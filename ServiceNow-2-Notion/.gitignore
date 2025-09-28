@@ -1,0 +1,50 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+pnpm-lock.yaml
+
+# Build output
+/dist
+/dist/
+/build
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Env files
+.env
+.env.local
+.env.*.local
+
+# VSCode
+.vscode/
+
+# Mac
+*.swp
+
+# Log files
+logs/
+*.log
+
+# Editor directories and files
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Temporary files
+*.tmp
+*.temp
+
+# Coverage
+coverage/
+
+# Misc
+*.bak
+*.orig
+
+# Allow tracking of dist if explicitly needed by unignoring
+# !/dist/README.md
