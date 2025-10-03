@@ -356,14 +356,18 @@ function isVideoIframeUrl(url) {
 
 // HTML to Notion blocks conversion function
 async function htmlToNotionBlocks(html) {
-  if (!html || typeof html !== "string") return [];
+  if (!html || typeof html !== "string")
+    return { blocks: [], hasVideos: false };
 
   // Reset video detection flag for this conversion
   hasDetectedVideos = false;
 
   log(`🔄 Converting HTML to Notion blocks (${html.length} chars)`);
 
-  // Try Martian conversion first for sophisticated HTML processing
+  // DISABLED: Martian conversion bypasses our custom image processing
+  // Images need to be processed directly with our image handling code
+  // that supports ServiceNow authentication and proper positioning
+  /*
   if (
     martianHelper &&
     typeof martianHelper.convertToNotionBlocks === "function"
@@ -381,7 +385,7 @@ async function htmlToNotionBlocks(html) {
         convertedBlocks.length > 0
       ) {
         log(`✅ Martian converted HTML to ${convertedBlocks.length} blocks`);
-        return convertedBlocks;
+        return { blocks: convertedBlocks, hasVideos: false };
       } else {
         log("⚠️ Martian returned empty result, falling back to basic parsing");
       }
@@ -392,6 +396,9 @@ async function htmlToNotionBlocks(html) {
   } else {
     log("⚠️ Martian helper not available, using basic HTML parsing");
   }
+  */
+
+  log("📝 Using custom HTML parsing with direct Notion SDK image handling");
 
   // Fallback to improved DOM-based parsing
   const blocks = [];
@@ -399,6 +406,99 @@ async function htmlToNotionBlocks(html) {
   // Remove script and style tags
   html = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
   html = html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
+
+  // Don't extract images at the top - they'll be processed inline within their context
+  // This ensures images appear in their proper position in the document flow
+
+  /*
+  // REMOVED: This code extracted all images at the start, causing them to appear at the top
+  const imgRegex = /<img[^>]*>/gi;
+  let imgMatch;
+  while ((imgMatch = imgRegex.exec(html)) !== null) {
+    const imgTag = imgMatch[0];
+    const srcMatch = imgTag.match(/src=["']([^"']*)["']/i);
+    const altMatch = imgTag.match(/alt=["']([^"']*)["']/i);
+
+    if (srcMatch && srcMatch[1]) {
+      let src = srcMatch[1];
+      const alt = altMatch ? altMatch[1] : "";
+
+      // Convert relative URLs to absolute
+      src = convertServiceNowUrl(src);
+
+      if (src && isValidImageUrl(src)) {
+        // For ServiceNow images, use external URLs directly since they require authentication
+        const isServiceNowImage =
+          src.includes("servicenow.com") || src.includes("servicenow-be-prod");
+
+        if (!isServiceNowImage) {
+          // Try to download and upload non-ServiceNow images
+          try {
+            log(`🖼️ Processing image: ${src.substring(0, 80)}...`);
+            const uploadId = await downloadAndUploadImage(src, alt || "image");
+
+            if (uploadId) {
+              // Successfully uploaded - use file reference
+              blocks.push({
+                object: "block",
+                type: "image",
+                image: {
+                  type: "file_upload",
+                  file_upload: {
+                    id: uploadId,
+                  },
+                  caption: alt
+                    ? [{ type: "text", text: { content: alt } }]
+                    : [],
+                },
+              });
+              log(`✅ Image uploaded successfully with ID: ${uploadId}`);
+            } else {
+              // Upload failed - fallback to external URL
+              log(`⚠️ Image upload failed, using external URL as fallback`);
+              blocks.push({
+                object: "block",
+                type: "image",
+                image: {
+                  type: "external",
+                  external: { url: src },
+                  caption: alt
+                    ? [{ type: "text", text: { content: alt } }]
+                    : [],
+                },
+              });
+            }
+          } catch (error) {
+            log(
+              `⚠️ Error uploading image: ${error.message}, falling back to external URL`
+            );
+            blocks.push({
+              object: "block",
+              type: "image",
+              image: {
+                type: "external",
+                external: { url: src },
+                caption: alt ? [{ type: "text", text: { content: alt } }] : [],
+              },
+            });
+          }
+        } else {
+          // Use external URL for ServiceNow images
+          log(`🔗 Using external image URL: ${src.substring(0, 80)}...`);
+          blocks.push({
+            object: "block",
+            type: "image",
+            image: {
+              type: "external",
+              external: { url: src },
+              caption: alt ? [{ type: "text", text: { content: alt } }] : [],
+            },
+          });
+        }
+      }
+    }
+  }
+  */
 
   // Remove smartTable dropdown/filter UI elements globally (accounting for nested divs)
   // This function properly handles nested div tags
@@ -502,7 +602,7 @@ async function htmlToNotionBlocks(html) {
 
   // Helper function to parse list items with support for nested lists
   // Notion has a depth limit of 2 levels for nested blocks
-  function parseListItems(html, listType, currentDepth = 0) {
+  async function parseListItems(html, listType, currentDepth = 0) {
     const MAX_DEPTH = 2; // Notion's maximum nesting depth
     const items = [];
 
@@ -527,7 +627,7 @@ async function htmlToNotionBlocks(html) {
         // Parse the nested list
         const nestedListType =
           nestedMatch[1] === "ul" ? "bulleted_list_item" : "numbered_list_item";
-        children = parseListItems(
+        children = await parseListItems(
           nestedMatch[2],
           nestedListType,
           currentDepth + 1
@@ -541,7 +641,8 @@ async function htmlToNotionBlocks(html) {
       }
 
       // Clean the text content and convert to rich text
-      const richText = htmlToNotionRichText(textContent);
+      const result = await htmlToNotionRichText(textContent);
+      const richText = result.richText;
 
       if (richText.length > 0 && richText[0].text.content.trim().length > 0) {
         const item = {
@@ -558,6 +659,8 @@ async function htmlToNotionBlocks(html) {
         }
 
         items.push(item);
+        // Note: inline images in list items are not supported by Notion API
+        // They would need to be handled differently if needed
       }
     }
 
@@ -654,7 +757,8 @@ async function htmlToNotionBlocks(html) {
       // Extract any text before this match
       if (m.index > lastEndPos) {
         const textBetween = htmlStr.substring(lastEndPos, m.index);
-        const richText = htmlToNotionRichText(textBetween);
+        const result = await htmlToNotionRichText(textBetween);
+        const richText = result.richText;
         if (richText.length > 0 && richText[0].text.content.trim().length > 0) {
           tempBlocks.push({
             object: "block",
@@ -663,6 +767,10 @@ async function htmlToNotionBlocks(html) {
               rich_text: richText,
             },
           });
+          // Add any inline images after the paragraph
+          if (result.inlineImages && result.inlineImages.length > 0) {
+            tempBlocks.push(...result.inlineImages);
+          }
         }
       }
 
@@ -676,7 +784,8 @@ async function htmlToNotionBlocks(html) {
       // Headers
       if (/^h[1-6]$/.test(tag)) {
         const level = parseInt(tag[1]);
-        const richText = htmlToNotionRichText(content);
+        const result = await htmlToNotionRichText(content);
+        const richText = result.richText;
         if (richText.length > 0 && richText[0].text.content.length > 0) {
           tempBlocks.push({
             object: "block",
@@ -685,11 +794,25 @@ async function htmlToNotionBlocks(html) {
               rich_text: richText,
             },
           });
+          // Add any inline images after the heading
+          if (result.inlineImages && result.inlineImages.length > 0) {
+            tempBlocks.push(...result.inlineImages);
+          }
         }
       }
       // Paragraphs
       else if (tag === "p") {
-        const richText = htmlToNotionRichText(content);
+        const result = await htmlToNotionRichText(content);
+        const richText = result.richText;
+        log(
+          `🔍 Paragraph result: richText=${
+            richText.length
+          } items, inlineImages=${
+            result.inlineImages ? result.inlineImages.length : "undefined"
+          }`
+        );
+
+        // Add paragraph block if there's text content
         if (richText.length > 0 && richText[0].text.content.length > 0) {
           tempBlocks.push({
             object: "block",
@@ -699,19 +822,33 @@ async function htmlToNotionBlocks(html) {
             },
           });
         }
+
+        // Add any inline images (even if paragraph had no text)
+        if (result.inlineImages && result.inlineImages.length > 0) {
+          log(`✅ Adding ${result.inlineImages.length} inline images`);
+          tempBlocks.push(...result.inlineImages);
+        }
       }
       // Lists (with nested list support up to Notion's 2-level limit)
       else if (tag === "ul") {
-        const listItems = parseListItems(content, "bulleted_list_item", 0);
+        const listItems = await parseListItems(
+          content,
+          "bulleted_list_item",
+          0
+        );
         tempBlocks.push(...listItems);
       } else if (tag === "ol") {
-        const listItems = parseListItems(content, "numbered_list_item", 0);
+        const listItems = await parseListItems(
+          content,
+          "numbered_list_item",
+          0
+        );
         tempBlocks.push(...listItems);
       }
       // Tables
       else if (tag === "table") {
         try {
-          const tableBlocks = parseTableToNotionBlock(content);
+          const tableBlocks = await parseTableToNotionBlock(content);
           if (tableBlocks && tableBlocks.length > 0) {
             tempBlocks.push(...tableBlocks);
           }
@@ -757,6 +894,54 @@ async function htmlToNotionBlocks(html) {
           });
         }
       }
+      // Image blocks
+      else if (tag === "img") {
+        log(
+          `🔍 Processing img tag with attributes: ${m.attributes.substring(
+            0,
+            100
+          )}`
+        );
+        const srcMatch = m.attributes.match(/src=["']([^"']*)["\']/i);
+        const altMatch = m.attributes.match(/alt=["']([^"']*)["\']/i);
+
+        if (srcMatch && srcMatch[1]) {
+          let src = srcMatch[1];
+          const alt = altMatch ? altMatch[1] : "";
+          log(`🔍 Found src: ${src.substring(0, 80)}`);
+
+          // Convert relative URLs to absolute
+          src = convertServiceNowUrl(src);
+          log(
+            `🔍 After conversion: ${src.substring(
+              0,
+              80
+            )}, isValid: ${isValidImageUrl(src)}`
+          );
+
+          if (src && isValidImageUrl(src)) {
+            log(`🔍 About to create image block...`);
+            const imageBlock = await createImageBlock(src, alt);
+            log(
+              `🔍 createImageBlock returned: ${
+                imageBlock ? "block object" : "null"
+              }`
+            );
+            if (imageBlock) {
+              log(
+                `✅ Image block created and added to tempBlocks (type: ${imageBlock.type})`
+              );
+              tempBlocks.push(imageBlock);
+            } else {
+              log(`❌ imageBlock was null!`);
+            }
+          } else {
+            log(`❌ Image validation failed for: ${src}`);
+          }
+        } else {
+          log(`❌ No src found in img tag`);
+        }
+      }
       // Divider blocks
       else if (tag === "hr") {
         tempBlocks.push({
@@ -764,79 +949,6 @@ async function htmlToNotionBlocks(html) {
           type: "divider",
           divider: {},
         });
-      }
-      // Image blocks
-      else if (tag === "img") {
-        // Extract src and alt from the attributes
-        const imgMatch = m.attributes.match(/src=["']([^"']*)["\']/i);
-        const altMatch = m.attributes.match(/alt=["']([^"']*)["\']/i);
-        if (imgMatch) {
-          let src = imgMatch[1];
-          const alt = altMatch ? altMatch[1] : "";
-
-          // Convert relative URLs to absolute
-          src = convertServiceNowUrl(src);
-
-          if (src && isValidImageUrl(src)) {
-            // Download and upload image to Notion
-            try {
-              log(`🖼️ Processing image: ${src.substring(0, 80)}...`);
-              const uploadId = await downloadAndUploadImage(
-                src,
-                alt || "image"
-              );
-
-              if (uploadId) {
-                // Successfully uploaded - use file reference
-                // Notion expects type "file_upload" with file_upload object containing id
-                tempBlocks.push({
-                  object: "block",
-                  type: "image",
-                  image: {
-                    type: "file_upload",
-                    file_upload: {
-                      id: uploadId,
-                    },
-                    caption: alt
-                      ? [{ type: "text", text: { content: alt } }]
-                      : [],
-                  },
-                });
-                log(`✅ Image uploaded successfully with ID: ${uploadId}`);
-              } else {
-                // Upload failed - fallback to external URL
-                log(`⚠️ Image upload failed, using external URL as fallback`);
-                tempBlocks.push({
-                  object: "block",
-                  type: "image",
-                  image: {
-                    type: "external",
-                    external: { url: src },
-                    caption: alt
-                      ? [{ type: "text", text: { content: alt } }]
-                      : [],
-                  },
-                });
-              }
-            } catch (error) {
-              // Error during upload - fallback to external URL
-              log(
-                `⚠️ Error uploading image: ${error.message}, using external URL as fallback`
-              );
-              tempBlocks.push({
-                object: "block",
-                type: "image",
-                image: {
-                  type: "external",
-                  external: { url: src },
-                  caption: alt
-                    ? [{ type: "text", text: { content: alt } }]
-                    : [],
-                },
-              });
-            }
-          }
-        }
       }
       // Embed blocks (for iframes)
       else if (tag === "iframe") {
@@ -925,7 +1037,8 @@ async function htmlToNotionBlocks(html) {
 
         if (isNoteCallout) {
           // Convert to Notion callout block
-          const richText = htmlToNotionRichText(content);
+          const result = await htmlToNotionRichText(content);
+          const richText = result.richText;
           if (
             richText.length > 0 &&
             richText[0].text.content.trim().length > 0
@@ -968,6 +1081,11 @@ async function htmlToNotionBlocks(html) {
           if (hasNestedBlocks) {
             // Recursively process nested content
             const nestedBlocks = await extractBlocksFromHTML(content);
+            log(
+              `🔄 Recursive call returned ${
+                nestedBlocks.length
+              } blocks: ${nestedBlocks.map((b) => b.type).join(", ")}`
+            );
             tempBlocks.push(...nestedBlocks);
           } else {
             // Extract plain text from container
@@ -989,7 +1107,8 @@ async function htmlToNotionBlocks(html) {
     // Handle any remaining text after the last match
     if (matches.length > 0 && lastEndPos < htmlStr.length) {
       const textAfter = htmlStr.substring(lastEndPos);
-      const richText = htmlToNotionRichText(textAfter);
+      const result = await htmlToNotionRichText(textAfter);
+      const richText = result.richText;
       if (richText.length > 0 && richText[0].text.content.trim().length > 0) {
         tempBlocks.push({
           object: "block",
@@ -998,6 +1117,10 @@ async function htmlToNotionBlocks(html) {
             rich_text: richText,
           },
         });
+        // Add any inline images after the paragraph
+        if (result.inlineImages && result.inlineImages.length > 0) {
+          tempBlocks.push(...result.inlineImages);
+        }
       }
     }
 
@@ -1115,50 +1238,119 @@ function convertServiceNowUrl(url) {
   return url;
 }
 
+// Helper function to create image blocks
+async function createImageBlock(src, alt = "") {
+  if (!src || !isValidImageUrl(src)) return null;
+
+  // ServiceNow images require authentication, so they MUST be downloaded and uploaded
+  // External URLs won't work for ServiceNow images outside the authenticated session
+  const isServiceNowImage =
+    src.includes("servicenow.com") || src.includes("servicenow-be-prod");
+
+  // Always try to download and upload images to Notion
+  try {
+    log(`🖼️ Downloading and uploading image: ${src.substring(0, 80)}...`);
+    const uploadId = await downloadAndUploadImage(src, alt || "image");
+
+    if (uploadId) {
+      // Successfully uploaded - use file reference
+      log(`✅ Image uploaded successfully with ID: ${uploadId}`);
+      return {
+        object: "block",
+        type: "image",
+        image: {
+          type: "file_upload",
+          file_upload: {
+            id: uploadId,
+          },
+          caption: alt ? [{ type: "text", text: { content: alt } }] : [],
+        },
+      };
+    } else {
+      // Upload failed
+      if (isServiceNowImage) {
+        // ServiceNow images REQUIRE upload - don't fallback to external
+        log(
+          `❌ ServiceNow image upload failed - cannot use external URL (requires auth)`
+        );
+        return null;
+      } else {
+        // Non-ServiceNow images can fallback to external URL
+        log(`⚠️ Image upload failed, using external URL as fallback`);
+        return {
+          object: "block",
+          type: "image",
+          image: {
+            type: "external",
+            external: { url: src },
+            caption: alt ? [{ type: "text", text: { content: alt } }] : [],
+          },
+        };
+      }
+    }
+  } catch (error) {
+    log(`❌ Error processing image ${src}: ${error.message}`);
+    if (isServiceNowImage) {
+      // ServiceNow images REQUIRE upload - don't fallback to external
+      log(
+        `❌ ServiceNow image error - cannot use external URL (requires auth)`
+      );
+      return null;
+    } else {
+      // Non-ServiceNow images can fallback to external URL
+      return {
+        object: "block",
+        type: "image",
+        image: {
+          type: "external",
+          external: { url: src },
+          caption: alt ? [{ type: "text", text: { content: alt } }] : [],
+        },
+      };
+    }
+  }
+}
+
 // Helper function to convert HTML to Notion rich text format
-function htmlToNotionRichText(html) {
-  if (!html) return [{ type: "text", text: { content: "" } }];
+async function htmlToNotionRichText(html) {
+  if (!html)
+    return {
+      richText: [{ type: "text", text: { content: "" } }],
+      inlineImages: [],
+    };
 
   const richText = [];
+  const inlineImages = [];
   let text = html;
 
-  // First, replace embedded img tags with links to the image
-  // This handles cases where images are inline with text (like video thumbnails)
-  text = text.replace(/<img[^>]*>/gi, (imgTag) => {
+  // Extract and process img tags, converting them to inline images
+  const imgRegex = /<img[^>]*>/gi;
+  let imgMatch;
+
+  while ((imgMatch = imgRegex.exec(text)) !== null) {
+    const imgTag = imgMatch[0];
     const srcMatch = imgTag.match(/src=["']([^"']*)["']/i);
     const altMatch = imgTag.match(/alt=["']([^"']*)["']/i);
 
     if (srcMatch && srcMatch[1]) {
-      const src = srcMatch[1];
-      const alt = altMatch && altMatch[1] ? altMatch[1] : "Image";
-      // Convert to a link format that will be processed below
-      return `<a href="${src}">[${alt || "Embedded Video/Image"}]</a>`;
-    }
-    return ""; // Remove img tag if no src
-  });
+      let src = srcMatch[1];
+      const alt = altMatch && altMatch[1] ? altMatch[1] : "";
 
-  // Also handle inline iframe tags (video embeds that appear in text)
-  text = text.replace(/<iframe[^>]*>/gi, (iframeTag) => {
-    const srcMatch = iframeTag.match(/src=["']([^"']*)["']/i);
-    const titleMatch = iframeTag.match(/title=["']([^"']*)["']/i);
+      // Convert relative URLs to absolute
+      src = convertServiceNowUrl(src);
 
-    if (srcMatch && srcMatch[1]) {
-      const src = srcMatch[1];
-      const title =
-        titleMatch && titleMatch[1] ? titleMatch[1] : "Embedded Content";
-      // Only mark as video if it's from a known video platform
-      const isVideo = isVideoIframeUrl(src);
-      if (isVideo) {
-        hasDetectedVideos = true;
-        // Convert to a link format with video emoji
-        return `<a href="${src}">🎥 [${title || "Embedded Video"}]</a>`;
-      } else {
-        // Non-video iframe, just convert to a link
-        return `<a href="${src}">[${title || "Embedded Content"}]</a>`;
+      if (src && isValidImageUrl(src)) {
+        // Create an inline image block
+        const imageBlock = await createImageBlock(src, alt);
+        if (imageBlock) {
+          inlineImages.push(imageBlock);
+        }
       }
     }
-    return ""; // Remove iframe tag if no src
-  });
+
+    // Remove the img tag from text
+    text = text.replace(imgTag, "");
+  }
 
   // Handle links specially - support both single and double quotes
   const linkRegex = /<a[^>]*href=(["'])([^"']*)\1[^>]*>([\s\S]*?)<\/a>/gi;
@@ -1215,9 +1407,15 @@ function htmlToNotionRichText(html) {
     }
   }
 
-  // If no links were found, return plain text
+  // If no rich text was created, add the cleaned text
   if (richText.length === 0) {
-    return [{ type: "text", text: { content: cleanHtmlText(text) } }];
+    const cleanedText = cleanHtmlText(text);
+    if (cleanedText.trim()) {
+      richText.push({
+        type: "text",
+        text: { content: cleanedText },
+      });
+    }
   }
 
   // Ensure proper spacing between rich text elements
@@ -1237,7 +1435,7 @@ function htmlToNotionRichText(html) {
     }
   }
 
-  return richText;
+  return { richText, inlineImages };
 }
 
 // Helper function to clean text while preserving newlines
@@ -1276,49 +1474,45 @@ function cleanTextPreserveNewlines(html, preserveLeadingTrailing = false) {
 }
 
 // Helper function to convert HTML to rich text while preserving newlines
-function htmlToNotionRichTextPreserveNewlines(html) {
-  if (!html) return [{ type: "text", text: { content: "" } }];
+async function htmlToNotionRichTextPreserveNewlines(html) {
+  if (!html)
+    return {
+      richText: [{ type: "text", text: { content: "" } }],
+      inlineImages: [],
+    };
 
   const richText = [];
+  const inlineImages = [];
   let text = html;
 
-  // First, replace embedded img tags with links to the image
-  // This handles cases where images are inline with text (like video thumbnails)
-  text = text.replace(/<img[^>]*>/gi, (imgTag) => {
+  // Extract and process img tags, converting them to inline images
+  const imgRegex = /<img[^>]*>/gi;
+  let imgMatch;
+
+  while ((imgMatch = imgRegex.exec(text)) !== null) {
+    const imgTag = imgMatch[0];
     const srcMatch = imgTag.match(/src=["']([^"']*)["']/i);
     const altMatch = imgTag.match(/alt=["']([^"']*)["']/i);
 
     if (srcMatch && srcMatch[1]) {
-      const src = srcMatch[1];
-      const alt = altMatch && altMatch[1] ? altMatch[1] : "Image";
-      // Convert to a link format that will be processed below
-      return `<a href="${src}">[${alt || "Embedded Video/Image"}]</a>`;
-    }
-    return ""; // Remove img tag if no src
-  });
+      let src = srcMatch[1];
+      const alt = altMatch && altMatch[1] ? altMatch[1] : "";
 
-  // Also handle inline iframe tags (video embeds that appear in text)
-  text = text.replace(/<iframe[^>]*>/gi, (iframeTag) => {
-    const srcMatch = iframeTag.match(/src=["']([^"']*)["']/i);
-    const titleMatch = iframeTag.match(/title=["']([^"']*)["']/i);
+      // Convert relative URLs to absolute
+      src = convertServiceNowUrl(src);
 
-    if (srcMatch && srcMatch[1]) {
-      const src = srcMatch[1];
-      const title =
-        titleMatch && titleMatch[1] ? titleMatch[1] : "Embedded Content";
-      // Only mark as video if it's from a known video platform
-      const isVideo = isVideoIframeUrl(src);
-      if (isVideo) {
-        hasDetectedVideos = true;
-        // Convert to a link format with video emoji
-        return `<a href="${src}">🎥 [${title || "Embedded Video"}]</a>`;
-      } else {
-        // Non-video iframe, just convert to a link
-        return `<a href="${src}">[${title || "Embedded Content"}]</a>`;
+      if (src && isValidImageUrl(src)) {
+        // Create an inline image block
+        const imageBlock = await createImageBlock(src, alt);
+        if (imageBlock) {
+          inlineImages.push(imageBlock);
+        }
       }
     }
-    return ""; // Remove iframe tag if no src
-  });
+
+    // Remove the img tag from text
+    text = text.replace(imgTag, "");
+  }
 
   // Handle links specially - support both single and double quotes
   const linkRegex = /<a[^>]*href=(["'])([^"']*)\1[^>]*>([\s\S]*?)<\/a>/gi;
@@ -1375,19 +1569,32 @@ function htmlToNotionRichTextPreserveNewlines(html) {
     }
   }
 
-  // If no links were found, return plain text
+  // If no rich text was created, add the cleaned text
   if (richText.length === 0) {
-    return [
-      { type: "text", text: { content: cleanTextPreserveNewlines(text) } },
-    ];
+    const cleanedText = cleanTextPreserveNewlines(text);
+    if (cleanedText.trim()) {
+      richText.push({
+        type: "text",
+        text: { content: cleanedText },
+      });
+    }
   }
 
-  return richText;
+  return { richText, inlineImages };
 }
 
 // Helper function to process table cell content with proper list formatting and hyperlink preservation
-function processTableCellContent(html) {
+async function processTableCellContent(html) {
   if (!html) return [{ type: "text", text: { content: "" } }];
+
+  // Check if this cell contains images - replace them with bullet placeholders
+  const hasImages = /<img[^>]*>/i.test(html);
+  if (hasImages) {
+    log(`🖼️ Table cell contains image(s), replacing with bullet placeholder`);
+    // Replace each image with a bullet symbol placeholder
+    html = html.replace(/<img[^>]*>/gi, " • ");
+    log(`📝 After image replacement: ${html.substring(0, 100)}...`);
+  }
 
   // Check if this cell contains lists
   const hasLists = /<[uo]l[^>]*>/i.test(html);
@@ -1415,16 +1622,21 @@ function processTableCellContent(html) {
     processedHtml = processedHtml.replace(/\s+$/, "");
 
     // Use the newline-preserving version to maintain both links and line breaks
-    return htmlToNotionRichTextPreserveNewlines(processedHtml);
+    return (await htmlToNotionRichTextPreserveNewlines(processedHtml)).richText;
   } else {
     // Use regular htmlToNotionRichText for non-list content
-    return htmlToNotionRichText(html);
+    return (await htmlToNotionRichText(html)).richText;
   }
 }
 
 // Helper function to parse HTML table to Notion table block
-function parseTableToNotionBlock(tableHtml) {
+async function parseTableToNotionBlock(tableHtml) {
   const blocks = [];
+
+  // Log the raw table HTML to see if images are present
+  log(`🔍 Raw table HTML (first 500 chars): ${tableHtml.substring(0, 500)}...`);
+  const hasImagesInTable = /<img[^>]*>/i.test(tableHtml);
+  log(`🖼️ Table contains images: ${hasImagesInTable}`);
 
   // Remove table dropdown/filter elements
   let cleanedTableHtml = tableHtml.replace(
@@ -1438,7 +1650,16 @@ function parseTableToNotionBlock(tableHtml) {
     ""
   );
 
-  // Extract table caption if present
+  // Replace any remaining img tags with bullet symbols before processing cells
+  // This handles cases where images are in the HTML
+  if (hasImagesInTable) {
+    log(
+      `🔄 Replacing ${
+        (cleanedTableHtml.match(/<img[^>]*>/gi) || []).length
+      } images with bullet symbols`
+    );
+    cleanedTableHtml = cleanedTableHtml.replace(/<img[^>]*>/gi, " • ");
+  } // Extract table caption if present
   const captionRegex = /<caption[^>]*>([\s\S]*?)<\/caption>/i;
   const captionMatch = cleanedTableHtml.match(captionRegex);
   if (captionMatch) {
@@ -1460,32 +1681,123 @@ function parseTableToNotionBlock(tableHtml) {
     }
   }
 
-  // Extract table rows
-  const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-  const rows = [];
-  let rowMatch;
+  // Extract thead and tbody sections separately
+  const theadRegex = /<thead[^>]*>([\s\S]*?)<\/thead>/gi;
+  const tbodyRegex = /<tbody[^>]*>([\s\S]*?)<\/tbody>/gi;
 
-  while ((rowMatch = rowRegex.exec(cleanedTableHtml)) !== null) {
-    const rowContent = rowMatch[1];
-    // Extract cells (both td and th)
-    const cellRegex = /<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;
-    const cells = [];
-    let cellMatch;
+  const theadMatch = theadRegex.exec(cleanedTableHtml);
+  const tbodyMatch = tbodyRegex.exec(cleanedTableHtml);
 
-    while ((cellMatch = cellRegex.exec(rowContent)) !== null) {
-      const cellRichText = processTableCellContent(cellMatch[1]);
-      cells.push(cellRichText);
+  // Extract table rows from thead
+  const theadRows = [];
+  if (theadMatch) {
+    const theadContent = theadMatch[1];
+    const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+    let rowMatch;
+
+    while ((rowMatch = rowRegex.exec(theadContent)) !== null) {
+      const rowContent = rowMatch[1];
+      const cellRegex = /<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;
+      const cells = [];
+      let cellMatch;
+
+      while ((cellMatch = cellRegex.exec(rowContent)) !== null) {
+        const cellContent = cellMatch[1];
+        log(
+          `📋 Processing thead cell content (${
+            cellContent.length
+          } chars): ${cellContent.substring(0, 150)}...`
+        );
+        const cellRichText = await processTableCellContent(cellContent);
+        cells.push(cellRichText);
+      }
+
+      if (cells.length > 0) {
+        theadRows.push(cells);
+      }
+    }
+  }
+
+  // Extract table rows from tbody and check for images
+  const tbodyRows = [];
+  const tbodyRawRows = []; // Keep raw HTML for detecting images
+  if (tbodyMatch) {
+    const tbodyContent = tbodyMatch[1];
+    const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+    let rowMatch;
+
+    while ((rowMatch = rowRegex.exec(tbodyContent)) !== null) {
+      const rowContent = rowMatch[1];
+      tbodyRawRows.push(rowContent); // Store raw HTML before processing
+
+      const cellRegex = /<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;
+      const cells = [];
+      let cellMatch;
+
+      while ((cellMatch = cellRegex.exec(rowContent)) !== null) {
+        const cellContent = cellMatch[1];
+        log(
+          `📋 Processing tbody cell content (${
+            cellContent.length
+          } chars): ${cellContent.substring(0, 150)}...`
+        );
+        const cellRichText = await processTableCellContent(cellContent);
+        cells.push(cellRichText);
+      }
+
+      if (cells.length > 0) {
+        tbodyRows.push(cells);
+      }
+    }
+  }
+
+  // If no thead/tbody structure, fall back to processing all <tr> elements
+  let rows = [];
+  let firstBodyRowHasImages = false;
+
+  if (theadRows.length > 0 || tbodyRows.length > 0) {
+    // Table has thead/tbody structure
+    rows = [...theadRows, ...tbodyRows];
+
+    // Check if first tbody row contains images
+    if (tbodyRawRows.length > 0) {
+      firstBodyRowHasImages = /<img[^>]*>/i.test(tbodyRawRows[0]);
+    }
+  } else {
+    // No thead/tbody - process all rows as before
+    const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+    const rawRows = [];
+    let rowMatch;
+
+    while ((rowMatch = rowRegex.exec(cleanedTableHtml)) !== null) {
+      const rowContent = rowMatch[1];
+      rawRows.push(rowContent);
+
+      const cellRegex = /<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;
+      const cells = [];
+      let cellMatch;
+
+      while ((cellMatch = cellRegex.exec(rowContent)) !== null) {
+        const cellRichText = await processTableCellContent(cellMatch[1]);
+        cells.push(cellRichText);
+      }
+
+      if (cells.length > 0) {
+        rows.push(cells);
+      }
     }
 
-    if (cells.length > 0) {
-      rows.push(cells);
+    // For tables without thead/tbody, check first row
+    if (rawRows.length > 0) {
+      firstBodyRowHasImages = /<img[^>]*>/i.test(rawRows[0]);
     }
   }
 
   if (rows.length === 0) return blocks.length > 0 ? blocks : null;
 
   // Determine table structure
-  const hasHeaders = rows.length > 1; // Assume first row is headers if multiple rows
+  // If first body row has images, don't treat it as a header row
+  const hasHeaders = theadRows.length > 0 && !firstBodyRowHasImages;
   const tableWidth = Math.max(...rows.map((row) => row.length));
 
   // Skip tables with no columns
@@ -1657,6 +1969,10 @@ app.post("/api/W2N", async (req, res) => {
     log(`   Database ID: ${payload.databaseId}`);
     log(`   Properties: ${JSON.stringify(properties, null, 2)}`);
     log(`   Children blocks: ${children.length}`);
+
+    // Log block types for debugging
+    const blockTypes = children.map((b) => b.type).join(", ");
+    log(`   Block types: ${blockTypes}`);
 
     const response = await notion.pages.create({
       parent: { database_id: payload.databaseId },

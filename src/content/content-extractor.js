@@ -175,6 +175,64 @@ export async function extractContentWithIframes(contentElement) {
 
         // Extract images from iframe if we have content
         if (iframeContent && iframeContent.trim().length > 50) {
+          // Replace images inside tables with bullet symbols
+          // Notion doesn't support images in tables, so we use bullets as placeholders
+
+          // Use regex to find table elements and replace img tags within them
+          const tableRegex = /<table[^>]*>[\s\S]*?<\/table>/gi;
+          const tableMatches = iframeContent.match(tableRegex);
+          debug(
+            `🔍 Found ${
+              tableMatches ? tableMatches.length : 0
+            } table(s) in content`
+          );
+
+          let replacedCount = 0;
+
+          iframeContent = iframeContent.replace(
+            tableRegex,
+            (tableMatch, offset) => {
+              // Count images and SVGs before replacement
+              const imgMatches = tableMatch.match(/<img[^>]*>/gi);
+              const svgMatches = tableMatch.match(
+                /<svg[^>]*>[\s\S]*?<\/svg>/gi
+              );
+              const imgCount = imgMatches ? imgMatches.length : 0;
+              const svgCount = svgMatches ? svgMatches.length : 0;
+
+              debug(
+                `📋 Table at offset ${offset}: contains ${imgCount} img tag(s) and ${svgCount} svg element(s)`
+              );
+
+              let result = tableMatch;
+
+              // Replace img tags with bullet symbol
+              if (imgMatches) {
+                result = result.replace(/<img[^>]*>/gi, " • ");
+                replacedCount += imgCount;
+                debug(`✅ Replaced ${imgCount} img tags with bullets`);
+              }
+
+              // Replace svg elements with bullet symbol
+              if (svgMatches) {
+                result = result.replace(/<svg[^>]*>[\s\S]*?<\/svg>/gi, " • ");
+                replacedCount += svgCount;
+                debug(`✅ Replaced ${svgCount} svg elements with bullets`);
+              }
+
+              return result;
+            }
+          );
+
+          debug(`📊 Total images/svgs replaced in tables: ${replacedCount}`);
+          if (replacedCount > 0) {
+            debug(
+              `🔄 Replaced ${replacedCount} images/svgs in tables with bullet symbols (•)`
+            );
+          } else {
+            debug(`⚠️ No images or svgs found in tables to replace`);
+          }
+
           combinedHtml = iframeContent;
           debug(
             `✅ Successfully extracted iframe content (${iframeContent.length} chars)`
@@ -238,6 +296,55 @@ export async function extractContentWithIframes(contentElement) {
     // If no iframe content found, use the regular element content
     if (!combinedHtml) {
       combinedHtml = contentElement.innerHTML || contentElement.outerHTML;
+    }
+
+    // Replace images/SVGs inside tables with bullet symbols
+    // Notion doesn't support images in tables, so we use bullets as placeholders
+    const tableRegex = /<table[^>]*>[\s\S]*?<\/table>/gi;
+    const tableMatches = combinedHtml.match(tableRegex);
+    debug(
+      `🔍 Found ${tableMatches ? tableMatches.length : 0} table(s) in content`
+    );
+
+    let replacedCount = 0;
+
+    combinedHtml = combinedHtml.replace(tableRegex, (tableMatch, offset) => {
+      // Count images and SVGs before replacement
+      const imgMatches = tableMatch.match(/<img[^>]*>/gi);
+      const svgMatches = tableMatch.match(/<svg[^>]*>[\s\S]*?<\/svg>/gi);
+      const imgCount = imgMatches ? imgMatches.length : 0;
+      const svgCount = svgMatches ? svgMatches.length : 0;
+
+      debug(
+        `📋 Table at offset ${offset}: contains ${imgCount} img tag(s) and ${svgCount} svg element(s)`
+      );
+
+      let result = tableMatch;
+
+      // Replace img tags with bullet symbol
+      if (imgMatches) {
+        result = result.replace(/<img[^>]*>/gi, " • ");
+        replacedCount += imgCount;
+        debug(`✅ Replaced ${imgCount} img tags with bullets`);
+      }
+
+      // Replace svg elements with bullet symbol
+      if (svgMatches) {
+        result = result.replace(/<svg[^>]*>[\s\S]*?<\/svg>/gi, " • ");
+        replacedCount += svgCount;
+        debug(`✅ Replaced ${svgCount} svg elements with bullets`);
+      }
+
+      return result;
+    });
+
+    debug(`📊 Total images/svgs replaced in tables: ${replacedCount}`);
+    if (replacedCount > 0) {
+      debug(
+        `🔄 Replaced ${replacedCount} images/svgs in tables with bullet symbols (•)`
+      );
+    } else {
+      debug(`⚠️ No images or svgs found in tables to replace`);
     }
 
     // Extract images from the main content element
