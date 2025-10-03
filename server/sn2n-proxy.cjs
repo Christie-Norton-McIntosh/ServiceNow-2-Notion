@@ -1662,10 +1662,8 @@ app.post("/api/W2N", async (req, res) => {
       parent: { database_id: payload.databaseId },
       properties: properties,
       icon: {
-        type: "external",
-        external: {
-          url: "https://raw.githubusercontent.com/Christie-Norton-McIntosh/ServiceNow-2-Notion/main/ServiceNow-2-Notion/src/img/ServiceNow%20icon.png",
-        },
+        type: "emoji",
+        emoji: "💠",
       },
       cover: {
         type: "external",
