@@ -1,0 +1,59 @@
+name: Release on dist change
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      actions: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install --no-audit --prefer-offline; fi
+
+      - name: Build userscript
+        run: npm run build
+
+      - name: Check if dist changed
+        id: check_diff
+        run: |
+          git fetch --no-tags origin main
+          git diff --name-only HEAD HEAD~1 > changed.txt || true
+          echo "changed_files<<EOF" >> $GITHUB_OUTPUT
+          cat changed.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create release when dist changed
+        if: contains(steps.check_diff.outputs.changed_files, 'dist/ServiceNow-2-Notion.user.js')
+        uses: softprops/action-gh-release@v1
+        with:
+          name: ServiceNow-2-Notion userscript built
+          body: |
+            Automated release containing the built Tampermonkey userscript.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload userscript to release
+        if: contains(steps.check_diff.outputs.changed_files, 'dist/ServiceNow-2-Notion.user.js')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/ServiceNow-2-Notion.user.js
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

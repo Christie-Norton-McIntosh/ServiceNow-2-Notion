@@ -19,6 +19,8 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+# Also ignore server-level env files
+server/.env
 
 # VSCode
 .vscode/

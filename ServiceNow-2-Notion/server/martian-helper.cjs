@@ -1,8 +1,7 @@
-/\*
-
-- W2N-Proxy/martian-helper.js
-- Clean implementation: conversion helpers and Notion upload utilities.
-  \*/
+/*
+ - W2N-Proxy/martian-helper.js
+ - Clean implementation: conversion helpers and Notion upload utilities.
+ */
 
 const axios = require("axios");
 const { v4: uuidv4 } = require("uuid");
@@ -11,76 +10,81 @@ const fs = require("fs");
 const path = require("path");
 let martian = null;
 try {
-martian = require("@tryfabric/martian");
+  martian = require("@tryfabric/martian");
 } catch (e) {
-martian = null;
+  martian = null;
 }
 
 let notionClient = null;
 function setNotionClient(client) {
-notionClient = client;
+  notionClient = client;
 }
 
 async function convertToNotionBlocks(
-input,
-{ from = "markdown", options = {} } = {}
+  input,
+  { from = "markdown", options = {} } = {}
 ) {
-if (!martian)
-throw new Error("Martian not installed. Run npm install in W2N-Proxy");
+  if (!martian)
+    throw new Error("Martian not installed. Run npm install in W2N-Proxy");
 
-// Default options based on Martian documentation to enable key features
-const defaultOptions = {
-enableEmojiCallouts: true, // Enable emoji-style callouts (📘 Note: ...)
-strictImageUrls: false, // CHANGED: Don't validate image URLs to avoid converting images to text - let proxy handle image processing
-nonInline: "ignore", // Ignore non-inline elements when parsing rich text
-notionLimits: {
-truncate: false, // Don't truncate - we handle chunking in the proxy
-onError: (err) => {
-if (typeof window !== 'undefined' ? window.SN2N_REF_DEBUG : (process && process.env && process.env.SN2N_REF_DEBUG)) console.log(`🔍 Martian Notion limits warning: ${err.message}`);
-},
-},
-};
+  // Default options based on Martian documentation to enable key features
+  const defaultOptions = {
+    enableEmojiCallouts: true, // Enable emoji-style callouts (📘 Note: ...)
+    strictImageUrls: false, // CHANGED: Don't validate image URLs to avoid converting images to text - let proxy handle image processing
+    nonInline: "ignore", // Ignore non-inline elements when parsing rich text
+    notionLimits: {
+      truncate: false, // Don't truncate - we handle chunking in the proxy
+      onError: (err) => {
+        if (
+          typeof window !== "undefined"
+            ? window.SN2N_REF_DEBUG
+            : process && process.env && process.env.SN2N_REF_DEBUG
+        )
+          console.log(`🔍 Martian Notion limits warning: ${err.message}`);
+      },
+    },
+  };
 
-// Merge user options with defaults
-const martianOptions = { ...defaultOptions, ...options };
+  // Merge user options with defaults
+  const martianOptions = { ...defaultOptions, ...options };
 
-let blocks;
+  let blocks;
 
-if (from === "markdown") {
-if (typeof martian.markdownToBlocks === "function")
-blocks = await martian.markdownToBlocks(input, martianOptions);
-else if (typeof martian.markdownToNotion === "function")
-blocks = await martian.markdownToNotion(input, martianOptions);
-else if (typeof martian.toNotion === "function")
-blocks = await martian.toNotion(input, {
-format: "markdown",
-...martianOptions,
-});
-} else if (from === "html") {
-if (typeof martian.htmlToBlocks === "function")
-blocks = await martian.htmlToBlocks(input, martianOptions);
-else if (typeof martian.htmlToNotion === "function")
-blocks = await martian.htmlToNotion(input, martianOptions);
-else if (typeof martian.toNotion === "function")
-blocks = await martian.toNotion(input, {
-format: "html",
-...martianOptions,
-});
-} else {
-throw new Error("Unsupported conversion or martian API missing");
-}
+  if (from === "markdown") {
+    if (typeof martian.markdownToBlocks === "function")
+      blocks = await martian.markdownToBlocks(input, martianOptions);
+    else if (typeof martian.markdownToNotion === "function")
+      blocks = await martian.markdownToNotion(input, martianOptions);
+    else if (typeof martian.toNotion === "function")
+      blocks = await martian.toNotion(input, {
+        format: "markdown",
+        ...martianOptions,
+      });
+  } else if (from === "html") {
+    if (typeof martian.htmlToBlocks === "function")
+      blocks = await martian.htmlToBlocks(input, martianOptions);
+    else if (typeof martian.htmlToNotion === "function")
+      blocks = await martian.htmlToNotion(input, martianOptions);
+    else if (typeof martian.toNotion === "function")
+      blocks = await martian.toNotion(input, {
+        format: "html",
+        ...martianOptions,
+      });
+  } else {
+    throw new Error("Unsupported conversion or martian API missing");
+  }
 
-// Post-process blocks to style table headers, flatten nested lists, and convert toggle patterns
-if (blocks && Array.isArray(blocks)) {
-console.log(
-`[DEBUG] Processing ${blocks.length} blocks for table/list fixes`
-);
-const blockTypes = blocks.map((b) => b.type).filter(Boolean);
-console.log(`[DEBUG] Block types found: ${JSON.stringify(blockTypes)}`);
-const tableBlocks = blocks.filter((b) => b.type === "table");
-console.log(
-`[DEBUG] Found ${tableBlocks.length} table blocks BEFORE processing`
-);
+  // Post-process blocks to style table headers, flatten nested lists, and convert toggle patterns
+  if (blocks && Array.isArray(blocks)) {
+    console.log(
+      `[DEBUG] Processing ${blocks.length} blocks for table/list fixes`
+    );
+    const blockTypes = blocks.map((b) => b.type).filter(Boolean);
+    console.log(`[DEBUG] Block types found: ${JSON.stringify(blockTypes)}`);
+    const tableBlocks = blocks.filter((b) => b.type === "table");
+    console.log(
+      `[DEBUG] Found ${tableBlocks.length} table blocks BEFORE processing`
+    );
 
     blocks = blocks.map((block) => styleTableHeaders(block));
     blocks = flattenNestedBulletLists(blocks);
@@ -100,17 +104,16 @@ console.log(
       );
       blocks = blocks.map((block) => styleTableHeaders(block));
     }
-
-}
-return blocks;
+  }
+  return blocks;
 }
 
 function styleTableHeaders(block) {
-// Check if this is a table block
-if (block.type === "table" && block.table) {
-console.log(
-`[DEBUG] Processing table with ${block.table.children?.length || 0} rows`
-);
+  // Check if this is a table block
+  if (block.type === "table" && block.table) {
+    console.log(
+      `[DEBUG] Processing table with ${block.table.children?.length || 0} rows`
+    );
 
     // Validate and fix table structure first
     if (block.table.children && block.table.children.length > 0) {
@@ -288,29 +291,28 @@ console.log(
     console.log(
       `[DEBUG] Processed line breaks in ${lineBreaksProcessed} table cells`
     );
+  }
 
-}
+  // Recursively process child blocks
+  if (block.children && Array.isArray(block.children)) {
+    block.children = block.children.map((child) => styleTableHeaders(child));
+  }
 
-// Recursively process child blocks
-if (block.children && Array.isArray(block.children)) {
-block.children = block.children.map((child) => styleTableHeaders(child));
-}
-
-return block;
+  return block;
 }
 
 function flattenNestedBulletLists(blocks) {
-const result = [];
+  const result = [];
 
-for (const block of blocks) {
-if (block.type === "bulleted_list_item" && block.bulleted_list_item) {
-// Create a new block without nested children
-const flatBlock = {
-type: "bulleted_list_item",
-bulleted_list_item: {
-rich_text: block.bulleted_list_item.rich_text || [],
-},
-};
+  for (const block of blocks) {
+    if (block.type === "bulleted_list_item" && block.bulleted_list_item) {
+      // Create a new block without nested children
+      const flatBlock = {
+        type: "bulleted_list_item",
+        bulleted_list_item: {
+          rich_text: block.bulleted_list_item.rich_text || [],
+        },
+      };
 
       result.push(flatBlock);
 
@@ -350,24 +352,23 @@ rich_text: block.bulleted_list_item.rich_text || [],
         result.push(block);
       }
     }
+  }
 
-}
-
-return result;
+  return result;
 }
 
 function flattenNestedNumberedLists(blocks) {
-const result = [];
+  const result = [];
 
-for (const block of blocks) {
-if (block.type === "numbered_list_item" && block.numbered_list_item) {
-// Create a new block without nested children
-const flatBlock = {
-type: "numbered_list_item",
-numbered_list_item: {
-rich_text: block.numbered_list_item.rich_text || [],
-},
-};
+  for (const block of blocks) {
+    if (block.type === "numbered_list_item" && block.numbered_list_item) {
+      // Create a new block without nested children
+      const flatBlock = {
+        type: "numbered_list_item",
+        numbered_list_item: {
+          rich_text: block.numbered_list_item.rich_text || [],
+        },
+      };
 
       result.push(flatBlock);
 
@@ -407,17 +408,16 @@ rich_text: block.numbered_list_item.rich_text || [],
         result.push(block);
       }
     }
+  }
 
-}
-
-return result;
+  return result;
 }
 
 function convertTogglePatterns(blocks) {
-const result = [];
+  const result = [];
 
-for (let i = 0; i < blocks.length; i++) {
-const block = blocks[i];
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
 
     // Look for H3 heading blocks that contain "(h3toggle)" pattern
     if (
@@ -588,64 +588,63 @@ const block = blocks[i];
       }
       result.push(block);
     }
+  }
 
-}
-
-return result;
+  return result;
 }
 
 async function uploadFileToNotion(buffer, filename) {
-if (!notionClient)
-throw new Error("Notion client not injected. Call setNotionClient(notion)");
+  if (!notionClient)
+    throw new Error("Notion client not injected. Call setNotionClient(notion)");
 
-// Defensive check: some @notionhq/client versions do not expose fileUploads
-if (
-!notionClient.fileUploads ||
-typeof notionClient.fileUploads.create !== "function" ||
-typeof notionClient.fileUploads.send !== "function"
-) {
-const available = Object.keys(notionClient || {}).join(", ");
-throw new Error(
-`Notion SDK file upload API not available. Update @notionhq/client to a version that provides fileUploads.create/send or use external image URLs. Notion client available keys: ${available}`
-);
-}
+  // Defensive check: some @notionhq/client versions do not expose fileUploads
+  if (
+    !notionClient.fileUploads ||
+    typeof notionClient.fileUploads.create !== "function" ||
+    typeof notionClient.fileUploads.send !== "function"
+  ) {
+    const available = Object.keys(notionClient || {}).join(", ");
+    throw new Error(
+      `Notion SDK file upload API not available. Update @notionhq/client to a version that provides fileUploads.create/send or use external image URLs. Notion client available keys: ${available}`
+    );
+  }
 
-// Determine content type from filename extension
-const ext = (filename || "").split(".").pop().toLowerCase();
-const ctMap = {
-png: "image/png",
-jpg: "image/jpeg",
-jpeg: "image/jpeg",
-gif: "image/gif",
-webp: "image/webp",
-pdf: "application/pdf",
-doc: "application/msword",
-docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-};
-const contentType = ctMap[ext] || "application/octet-stream";
+  // Determine content type from filename extension
+  const ext = (filename || "").split(".").pop().toLowerCase();
+  const ctMap = {
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    gif: "image/gif",
+    webp: "image/webp",
+    pdf: "application/pdf",
+    doc: "application/msword",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  };
+  const contentType = ctMap[ext] || "application/octet-stream";
 
-// Use single_part mode only for now, as multi_part is having issues
-const mode = "single_part";
+  // Use single_part mode only for now, as multi_part is having issues
+  const mode = "single_part";
 
-console.log(
-`[martian-helper] Starting ${mode} upload for ${filename} (${buffer.length} bytes, ${contentType})`
-);
+  console.log(
+    `[martian-helper] Starting ${mode} upload for ${filename} (${buffer.length} bytes, ${contentType})`
+  );
 
-try {
-// Step 1: Create upload session
-const createRes = await notionClient.fileUploads.create({
-mode,
-filename: filename || `upload-${uuidv4()}`,
-content_type: contentType,
-...(mode === "multi_part"
-? {
-number_of_parts: Math.max(
-1,
-Math.ceil(buffer.length / (5 _ 1024 _ 1024))
-),
-}
-: {}),
-});
+  try {
+    // Step 1: Create upload session
+    const createRes = await notionClient.fileUploads.create({
+      mode,
+      filename: filename || `upload-${uuidv4()}`,
+      content_type: contentType,
+      ...(mode === "multi_part"
+        ? {
+            number_of_parts: Math.max(
+              1,
+              Math.ceil(buffer.length / (5 * 1024 * 1024))
+            ),
+          }
+        : {}),
+    });
 
     console.log(
       "[martian-helper] File upload session created:",
@@ -746,26 +745,25 @@ Math.ceil(buffer.length / (5 _ 1024 _ 1024))
       }
       throw e;
     }
-
-} catch (e) {
-console.log("[martian-helper] File upload session error:", e && e.message);
-if (e.response) {
-console.log(
-"[martian-helper] Session error response:",
-e.response.status,
-e.response.data
-);
-}
-throw e;
-}
+  } catch (e) {
+    console.log("[martian-helper] File upload session error:", e && e.message);
+    if (e.response) {
+      console.log(
+        "[martian-helper] Session error response:",
+        e.response.status,
+        e.response.data
+      );
+    }
+    throw e;
+  }
 }
 
 async function prepareImageBlocks(images = []) {
-if (!Array.isArray(images) || images.length === 0) return [];
-const blocks = [];
-for (const img of images) {
-if (img.isBase64 && img.data) {
-const m = img.data.match(/^data:(.+);base64,(.\*)$/);
+  if (!Array.isArray(images) || images.length === 0) return [];
+  const blocks = [];
+  for (const img of images) {
+    if (img.isBase64 && img.data) {
+      const m = img.data.match(/^data:(.+);base64,(.*)$/);
       let buffer;
       let filename = img.alt || `upload-${uuidv4()}.png`;
       if (m) {
@@ -778,18 +776,18 @@ const m = img.data.match(/^data:(.+);base64,(.\*)$/);
           ? ext
           : "png";
         filename = (img.filename || img.alt || `upload`) + `.${safeExt}`;
-} else {
-buffer = Buffer.from(img.data, "base64");
-// Default to PNG if no extension detected
-if (!filename.includes(".")) {
-filename += ".png";
-}
-}
-if (notionClient) {
-const up = await uploadFileToNotion(buffer, filename).catch((e) => {
-console.log("[martian-helper] Upload failed:", e && e.message);
-return null;
-});
+      } else {
+        buffer = Buffer.from(img.data, "base64");
+        // Default to PNG if no extension detected
+        if (!filename.includes(".")) {
+          filename += ".png";
+        }
+      }
+      if (notionClient) {
+        const up = await uploadFileToNotion(buffer, filename).catch((e) => {
+          console.log("[martian-helper] Upload failed:", e && e.message);
+          return null;
+        });
 
         if (up && up.block) blocks.push(up.block);
         else if (up && up.fileUploadId)
@@ -819,9 +817,8 @@ return null;
         image: { external: { url: img.url } },
       });
     }
-
-}
-return blocks;
+  }
+  return blocks;
 }
 
 // --- PrismDrive external upload helper (fallback) -------------------------
@@ -829,23 +826,23 @@ return blocks;
 // file and return a public URL that can be used as Notion external image URL.
 // This keeps the proxy working even if Notion multipart uploads fail.
 async function uploadToPrismDrive(buffer, filename) {
-// PrismDrive expects Authorization: Bearer <token> and multipart/form-data
-// We'll read PRISM_DRIVE_TOKEN from environment; return null if missing.
-const token = process.env.PRISM_DRIVE_TOKEN;
-if (!token) {
-console.log(
-"[martian-helper] PrismDrive token not configured (PRISM_DRIVE_TOKEN)"
-);
-return null;
-}
-try {
-const FormData = require("form-data");
-const fd = new FormData();
-fd.append("parentId", "Notion External Storage");
-fd.append("file", buffer, {
-filename,
-contentType: "application/octet-stream",
-});
+  // PrismDrive expects Authorization: Bearer <token> and multipart/form-data
+  // We'll read PRISM_DRIVE_TOKEN from environment; return null if missing.
+  const token = process.env.PRISM_DRIVE_TOKEN;
+  if (!token) {
+    console.log(
+      "[martian-helper] PrismDrive token not configured (PRISM_DRIVE_TOKEN)"
+    );
+    return null;
+  }
+  try {
+    const FormData = require("form-data");
+    const fd = new FormData();
+    fd.append("parentId", "Notion External Storage");
+    fd.append("file", buffer, {
+      filename,
+      contentType: "application/octet-stream",
+    });
 
     const res = await axios.post(
       "https://app.prismdrive.com/api/v1/uploads",
@@ -871,55 +868,54 @@ contentType: "application/octet-stream",
       res && res.data
     );
     return null;
-
-} catch (err) {
-console.log(
-"[martian-helper] PrismDrive upload failed:",
-err && err.message
-);
-if (err && err.response)
-console.log(
-"[martian-helper] PrismDrive response:",
-err.response.status,
-err.response.data
-);
-return null;
-}
+  } catch (err) {
+    console.log(
+      "[martian-helper] PrismDrive upload failed:",
+      err && err.message
+    );
+    if (err && err.response)
+      console.log(
+        "[martian-helper] PrismDrive response:",
+        err.response.status,
+        err.response.data
+      );
+    return null;
+  }
 }
 
 // Wrap file upload: if it fails, try external host (PrismDrive) and
 // return an external image block so pages are still created successfully.
 const originalUploadFileToNotion = uploadFileToNotion;
 async function uploadFileWithExternalFallback(buffer, filename) {
-const result = await originalUploadFileToNotion(buffer, filename).catch(
-(e) => {
-console.log("[martian-helper] uploadFileToNotion threw:", e && e.message);
-return null;
-}
-);
-if (result && result.block) return result;
-// If Notion upload returned an object but upload failed, attempt PrismDrive.
-const prism = await uploadToPrismDrive(buffer, filename);
-if (prism && prism.url) {
-return {
-fileUploadId: null,
-block: {
-object: "block",
-type: "image",
-image: { external: { url: prism.url } },
-},
-external: true,
-};
-}
-return result;
+  const result = await originalUploadFileToNotion(buffer, filename).catch(
+    (e) => {
+      console.log("[martian-helper] uploadFileToNotion threw:", e && e.message);
+      return null;
+    }
+  );
+  if (result && result.block) return result;
+  // If Notion upload returned an object but upload failed, attempt PrismDrive.
+  const prism = await uploadToPrismDrive(buffer, filename);
+  if (prism && prism.url) {
+    return {
+      fileUploadId: null,
+      block: {
+        object: "block",
+        type: "image",
+        image: { external: { url: prism.url } },
+      },
+      external: true,
+    };
+  }
+  return result;
 }
 
 // Export the module
 module.exports = {
-convertToNotionBlocks,
-prepareImageBlocks,
-setNotionClient,
-uploadFileToNotion: uploadFileWithExternalFallback,
-\_uploadFileToNotionRaw: originalUploadFileToNotion,
-uploadToPrismDrive,
+  convertToNotionBlocks,
+  prepareImageBlocks,
+  setNotionClient,
+  uploadFileToNotion: uploadFileWithExternalFallback,
+  _uploadFileToNotionRaw: originalUploadFileToNotion,
+  uploadToPrismDrive,
 };

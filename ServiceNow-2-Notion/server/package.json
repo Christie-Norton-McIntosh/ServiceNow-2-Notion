@@ -1,0 +1,42 @@
+{
+  "name": "servicenow-2-notion",
+  "version": "7.1.0",
+  "description": "Modular ServiceNow content extractor for Universal Workflow",
+  "type": "module",
+  "main": "src/main.js",
+  "scripts": {
+    "build": "rollup -c",
+    "build:prod": "NODE_ENV=production rollup -c",
+    "dev": "rollup -c --watch",
+    "watch": "rollup -c --watch",
+    "start": "node sn2n-proxy.cjs",
+    "start:dev": "npx nodemon --watch . --exec \"node sn2n-proxy.cjs\"",
+    "start:pm2": "pm2 start sn2n-proxy.cjs --name sn2n-proxy --output sn2n-proxy.out --error sn2n-proxy.err",
+    "clean": "rm -rf dist",
+    "test": "echo \"No tests yet\" && exit 0",
+    "release:patch": "node scripts/release.js patch",
+    "release:minor": "node scripts/release.js minor",
+    "release:major": "node scripts/release.js major"
+  },
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^25.0.7",
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-terser": "^0.4.4",
+    "rollup": "^3.29.4",
+    "rollup-plugin-cleanup": "^3.2.1"
+  },
+  "dependencies": {
+    "@notionhq/client": "^2.2.15",
+    "@tryfabric/martian": "^1.2.4",
+    "axios": "^1.6.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "multer": "^1.4.5-lts.1",
+    "nodemon": "^3.1.10",
+    "unsplash-js": "^7.0.20",
+    "uuid": "^9.0.1"
+  },
+  "author": "Christie Norton-McIntosh",
+  "license": "MIT"
+}
