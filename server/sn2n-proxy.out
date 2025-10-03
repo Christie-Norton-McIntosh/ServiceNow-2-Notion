@@ -1,0 +1,12 @@
+2025-10-01T03:38:32.821Z [SN2N] Notion token configured: true
+2025-10-01T03:38:32.822Z [SN2N] ✅ Martian helper initialized with Notion client
+2025-10-01T03:38:32.824Z [SN2N] SN2N proxy listening on port 3004
+2025-10-01T03:38:32.824Z [SN2N] Notion configured: true
+2025-10-01T03:39:03.556Z [SN2N] 📝 Processing W2N request for: Service Graph Connector for Wiz
+2025-10-01T03:39:03.556Z [SN2N] 🔄 Converting HTML content to Notion blocks
+2025-10-01T03:39:03.556Z [SN2N] 🔄 Converting HTML to Notion blocks (64753 chars)
+2025-10-01T03:39:03.557Z [SN2N] 🚀 Using Martian helper for HTML-to-Notion conversion
+2025-10-01T03:39:03.557Z [SN2N] ⚠️ Martian returned empty result, falling back to basic parsing
+2025-10-01T03:39:03.558Z [SN2N] ✅ Converted HTML to 8 Notion blocks
+2025-10-01T03:39:04.715Z [SN2N] ✅ Page created successfully: 27fa89fe-dba5-81a1-80d0-eadcc945dc31
+2025-10-01T03:39:04.715Z [SN2N] 🔗 Page URL: https://www.notion.so/Service-Graph-Connector-for-Wiz-27fa89fedba581a180d0eadcc945dc31
