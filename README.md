@@ -6,6 +6,10 @@ A modular, ES6-based rewrite of the ServiceNow-2-Notion userscript that extracts
 
 This project transforms a large monolithic userscript (18,438 lines across 4 files) into a clean, modular ES6 codebase that can be bundled into a single Tampermonkey userscript using Rollup.
 
+## 📝 Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for a complete history of changes and releases.
+
 ## 🏗️ Architecture
 
 The modular architecture is organized into logical layers:
