@@ -11,7 +11,7 @@ export default {
     banner: `// ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/nortonglitz/ServiceNow-2-Notion
-// @version      7.1.0
+// @version      8.0.2
 // @description  Extract ServiceNow content and send to Notion via Universal Workflow or proxy
 // @author       Norton Glitz
 // @match        https://*.service-now.com/*
