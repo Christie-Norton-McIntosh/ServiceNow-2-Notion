@@ -4,6 +4,7 @@ import { debug, getConfig } from "../config.js";
 import { showPropertyMappingModal } from "./property-mapping-modal.js";
 import { injectAdvancedSettingsModal } from "./advanced-settings-modal.js";
 import { injectIconCoverModal } from "./icon-cover-modal.js";
+import { getAllDatabases } from "../api/database-api.js";
 
 export function injectMainPanel() {
   if (document.getElementById("w2n-notion-panel")) return;
@@ -157,6 +158,98 @@ export function setupMainPanel(panel) {
     }
   };
 
+  // Database button handlers
+  const refreshBtn = panel.querySelector("#w2n-refresh-dbs");
+  const searchBtn = panel.querySelector("#w2n-search-dbs");
+  const getByIdBtn = panel.querySelector("#w2n-get-db");
+  const databaseSelect = panel.querySelector("#w2n-database-select");
+  const databaseLabel = panel.querySelector("#w2n-selected-database-label");
+
+  if (refreshBtn) {
+    refreshBtn.onclick = async () => {
+      try {
+        debug("🔄 Refreshing database list...");
+        const databases = await getAllDatabases({ forceRefresh: true });
+        populateDatabaseSelect(databaseSelect, databases);
+        debug(`✅ Refreshed ${databases.length} databases`);
+      } catch (e) {
+        debug("Failed to refresh databases:", e);
+      }
+    };
+  }
+
+  if (searchBtn) {
+    searchBtn.onclick = async () => {
+      try {
+        const searchTerm = prompt("Enter database name or ID to search:");
+        if (!searchTerm || searchTerm.trim() === "") return;
+
+        debug(`🔍 Searching for database: ${searchTerm}`);
+        
+        // Query all databases fresh (no cache)
+        const databases = await getAllDatabases({ forceRefresh: true });
+        
+        // Find matching database
+        const matchingDb = databases.find(db => 
+          db.id === searchTerm.trim() || 
+          (db.title && db.title.some(t => t.plain_text && t.plain_text.toLowerCase().includes(searchTerm.toLowerCase())))
+        );
+
+        if (matchingDb) {
+          // Update config with new database
+          const config = getConfig();
+          config.databaseId = matchingDb.id;
+          config.databaseName = matchingDb.title ? matchingDb.title[0].plain_text : "Unknown Database";
+          
+          // Save to storage
+          if (typeof GM_setValue === "function") {
+            GM_setValue("notionConfig", config);
+          }
+          
+          // Update UI
+          databaseSelect.innerHTML = `<option value="${matchingDb.id}">${config.databaseName}</option>`;
+          databaseLabel.textContent = `Database: ${config.databaseName}`;
+          
+          debug(`✅ Set target database to: ${config.databaseName} (${matchingDb.id})`);
+        } else {
+          alert(`Database "${searchTerm}" not found.`);
+          debug(`❌ Database "${searchTerm}" not found`);
+        }
+      } catch (e) {
+        debug("Failed to search database:", e);
+        alert("Error searching for database. Check console for details.");
+      }
+    };
+  }
+
+  if (getByIdBtn) {
+    getByIdBtn.onclick = async () => {
+      try {
+        const dbId = prompt("Enter database ID:");
+        if (!dbId || dbId.trim() === "") return;
+
+        debug(`🔍 Getting database by ID: ${dbId}`);
+        
+        // This would need to be implemented - perhaps call getDatabase with force refresh
+        // For now, just set the config
+        const config = getConfig();
+        config.databaseId = dbId.trim();
+        config.databaseName = "Database by ID";
+        
+        if (typeof GM_setValue === "function") {
+          GM_setValue("notionConfig", config);
+        }
+        
+        databaseSelect.innerHTML = `<option value="${dbId}">${config.databaseName}</option>`;
+        databaseLabel.textContent = `Database: ${config.databaseName}`;
+        
+        debug(`✅ Set target database to ID: ${dbId}`);
+      } catch (e) {
+        debug("Failed to get database by ID:", e);
+      }
+    };
+  }
+
   // mark as initialized
   try {
     panel.dataset = panel.dataset || {};
@@ -253,3 +346,21 @@ setupMainPanel = function (panel) {
     // noop
   }
 };
+
+/**
+ * Populate the database select dropdown
+ * @param {HTMLElement} selectEl - The select element
+ * @param {Array} databases - Array of database objects
+ */
+function populateDatabaseSelect(selectEl, databases) {
+  if (!selectEl) return;
+  
+  selectEl.innerHTML = '<option value="">Select a database...</option>';
+  
+  databases.forEach(db => {
+    const option = document.createElement("option");
+    option.value = db.id;
+    option.textContent = db.title && db.title[0] ? db.title[0].plain_text : "Untitled Database";
+    selectEl.appendChild(option);
+  });
+}
