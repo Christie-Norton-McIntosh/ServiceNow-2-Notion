@@ -191,11 +191,23 @@ export function extractServiceNowMetadata() {
       ); // Handle misspelling
     }
 
-    // Section extraction with special handling
-    let sectionText = getPrefixedMatch("section", SERVICENOW_SELECTORS.section);
-    if (!sectionText) {
-      sectionText = getPrefixedMatch("Section", SERVICENOW_SELECTORS.section);
+    // Section extraction with special handling - only extract if 4th span exists
+    let sectionText = "";
+    const sectionSpanSelector =
+      "#zDocsTopicPage > div.zDocsTopicPageTopicContainer > div.zDocsTopicPageBreadcrumbsContainer > div > span:nth-child(4)";
+    const sectionSpan = document.querySelector(sectionSpanSelector);
+    if (sectionSpan) {
+      // If 4th span exists, try to get text from anchor inside it, or span itself
+      sectionText = getPrefixedMatch("section", SERVICENOW_SELECTORS.section);
+      if (!sectionText) {
+        sectionText = getPrefixedMatch("Section", SERVICENOW_SELECTORS.section);
+      }
+      // If still no text but span exists, try getting text directly from span
+      if (!sectionText) {
+        sectionText = sectionSpan.textContent?.trim() || "";
+      }
     }
+    // If 4th span doesn't exist, sectionText remains empty
 
     const statusText = getPrefixedMatch("status", SERVICENOW_SELECTORS.status);
     const departmentText = getPrefixedMatch(

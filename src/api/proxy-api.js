@@ -173,10 +173,13 @@ export async function fetchDatabases(options = {}) {
     let startCursor = null;
     let hasMore = true;
 
+    // Set default limit to maximum (100) if not specified
+    const limit = options.limit || 100;
+
     while (hasMore) {
       const queryParams = new URLSearchParams();
       if (options.search) queryParams.set("search", options.search);
-      if (options.limit) queryParams.set("limit", options.limit.toString());
+      queryParams.set("limit", limit.toString());
       if (startCursor) queryParams.set("start_cursor", startCursor);
 
       const endpoint = `/api/databases${
@@ -187,11 +190,13 @@ export async function fetchDatabases(options = {}) {
       if (result && result.success && result.data) {
         const databases = result.data.results || [];
         allDatabases.push(...databases);
-        
+
         hasMore = result.data.has_more || false;
         startCursor = result.data.next_cursor || null;
-        
-        debug(`📄 Fetched page with ${databases.length} databases, total: ${allDatabases.length}, has_more: ${hasMore}`);
+
+        debug(
+          `📄 Fetched page with ${databases.length} databases, total: ${allDatabases.length}, has_more: ${hasMore}`
+        );
       } else {
         hasMore = false;
       }

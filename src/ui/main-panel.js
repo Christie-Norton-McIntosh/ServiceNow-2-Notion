@@ -5,6 +5,7 @@ import { showPropertyMappingModal } from "./property-mapping-modal.js";
 import { injectAdvancedSettingsModal } from "./advanced-settings-modal.js";
 import { injectIconCoverModal } from "./icon-cover-modal.js";
 import { getAllDatabases, getDatabase } from "../api/database-api.js";
+import { overlayModule } from "./overlay-progress.js";
 
 export function injectMainPanel() {
   if (document.getElementById("w2n-notion-panel")) return;
@@ -34,6 +35,12 @@ export function injectMainPanel() {
   panel.addEventListener("mouseleave", () => (panel.style.opacity = "0.95"));
 
   panel.innerHTML = `
+    <style>
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    </style>
     <div id="w2n-header" style="padding: 16px; border-bottom: 1px solid #e5e7eb; background: #f9fafb; border-radius: 8px 8px 0 0; cursor: move; position: relative;">
       <div style="display:flex; justify-content:space-between; align-items:center;">
         <h3 style="margin:0; font-size:16px; color:#1f2937; display:flex; align-items:center; gap:8px;">
@@ -63,6 +70,10 @@ export function injectMainPanel() {
           <button id="w2n-search-dbs" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">Search</button>
           <button id="w2n-get-db" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">By ID</button>
           <button id="w2n-configure-mapping" style="font-size:11px;padding:6px 8px;border:1px solid #10b981;border-radius:4px;background:#10b981;color:white;cursor:pointer;">Configure Property Mapping</button>
+        </div>
+        <div id="w2n-db-spinner" style="display:none; margin-top:8px; font-size:12px; color:#6b7280; align-items:center;">
+          <span style="display:inline-block; width:12px; height:12px; border:2px solid #d1d5db; border-top:2px solid #10b981; border-radius:50%; animation:spin 1s linear infinite; margin-right:8px;"></span>
+          Fetching databases...
         </div>
       </div>
 
@@ -106,6 +117,17 @@ export function setupMainPanel(panel) {
   if (!panel) panel = document.getElementById("w2n-notion-panel");
   if (!panel) return;
   if (panel.dataset && panel.dataset.w2nInit) return;
+
+  // Helper functions for spinner
+  const showSpinner = () => {
+    const spinner = panel.querySelector("#w2n-db-spinner");
+    if (spinner) spinner.style.display = "flex";
+  };
+
+  const hideSpinner = () => {
+    const spinner = panel.querySelector("#w2n-db-spinner");
+    if (spinner) spinner.style.display = "none";
+  };
 
   const closeBtn = panel.querySelector("#w2n-close");
   const advancedBtn = panel.querySelector("#w2n-advanced-settings-btn");
@@ -169,11 +191,14 @@ export function setupMainPanel(panel) {
     refreshBtn.onclick = async () => {
       try {
         debug("🔄 Refreshing database list...");
+        showSpinner();
         const databases = await getAllDatabases({ forceRefresh: true });
         populateDatabaseSelect(databaseSelect, databases);
         debug(`✅ Refreshed ${databases.length} databases`);
       } catch (e) {
         debug("Failed to refresh databases:", e);
+      } finally {
+        hideSpinner();
       }
     };
   }
@@ -185,6 +210,7 @@ export function setupMainPanel(panel) {
         if (!searchTerm || searchTerm.trim() === "") return;
 
         debug(`🔍 Searching for database: ${searchTerm}`);
+        showSpinner();
 
         // Query all databases fresh (no cache)
         const databases = await getAllDatabases({ forceRefresh: true });
@@ -242,6 +268,8 @@ export function setupMainPanel(panel) {
       } catch (e) {
         debug("Failed to search database:", e);
         alert("Error searching for database. Check console for details.");
+      } finally {
+        hideSpinner();
       }
     };
   }
@@ -254,6 +282,7 @@ export function setupMainPanel(panel) {
 
         const cleanDbId = dbId.trim();
         debug(`🔍 Getting database by ID: ${cleanDbId}`);
+        showSpinner();
 
         // Fetch database details to validate and get name
         const dbDetails = await getDatabase(cleanDbId);
@@ -279,9 +308,53 @@ export function setupMainPanel(panel) {
         alert(
           `Error: Could not access database with ID "${dbId}". Make sure the database is shared with your Notion integration.`
         );
+      } finally {
+        hideSpinner();
       }
     };
-  } // mark as initialized
+  }
+
+  // AutoExtract button handlers
+  const selectNextBtn = panel.querySelector("#w2n-select-next-element");
+  const startAutoExtractBtn = panel.querySelector("#w2n-start-autoextract");
+  const diagnoseAutoExtractBtn = panel.querySelector(
+    "#w2n-diagnose-autoextract"
+  );
+
+  if (selectNextBtn) {
+    selectNextBtn.onclick = () => {
+      try {
+        startElementSelection();
+      } catch (e) {
+        debug("Failed to start element selection:", e);
+        alert("Error starting element selection. Check console for details.");
+      }
+    };
+  }
+
+  if (startAutoExtractBtn) {
+    startAutoExtractBtn.onclick = async () => {
+      try {
+        await startAutoExtraction();
+      } catch (e) {
+        debug("Failed to start auto extraction:", e);
+        alert("Error starting auto extraction. Check console for details.");
+      }
+    };
+  }
+
+  if (diagnoseAutoExtractBtn) {
+    diagnoseAutoExtractBtn.onclick = () => {
+      try {
+        diagnoseAutoExtraction();
+      } catch (e) {
+        debug("Failed to diagnose auto extraction:", e);
+        alert("Error diagnosing auto extraction. Check console for details.");
+      }
+    };
+  }
+
+  // mark as initialized
   try {
     panel.dataset = panel.dataset || {};
     panel.dataset.w2nInit = "1";
@@ -395,4 +468,328 @@ function populateDatabaseSelect(selectEl, databases) {
       db.title && db.title[0] ? db.title[0].plain_text : "Untitled Database";
     selectEl.appendChild(option);
   });
+}
+
+// AutoExtract functionality
+let elementSelectionActive = false;
+let selectedElement = null;
+
+function startElementSelection() {
+  if (elementSelectionActive) {
+    stopElementSelection();
+    return;
+  }
+
+  elementSelectionActive = true;
+  selectedElement = null;
+
+  // Add visual feedback
+  document.body.style.cursor = "crosshair";
+
+  // Create overlay message
+  const overlay = document.createElement("div");
+  overlay.id = "w2n-element-selection-overlay";
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-family: Arial, sans-serif;
+    font-size: 18px;
+    text-align: center;
+  `;
+  overlay.innerHTML = `
+    <div>
+      <div style="font-size: 24px; margin-bottom: 10px;">🎯</div>
+      <div>Click on the "Next Page" element</div>
+      <div style="font-size: 14px; margin-top: 10px; opacity: 0.8;">Press ESC to cancel</div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  // Handle element selection
+  const handleClick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    selectedElement = e.target;
+    stopElementSelection();
+
+    // Generate selector for the selected element
+    const selector = generateSelector(selectedElement);
+    debug("Selected element selector:", selector);
+
+    // Store the selector
+    if (typeof GM_setValue === "function") {
+      GM_setValue("w2n_next_page_selector", selector);
+    }
+
+    alert(
+      `Selected element: ${selector}\n\nThis selector will be used to find the "Next Page" button during auto-extraction.`
+    );
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Escape") {
+      stopElementSelection();
+    }
+  };
+
+  document.addEventListener("click", handleClick, true);
+  document.addEventListener("keydown", handleKeyDown);
+
+  function stopElementSelection() {
+    elementSelectionActive = false;
+    document.body.style.cursor = "";
+    document.removeEventListener("click", handleClick, true);
+    document.removeEventListener("keydown", handleKeyDown);
+
+    const overlay = document.getElementById("w2n-element-selection-overlay");
+    if (overlay) {
+      overlay.remove();
+    }
+  }
+}
+
+function generateSelector(element) {
+  if (!element) return "";
+
+  // Try to generate a unique selector
+  const id = element.id;
+  if (id) return `#${id}`;
+
+  const className = element.className;
+  if (className && typeof className === "string") {
+    const classes = className
+      .trim()
+      .split(/\s+/)
+      .filter((c) => c);
+    if (classes.length > 0) {
+      return `${element.tagName.toLowerCase()}.${classes.join(".")}`;
+    }
+  }
+
+  // Generate path-based selector
+  const path = [];
+  let current = element;
+  while (current && current.nodeType === Node.ELEMENT_NODE) {
+    let selector = current.tagName.toLowerCase();
+
+    if (current.id) {
+      selector = `#${current.id}`;
+      path.unshift(selector);
+      break;
+    } else if (current.className && typeof current.className === "string") {
+      const classes = current.className
+        .trim()
+        .split(/\s+/)
+        .filter((c) => c);
+      if (classes.length > 0) {
+        selector += `.${classes[0]}`;
+      }
+    }
+
+    // Add nth-child if needed
+    const siblings = Array.from(current.parentNode?.children || []);
+    const index = siblings.indexOf(current);
+    if (siblings.length > 1) {
+      selector += `:nth-child(${index + 1})`;
+    }
+
+    path.unshift(selector);
+    current = current.parentNode;
+
+    if (path.length > 5) break; // Limit depth
+  }
+
+  return path.join(" > ");
+}
+
+async function startAutoExtraction() {
+  const config = getConfig();
+  if (!config.databaseId) {
+    alert("Please select a database first.");
+    return;
+  }
+
+  const maxPages =
+    parseInt(document.getElementById("w2n-max-pages")?.value) || 500;
+  const nextPageSelector =
+    typeof GM_getValue === "function"
+      ? GM_getValue("w2n_next_page_selector", "")
+      : "";
+
+  if (!nextPageSelector) {
+    alert(
+      "Please select a 'Next Page' element first using the 'Select Next Page Element' button."
+    );
+    return;
+  }
+
+  // Get app instance
+  if (
+    !window.ServiceNowToNotion ||
+    typeof window.ServiceNowToNotion.app !== "function"
+  ) {
+    alert("App instance not available. Please refresh the page.");
+    return;
+  }
+
+  const app = window.ServiceNowToNotion.app();
+  if (!app) {
+    alert("App instance not available. Please refresh the page.");
+    return;
+  }
+
+  debug(
+    `Starting auto-extraction with max ${maxPages} pages using selector: ${nextPageSelector}`
+  );
+
+  try {
+    // Start the extraction process
+    overlayModule.start("Starting multi-page extraction...");
+
+    let pageCount = 0;
+    let hasNextPage = true;
+
+    while (pageCount < maxPages && hasNextPage) {
+      pageCount++;
+      const currentPageNum = pageCount;
+
+      overlayModule.setMessage(`Extracting page ${currentPageNum} of ${maxPages}...`);
+      overlayModule.setProgress((pageCount - 1) / maxPages * 100);
+
+      try {
+        // Extract current page data
+        const extractedData = await app.extractCurrentPageData();
+
+        // Process with proxy (save to Notion)
+        await app.processWithProxy(extractedData);
+
+        debug(`✅ Page ${currentPageNum} processed successfully`);
+
+        // Check if we should continue (only if not the last page)
+        if (pageCount < maxPages) {
+          // Find and click next page button
+          const nextButton = document.querySelector(nextPageSelector);
+          if (!nextButton) {
+            debug(`⚠️ Next page button not found with selector: ${nextPageSelector}`);
+            hasNextPage = false;
+            break;
+          }
+
+          // Check if button is disabled or not clickable
+          if (nextButton.disabled || nextButton.getAttribute('aria-disabled') === 'true' ||
+              nextButton.classList.contains('disabled') || !nextButton.offsetParent) {
+            debug(`⚠️ Next page button is disabled or hidden`);
+            hasNextPage = false;
+            break;
+          }
+
+          overlayModule.setMessage(`Navigating to page ${currentPageNum + 1}...`);
+
+          // Click the next button
+          nextButton.click();
+
+          // Wait for navigation to complete
+          await waitForNavigation();
+
+          // Small delay to ensure page is fully loaded
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+
+      } catch (pageError) {
+        debug(`❌ Failed to process page ${currentPageNum}:`, pageError);
+        // Continue to next page or stop?
+        // For now, let's stop on first error to be safe
+        throw new Error(`Failed to process page ${currentPageNum}: ${pageError.message}`);
+      }
+    }
+
+    // Complete successfully
+    overlayModule.setProgress(100);
+    overlayModule.done({
+      success: true,
+      autoCloseMs: 5000,
+    });
+
+    alert(`Auto-extraction completed! Processed ${pageCount} page${pageCount !== 1 ? 's' : ''}.`);
+
+  } catch (error) {
+    debug("❌ Auto-extraction failed:", error);
+    overlayModule.error({
+      message: `Auto-extraction failed: ${error.message}`,
+    });
+  }
+}
+
+// Helper function to wait for page navigation
+async function waitForNavigation(timeoutMs = 10000) {
+  const initialUrl = window.location.href;
+  const startTime = Date.now();
+
+  return new Promise((resolve, reject) => {
+    const checkNavigation = () => {
+      if (window.location.href !== initialUrl) {
+        debug("Navigation detected - URL changed");
+        resolve();
+        return;
+      }
+
+      if (Date.now() - startTime > timeoutMs) {
+        reject(new Error(`Navigation timeout after ${timeoutMs}ms`));
+        return;
+      }
+
+      // Check again in a short interval
+      setTimeout(checkNavigation, 100);
+    };
+
+    checkNavigation();
+  });
+}
+
+function diagnoseAutoExtraction() {
+  const nextPageSelector =
+    typeof GM_getValue === "function"
+      ? GM_getValue("w2n_next_page_selector", "")
+      : "";
+  const maxPages =
+    parseInt(document.getElementById("w2n-max-pages")?.value) || 500;
+
+  let diagnosis = "AutoExtract Diagnosis:\n\n";
+  diagnosis += `Max pages: ${maxPages}\n`;
+  diagnosis += `Next page selector: ${nextPageSelector || "Not set"}\n\n`;
+
+  if (!nextPageSelector) {
+    diagnosis +=
+      "❌ No next page selector configured. Use 'Select Next Page Element' first.\n";
+  } else {
+    diagnosis += "✅ Next page selector configured.\n";
+    // Test if selector exists on current page
+    try {
+      const element = document.querySelector(nextPageSelector);
+      if (element) {
+        diagnosis += `✅ Selector found on current page: ${
+          element.textContent?.trim().substring(0, 50) || element.tagName
+        }\n`;
+      } else {
+        diagnosis += "⚠️ Selector not found on current page.\n";
+      }
+    } catch (e) {
+      diagnosis += `❌ Invalid selector: ${e.message}\n`;
+    }
+  }
+
+  diagnosis +=
+    "\nNote: Full auto-extraction functionality is not yet implemented.";
+
+  alert(diagnosis);
 }
