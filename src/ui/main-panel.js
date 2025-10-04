@@ -6,6 +6,7 @@ import { injectAdvancedSettingsModal } from "./advanced-settings-modal.js";
 import { injectIconCoverModal } from "./icon-cover-modal.js";
 import { getAllDatabases, getDatabase } from "../api/database-api.js";
 import { overlayModule } from "./overlay-progress.js";
+import { showToast } from "./utils.js";
 
 export function injectMainPanel() {
   if (document.getElementById("w2n-notion-panel")) return;
@@ -92,8 +93,11 @@ export function injectMainPanel() {
             <label style="display:block; margin-bottom:0; font-size:12px;">Max Pages:</label>
             <input type="number" id="w2n-max-pages" value="500" min="1" max="500" style="width:60px; padding:4px; border:1px solid #d1d5db; border-radius:4px;">
           </div>
-          <div style="flex:1; min-width:180px;">
-            <button id="w2n-select-next-element" style="width:100%; padding:6px; background:#2563eb; color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px;">Select "Next Page" Element</button>
+          <div style="flex:1; min-width:120px;">
+            <button id="w2n-select-next-element" style="width:100%; padding:6px; background:#2563eb; color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px;">Select "Next Page"</button>
+          </div>
+          <div style="flex:1; min-width:80px;">
+            <button id="w2n-reset-next-selector" style="width:100%; padding:6px; background:#dc2626; color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px;">Reset</button>
           </div>
         </div>
 
@@ -316,6 +320,7 @@ export function setupMainPanel(panel) {
 
   // AutoExtract button handlers
   const selectNextBtn = panel.querySelector("#w2n-select-next-element");
+  const resetNextBtn = panel.querySelector("#w2n-reset-next-selector");
   const startAutoExtractBtn = panel.querySelector("#w2n-start-autoextract");
   const diagnoseAutoExtractBtn = panel.querySelector(
     "#w2n-diagnose-autoextract"
@@ -328,6 +333,20 @@ export function setupMainPanel(panel) {
       } catch (e) {
         debug("Failed to start element selection:", e);
         alert("Error starting element selection. Check console for details.");
+      }
+    };
+  }
+
+  if (resetNextBtn) {
+    resetNextBtn.onclick = () => {
+      try {
+        if (typeof GM_setValue === "function") {
+          GM_setValue("w2n_next_page_selector", "#zDocsContent > header > div.zDocsTopicActions > div.zDocsBundlePagination > div.zDocsNextTopicButton.zDocsNextTopicButton > span > a > svg > use");
+        }
+        alert("Next Page selector reset to default ServiceNow documentation selector.");
+      } catch (e) {
+        debug("Failed to reset selector:", e);
+        alert("Error resetting selector. Check console for details.");
       }
     };
   }
@@ -486,7 +505,7 @@ function startElementSelection() {
   // Add visual feedback
   document.body.style.cursor = "crosshair";
 
-  // Create overlay message
+  // Create overlay message (non-blocking)
   const overlay = document.createElement("div");
   overlay.id = "w2n-element-selection-overlay";
   overlay.style.cssText = `
@@ -504,9 +523,10 @@ function startElementSelection() {
     font-family: Arial, sans-serif;
     font-size: 18px;
     text-align: center;
+    pointer-events: none;
   `;
   overlay.innerHTML = `
-    <div>
+    <div style="pointer-events: auto;">
       <div style="font-size: 24px; margin-bottom: 10px;">🎯</div>
       <div>Click on the "Next Page" element</div>
       <div style="font-size: 14px; margin-top: 10px; opacity: 0.8;">Press ESC to cancel</div>
@@ -514,8 +534,11 @@ function startElementSelection() {
   `;
   document.body.appendChild(overlay);
 
-  // Handle element selection
+  // Handle element selection (use bubbling phase so clicks pass through overlay)
   const handleClick = (e) => {
+    // Only handle clicks if element selection is active
+    if (!elementSelectionActive) return;
+
     e.preventDefault();
     e.stopPropagation();
 
@@ -542,7 +565,8 @@ function startElementSelection() {
     }
   };
 
-  document.addEventListener("click", handleClick, true);
+  // Use bubbling phase (false) instead of capture phase (true)
+  document.addEventListener("click", handleClick, false);
   document.addEventListener("keydown", handleKeyDown);
 
   function stopElementSelection() {
@@ -623,8 +647,8 @@ async function startAutoExtraction() {
     parseInt(document.getElementById("w2n-max-pages")?.value) || 500;
   const nextPageSelector =
     typeof GM_getValue === "function"
-      ? GM_getValue("w2n_next_page_selector", "")
-      : "";
+      ? GM_getValue("w2n_next_page_selector", "#zDocsContent > header > div.zDocsTopicActions > div.zDocsBundlePagination > div.zDocsNextTopicButton.zDocsNextTopicButton > span > a > svg > use")
+      : "#zDocsContent > header > div.zDocsTopicActions > div.zDocsBundlePagination > div.zDocsNextTopicButton.zDocsNextTopicButton > span > a > svg > use";
 
   if (!nextPageSelector) {
     alert(
@@ -652,82 +676,256 @@ async function startAutoExtraction() {
     `Starting auto-extraction with max ${maxPages} pages using selector: ${nextPageSelector}`
   );
 
+  // Initialize auto-extract state
+  const autoExtractState = {
+    running: true,
+    currentPage: 0,
+    totalProcessed: 0,
+    maxPages: maxPages,
+    reloadAttempts: 0,
+    paused: false,
+  };
+
+  // Check if we're resuming from a page reload
+  const savedState = localStorage.getItem("W2N_autoExtractState");
+  if (savedState) {
+    try {
+      const restoredState = JSON.parse(savedState);
+      if (restoredState.running && !restoredState.paused) {
+        Object.assign(autoExtractState, restoredState);
+        localStorage.removeItem("W2N_autoExtractState");
+        debug("Resumed AutoExtract state from page reload:", autoExtractState);
+        showToast(
+          `🔄 AutoExtract resumed after page reload\nProcessing page ${autoExtractState.currentPage}/${autoExtractState.maxPages}`,
+          5000
+        );
+      }
+    } catch (error) {
+      debug("Error restoring AutoExtract state:", error);
+      localStorage.removeItem("W2N_autoExtractState");
+    }
+  }
+
   try {
     // Start the extraction process
     overlayModule.start("Starting multi-page extraction...");
 
-    let pageCount = 0;
-    let hasNextPage = true;
-
-    while (pageCount < maxPages && hasNextPage) {
-      pageCount++;
-      const currentPageNum = pageCount;
-
-      overlayModule.setMessage(`Extracting page ${currentPageNum} of ${maxPages}...`);
-      overlayModule.setProgress((pageCount - 1) / maxPages * 100);
-
-      try {
-        // Extract current page data
-        const extractedData = await app.extractCurrentPageData();
-
-        // Process with proxy (save to Notion)
-        await app.processWithProxy(extractedData);
-
-        debug(`✅ Page ${currentPageNum} processed successfully`);
-
-        // Check if we should continue (only if not the last page)
-        if (pageCount < maxPages) {
-          // Find and click next page button
-          const nextButton = document.querySelector(nextPageSelector);
-          if (!nextButton) {
-            debug(`⚠️ Next page button not found with selector: ${nextPageSelector}`);
-            hasNextPage = false;
-            break;
-          }
-
-          // Check if button is disabled or not clickable
-          if (nextButton.disabled || nextButton.getAttribute('aria-disabled') === 'true' ||
-              nextButton.classList.contains('disabled') || !nextButton.offsetParent) {
-            debug(`⚠️ Next page button is disabled or hidden`);
-            hasNextPage = false;
-            break;
-          }
-
-          overlayModule.setMessage(`Navigating to page ${currentPageNum + 1}...`);
-
-          // Click the next button
-          nextButton.click();
-
-          // Wait for navigation to complete
-          await waitForNavigation();
-
-          // Small delay to ensure page is fully loaded
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-
-      } catch (pageError) {
-        debug(`❌ Failed to process page ${currentPageNum}:`, pageError);
-        // Continue to next page or stop?
-        // For now, let's stop on first error to be safe
-        throw new Error(`Failed to process page ${currentPageNum}: ${pageError.message}`);
-      }
-    }
-
-    // Complete successfully
-    overlayModule.setProgress(100);
-    overlayModule.done({
-      success: true,
-      autoCloseMs: 5000,
-    });
-
-    alert(`Auto-extraction completed! Processed ${pageCount} page${pageCount !== 1 ? 's' : ''}.`);
-
+    await runAutoExtractLoop(autoExtractState, app, nextPageSelector);
   } catch (error) {
     debug("❌ Auto-extraction failed:", error);
     overlayModule.error({
       message: `Auto-extraction failed: ${error.message}`,
     });
   }
+}
+
+async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
+  debug("🔄 Starting AutoExtract loop");
+
+  // Get button reference for progress updates
+  const button = document.getElementById("w2n-start-autoextract");
+
+  while (autoExtractState.running && !autoExtractState.paused) {
+    // Check if we've reached max pages
+    if (autoExtractState.currentPage >= autoExtractState.maxPages) {
+      showToast(
+        `AutoExtract complete: Reached max pages (${autoExtractState.maxPages})`,
+        4000
+      );
+      stopAutoExtract(autoExtractState);
+      if (button) button.textContent = "Start AutoExtract";
+      return;
+    }
+
+    autoExtractState.currentPage++;
+    const currentPageNum = autoExtractState.currentPage;
+
+    overlayModule.setMessage(
+      `Extracting page ${currentPageNum} of ${autoExtractState.maxPages}...`
+    );
+    overlayModule.setProgress(
+      ((currentPageNum - 1) / autoExtractState.maxPages) * 100
+    );
+
+    // Update button with progress
+    if (button) {
+      button.textContent = `Processing ${currentPageNum}/${autoExtractState.maxPages}...`;
+    }
+
+    try {
+      // Extract current page data with retry logic
+      let captureSuccess = false;
+      let captureAttempts = 0;
+      const maxCaptureAttempts = 3;
+
+      while (captureAttempts < maxCaptureAttempts && !captureSuccess) {
+        captureAttempts++;
+
+        try {
+          if (captureAttempts > 1) {
+            showToast(
+              `Retry ${
+                captureAttempts - 1
+              }/2: Processing page ${currentPageNum}...`,
+              3000
+            );
+            if (button) {
+              button.textContent = `Retry ${
+                captureAttempts - 1
+              }/2: Processing ${currentPageNum}/${
+                autoExtractState.maxPages
+              }...`;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+          }
+
+          const extractedData = await app.extractCurrentPageData();
+          await app.processWithProxy(extractedData);
+          captureSuccess = true;
+          autoExtractState.totalProcessed++;
+          debug(
+            `✅ Page ${currentPageNum} captured successfully${
+              captureAttempts > 1 ? ` (attempt ${captureAttempts})` : ""
+            }`
+          );
+        } catch (error) {
+          debug(
+            `❌ Capture attempt ${captureAttempts} failed for page ${currentPageNum}:`,
+            error
+          );
+          if (captureAttempts < maxCaptureAttempts) {
+            showToast(
+              `⚠️ Page capture failed (attempt ${captureAttempts}/${maxCaptureAttempts}). Retrying...`,
+              4000
+            );
+          }
+        }
+      }
+
+      if (!captureSuccess) {
+        const errorMessage = `❌ AutoExtract STOPPED: Page ${currentPageNum} failed to capture after ${maxCaptureAttempts} attempts.\n\nTotal pages processed: ${autoExtractState.totalProcessed}`;
+        alert(errorMessage);
+        stopAutoExtract(autoExtractState);
+        if (button)
+          button.textContent = `❌ Stopped: Page ${currentPageNum} failed`;
+        return;
+      }
+
+      // Wait for save to complete
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // Check if we should continue to next page
+      if (currentPageNum < autoExtractState.maxPages) {
+        // Try to find next page element with multiple strategies
+        let nextButton = findNextPageElement(nextPageSelector);
+
+        if (!nextButton) {
+          debug(`⚠️ Next page element not found or not visible`);
+
+          // Try page reload first (max 2 attempts)
+          if (autoExtractState.reloadAttempts < 2) {
+            autoExtractState.reloadAttempts++;
+            debug(`🔄 Reload attempt ${autoExtractState.reloadAttempts}/2`);
+
+            showToast(
+              `Page reload attempt ${autoExtractState.reloadAttempts}/2 - trying to refresh content...`,
+              3000
+            );
+            if (button) {
+              button.textContent = `Reloading... (${autoExtractState.reloadAttempts}/2)`;
+            }
+
+            // Save state before reload
+            const stateToSave = {
+              running: autoExtractState.running,
+              currentPage: autoExtractState.currentPage,
+              totalProcessed: autoExtractState.totalProcessed,
+              maxPages: autoExtractState.maxPages,
+              reloadAttempts: autoExtractState.reloadAttempts,
+              paused: false,
+            };
+            localStorage.setItem(
+              "W2N_autoExtractState",
+              JSON.stringify(stateToSave)
+            );
+
+            // Wait then reload
+            await new Promise((resolve) => setTimeout(resolve, 2500));
+            window.location.reload();
+            return; // Exit - will resume after reload
+          }
+
+          // Max reloads reached - show end of book confirmation
+          const shouldContinue = await showEndOfBookConfirmation(
+            autoExtractState
+          );
+          if (!shouldContinue) {
+            showToast(
+              `AutoExtract complete: User confirmed end of book\nProcessed ${autoExtractState.totalProcessed} pages`,
+              4000
+            );
+            stopAutoExtract(autoExtractState);
+            if (button) button.textContent = "Start AutoExtract";
+            return;
+          } else {
+            showToast(
+              "Please select a new 'Next Page' element to continue AutoExtract",
+              5000
+            );
+            autoExtractState.paused = true;
+            if (button) button.textContent = "Paused - Select New Element";
+            return;
+          }
+        }
+
+        // Navigate to next page
+        overlayModule.setMessage(`Navigating to page ${currentPageNum + 1}...`);
+        if (button) {
+          button.textContent = `Going to next page...`;
+        }
+
+        const currentUrl = window.location.href;
+        const currentTitle = document.title;
+
+        // Click next button with advanced methods
+        await clickNextPageButton(nextButton);
+
+        // Wait for navigation
+        const navigationSuccess = await waitForNavigationAdvanced(
+          currentUrl,
+          currentTitle
+        );
+
+        if (!navigationSuccess) {
+          const navErrorMessage = `❌ AutoExtract STOPPED: Page navigation failed.\n\nTotal pages processed: ${autoExtractState.totalProcessed}`;
+          alert(navErrorMessage);
+          stopAutoExtract(autoExtractState);
+          if (button) button.textContent = `❌ Stopped: Navigation failed`;
+          return;
+        }
+
+        // Wait for content to load
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+      }
+    } catch (error) {
+      debug(`❌ Error in AutoExtract loop:`, error);
+      const errorMessage = `❌ AutoExtract ERROR: ${error.message}\n\nTotal pages processed: ${autoExtractState.totalProcessed}`;
+      alert(errorMessage);
+      stopAutoExtract(autoExtractState);
+      if (button)
+        button.textContent = `❌ Error: ${error.message.substring(0, 20)}...`;
+      return;
+    }
+  }
+}
+
+function stopAutoExtract(autoExtractState) {
+  autoExtractState.running = false;
+  overlayModule.setProgress(100);
+  overlayModule.done({
+    success: true,
+    autoCloseMs: 5000,
+  });
 }
 
 // Helper function to wait for page navigation
@@ -756,11 +954,254 @@ async function waitForNavigation(timeoutMs = 10000) {
   });
 }
 
+// Advanced navigation detection with multiple checks
+async function waitForNavigationAdvanced(
+  originalUrl,
+  originalTitle,
+  timeoutMs = 15000
+) {
+  const startTime = Date.now();
+  let attempts = 0;
+  const maxAttempts = Math.ceil(timeoutMs / 1000);
+
+  return new Promise((resolve) => {
+    const checkNavigation = () => {
+      attempts++;
+
+      const currentUrl = window.location.href;
+      const currentTitle = document.title;
+
+      // Check multiple indicators
+      const urlChanged = currentUrl !== originalUrl;
+      const titleChanged = currentTitle !== originalTitle;
+
+      // Content-based check
+      const mainContent = document.querySelector(
+        'main, .main-content, [role="main"]'
+      );
+      const contentLength = mainContent ? mainContent.innerHTML.length : 0;
+
+      if (urlChanged || titleChanged || contentLength > 100) {
+        debug(
+          `✅ Navigation detected after ${attempts} seconds (${
+            urlChanged ? "URL" : titleChanged ? "Title" : "Content"
+          } changed)`
+        );
+        resolve(true);
+        return;
+      }
+
+      if (attempts >= maxAttempts) {
+        debug(`❌ Navigation timeout after ${maxAttempts} seconds`);
+        resolve(false);
+        return;
+      }
+
+      setTimeout(checkNavigation, 1000);
+    };
+
+    checkNavigation();
+  });
+}
+
+// Check if element is visible and clickable
+function isElementVisible(element) {
+  if (!element || !document.contains(element)) return false;
+
+  const style = window.getComputedStyle(element);
+  if (
+    style.display === "none" ||
+    style.visibility === "hidden" ||
+    style.opacity === "0"
+  ) {
+    return false;
+  }
+
+  const rect = element.getBoundingClientRect();
+  if (rect.width === 0 && rect.height === 0) return false;
+
+  if (element.disabled) return false;
+
+  return true;
+}
+
+// Advanced click simulation for next page button
+async function clickNextPageButton(button) {
+  try {
+    // Focus the element
+    button.focus();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Method 1: Mouse events
+    button.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, cancelable: true })
+    );
+    button.dispatchEvent(
+      new MouseEvent("mouseup", { bubbles: true, cancelable: true })
+    );
+    button.click();
+
+    // Method 2: Programmatic click after delay
+    setTimeout(() => {
+      if (window.location.href === window.location.href) {
+        // Still on same page
+        try {
+          button.dispatchEvent(
+            new Event("click", { bubbles: true, cancelable: true })
+          );
+        } catch (e) {
+          debug("Programmatic click failed:", e);
+        }
+
+        // Method 3: href navigation if available
+        if (button.href) {
+          setTimeout(() => {
+            if (window.location.href === window.location.href) {
+              // Still on same page
+              window.location.href = button.href;
+            }
+          }, 500);
+        }
+      }
+    }, 1000);
+  } catch (error) {
+    debug("Error clicking next page button:", error);
+    throw error;
+  }
+}
+
+// Show end-of-book confirmation dialog
+async function showEndOfBookConfirmation(autoExtractState) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 10001;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    `;
+
+    overlay.innerHTML = `
+      <div style="
+        background: white;
+        padding: 30px;
+        border-radius: 12px;
+        max-width: 500px;
+        width: 90%;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        text-align: center;
+      ">
+        <div style="font-size: 24px; margin-bottom: 15px; color: #f59e0b;">⚠️</div>
+
+        <h3 style="
+          margin: 0 0 15px 0;
+          font-size: 18px;
+          font-weight: 600;
+          color: #111827;
+        ">AutoExtract: Next Page Not Found</h3>
+
+        <p style="
+          margin: 0 0 25px 0;
+          color: #6b7280;
+          line-height: 1.5;
+          font-size: 14px;
+        ">The "Next Page" button/element could not be found on this page. This typically means you've reached the end of the book.</p>
+
+        <div style="
+          background: #f3f4f6;
+          padding: 15px;
+          border-radius: 8px;
+          margin-bottom: 25px;
+          font-size: 13px;
+          color: #374151;
+          text-align: left;
+        ">
+          <strong>Processed so far:</strong> ${autoExtractState.totalProcessed} pages<br>
+          <strong>Current page:</strong> ${autoExtractState.currentPage} of ${autoExtractState.maxPages}
+        </div>
+
+        <p style="
+          margin: 0 0 25px 0;
+          color: #374151;
+          line-height: 1.4;
+          font-size: 14px;
+          font-weight: 500;
+        ">What would you like to do?</p>
+
+        <div style="display: flex; gap: 10px; justify-content: center;">
+          <button id="end-of-book-confirm" style="
+            padding: 12px 20px;
+            background: #dc2626;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 14px;
+            flex: 1;
+            max-width: 150px;
+          ">End of Book</button>
+
+          <button id="continue-autoextract" style="
+            padding: 12px 20px;
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 14px;
+            flex: 1;
+            max-width: 150px;
+          ">Select New Element</button>
+        </div>
+
+        <p style="
+          margin: 20px 0 0 0;
+          color: #9ca3af;
+          font-size: 12px;
+          line-height: 1.4;
+        ">Choose "End of Book" if this is the last page, or "Select New Element" if you want to continue with a different element.</p>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const endButton = overlay.querySelector("#end-of-book-confirm");
+    const continueButton = overlay.querySelector("#continue-autoextract");
+
+    endButton.onclick = () => {
+      overlay.remove();
+      resolve(false);
+    };
+
+    continueButton.onclick = () => {
+      overlay.remove();
+      resolve(true);
+    };
+
+    // Auto-close after 60 seconds (defaults to end of book)
+    setTimeout(() => {
+      if (document.body.contains(overlay)) {
+        overlay.remove();
+        resolve(false);
+      }
+    }, 60000);
+  });
+}
+
 function diagnoseAutoExtraction() {
   const nextPageSelector =
     typeof GM_getValue === "function"
-      ? GM_getValue("w2n_next_page_selector", "")
-      : "";
+      ? GM_getValue("w2n_next_page_selector", "#zDocsContent > header > div.zDocsTopicActions > div.zDocsBundlePagination > div.zDocsNextTopicButton.zDocsNextTopicButton > span > a > svg > use")
+      : "#zDocsContent > header > div.zDocsTopicActions > div.zDocsBundlePagination > div.zDocsNextTopicButton.zDocsNextTopicButton > span > a > svg > use";
   const maxPages =
     parseInt(document.getElementById("w2n-max-pages")?.value) || 500;
 
@@ -792,4 +1233,101 @@ function diagnoseAutoExtraction() {
     "\nNote: Full auto-extraction functionality is not yet implemented.";
 
   alert(diagnosis);
+}
+
+// Advanced element discovery with multiple strategies
+function findNextPageElement(savedSelector) {
+  // Strategy 1: Try saved selector
+  if (savedSelector) {
+    try {
+      const element = document.querySelector(savedSelector);
+      if (element && isElementVisible(element)) {
+        debug(
+          `🎯 Found next page element with saved selector: ${savedSelector}`
+        );
+        return element;
+      }
+    } catch (e) {
+      debug(`⚠️ Saved selector failed: ${savedSelector}`, e);
+    }
+  }
+
+  // Strategy 2: Look for common next page patterns
+  const nextPagePatterns = [
+    // Text-based matching
+    'button:contains("Next")',
+    'button:contains("Forward")',
+    'button:contains(">")',
+    'button:contains("→")',
+    'a:contains("Next")',
+    'a:contains("Forward")',
+    'a:contains(">")',
+    'a:contains("→")',
+    // Attribute-based matching
+    'button[aria-label*="next" i]',
+    'button[aria-label*="forward" i]',
+    'a[aria-label*="next" i]',
+    'a[aria-label*="forward" i]',
+    // Class-based matching
+    "button.next",
+    "button.forward",
+    "a.next",
+    "a.forward",
+    ".pagination button:last-child",
+    ".pagination a:last-child",
+  ];
+
+  for (const pattern of nextPagePatterns) {
+    try {
+      let elements;
+      if (pattern.includes(":contains")) {
+        // Handle jQuery-style :contains pseudo-selector
+        const [tag, text] = pattern.split(':contains("');
+        const searchText = text.slice(0, -2).toLowerCase();
+        elements = Array.from(document.querySelectorAll(tag)).filter((el) =>
+          el.textContent?.toLowerCase().includes(searchText)
+        );
+      } else {
+        elements = document.querySelectorAll(pattern);
+      }
+
+      for (const element of elements) {
+        if (isElementVisible(element)) {
+          debug(`🔍 Found next page element with pattern: ${pattern}`);
+          return element;
+        }
+      }
+    } catch (e) {
+      // Skip invalid selectors
+    }
+  }
+
+  // Strategy 3: Look for elements with navigation-related attributes
+  const navElements = document.querySelectorAll('button, a, [role="button"]');
+  for (const element of navElements) {
+    const text = element.textContent?.toLowerCase() || "";
+    const ariaLabel = element.getAttribute("aria-label")?.toLowerCase() || "";
+    const title = element.getAttribute("title")?.toLowerCase() || "";
+
+    if (
+      text.includes("next") ||
+      text.includes("forward") ||
+      text.includes(">") ||
+      text.includes("→") ||
+      ariaLabel.includes("next") ||
+      ariaLabel.includes("forward") ||
+      title.includes("next") ||
+      title.includes("forward")
+    ) {
+      if (isElementVisible(element)) {
+        debug(
+          `🔍 Found next page element by text/attribute analysis: ${element.tagName}`
+        );
+        return element;
+      }
+    }
+  }
+
+  debug("❌ No next page element found with any strategy");
+  return null;
 }
