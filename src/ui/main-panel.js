@@ -188,23 +188,36 @@ export function setupMainPanel(panel) {
 
         // Query all databases fresh (no cache)
         const databases = await getAllDatabases({ forceRefresh: true });
+        
+        debug(`📋 Available databases: ${databases.map(db => `${db.id.slice(-8)}: ${db.title || 'Untitled'}`).join(', ')}`);
 
         // Find matching database
-        const matchingDb = databases.find(
+        const searchTermTrimmed = searchTerm.trim();
+        let matchingDb = databases.find(
           (db) =>
-            db.id === searchTerm.trim() ||
+            db.id === searchTermTrimmed ||
             (db.title &&
               typeof db.title === "string" &&
-              db.title.toLowerCase().includes(searchTerm.toLowerCase()))
+              db.title.toLowerCase().includes(searchTermTrimmed.toLowerCase()))
         );
+
+        // If not found by exact match, try partial ID match (last 8 chars)
+        if (!matchingDb && searchTermTrimmed.length >= 8) {
+          const partialId = searchTermTrimmed.slice(-8);
+          matchingDb = databases.find((db) => db.id.endsWith(partialId));
+          if (matchingDb) {
+            debug(`✅ Found database by partial ID match: ${partialId}`);
+          }
+        }
 
         if (matchingDb) {
           // Update config with new database
           const config = getConfig();
           config.databaseId = matchingDb.id;
-          config.databaseName = typeof matchingDb.title === "string"
-            ? matchingDb.title
-            : "Unknown Database";
+          config.databaseName =
+            typeof matchingDb.title === "string"
+              ? matchingDb.title
+              : "Unknown Database";
 
           // Save to storage
           if (typeof GM_setValue === "function") {
