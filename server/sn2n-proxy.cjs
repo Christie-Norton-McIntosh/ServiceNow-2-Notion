@@ -672,6 +672,8 @@ async function htmlToNotionBlocks(html) {
     const tempBlocks = [];
 
     // Match opening tags for block elements
+    // NOTE: Order matters! Longer tags must come before shorter tags that are prefixes
+    // (e.g., 'pre' before 'p', 'aside' before 'a') to prevent incorrect regex matching
     const blockTags = [
       "h1",
       "h2",
@@ -679,20 +681,20 @@ async function htmlToNotionBlocks(html) {
       "h4",
       "h5",
       "h6",
-      "p",
-      "div",
+      "blockquote", // before 'p' to prevent prefix match issues
       "section",
       "article",
-      "ul",
-      "ol",
-      "table",
       "header",
       "footer",
-      "main",
-      "pre",
-      "blockquote",
-      "aside",
       "details",
+      "aside",
+      "table",
+      "main",
+      "pre", // MUST come before 'p' to avoid <pre> being matched as <p>
+      "div",
+      "ul",
+      "ol",
+      "p",
     ];
     const selfClosingTags = ["hr", "img", "iframe"];
     const allTags = [...blockTags, ...selfClosingTags];
