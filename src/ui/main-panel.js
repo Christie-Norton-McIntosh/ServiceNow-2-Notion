@@ -254,30 +254,34 @@ export function setupMainPanel(panel) {
 
         const cleanDbId = dbId.trim();
         debug(`🔍 Getting database by ID: ${cleanDbId}`);
-        
+
         // Fetch database details to validate and get name
         const dbDetails = await getDatabase(cleanDbId);
-        
+
         // Update config with validated database
         const config = getConfig();
         config.databaseId = cleanDbId;
         config.databaseName = dbDetails.title || "Database by ID";
-        
+
         if (typeof GM_setValue === "function") {
           GM_setValue("notionConfig", config);
         }
-        
+
         // Update UI
         databaseSelect.innerHTML = `<option value="${cleanDbId}">${config.databaseName}</option>`;
         databaseLabel.textContent = `Database: ${config.databaseName}`;
-        
-        debug(`✅ Set target database to: ${config.databaseName} (${cleanDbId})`);
+
+        debug(
+          `✅ Set target database to: ${config.databaseName} (${cleanDbId})`
+        );
       } catch (e) {
         debug("Failed to get database by ID:", e);
-        alert(`Error: Could not access database with ID "${dbId}". Make sure the database is shared with your Notion integration.`);
+        alert(
+          `Error: Could not access database with ID "${dbId}". Make sure the database is shared with your Notion integration.`
+        );
       }
     };
-  }  // mark as initialized
+  } // mark as initialized
   try {
     panel.dataset = panel.dataset || {};
     panel.dataset.w2nInit = "1";

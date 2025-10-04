@@ -169,21 +169,36 @@ export async function fetchDatabaseSchema(databaseId) {
 export async function fetchDatabases(options = {}) {
   debug("📊 Fetching available databases");
   try {
-    const queryParams = new URLSearchParams();
-    if (options.search) queryParams.set("search", options.search);
-    if (options.limit) queryParams.set("limit", options.limit.toString());
+    const allDatabases = [];
+    let startCursor = null;
+    let hasMore = true;
 
-    const endpoint = `/api/databases${
-      queryParams.toString() ? "?" + queryParams.toString() : ""
-    }`;
-    const result = await apiCall("GET", endpoint);
+    while (hasMore) {
+      const queryParams = new URLSearchParams();
+      if (options.search) queryParams.set("search", options.search);
+      if (options.limit) queryParams.set("limit", options.limit.toString());
+      if (startCursor) queryParams.set("start_cursor", startCursor);
 
-    if (result && result.success && result.data && result.data.results) {
-      debug(`✅ Found ${result.data.results.length} databases`);
-      return result.data.results;
+      const endpoint = `/api/databases${
+        queryParams.toString() ? "?" + queryParams.toString() : ""
+      }`;
+      const result = await apiCall("GET", endpoint);
+
+      if (result && result.success && result.data) {
+        const databases = result.data.results || [];
+        allDatabases.push(...databases);
+        
+        hasMore = result.data.has_more || false;
+        startCursor = result.data.next_cursor || null;
+        
+        debug(`📄 Fetched page with ${databases.length} databases, total: ${allDatabases.length}, has_more: ${hasMore}`);
+      } else {
+        hasMore = false;
+      }
     }
 
-    return [];
+    debug(`✅ Found ${allDatabases.length} databases total`);
+    return allDatabases;
   } catch (error) {
     debug("❌ Failed to fetch databases:", error);
     throw error;
