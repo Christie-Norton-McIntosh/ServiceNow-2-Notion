@@ -111,6 +111,7 @@ class ServiceNowToNotionApp {
           "w2n-capture-description",
           "w2n-max-pages",
           "w2n-select-next-element",
+          "w2n-reset-next-selector",
           "w2n-autoextract-controls",
           "w2n-start-autoextract",
           "w2n-open-icon-cover",
