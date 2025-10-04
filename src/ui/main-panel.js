@@ -341,9 +341,14 @@ export function setupMainPanel(panel) {
     resetNextBtn.onclick = () => {
       try {
         if (typeof GM_setValue === "function") {
-          GM_setValue("w2n_next_page_selector", "#zDocsContent > header > div.zDocsTopicActions > div.zDocsBundlePagination > div.zDocsNextTopicButton.zDocsNextTopicButton > span > a > svg > use");
+          GM_setValue(
+            "w2n_next_page_selector",
+            "#zDocsContent > header > div.zDocsTopicActions > div.zDocsBundlePagination > div.zDocsNextTopicButton.zDocsNextTopicButton > span > a > svg > use"
+          );
         }
-        alert("Next Page selector reset to default ServiceNow documentation selector.");
+        alert(
+          "Next Page selector reset to default ServiceNow documentation selector."
+        );
       } catch (e) {
         debug("Failed to reset selector:", e);
         alert("Error resetting selector. Check console for details.");
@@ -647,7 +652,10 @@ async function startAutoExtraction() {
     parseInt(document.getElementById("w2n-max-pages")?.value) || 500;
   const nextPageSelector =
     typeof GM_getValue === "function"
-      ? GM_getValue("w2n_next_page_selector", "#zDocsContent > header > div.zDocsTopicActions > div.zDocsBundlePagination > div.zDocsNextTopicButton.zDocsNextTopicButton > span > a > svg > use")
+      ? GM_getValue(
+          "w2n_next_page_selector",
+          "#zDocsContent > header > div.zDocsTopicActions > div.zDocsBundlePagination > div.zDocsNextTopicButton.zDocsNextTopicButton > span > a > svg > use"
+        )
       : "#zDocsContent > header > div.zDocsTopicActions > div.zDocsBundlePagination > div.zDocsNextTopicButton.zDocsNextTopicButton > span > a > svg > use";
 
   if (!nextPageSelector) {
@@ -814,6 +822,9 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
       // Wait for save to complete
       await new Promise((resolve) => setTimeout(resolve, 2000));
 
+      // Reset reload attempts after successful capture
+      autoExtractState.reloadAttempts = 0;
+
       // Check if we should continue to next page
       if (currentPageNum < autoExtractState.maxPages) {
         // Try to find next page element with multiple strategies
@@ -904,8 +915,15 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
           return;
         }
 
-        // Wait for content to load
-        await new Promise((resolve) => setTimeout(resolve, 3000));
+        // Wait for content to load - increased timeout and added content check
+        debug("⏳ Waiting for new page content to load...");
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        // Wait for content to be available
+        await waitForContentReady();
+
+        debug("✅ New page content ready, continuing...");
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
     } catch (error) {
       debug(`❌ Error in AutoExtract loop:`, error);
@@ -1004,6 +1022,55 @@ async function waitForNavigationAdvanced(
   });
 }
 
+// Wait for content to be ready on the page
+async function waitForContentReady(timeoutMs = 10000) {
+  const startTime = Date.now();
+
+  return new Promise((resolve) => {
+    const checkContent = () => {
+      // Check if main content area exists and has meaningful content
+      const contentSelectors = [
+        "#zDocsContent .zDocsTopicPageBody",
+        'main[role="main"]',
+        "main",
+        "article",
+        ".main-content",
+      ];
+
+      for (const selector of contentSelectors) {
+        try {
+          const element = document.querySelector(selector);
+          if (
+            element &&
+            element.innerHTML &&
+            element.innerHTML.trim().length > 200
+          ) {
+            debug(
+              `✅ Content ready: Found ${selector} with ${element.innerHTML.length} chars`
+            );
+            resolve(true);
+            return;
+          }
+        } catch (e) {
+          // Continue checking other selectors
+        }
+      }
+
+      // Check timeout
+      if (Date.now() - startTime > timeoutMs) {
+        debug("⚠️ Content ready timeout - continuing anyway");
+        resolve(false);
+        return;
+      }
+
+      // Check again after a short delay
+      setTimeout(checkContent, 500);
+    };
+
+    checkContent();
+  });
+}
+
 // Check if element is visible and clickable
 function isElementVisible(element) {
   if (!element || !document.contains(element)) return false;
@@ -1028,25 +1095,62 @@ function isElementVisible(element) {
 // Advanced click simulation for next page button
 async function clickNextPageButton(button) {
   try {
+    // Find the actual clickable element (anchor, button, or input)
+    let clickableElement = button;
+
+    // If the element is inside an SVG, find the parent anchor or button
+    if (
+      button.ownerSVGElement ||
+      button.tagName.toLowerCase() === "use" ||
+      button.tagName.toLowerCase() === "path" ||
+      button.tagName.toLowerCase() === "svg"
+    ) {
+      // Walk up the DOM to find a clickable element
+      let current = button;
+      while (current && current !== document.body) {
+        if (
+          current.tagName.toLowerCase() === "a" ||
+          current.tagName.toLowerCase() === "button" ||
+          current.getAttribute("role") === "button" ||
+          current.onclick ||
+          current.getAttribute("href")
+        ) {
+          clickableElement = current;
+          break;
+        }
+        current = current.parentElement;
+      }
+    }
+
+    debug(
+      `Clicking element: ${clickableElement.tagName}${
+        clickableElement.id ? "#" + clickableElement.id : ""
+      }${
+        clickableElement.className
+          ? "." + clickableElement.className.split(" ").join(".")
+          : ""
+      }`
+    );
+
     // Focus the element
-    button.focus();
+    clickableElement.focus();
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     // Method 1: Mouse events
-    button.dispatchEvent(
+    clickableElement.dispatchEvent(
       new MouseEvent("mousedown", { bubbles: true, cancelable: true })
     );
-    button.dispatchEvent(
+    clickableElement.dispatchEvent(
       new MouseEvent("mouseup", { bubbles: true, cancelable: true })
     );
-    button.click();
+    clickableElement.click();
 
     // Method 2: Programmatic click after delay
     setTimeout(() => {
       if (window.location.href === window.location.href) {
         // Still on same page
         try {
-          button.dispatchEvent(
+          clickableElement.dispatchEvent(
             new Event("click", { bubbles: true, cancelable: true })
           );
         } catch (e) {
@@ -1054,11 +1158,11 @@ async function clickNextPageButton(button) {
         }
 
         // Method 3: href navigation if available
-        if (button.href) {
+        if (clickableElement.href) {
           setTimeout(() => {
             if (window.location.href === window.location.href) {
               // Still on same page
-              window.location.href = button.href;
+              window.location.href = clickableElement.href;
             }
           }, 500);
         }
@@ -1066,7 +1170,34 @@ async function clickNextPageButton(button) {
     }, 1000);
   } catch (error) {
     debug("Error clicking next page button:", error);
-    throw error;
+    // Provide more detailed error information
+    const errorDetails = {
+      message: error.message || "Unknown error",
+      element: button
+        ? `${button.tagName}${button.id ? "#" + button.id : ""}${
+            button.className ? "." + button.className.split(" ").join(".") : ""
+          }`
+        : "null",
+      clickableElement: clickableElement
+        ? `${clickableElement.tagName}${
+            clickableElement.id ? "#" + clickableElement.id : ""
+          }${
+            clickableElement.className
+              ? "." + clickableElement.className.split(" ").join(".")
+              : ""
+          }`
+        : "null",
+      href: clickableElement?.href || "none",
+      onclick: !!clickableElement?.onclick,
+    };
+    debug("Detailed click error info:", errorDetails);
+    throw new Error(
+      `Failed to click next page button: ${
+        error.message || "Unknown error"
+      } (Element: ${errorDetails.element}, Clickable: ${
+        errorDetails.clickableElement
+      })`
+    );
   }
 }
 
@@ -1200,7 +1331,10 @@ async function showEndOfBookConfirmation(autoExtractState) {
 function diagnoseAutoExtraction() {
   const nextPageSelector =
     typeof GM_getValue === "function"
-      ? GM_getValue("w2n_next_page_selector", "#zDocsContent > header > div.zDocsTopicActions > div.zDocsBundlePagination > div.zDocsNextTopicButton.zDocsNextTopicButton > span > a > svg > use")
+      ? GM_getValue(
+          "w2n_next_page_selector",
+          "#zDocsContent > header > div.zDocsTopicActions > div.zDocsBundlePagination > div.zDocsNextTopicButton.zDocsNextTopicButton > span > a > svg > use"
+        )
       : "#zDocsContent > header > div.zDocsTopicActions > div.zDocsBundlePagination > div.zDocsNextTopicButton.zDocsNextTopicButton > span > a > svg > use";
   const maxPages =
     parseInt(document.getElementById("w2n-max-pages")?.value) || 500;

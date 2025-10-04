@@ -370,6 +370,9 @@ export async function extractContentWithIframes(contentElement) {
     combinedHtml += relatedContentHtml;
   }
 
+  // Clean the HTML content (removes unwanted elements, processes code-toolbar, etc.)
+  combinedHtml = cleanHtmlContent(combinedHtml);
+
   return { combinedHtml, combinedImages };
 }
 
@@ -607,15 +610,23 @@ export function cleanHtmlContent(htmlContent) {
       elements.forEach((el) => el.remove());
     });
 
-    // Remove empty paragraphs and divs
+    // Remove empty paragraphs and divs (but preserve pre/code elements)
     const emptyElements = doc.querySelectorAll(
       "p:empty, div:empty, span:empty"
     );
     emptyElements.forEach((el) => el.remove());
 
-    // Remove elements with only whitespace
+    // Remove elements with only whitespace (but preserve pre/code elements)
     const textNodes = doc.querySelectorAll("p, div, span");
     textNodes.forEach((el) => {
+      // Don't remove code blocks or their parents
+      if (
+        el.tagName === "PRE" ||
+        el.tagName === "CODE" ||
+        el.querySelector("pre, code")
+      ) {
+        return;
+      }
       if (el.textContent.trim() === "" && el.children.length === 0) {
         el.remove();
       }
@@ -638,11 +649,79 @@ export function cleanHtmlContent(htmlContent) {
     // Remove table search labels (ServiceNow specific)
     removeTableSearchLabels(doc);
 
+    // Process code-toolbar elements as code blocks
+    processCodeToolbarElements(doc);
+
     debug(`✅ HTML content cleaned successfully`);
     return doc.body.innerHTML;
   } catch (error) {
     debug("❌ Error cleaning HTML content:", error);
     return htmlContent; // Return original if cleaning fails
+  }
+}
+
+/**
+ * Process code-toolbar elements and format as code blocks
+ * @param {Document} doc - Document object to process
+ */
+function processCodeToolbarElements(doc) {
+  try {
+    let processedCount = 0;
+
+    // Find all elements with code-toolbar class
+    const codeToolbarElements = doc.querySelectorAll(
+      '.code-toolbar, [class*="code-toolbar"]'
+    );
+
+    codeToolbarElements.forEach((element) => {
+      // Look for pre > code structure within the code-toolbar
+      const preElement = element.querySelector("pre");
+      const codeElement = element.querySelector("code");
+
+      if (preElement && codeElement) {
+        // Extract the code content
+        const codeContent =
+          codeElement.textContent || codeElement.innerText || "";
+
+        // Get language from class if available (e.g., language-javascript)
+        let language = "";
+        const codeClasses = codeElement.className || "";
+        const languageMatch = codeClasses.match(/language-(\w+)/);
+        if (languageMatch) {
+          language = languageMatch[1];
+        }
+
+        // Create a new pre element with proper formatting for Notion
+        const newPre = doc.createElement("pre");
+        const newCode = doc.createElement("code");
+
+        if (language) {
+          newCode.className = `language-${language}`;
+          newCode.setAttribute("data-language", language);
+        }
+
+        newCode.textContent = codeContent;
+        newPre.appendChild(newCode);
+
+        // Replace the code-toolbar element with the cleaned pre > code structure
+        element.parentNode.replaceChild(newPre, element);
+        processedCount++;
+
+        debug(
+          `✅ Processed code-toolbar element with ${
+            language || "no"
+          } language, ${codeContent.length} chars`
+        );
+      }
+    });
+
+    if (processedCount > 0) {
+      debug(
+        `✅ Processed ${processedCount} code-toolbar element(s) as code blocks`
+      );
+    }
+  } catch (error) {
+    debug("❌ Error processing code-toolbar elements:", error);
   }
 }
 
