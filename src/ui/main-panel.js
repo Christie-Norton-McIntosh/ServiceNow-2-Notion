@@ -194,19 +194,16 @@ export function setupMainPanel(panel) {
           (db) =>
             db.id === searchTerm.trim() ||
             (db.title &&
-              db.title.some(
-                (t) =>
-                  t.plain_text &&
-                  t.plain_text.toLowerCase().includes(searchTerm.toLowerCase())
-              ))
+              typeof db.title === "string" &&
+              db.title.toLowerCase().includes(searchTerm.toLowerCase()))
         );
 
         if (matchingDb) {
           // Update config with new database
           const config = getConfig();
           config.databaseId = matchingDb.id;
-          config.databaseName = matchingDb.title
-            ? matchingDb.title[0].plain_text
+          config.databaseName = typeof matchingDb.title === "string"
+            ? matchingDb.title
             : "Unknown Database";
 
           // Save to storage
