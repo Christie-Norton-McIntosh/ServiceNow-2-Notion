@@ -178,9 +178,9 @@ export async function fetchDatabases(options = {}) {
     }`;
     const result = await apiCall("GET", endpoint);
 
-    if (result && result.databases) {
-      debug(`✅ Found ${result.databases.length} databases`);
-      return result.databases;
+    if (result && result.success && result.data && result.data.results) {
+      debug(`✅ Found ${result.data.results.length} databases`);
+      return result.data.results;
     }
 
     return [];
