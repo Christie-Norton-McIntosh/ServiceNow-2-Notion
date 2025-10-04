@@ -185,32 +185,42 @@ export function setupMainPanel(panel) {
         if (!searchTerm || searchTerm.trim() === "") return;
 
         debug(`🔍 Searching for database: ${searchTerm}`);
-        
+
         // Query all databases fresh (no cache)
         const databases = await getAllDatabases({ forceRefresh: true });
-        
+
         // Find matching database
-        const matchingDb = databases.find(db => 
-          db.id === searchTerm.trim() || 
-          (db.title && db.title.some(t => t.plain_text && t.plain_text.toLowerCase().includes(searchTerm.toLowerCase())))
+        const matchingDb = databases.find(
+          (db) =>
+            db.id === searchTerm.trim() ||
+            (db.title &&
+              db.title.some(
+                (t) =>
+                  t.plain_text &&
+                  t.plain_text.toLowerCase().includes(searchTerm.toLowerCase())
+              ))
         );
 
         if (matchingDb) {
           // Update config with new database
           const config = getConfig();
           config.databaseId = matchingDb.id;
-          config.databaseName = matchingDb.title ? matchingDb.title[0].plain_text : "Unknown Database";
-          
+          config.databaseName = matchingDb.title
+            ? matchingDb.title[0].plain_text
+            : "Unknown Database";
+
           // Save to storage
           if (typeof GM_setValue === "function") {
             GM_setValue("notionConfig", config);
           }
-          
+
           // Update UI
           databaseSelect.innerHTML = `<option value="${matchingDb.id}">${config.databaseName}</option>`;
           databaseLabel.textContent = `Database: ${config.databaseName}`;
-          
-          debug(`✅ Set target database to: ${config.databaseName} (${matchingDb.id})`);
+
+          debug(
+            `✅ Set target database to: ${config.databaseName} (${matchingDb.id})`
+          );
         } else {
           alert(`Database "${searchTerm}" not found.`);
           debug(`❌ Database "${searchTerm}" not found`);
@@ -229,20 +239,20 @@ export function setupMainPanel(panel) {
         if (!dbId || dbId.trim() === "") return;
 
         debug(`🔍 Getting database by ID: ${dbId}`);
-        
+
         // This would need to be implemented - perhaps call getDatabase with force refresh
         // For now, just set the config
         const config = getConfig();
         config.databaseId = dbId.trim();
         config.databaseName = "Database by ID";
-        
+
         if (typeof GM_setValue === "function") {
           GM_setValue("notionConfig", config);
         }
-        
+
         databaseSelect.innerHTML = `<option value="${dbId}">${config.databaseName}</option>`;
         databaseLabel.textContent = `Database: ${config.databaseName}`;
-        
+
         debug(`✅ Set target database to ID: ${dbId}`);
       } catch (e) {
         debug("Failed to get database by ID:", e);
@@ -354,13 +364,14 @@ setupMainPanel = function (panel) {
  */
 function populateDatabaseSelect(selectEl, databases) {
   if (!selectEl) return;
-  
+
   selectEl.innerHTML = '<option value="">Select a database...</option>';
-  
-  databases.forEach(db => {
+
+  databases.forEach((db) => {
     const option = document.createElement("option");
     option.value = db.id;
-    option.textContent = db.title && db.title[0] ? db.title[0].plain_text : "Untitled Database";
+    option.textContent =
+      db.title && db.title[0] ? db.title[0].plain_text : "Untitled Database";
     selectEl.appendChild(option);
   });
 }
