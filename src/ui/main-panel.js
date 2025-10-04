@@ -4,7 +4,7 @@ import { debug, getConfig } from "../config.js";
 import { showPropertyMappingModal } from "./property-mapping-modal.js";
 import { injectAdvancedSettingsModal } from "./advanced-settings-modal.js";
 import { injectIconCoverModal } from "./icon-cover-modal.js";
-import { getAllDatabases } from "../api/database-api.js";
+import { getAllDatabases, getDatabase } from "../api/database-api.js";
 
 export function injectMainPanel() {
   if (document.getElementById("w2n-notion-panel")) return;
@@ -188,8 +188,12 @@ export function setupMainPanel(panel) {
 
         // Query all databases fresh (no cache)
         const databases = await getAllDatabases({ forceRefresh: true });
-        
-        debug(`📋 Available databases: ${databases.map(db => `${db.id.slice(-8)}: ${db.title || 'Untitled'}`).join(', ')}`);
+
+        debug(
+          `📋 Available databases: ${databases
+            .map((db) => `${db.id.slice(-8)}: ${db.title || "Untitled"}`)
+            .join(", ")}`
+        );
 
         // Find matching database
         const searchTermTrimmed = searchTerm.trim();
@@ -248,29 +252,32 @@ export function setupMainPanel(panel) {
         const dbId = prompt("Enter database ID:");
         if (!dbId || dbId.trim() === "") return;
 
-        debug(`🔍 Getting database by ID: ${dbId}`);
-
-        // This would need to be implemented - perhaps call getDatabase with force refresh
-        // For now, just set the config
+        const cleanDbId = dbId.trim();
+        debug(`🔍 Getting database by ID: ${cleanDbId}`);
+        
+        // Fetch database details to validate and get name
+        const dbDetails = await getDatabase(cleanDbId);
+        
+        // Update config with validated database
         const config = getConfig();
-        config.databaseId = dbId.trim();
-        config.databaseName = "Database by ID";
-
+        config.databaseId = cleanDbId;
+        config.databaseName = dbDetails.title || "Database by ID";
+        
         if (typeof GM_setValue === "function") {
           GM_setValue("notionConfig", config);
         }
-
-        databaseSelect.innerHTML = `<option value="${dbId}">${config.databaseName}</option>`;
+        
+        // Update UI
+        databaseSelect.innerHTML = `<option value="${cleanDbId}">${config.databaseName}</option>`;
         databaseLabel.textContent = `Database: ${config.databaseName}`;
-
-        debug(`✅ Set target database to ID: ${dbId}`);
+        
+        debug(`✅ Set target database to: ${config.databaseName} (${cleanDbId})`);
       } catch (e) {
         debug("Failed to get database by ID:", e);
+        alert(`Error: Could not access database with ID "${dbId}". Make sure the database is shared with your Notion integration.`);
       }
     };
-  }
-
-  // mark as initialized
+  }  // mark as initialized
   try {
     panel.dataset = panel.dataset || {};
     panel.dataset.w2nInit = "1";
