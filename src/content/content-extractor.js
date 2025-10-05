@@ -519,8 +519,9 @@ export function findContentElement() {
 
   // Priority order of content selectors (most specific first)
   const contentSelectors = [
-    // ServiceNow docs specific
+    // ServiceNow docs specific - most specific first
     ".zDocsTopicPageBody .zDocsTopicPageBodyContent article.dita .body.conbody",
+    "#zDocsContent .zDocsTopicPageBody .zDocsTopicPageBodyContent",
     "#zDocsContent .zDocsTopicPageBody",
 
     // Generic main content areas
@@ -568,8 +569,124 @@ export function findContentElement() {
     }
   }
 
+  // If no main content found, look for sections with specific IDs that might contain content
+  const sectionSelectors = [
+    "[id*='customize-script-includes']", // ServiceNow script includes sections
+    "section[id]", // Any section with an ID
+    "div[id]", // Any div with an ID
+  ];
+
+  for (const selector of sectionSelectors) {
+    try {
+      const elements = document.querySelectorAll(selector);
+      for (const element of elements) {
+        if (
+          element &&
+          element.innerHTML &&
+          element.innerHTML.trim().length > 100
+        ) {
+          debug(
+            `✅ Found content section using selector: ${selector} (id: ${element.id})`
+          );
+          debug(
+            `📏 Section content length: ${element.innerHTML.length} characters`
+          );
+          return element;
+        }
+      }
+    } catch (e) {
+      debug(`❌ Invalid section selector: ${selector}`);
+    }
+  }
+
   debug("❌ No suitable content element found");
   return null;
+}
+
+/**
+ * Find all content sections and combine them
+ * @returns {HTMLElement|null} Combined content element or null if not found
+ */
+export function findAllContentElements() {
+  debug("🔍 Searching for all content elements...");
+
+  const allContentElements = [];
+  let mainContent = null;
+
+  // First, try to find the main content element
+  mainContent = findContentElement();
+  if (mainContent) {
+    allContentElements.push(mainContent);
+  }
+
+  // Then look for additional sections that might contain code blocks
+  const additionalSelectors = [
+    "[id*='customize-script-includes']", // ServiceNow script includes sections
+    "section[id]", // Any section with an ID
+    ".code-toolbar", // Code toolbar elements
+    "pre", // Pre elements
+  ];
+
+  for (const selector of additionalSelectors) {
+    try {
+      const elements = document.querySelectorAll(selector);
+      for (const element of elements) {
+        if (
+          element &&
+          element.innerHTML &&
+          element.innerHTML.trim().length > 10 &&
+          !allContentElements.includes(element) &&
+          !allContentElements.some((parent) => parent.contains(element)) &&
+          // Filter out UI elements that are unlikely to contain documentation
+          !element.id?.includes("nav") &&
+          !element.id?.includes("header") &&
+          !element.id?.includes("modal") &&
+          !element.id?.includes("feedback") &&
+          !element.id?.includes("walkme") &&
+          !element.id?.includes("ZN_") &&
+          !element.className?.includes("nav") &&
+          !element.className?.includes("header") &&
+          !element.className?.includes("modal") &&
+          !element.className?.includes("feedback")
+        ) {
+          debug(
+            `✅ Found additional content element: ${selector} (id: ${
+              element.id || "no-id"
+            })`
+          );
+          allContentElements.push(element);
+        }
+      }
+    } catch (e) {
+      debug(`❌ Invalid additional selector: ${selector}`);
+    }
+  }
+
+  if (allContentElements.length === 0) {
+    debug("❌ No content elements found");
+    return null;
+  }
+
+  if (allContentElements.length === 1) {
+    return allContentElements[0];
+  }
+
+  // Combine multiple elements into a single container
+  debug(`🔄 Combining ${allContentElements.length} content elements`);
+  const combinedContainer = document.createElement("div");
+  combinedContainer.className = "combined-content";
+
+  allContentElements.forEach((element, index) => {
+    const sectionWrapper = document.createElement("div");
+    sectionWrapper.className = `content-section-${index}`;
+    sectionWrapper.innerHTML = element.innerHTML;
+    combinedContainer.appendChild(sectionWrapper);
+  });
+
+  debug(
+    `✅ Combined content length: ${combinedContainer.innerHTML.length} characters`
+  );
+  return combinedContainer;
 }
 
 /**
@@ -668,15 +785,78 @@ function processCodeToolbarElements(doc) {
   try {
     let processedCount = 0;
 
-    // Find all elements with code-toolbar class
+    // Find all elements with code-toolbar class (more inclusive selector)
     const codeToolbarElements = doc.querySelectorAll(
-      '.code-toolbar, [class*="code-toolbar"]'
+      '.code-toolbar, [class*="code-toolbar"], div[class*="code"], pre[class*="code"]'
     );
 
-    codeToolbarElements.forEach((element) => {
-      // Look for pre > code structure within the code-toolbar
+    debug(`🔍 Found ${codeToolbarElements.length} potential code elements`);
+
+    codeToolbarElements.forEach((element, index) => {
+      debug(
+        `🔍 Processing potential code element ${index + 1} (${
+          element.tagName
+        }.${element.className || "no-class"}):`,
+        element.outerHTML.substring(0, 300)
+      );
+
+      // Look for pre > code structure within the element
       const preElement = element.querySelector("pre");
       const codeElement = element.querySelector("code");
+
+      debug(
+        `🔍 Element ${
+          index + 1
+        } - Pre element found: ${!!preElement}, Code element found: ${!!codeElement}`
+      );
+
+      // Check if this element itself is a pre or code element
+      const isPreElement = element.tagName === "PRE";
+      const isCodeElement = element.tagName === "CODE";
+
+      if (isPreElement || isCodeElement) {
+        debug(
+          `🔍 Element ${index + 1} is already a ${
+            element.tagName
+          }, checking language`
+        );
+        // Ensure it has proper language class
+        if (!element.className || !element.className.includes("language-")) {
+          // Try to detect language from content
+          const content = element.textContent || element.innerText || "";
+          if (
+            content.includes("var ") ||
+            content.includes("function ") ||
+            content.includes("Class.create") ||
+            content.includes("Object.extendsObject") ||
+            content.includes("prototype =") ||
+            content.includes("= Class.create") ||
+            content.includes(".prototype")
+          ) {
+            element.className = "language-javascript";
+            element.setAttribute("data-language", "javascript");
+            debug(
+              `✅ Added language-javascript class to existing ${
+                element.tagName
+              } element ${index + 1}`
+            );
+          }
+        }
+
+        // If this pre element is nested inside a block element, move it to be a sibling
+        const parent = element.parentNode;
+        if (
+          parent &&
+          ["DIV", "P", "SECTION", "ARTICLE"].includes(parent.tagName)
+        ) {
+          debug(`🔍 Moving nested pre element ${index + 1} to top level`);
+          // Insert the pre element after the parent element
+          parent.parentNode.insertBefore(element, parent.nextSibling);
+        }
+
+        processedCount++;
+        return;
+      }
 
       if (preElement && codeElement) {
         // Extract the code content
@@ -691,37 +871,188 @@ function processCodeToolbarElements(doc) {
           language = languageMatch[1];
         }
 
-        // Create a new pre element with proper formatting for Notion
-        const newPre = doc.createElement("pre");
-        const newCode = doc.createElement("code");
-
-        if (language) {
-          newCode.className = `language-${language}`;
-          newCode.setAttribute("data-language", language);
+        // Detect JavaScript-like code and override language if needed
+        if (!language || language === "plaintext" || language === "text") {
+          if (
+            codeContent.includes("var ") ||
+            codeContent.includes("function ") ||
+            codeContent.includes("Class.create") ||
+            codeContent.includes("Object.extendsObject") ||
+            codeContent.includes("prototype =") ||
+            codeContent.includes("= Class.create") ||
+            codeContent.includes(".prototype")
+          ) {
+            language = "javascript";
+            debug(
+              `🔍 Detected JavaScript-like code, overriding language to: ${language}`
+            );
+          }
         }
 
-        newCode.textContent = codeContent;
-        newPre.appendChild(newCode);
+        // Create a new pre element with proper formatting for Notion
+        const newPre = doc.createElement("pre");
 
-        // Replace the code-toolbar element with the cleaned pre > code structure
-        element.parentNode.replaceChild(newPre, element);
+        if (language) {
+          newPre.className = `language-${language}`;
+          newPre.setAttribute("data-language", language);
+        }
+
+        newPre.textContent = codeContent;
+
+        // Replace the code-toolbar element with the cleaned pre element
+        // If the parent is a block element, insert the pre as a sibling instead of replacing
+        const parent = element.parentNode;
+        if (
+          parent &&
+          ["DIV", "P", "SECTION", "ARTICLE"].includes(parent.tagName)
+        ) {
+          // Insert the pre element after the parent element
+          parent.parentNode.insertBefore(newPre, parent.nextSibling);
+          // Remove the original code-toolbar element
+          element.remove();
+        } else {
+          // Safe to replace directly
+          parent.replaceChild(newPre, element);
+        }
         processedCount++;
 
         debug(
           `✅ Processed code-toolbar element with ${
             language || "no"
-          } language, ${codeContent.length} chars`
+          } language, ${codeContent.length} chars: ${codeContent.substring(
+            0,
+            100
+          )}`
+        );
+      } else if (preElement) {
+        // Just a pre element without code wrapper - still process it
+        debug(`🔍 Found pre element without code wrapper, processing anyway`);
+        const codeContent =
+          preElement.textContent || preElement.innerText || "";
+
+        let language = "";
+        const preClasses = preElement.className || "";
+        const languageMatch = preClasses.match(/language-(\w+)/);
+        if (languageMatch) {
+          language = languageMatch[1];
+        }
+
+        // Detect JavaScript-like code and override language if needed
+        if (!language || language === "plaintext" || language === "text") {
+          if (
+            codeContent.includes("var ") ||
+            codeContent.includes("function ") ||
+            codeContent.includes("Class.create") ||
+            codeContent.includes("Object.extendsObject") ||
+            codeContent.includes("prototype =") ||
+            codeContent.includes("= Class.create") ||
+            codeContent.includes(".prototype")
+          ) {
+            language = "javascript";
+            debug(
+              `🔍 Detected JavaScript-like code in pre element, overriding language to: ${language}`
+            );
+          }
+        }
+
+        // Create a new pre element with proper formatting
+        const newPre = doc.createElement("pre");
+
+        if (language) {
+          newPre.className = `language-${language}`;
+          newPre.setAttribute("data-language", language);
+        }
+
+        newPre.textContent = codeContent;
+
+        // Replace the container element with the cleaned pre element
+        // If the parent is a block element, insert the pre as a sibling instead of replacing
+        const parent = element.parentNode;
+        if (
+          parent &&
+          ["DIV", "P", "SECTION", "ARTICLE"].includes(parent.tagName)
+        ) {
+          // Insert the pre element after the parent element
+          parent.parentNode.insertBefore(newPre, parent.nextSibling);
+          // Remove the original container element
+          element.remove();
+        } else {
+          // Safe to replace directly
+          parent.replaceChild(newPre, element);
+        }
+        processedCount++;
+
+        debug(
+          `✅ Processed pre element with ${language || "no"} language, ${
+            codeContent.length
+          } chars`
+        );
+      } else {
+        debug(
+          `❌ Code element ${index + 1} missing pre or code child elements`
         );
       }
     });
 
-    if (processedCount > 0) {
+    // Also look for any pre elements that might not be in code-toolbar containers
+    const allPreElements = doc.querySelectorAll("pre");
+    debug(`🔍 Found ${allPreElements.length} total pre elements in document`);
+
+    allPreElements.forEach((pre, index) => {
+      const parent = pre.parentElement;
+      const isInCodeToolbar =
+        parent &&
+        (parent.classList.contains("code-toolbar") ||
+          parent.matches('[class*="code-toolbar"]'));
       debug(
-        `✅ Processed ${processedCount} code-toolbar element(s) as code blocks`
+        `🔍 Pre element ${index + 1} ${
+          isInCodeToolbar ? "(in code-toolbar)" : "(not in code-toolbar)"
+        }:`,
+        pre.outerHTML.substring(0, 200)
       );
+
+      // Don't check parent anymore - just ensure proper formatting
+      if (true) {
+        // Check if this pre element contains JavaScript-like code
+        const preContent = pre.textContent || pre.innerText || "";
+        if (
+          preContent.includes("var ") ||
+          preContent.includes("function ") ||
+          preContent.includes("Class.create") ||
+          preContent.includes("Object.extendsObject") ||
+          preContent.includes("prototype =") ||
+          preContent.includes("= Class.create") ||
+          preContent.includes(".prototype")
+        ) {
+          debug(
+            `🔍 Pre element ${
+              index + 1
+            } contains JavaScript-like code, ensuring it's properly formatted`
+          );
+
+          // Ensure it has language class if it contains JS code
+          if (
+            !pre.className ||
+            !pre.className.includes("language-") ||
+            pre.className.includes("language-plaintext")
+          ) {
+            pre.className = "language-javascript";
+            pre.setAttribute("data-language", "javascript");
+            debug(
+              `✅ Added language-javascript class to pre element ${index + 1}`
+            );
+          }
+        }
+      }
+    });
+
+    if (processedCount > 0) {
+      debug(`✅ Processed ${processedCount} code element(s) as code blocks`);
+    } else {
+      debug(`⚠️ No code elements were processed`);
     }
   } catch (error) {
-    debug("❌ Error processing code-toolbar elements:", error);
+    debug("❌ Error processing code elements:", error);
   }
 }
 

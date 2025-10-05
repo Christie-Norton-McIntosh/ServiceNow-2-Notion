@@ -363,6 +363,7 @@ async function htmlToNotionBlocks(html) {
   hasDetectedVideos = false;
 
   log(`🔄 Converting HTML to Notion blocks (${html.length} chars)`);
+  log(`📄 HTML sample: ${html.substring(0, 500)}...`);
 
   // DISABLED: Martian conversion bypasses our custom image processing
   // Images need to be processed directly with our image handling code
@@ -640,8 +641,91 @@ async function htmlToNotionBlocks(html) {
         textContent = fullItemContent; // Include nested list as text
       }
 
-      // Clean the text content and convert to rich text
-      const result = await htmlToNotionRichText(textContent);
+      // Extract block elements like <pre> from the text content
+      const blockElements = [];
+      let processedTextContent = textContent;
+
+      // Extract <pre> elements
+      const preRegex = /<pre[^>]*>([\s\S]*?)<\/pre>/gi;
+      let preMatch;
+      while ((preMatch = preRegex.exec(textContent)) !== null) {
+        const preAttributes = preMatch[0].match(/<pre([^>]*)>/i)?.[1] || "";
+        const preContent = preMatch[1];
+
+        // Create a code block
+        let language = "plain text";
+        const classMatch = preAttributes.match(/class=["']([^"']*)["']/i);
+        if (classMatch) {
+          const classes = classMatch[1];
+          const languageMatch = classes.match(/language-(\w+)/);
+          if (languageMatch) {
+            language = languageMatch[1];
+          }
+        }
+
+        // Map common language names
+        const languageMap = {
+          javascript: "javascript",
+          js: "javascript",
+          python: "python",
+          py: "python",
+          java: "java",
+          cpp: "cpp",
+          "c++": "cpp",
+          csharp: "csharp",
+          "c#": "csharp",
+          php: "php",
+          ruby: "ruby",
+          go: "go",
+          rust: "rust",
+          swift: "swift",
+          kotlin: "kotlin",
+          scala: "scala",
+          html: "html",
+          xml: "xml",
+          css: "css",
+          scss: "scss",
+          sass: "sass",
+          less: "less",
+          json: "json",
+          yaml: "yaml",
+          yml: "yaml",
+          markdown: "markdown",
+          md: "markdown",
+          sql: "sql",
+          bash: "bash",
+          shell: "bash",
+          sh: "bash",
+          powershell: "powershell",
+          plaintext: "plain text",
+          text: "plain text",
+        };
+
+        if (languageMap[language.toLowerCase()]) {
+          language = languageMap[language.toLowerCase()];
+        }
+
+        const codeText = cleanHtmlText(preContent);
+        if (codeText && codeText.length > 0) {
+          blockElements.push({
+            object: "block",
+            type: "code",
+            code: {
+              rich_text: [{ type: "text", text: { content: codeText } }],
+              language: language,
+            },
+          });
+          log(
+            `✅ Found code block in list item: ${codeText.substring(0, 50)}...`
+          );
+        }
+
+        // Remove the <pre> element from the text content
+        processedTextContent = processedTextContent.replace(preMatch[0], "");
+      }
+
+      // Clean the remaining text content and convert to rich text
+      const result = await htmlToNotionRichText(processedTextContent);
       const richText = result.richText;
 
       if (richText.length > 0 && richText[0].text.content.trim().length > 0) {
@@ -659,9 +743,10 @@ async function htmlToNotionBlocks(html) {
         }
 
         items.push(item);
-        // Note: inline images in list items are not supported by Notion API
-        // They would need to be handled differently if needed
       }
+
+      // Add any block elements found in this list item
+      items.push(...blockElements);
     }
 
     return items;
@@ -869,16 +954,80 @@ async function htmlToNotionBlocks(html) {
       }
       // Code blocks
       else if (tag === "pre") {
+        log(`🔍 Found pre element with attributes: ${attributes}`);
         const codeText = cleanHtmlText(content);
+        log(
+          `🔍 Pre element content length: ${content.length}, cleaned text length: ${codeText.length}`
+        );
+        log(`🔍 Pre element content sample: ${content.substring(0, 100)}`);
         if (codeText && codeText.length > 0) {
+          // Try to detect language from class or data attribute
+          let language = "plain text";
+          const classMatch = attributes.match(/class=["']([^"']*)["']/i);
+          if (classMatch) {
+            const classes = classMatch[1];
+            log(`🔍 Pre element classes: ${classes}`);
+            const languageMatch = classes.match(/language-(\w+)/);
+            if (languageMatch) {
+              language = languageMatch[1];
+              log(`🔍 Detected language: ${language}`);
+            }
+          }
+
+          // Map common language names
+          const languageMap = {
+            javascript: "javascript",
+            js: "javascript",
+            python: "python",
+            py: "python",
+            java: "java",
+            cpp: "cpp",
+            "c++": "cpp",
+            csharp: "csharp",
+            "c#": "csharp",
+            php: "php",
+            ruby: "ruby",
+            go: "go",
+            rust: "rust",
+            swift: "swift",
+            kotlin: "kotlin",
+            scala: "scala",
+            html: "html",
+            xml: "xml",
+            css: "css",
+            scss: "scss",
+            sass: "sass",
+            less: "less",
+            json: "json",
+            yaml: "yaml",
+            yml: "yaml",
+            markdown: "markdown",
+            md: "markdown",
+            sql: "sql",
+            bash: "bash",
+            shell: "bash",
+            sh: "bash",
+            powershell: "powershell",
+            plaintext: "plain text",
+            text: "plain text",
+          };
+
+          if (languageMap[language.toLowerCase()]) {
+            language = languageMap[language.toLowerCase()];
+          }
+
+          log(`🔍 Creating code block with language: ${language}`);
           tempBlocks.push({
             object: "block",
             type: "code",
             code: {
               rich_text: [{ type: "text", text: { content: codeText } }],
-              language: "plain text", // Could be enhanced to detect language
+              language: language,
             },
           });
+          log(`✅ Code block added to blocks array`);
+        } else {
+          log(`⚠️ Pre element had no valid text content`);
         }
       }
       // Quote blocks
@@ -1072,32 +1221,304 @@ async function htmlToNotionBlocks(html) {
             });
           }
         } else {
-          // Check if this container has nested block elements
-          const hasNestedBlocks =
-            /<(h[1-6]|p|div|section|article|ul|ol|table|pre|blockquote|aside|details|hr|img|iframe)/i.test(
-              content
+          // Check if this container has pre elements that should be extracted as code blocks
+          // Replace pre elements with placeholders, process the content, then add code blocks
+          const preElements = [];
+          const preRegex = /<pre([^>]*?)>([\s\S]*?)<\/pre>/gi;
+          let preMatch;
+          let modifiedContent = content;
+
+          // Extract all pre elements and replace with unique placeholders
+          let preIndex = 0;
+          while ((preMatch = preRegex.exec(content)) !== null) {
+            const preAttributes = preMatch[1];
+            const preContent = preMatch[2];
+            const placeholder = `___PRE_PLACEHOLDER_${preIndex}___`;
+
+            // Store pre element info
+            let language = "plain text";
+            const classMatch = preAttributes.match(/class=["']([^"']*)["']/i);
+            if (classMatch) {
+              const classes = classMatch[1];
+              const languageMatch = classes.match(/language-(\w+)/);
+              if (languageMatch) {
+                language = languageMatch[1];
+              }
+            }
+
+            // Map language names
+            const languageMap = {
+              javascript: "javascript",
+              js: "javascript",
+              python: "python",
+              java: "java",
+              plaintext: "plain text",
+              text: "plain text",
+            };
+
+            if (languageMap[language.toLowerCase()]) {
+              language = languageMap[language.toLowerCase()];
+            }
+
+            const codeText = cleanHtmlText(preContent);
+            preElements.push({ placeholder, language, codeText });
+
+            // Replace in content
+            modifiedContent = modifiedContent.replace(preMatch[0], placeholder);
+            preIndex++;
+          }
+
+          if (preElements.length > 0) {
+            log(
+              `🔍 Found ${preElements.length} pre elements in ${tag} container, processing with placeholders`
             );
 
-          if (hasNestedBlocks) {
-            // Recursively process nested content
-            const nestedBlocks = await extractBlocksFromHTML(content);
-            log(
-              `🔄 Recursive call returned ${
-                nestedBlocks.length
-              } blocks: ${nestedBlocks.map((b) => b.type).join(", ")}`
-            );
-            tempBlocks.push(...nestedBlocks);
+            // Process the modified content with placeholders
+            const nestedBlocks = await extractBlocksFromHTML(modifiedContent);
+
+            // Helper function to check and replace placeholder in a block
+            // Returns: { replacement: block|null, codeBlockToAdd: block|null }
+            const checkAndReplacePlaceholder = (richTextArray) => {
+              if (!richTextArray || richTextArray.length === 0)
+                return { replacement: null, codeBlockToAdd: null };
+
+              const allText = richTextArray
+                .map((rt) => rt.text?.content || "")
+                .join("");
+              const placeholderMatch = allText.match(
+                /___PRE_PLACEHOLDER_(\d+)___/
+              );
+
+              if (placeholderMatch && allText.trim() === placeholderMatch[0]) {
+                // This is just a placeholder, replace with code block
+                const index = parseInt(placeholderMatch[1]);
+                const preInfo = preElements[index];
+                if (
+                  preInfo &&
+                  preInfo.codeText &&
+                  preInfo.codeText.length > 0
+                ) {
+                  log(
+                    `✅ Replacing placeholder ${index} with code block: ${preInfo.codeText.substring(
+                      0,
+                      50
+                    )}...`
+                  );
+                  return {
+                    replacement: {
+                      object: "block",
+                      type: "code",
+                      code: {
+                        rich_text: [
+                          { type: "text", text: { content: preInfo.codeText } },
+                        ],
+                        language: preInfo.language,
+                      },
+                    },
+                    codeBlockToAdd: null,
+                  };
+                }
+              } else if (placeholderMatch) {
+                // Placeholder is mixed with text - remove placeholder, add code block separately
+                const index = parseInt(placeholderMatch[1]);
+                const preInfo = preElements[index];
+
+                if (
+                  preInfo &&
+                  preInfo.codeText &&
+                  preInfo.codeText.length > 0
+                ) {
+                  log(
+                    `🔧 Removing placeholder ${index} from text and adding code block separately`
+                  );
+
+                  // Remove the placeholder from the rich text
+                  const cleanedRichText = richTextArray
+                    .map((rt) => {
+                      if (rt.text?.content?.includes(placeholderMatch[0])) {
+                        return {
+                          ...rt,
+                          text: {
+                            ...rt.text,
+                            content: rt.text.content
+                              .replace(placeholderMatch[0], "")
+                              .trim(),
+                          },
+                        };
+                      }
+                      return rt;
+                    })
+                    .filter((rt) => rt.text?.content); // Remove empty items
+
+                  const codeBlock = {
+                    object: "block",
+                    type: "code",
+                    code: {
+                      rich_text: [
+                        { type: "text", text: { content: preInfo.codeText } },
+                      ],
+                      language: preInfo.language,
+                    },
+                  };
+
+                  return {
+                    replacement: cleanedRichText,
+                    codeBlockToAdd: codeBlock,
+                  };
+                } else {
+                  log(
+                    `⚠️ Placeholder ${
+                      placeholderMatch[1]
+                    } mixed with text but no code found: ${allText.substring(
+                      0,
+                      100
+                    )}`
+                  );
+                }
+              }
+
+              return { replacement: null, codeBlockToAdd: null };
+            };
+
+            // Replace placeholder blocks with actual code blocks
+            for (const block of nestedBlocks) {
+              log(`🔍 Checking block type: ${block.type}`);
+
+              if (block.type === "paragraph" && block.paragraph.rich_text) {
+                const result = checkAndReplacePlaceholder(
+                  block.paragraph.rich_text
+                );
+                if (result.replacement) {
+                  tempBlocks.push(result.replacement);
+                  if (result.codeBlockToAdd) {
+                    tempBlocks.push(result.codeBlockToAdd);
+                  }
+                } else if (result.codeBlockToAdd) {
+                  // Keep original block, add code block after
+                  tempBlocks.push(block);
+                  tempBlocks.push(result.codeBlockToAdd);
+                } else {
+                  tempBlocks.push(block);
+                }
+              } else if (
+                block.type === "bulleted_list_item" &&
+                block.bulleted_list_item?.rich_text
+              ) {
+                const result = checkAndReplacePlaceholder(
+                  block.bulleted_list_item.rich_text
+                );
+                if (result.replacement && !result.codeBlockToAdd) {
+                  // Entire list item is just a placeholder - replace with code block
+                  tempBlocks.push(result.replacement);
+                } else if (result.replacement && result.codeBlockToAdd) {
+                  // List item has text + placeholder - update text and add code block
+                  block.bulleted_list_item.rich_text = result.replacement;
+                  tempBlocks.push(block);
+                  tempBlocks.push(result.codeBlockToAdd);
+                } else {
+                  // No placeholder in main text, check children
+                  if (block.bulleted_list_item.children) {
+                    const updatedChildren = [];
+                    for (const child of block.bulleted_list_item.children) {
+                      if (
+                        child.type === "paragraph" &&
+                        child.paragraph?.rich_text
+                      ) {
+                        const childResult = checkAndReplacePlaceholder(
+                          child.paragraph.rich_text
+                        );
+                        if (childResult.replacement) {
+                          updatedChildren.push(childResult.replacement);
+                          if (childResult.codeBlockToAdd) {
+                            updatedChildren.push(childResult.codeBlockToAdd);
+                          }
+                        } else if (childResult.codeBlockToAdd) {
+                          updatedChildren.push(child);
+                          updatedChildren.push(childResult.codeBlockToAdd);
+                        } else {
+                          updatedChildren.push(child);
+                        }
+                      } else {
+                        updatedChildren.push(child);
+                      }
+                    }
+                    block.bulleted_list_item.children = updatedChildren;
+                  }
+                  tempBlocks.push(block);
+                }
+              } else if (
+                block.type === "numbered_list_item" &&
+                block.numbered_list_item?.rich_text
+              ) {
+                const result = checkAndReplacePlaceholder(
+                  block.numbered_list_item.rich_text
+                );
+                if (result.replacement && !result.codeBlockToAdd) {
+                  // Entire list item is just a placeholder - replace with code block
+                  tempBlocks.push(result.replacement);
+                } else if (result.replacement && result.codeBlockToAdd) {
+                  // List item has text + placeholder - update text and add code block
+                  block.numbered_list_item.rich_text = result.replacement;
+                  tempBlocks.push(block);
+                  tempBlocks.push(result.codeBlockToAdd);
+                } else {
+                  // No placeholder in main text, check children
+                  if (block.numbered_list_item.children) {
+                    const updatedChildren = [];
+                    for (const child of block.numbered_list_item.children) {
+                      if (
+                        child.type === "paragraph" &&
+                        child.paragraph?.rich_text
+                      ) {
+                        const childResult = checkAndReplacePlaceholder(
+                          child.paragraph.rich_text
+                        );
+                        if (childResult.replacement) {
+                          updatedChildren.push(childResult.replacement);
+                          if (childResult.codeBlockToAdd) {
+                            updatedChildren.push(childResult.codeBlockToAdd);
+                          }
+                        } else if (childResult.codeBlockToAdd) {
+                          updatedChildren.push(child);
+                          updatedChildren.push(childResult.codeBlockToAdd);
+                        } else {
+                          updatedChildren.push(child);
+                        }
+                      } else {
+                        updatedChildren.push(child);
+                      }
+                    }
+                    block.numbered_list_item.children = updatedChildren;
+                  }
+                  tempBlocks.push(block);
+                }
+              } else {
+                // Other block types
+                tempBlocks.push(block);
+              }
+            }
           } else {
-            // Extract plain text from container
-            const text = cleanHtmlText(content);
-            if (text && text.length > 10) {
-              tempBlocks.push({
-                object: "block",
-                type: "paragraph",
-                paragraph: {
-                  rich_text: [{ type: "text", text: { content: text } }],
-                },
-              });
+            // No pre elements, process normally
+            const nestedBlocks = await extractBlocksFromHTML(content);
+            if (nestedBlocks.length > 0) {
+              log(
+                `🔄 Recursive call returned ${
+                  nestedBlocks.length
+                } blocks: ${nestedBlocks.map((b) => b.type).join(", ")}`
+              );
+              tempBlocks.push(...nestedBlocks);
+            } else {
+              // Extract plain text from container if no blocks found
+              const text = cleanHtmlText(content);
+              if (text && text.length > 10) {
+                tempBlocks.push({
+                  object: "block",
+                  type: "paragraph",
+                  paragraph: {
+                    rich_text: [{ type: "text", text: { content: text } }],
+                  },
+                });
+              }
             }
           }
         }
@@ -1352,68 +1773,118 @@ async function htmlToNotionRichText(html) {
     text = text.replace(imgTag, "");
   }
 
-  // Handle links specially - support both single and double quotes
-  const linkRegex = /<a[^>]*href=(["'])([^"']*)\1[^>]*>([\s\S]*?)<\/a>/gi;
-  let lastIndex = 0;
-  let match;
+  // First, handle bold/strong tags by replacing with markers
+  text = text.replace(
+    /<(b|strong)([^>]*)>([\s\S]*?)<\/\1>/gi,
+    (match, tag, attrs, content) => {
+      return `__BOLD_START__${content}__BOLD_END__`;
+    }
+  );
 
-  while ((match = linkRegex.exec(text)) !== null) {
-    // Add text before the link
-    if (match.index > lastIndex) {
-      const beforeText = text.substring(lastIndex, match.index);
-      const cleanedBefore = cleanHtmlText(beforeText);
-      if (cleanedBefore.trim()) {
+  // Handle italic/em tags
+  text = text.replace(
+    /<(i|em)([^>]*)>([\s\S]*?)<\/\1>/gi,
+    (match, tag, attrs, content) => {
+      return `__ITALIC_START__${content}__ITALIC_END__`;
+    }
+  );
+
+  // Handle inline code tags
+  text = text.replace(
+    /<code([^>]*)>([\s\S]*?)<\/code>/gi,
+    (match, attrs, content) => {
+      return `__CODE_START__${content}__CODE_END__`;
+    }
+  );
+
+  // Handle span with uicontrol class as bold
+  text = text.replace(
+    /<span[^>]*class=["'][^"']*uicontrol[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi,
+    (match, content) => {
+      return `__BOLD_START__${content}__BOLD_END__`;
+    }
+  );
+
+  // Handle links - extract before cleaning HTML
+  const links = [];
+  text = text.replace(
+    /<a[^>]*href=["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi,
+    (match, href, content) => {
+      const linkIndex = links.length;
+      links.push({ href, content: cleanHtmlText(content) });
+      return `__LINK_${linkIndex}__`;
+    }
+  );
+
+  // Now split by markers and build rich text
+  const parts = text.split(
+    /(__BOLD_START__|__BOLD_END__|__ITALIC_START__|__ITALIC_END__|__CODE_START__|__CODE_END__|__LINK_\d+__)/
+  );
+
+  let currentAnnotations = {
+    bold: false,
+    italic: false,
+    code: false,
+  };
+
+  for (const part of parts) {
+    if (part === "__BOLD_START__") {
+      currentAnnotations.bold = true;
+    } else if (part === "__BOLD_END__") {
+      currentAnnotations.bold = false;
+    } else if (part === "__ITALIC_START__") {
+      currentAnnotations.italic = true;
+    } else if (part === "__ITALIC_END__") {
+      currentAnnotations.italic = false;
+    } else if (part === "__CODE_START__") {
+      currentAnnotations.code = true;
+    } else if (part === "__CODE_END__") {
+      currentAnnotations.code = false;
+    } else if (part.match(/^__LINK_(\d+)__$/)) {
+      const linkMatch = part.match(/^__LINK_(\d+)__$/);
+      const linkIndex = parseInt(linkMatch[1]);
+      const linkInfo = links[linkIndex];
+      if (linkInfo && linkInfo.content.trim()) {
+        let url = convertServiceNowUrl(linkInfo.href);
+        if (url && isValidNotionUrl(url)) {
+          richText.push({
+            type: "text",
+            text: { content: linkInfo.content.trim(), link: { url } },
+            annotations: { ...currentAnnotations },
+          });
+        } else {
+          richText.push({
+            type: "text",
+            text: { content: linkInfo.content.trim() },
+            annotations: { ...currentAnnotations },
+          });
+        }
+      }
+    } else if (part) {
+      // Regular text
+      const cleanedText = cleanHtmlText(part);
+      if (cleanedText.trim()) {
         richText.push({
           type: "text",
-          text: { content: cleanedBefore },
+          text: { content: cleanedText },
+          annotations: { ...currentAnnotations },
         });
       }
     }
-
-    // Add the link (only if URL is valid)
-    const linkText = cleanHtmlText(match[3]);
-    let linkUrl = match[2];
-
-    // Convert ServiceNow relative URLs to absolute URLs
-    linkUrl = convertServiceNowUrl(linkUrl);
-
-    if (linkText.trim()) {
-      if (linkUrl && isValidNotionUrl(linkUrl)) {
-        richText.push({
-          type: "text",
-          text: { content: linkText.trim(), link: { url: linkUrl } },
-        });
-      } else {
-        // Invalid URL - just add as plain text
-        richText.push({
-          type: "text",
-          text: { content: linkText.trim() },
-        });
-      }
-    }
-
-    lastIndex = linkRegex.lastIndex;
   }
 
-  // Add remaining text after last link
-  if (lastIndex < text.length) {
-    const remainingText = text.substring(lastIndex);
-    const cleanedRemaining = cleanHtmlText(remainingText);
-    if (cleanedRemaining.trim()) {
-      richText.push({
-        type: "text",
-        text: { content: cleanedRemaining },
-      });
-    }
-  }
-
-  // If no rich text was created, add the cleaned text
+  // If no rich text was created, fall back to simple processing
   if (richText.length === 0) {
     const cleanedText = cleanHtmlText(text);
     if (cleanedText.trim()) {
       richText.push({
         type: "text",
         text: { content: cleanedText },
+        annotations: {
+          bold: false,
+          italic: false,
+          code: false,
+        },
       });
     }
   }

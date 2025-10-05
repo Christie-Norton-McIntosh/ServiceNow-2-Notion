@@ -548,6 +548,12 @@ class ServiceNowToNotionApp {
           ? pageData.contentHtml.substring(0, 100)
           : "EMPTY",
       });
+
+      // DEBUG: Log full HTML content being sent to proxy
+      if (pageData.contentHtml) {
+        debug("🔍 DEBUG: Full HTML content being sent to proxy:");
+        debug(pageData.contentHtml);
+      }
       debug("🔍 DEBUG: Full extractedData structure:", extractedData);
 
       // Send to proxy
