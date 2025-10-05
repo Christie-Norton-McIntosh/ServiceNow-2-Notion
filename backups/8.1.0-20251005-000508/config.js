@@ -4,7 +4,7 @@
 // PROVIDER CONSTANTS
 // =============================================================================
 
-export const PROVIDER_VERSION = "8.1.0";
+export const PROVIDER_VERSION = "8.0.0";
 export const PROVIDER_ID = "servicenow";
 export const PROVIDER_NAME = "ServiceNow";
 

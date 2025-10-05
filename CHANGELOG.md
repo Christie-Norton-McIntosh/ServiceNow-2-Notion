@@ -1,3 +1,26 @@
+## [8.1.0] - 2025-10-05
+
+### Added
+
+- **Enhanced Code Block Extraction**: Implemented comprehensive JavaScript code block detection and extraction system
+- **Placeholder-Based Processing**: Pre elements are now extracted and replaced with placeholders during HTML processing, then substituted back with properly formatted code blocks
+- **Mixed Content Handling**: Code blocks within list items (containing both text and code) are now properly handled - text is preserved and code blocks are added as separate blocks
+- **Improved Language Detection**: Enhanced JavaScript pattern matching to correctly identify and format code blocks with `javascript` language
+- **HTML Formatting Preservation**: Marker-based parser for bold text (`<span class="uicontrol">`), italic text, and links during HTML-to-Notion conversion
+- **Timestamped Backup**: Created backup of key files in `backups/8.1.0-<timestamp>/`
+
+### Fixed
+
+- Code blocks appearing as plain text or placeholder strings (`___PRE_PLACEHOLDER_0___`) in Notion pages
+- Content loss when code blocks were embedded within list items
+- HTML formatting (bold, italic, links) not being preserved in converted content
+
+### Changed
+
+- Enhanced server-side HTML parsing with improved placeholder replacement logic
+- Updated userscript content extraction to better handle code-toolbar elements
+- Improved logging with detailed debugging information for code block processing
+
 # Changelog
 
 All notable changes to this project will be documented in this file.
