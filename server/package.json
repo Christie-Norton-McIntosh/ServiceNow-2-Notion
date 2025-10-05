@@ -7,8 +7,6 @@
   "scripts": {
     "build": "rollup -c",
     "build:prod": "NODE_ENV=production rollup -c",
-    "dev": "rollup -c --watch",
-    "watch": "rollup -c --watch",
     "start": "node sn2n-proxy.cjs",
     "start:dev": "npx nodemon --watch . --exec \"node sn2n-proxy.cjs\"",
     "start:pm2": "pm2 start sn2n-proxy.cjs --name sn2n-proxy --output sn2n-proxy.out --error sn2n-proxy.err",

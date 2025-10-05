@@ -2,99 +2,136 @@
 
 These instructions are optimized for AI coding agents (Copilot-style) working in the ServiceNow-2-Notion repository. Keep guidance concise and actionable; prefer small, safe edits and always run the build after changes.
 
-Goal
+### 🎯 Project Architecture
 
-- Produce maintainable ES6 modules that bundle into a single Tampermonkey userscript (`dist/ServiceNow-2-Notion.user.js`) using Rollup.
+**Browser Userscript + Proxy Server Architecture**
 
-Quick facts
+- **Frontend**: Tampermonkey userscript extracts ServiceNow content, sends to local proxy server
+- **Backend**: Node.js/Express server converts HTML to Notion blocks, creates pages via Notion API
+- **Build**: Rollup bundles ES6 modules into single `dist/ServiceNow-2-Notion.user.js` userscript
+- **Data Flow**: ServiceNow page → Userscript extraction → Proxy server → HTML→Notion conversion → Notion page creation
 
-- Entry point: `src/main.js` — orchestrates UI, content extraction, and API calls.
-- UI components: `src/ui/*.js` (modals use `inject...()` and `setup...()` patterns and should only append to DOM when injected).
-- Content extractors: `src/content/*` — metadata/content extraction logic lives here.
-- API layer: `src/api/*` — `proxy-api.js` (M2N proxy), `database-api.js` (Notion ops), `workflow-api.js` (Universal Workflow integration).
-- Build: `npm run build` (dev), `npm run build:prod` (minified prod), `npm run dev` (watch).
+### 📁 Key Components & Entry Points
 
-When editing
+- `src/main.js` — App orchestration, UI wiring, content extraction coordination
+- `src/ui/*.js` — Modal components with `injectXxx()`/`setupXxx()` pattern (never auto-inject on import)
+- `src/content/*.js` — ServiceNow content/metadata extraction logic
+- `src/api/*.js` — External service integrations (Notion API, proxy communication)
+- `server/sn2n-proxy.cjs` — Express server with HTML-to-Notion block conversion
+- `rollup.config.js` — Bundles ES6 modules into Tampermonkey-compatible IIFE
 
-- Small, focused changes only. Prefer adding modules or functions rather than large rewrites.
-- Modals and overlays must not auto-inject on import. Use provided `injectXxx()` functions and wire injectors from `src/main.js`.
-- UI elements referenced elsewhere must exist in the DOM (e.g., `#w2n-notion-panel`, `#w2n-indicator-martian`, `#w2n-selected-database-label`). Search for `w2n-` IDs before removing or renaming elements.
+### 🔧 Critical Developer Workflows
 
-Patterns & conventions (practical examples)
-
-- Initialization: modules follow a pair: `injectFoo()` (creates and appends DOM) and `setupFoo(element)` (wires handlers and marks element with `dataset.w2nInit = "1"`). Example: `src/ui/property-mapping-modal.js`.
-- Overlay wiring: `src/ui/overlay-progress.js` accepts an injector for the property-mapping modal — set the injector in `src/main.js` so progress UI can open modals without importing them eagerly.
-- Global app accessor: use `window.ServiceNowToNotion.app()` to access the central app instance if available — used by UI actions to trigger save/extract flows.
-
-Build & debug workflow
-
-- Run tests: there are no automated tests currently; validate via build + manual browser test.
-- Build locally: `npm install` then `npm run build`. Use `npm run dev` during active changes to rebuild on file save.
-- After building, open `dist/ServiceNow-2-Notion.user.js` and load into Tampermonkey for runtime verification.
-- Enable debug: toggle `debugMode: true` in advanced settings modal or set `debug` flags in `src/config.js` to get detailed console logs.
-
-Integration & external services
-
-- Proxy server: `src/api/proxy-api.js` expects an M2N proxy (local dev server in `S2N-PROXY/` historically). If calling remote services, mock or stub network calls during unit testing.
-- Notion: `src/api/database-api.js` encapsulates Notion operations; be careful when changing property mapping logic — tests are manual and integration-heavy.
-
-Common pitfalls
-
-- Accidentally importing modal modules at top-level causes them to auto-insert UI. Always call their `inject` functions from `src/main.js` or an on-demand handler.
-- UI id mismatches: many modules reference `w2n-` ids. Use grep for `w2n-` to find cross-file dependencies before renaming.
-- Position/drag behavior: the main panel used fixed `right` positioning originally. When adding drag behavior, convert `right` -> `left` at drag start to allow free movement (see `src/ui/main-panel.js`).
-
-Code-edit checklist
-
-1. Search for `w2n-` ids and references before changing UI element names.
-2. Update or add `inject...()` and `setup...()` for new UI components.
-3. Wire modal injectors through `src/main.js` instead of importing at top-level.
-4. Run `npm run build`; inspect `dist/ServiceNow-2-Notion.user.js`.
-5. Manual smoke test in a browser via Tampermonkey.
-
-Where to look first
-
-- `src/main.js` — app wiring and entry point
-- `src/ui/*` — UI components and modal patterns
-- `src/api/*` — external integrations and network logic
-- `refactor/` — original monolithic userscript — useful when porting UI/behavior
-- `README.md` — high-level overview and build commands
-
-If unsure, ask the maintainer for
-
-- preferred behavior for persisted UI state (panel position persistence)
-- remote proxy URL used in development vs production
-
-After edits
-
-- Always run `npm run build` and report any build errors before proposing PRs.
-
-Build after edits (required)
-
-After every non-trivial edit (code, UI, build config), run:
+**Build & Test Cycle** (required after every code change):
 
 ```bash
-npm ci
-npm run build
+npm run build                    # Generate dist/ServiceNow-2-Notion.user.js
+# Load into Tampermonkey, test on ServiceNow page
 ```
 
-- Confirm `dist/ServiceNow-2-Notion.user.js` was regenerated and include that verification in your PR description.
-
-Versioning (required)
-
-- Bump `package.json` version for every change that modifies behavior or public surface. Use semantic versioning. Example commands:
+**Server Development** (auto-restarts on changes):
 
 ```bash
-# patch (bugfix)
-npm version patch
-
-# minor (feature)
-npm version minor
-
-# major (breaking)
-npm version major
+npm start                        # Starts proxy server with nodemon watch
+# Server listens on port 3004, auto-restarts on server/ file changes
 ```
 
-- Include the new version number in the PR title (example: `chore(release): 7.1.1`).
+**Version Management** (required for all behavioral changes):
 
-Please review and tell me if you want examples expanded (e.g., exact grep commands, or a short snippet showing how to wire an injector in `src/main.js`).
+```bash
+npm version patch/minor/major    # Updates package.json + rollup.config.js
+```
+
+### 🎨 Project-Specific Patterns
+
+**UI Component Pattern** (exemplified in `src/ui/property-mapping-modal.js`):
+
+```javascript
+// ❌ Never auto-inject on import
+// ✅ Always use inject/setup pair
+export function injectPropertyMappingModal() {
+  // Create and append DOM elements
+}
+export function setupPropertyMappingModal(element) {
+  // Wire event handlers, mark with dataset.w2nInit = "1"
+}
+```
+
+**Modal Injector Wiring** (in `src/main.js`):
+
+```javascript
+import { setPropertyMappingModalInjector } from "./ui/overlay-progress.js";
+import { showPropertyMappingModal } from "./ui/property-mapping-modal.js";
+
+// Wire injector to avoid eager imports
+setPropertyMappingModalInjector(showPropertyMappingModal);
+```
+
+**Global App Access** (used by UI actions):
+
+```javascript
+const app = window.ServiceNowToNotion?.app?.();
+```
+
+**HTML-to-Notion Block Conversion** (server-side recursive parsing):
+
+- Handles mixed content (text + code blocks) in containers
+- Extracts `<pre>` elements as separate code blocks with language detection
+- Processes nested lists up to Notion's 2-level depth limit
+
+### 🔍 Integration Points & Dependencies
+
+**ServiceNow Integration**:
+
+- Content extraction from iframe-heavy ServiceNow documentation pages
+- Metadata parsing from page structure and URL patterns
+- Handles ServiceNow's dynamic content loading
+
+**Notion API Integration**:
+
+- Page creation with custom properties and rich text content
+- Database schema introspection and property mapping
+- Image upload for covers/icons via Notion's file upload API
+
+**Proxy Server Communication**:
+
+- Local Express server (port 3004) for HTML→Notion conversion
+- CORS-enabled for browser userscript communication
+- Environment-based configuration (.env files)
+
+### ⚠️ Common Pitfalls & Required Checks
+
+**Before UI Changes**:
+
+- Search for `w2n-` IDs across codebase to find dependencies
+- Never import modal modules at top-level (causes auto-injection)
+- Wire modal injectors through `src/main.js` only
+
+**Build Validation**:
+
+- Always run `npm run build` after changes
+- Verify `dist/ServiceNow-2-Notion.user.js` exists and is updated
+- Manual Tampermonkey testing required (no automated tests)
+
+**Server Development**:
+
+- Use `npm start` for auto-restart during server changes
+- Server processes HTML with complex recursive block parsing
+- Debug with `SN2N_VERBOSE=1` environment variable
+
+### 📋 Code-Edit Checklist
+
+1. Search for `w2n-` ID references before renaming UI elements
+2. Add `injectXxx()`/`setupXxx()` pairs for new UI components
+3. Wire modal injectors through `src/main.js` (never import modals directly)
+4. Run `npm run build` and verify dist file generation
+5. Manual smoke test in Tampermonkey on ServiceNow page
+6. Bump version with `npm version` for behavioral changes
+
+### 🎯 Where to Start Reading
+
+- `src/main.js` — App initialization and component wiring
+- `src/ui/property-mapping-modal.js` — Exemplifies UI component patterns
+- `server/sn2n-proxy.cjs` — HTML-to-Notion conversion logic
+- `rollup.config.js` — Build configuration and userscript metadata
+- `README.md` — High-level architecture and setup instructions
