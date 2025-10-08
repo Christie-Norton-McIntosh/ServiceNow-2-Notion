@@ -364,93 +364,10 @@ export async function extractContentWithIframes(contentElement) {
     combinedImages.push(...mainImages);
   }
 
-  // Extract and append Related Content section if it exists
-  const relatedContentHtml = extractRelatedContent();
-  if (relatedContentHtml) {
-    combinedHtml += relatedContentHtml;
-  }
-
   // Clean the HTML content (removes unwanted elements, processes code-toolbar, etc.)
   combinedHtml = cleanHtmlContent(combinedHtml);
 
   return { combinedHtml, combinedImages };
-}
-
-/**
- * Extract Related Content section and format as callout
- * @returns {string} HTML for related content callout, or empty string if not found
- */
-function extractRelatedContent() {
-  try {
-    // Look for Related Content section
-    // Try multiple selectors to find the heading
-    const relatedHeadingSelectors = [
-      'h5:contains("Related Content")',
-      'h5[class*="css-"]:has-text("Related Content")',
-      '.css-g931ng:has-text("Related Content")',
-    ];
-
-    let relatedSection = null;
-
-    // Find by heading text content
-    const headings = document.querySelectorAll("h5");
-    for (const heading of headings) {
-      if (heading.textContent.trim() === "Related Content") {
-        relatedSection = heading.parentElement;
-        break;
-      }
-    }
-
-    if (!relatedSection) {
-      debug("ℹ️ No Related Content section found");
-      return "";
-    }
-
-    // Extract the list items
-    const listItems = relatedSection.querySelectorAll("li");
-    if (listItems.length === 0) {
-      debug("ℹ️ Related Content section found but has no items");
-      return "";
-    }
-
-    // Build the callout HTML
-    let calloutHtml = '<div class="note related note_related">';
-    calloutHtml += '<span class="note__title">Related Content</span><br>';
-    calloutHtml += "<ul>";
-
-    listItems.forEach((li) => {
-      const link = li.querySelector("a");
-      const description = li.querySelector("p");
-
-      if (link) {
-        const href = link.getAttribute("href");
-        const linkText = link.textContent.trim();
-
-        calloutHtml += "<li>";
-        if (href) {
-          calloutHtml += `<a href="${href}">${linkText}</a>`;
-        } else {
-          calloutHtml += linkText;
-        }
-
-        if (description && description.textContent.trim()) {
-          calloutHtml += ` - ${description.textContent.trim()}`;
-        }
-        calloutHtml += "</li>";
-      }
-    });
-
-    calloutHtml += "</ul>";
-    calloutHtml += "</div>";
-
-    debug(
-      `✅ Extracted Related Content section with ${listItems.length} items`
-    );
-    return calloutHtml;
-  } catch (error) {
-    debug("❌ Error extracting Related Content:", error);
-    return "";
-  }
 }
 
 /**
@@ -520,9 +437,9 @@ export function findContentElement() {
   // Priority order of content selectors (most specific first)
   const contentSelectors = [
     // ServiceNow docs specific - most specific first
+    "#zDocsContent .zDocsTopicPageBody",
     ".zDocsTopicPageBody .zDocsTopicPageBodyContent article.dita .body.conbody",
     "#zDocsContent .zDocsTopicPageBody .zDocsTopicPageBodyContent",
-    "#zDocsContent .zDocsTopicPageBody",
 
     // Generic main content areas
     "main[role='main']",

@@ -93,16 +93,13 @@ export function injectMainPanel() {
             <label style="display:block; margin-bottom:0; font-size:12px;">Max Pages:</label>
             <input type="number" id="w2n-max-pages" value="500" min="1" max="500" style="width:60px; padding:4px; border:1px solid #d1d5db; border-radius:4px;">
           </div>
-          <div style="flex:1; min-width:120px;">
-            <button id="w2n-select-next-element" style="width:100%; padding:6px; background:#2563eb; color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px;">Select "Next Page"</button>
-          </div>
-          <div style="flex:1; min-width:80px;">
-            <button id="w2n-reset-next-selector" style="width:100%; padding:6px; background:#dc2626; color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px;">Reset</button>
-          </div>
         </div>
 
         <div id="w2n-autoextract-controls">
-          <button id="w2n-start-autoextract" style="width:100%; padding:10px; background:#f59e0b; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">Start AutoExtract</button>
+          <div style="display:flex; gap:8px;">
+            <button id="w2n-start-autoextract" style="flex:1; padding:10px; background:#f59e0b; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">Start AutoExtract</button>
+            <button id="w2n-stop-autoextract" style="flex:1; padding:10px; background:#dc2626; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500; display:none;">⏹ Stop</button>
+          </div>
           <div style="display:flex; gap:8px; margin-top:8px;">
             <button id="w2n-open-icon-cover" style="flex:1; padding:8px; background:#6b7280; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px;">Icon & Cover</button>
             <button id="w2n-diagnose-autoextract" style="flex:1; padding:8px; background:#0ea5e9; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px;">🔍 Diagnose</button>
@@ -318,52 +315,69 @@ export function setupMainPanel(panel) {
     };
   }
 
+  // Check for saved autoExtractState from page reload and resume if found
+  const savedAutoExtractState = GM_getValue("w2n_autoExtractState");
+  if (savedAutoExtractState) {
+    try {
+      const parsedState = JSON.parse(savedAutoExtractState);
+      debug(`🔄 Found saved autoExtractState from page reload:`, parsedState);
+
+      // Clear the saved state
+      GM_setValue("w2n_autoExtractState", null);
+
+      // Resume auto-extraction after a short delay to let page fully load
+      setTimeout(async () => {
+        debug(`▶️ Resuming auto-extraction after page reload...`);
+        await resumeAutoExtraction(parsedState);
+      }, 2000);
+    } catch (e) {
+      debug(`❌ Error parsing saved autoExtractState:`, e);
+      GM_setValue("w2n_autoExtractState", null);
+    }
+  }
+
   // AutoExtract button handlers
-  const selectNextBtn = panel.querySelector("#w2n-select-next-element");
-  const resetNextBtn = panel.querySelector("#w2n-reset-next-selector");
   const startAutoExtractBtn = panel.querySelector("#w2n-start-autoextract");
+  const stopAutoExtractBtn = panel.querySelector("#w2n-stop-autoextract");
   const diagnoseAutoExtractBtn = panel.querySelector(
     "#w2n-diagnose-autoextract"
   );
 
-  if (selectNextBtn) {
-    selectNextBtn.onclick = () => {
-      try {
-        startElementSelection();
-      } catch (e) {
-        debug("Failed to start element selection:", e);
-        alert("Error starting element selection. Check console for details.");
-      }
-    };
-  }
-
-  if (resetNextBtn) {
-    resetNextBtn.onclick = () => {
-      try {
-        if (typeof GM_setValue === "function") {
-          GM_setValue(
-            "w2n_next_page_selector",
-            "#zDocsContent > header > div.zDocsTopicActions > div.zDocsBundlePagination > div.zDocsNextTopicButton.zDocsNextTopicButton > span > a > svg > use"
-          );
-        }
-        alert(
-          "Next Page selector reset to default ServiceNow documentation selector."
-        );
-      } catch (e) {
-        debug("Failed to reset selector:", e);
-        alert("Error resetting selector. Check console for details.");
-      }
-    };
-  }
-
   if (startAutoExtractBtn) {
     startAutoExtractBtn.onclick = async () => {
       try {
+        // Show stop button, hide start button
+        startAutoExtractBtn.style.display = "none";
+        if (stopAutoExtractBtn) stopAutoExtractBtn.style.display = "block";
+
         await startAutoExtraction();
+
+        // After completion, restore buttons
+        startAutoExtractBtn.style.display = "block";
+        if (stopAutoExtractBtn) stopAutoExtractBtn.style.display = "none";
       } catch (e) {
         debug("Failed to start auto extraction:", e);
         alert("Error starting auto extraction. Check console for details.");
+        // Restore buttons on error
+        startAutoExtractBtn.style.display = "block";
+        if (stopAutoExtractBtn) stopAutoExtractBtn.style.display = "none";
       }
+    };
+  }
+
+  if (stopAutoExtractBtn) {
+    stopAutoExtractBtn.onclick = () => {
+      // Stop the extraction by setting running to false
+      if (
+        window.ServiceNowToNotion &&
+        window.ServiceNowToNotion.autoExtractState
+      ) {
+        window.ServiceNowToNotion.autoExtractState.running = false;
+        showToast("⏹ Stopping AutoExtract after current page...", 3000);
+      }
+      // Restore buttons
+      startAutoExtractBtn.style.display = "block";
+      stopAutoExtractBtn.style.display = "none";
     };
   }
 
@@ -495,151 +509,6 @@ function populateDatabaseSelect(selectEl, databases) {
 }
 
 // AutoExtract functionality
-let elementSelectionActive = false;
-let selectedElement = null;
-
-function startElementSelection() {
-  if (elementSelectionActive) {
-    stopElementSelection();
-    return;
-  }
-
-  elementSelectionActive = true;
-  selectedElement = null;
-
-  // Add visual feedback
-  document.body.style.cursor = "crosshair";
-
-  // Create overlay message (non-blocking)
-  const overlay = document.createElement("div");
-  overlay.id = "w2n-element-selection-overlay";
-  overlay.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.7);
-    z-index: 9999;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-family: Arial, sans-serif;
-    font-size: 18px;
-    text-align: center;
-    pointer-events: none;
-  `;
-  overlay.innerHTML = `
-    <div style="pointer-events: auto;">
-      <div style="font-size: 24px; margin-bottom: 10px;">🎯</div>
-      <div>Click on the "Next Page" element</div>
-      <div style="font-size: 14px; margin-top: 10px; opacity: 0.8;">Press ESC to cancel</div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-
-  // Handle element selection (use bubbling phase so clicks pass through overlay)
-  const handleClick = (e) => {
-    // Only handle clicks if element selection is active
-    if (!elementSelectionActive) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    selectedElement = e.target;
-    stopElementSelection();
-
-    // Generate selector for the selected element
-    const selector = generateSelector(selectedElement);
-    debug("Selected element selector:", selector);
-
-    // Store the selector
-    if (typeof GM_setValue === "function") {
-      GM_setValue("w2n_next_page_selector", selector);
-    }
-
-    alert(
-      `Selected element: ${selector}\n\nThis selector will be used to find the "Next Page" button during auto-extraction.`
-    );
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === "Escape") {
-      stopElementSelection();
-    }
-  };
-
-  // Use bubbling phase (false) instead of capture phase (true)
-  document.addEventListener("click", handleClick, false);
-  document.addEventListener("keydown", handleKeyDown);
-
-  function stopElementSelection() {
-    elementSelectionActive = false;
-    document.body.style.cursor = "";
-    document.removeEventListener("click", handleClick, true);
-    document.removeEventListener("keydown", handleKeyDown);
-
-    const overlay = document.getElementById("w2n-element-selection-overlay");
-    if (overlay) {
-      overlay.remove();
-    }
-  }
-}
-
-function generateSelector(element) {
-  if (!element) return "";
-
-  // Try to generate a unique selector
-  const id = element.id;
-  if (id) return `#${id}`;
-
-  const className = element.className;
-  if (className && typeof className === "string") {
-    const classes = className
-      .trim()
-      .split(/\s+/)
-      .filter((c) => c);
-    if (classes.length > 0) {
-      return `${element.tagName.toLowerCase()}.${classes.join(".")}`;
-    }
-  }
-
-  // Generate path-based selector
-  const path = [];
-  let current = element;
-  while (current && current.nodeType === Node.ELEMENT_NODE) {
-    let selector = current.tagName.toLowerCase();
-
-    if (current.id) {
-      selector = `#${current.id}`;
-      path.unshift(selector);
-      break;
-    } else if (current.className && typeof current.className === "string") {
-      const classes = current.className
-        .trim()
-        .split(/\s+/)
-        .filter((c) => c);
-      if (classes.length > 0) {
-        selector += `.${classes[0]}`;
-      }
-    }
-
-    // Add nth-child if needed
-    const siblings = Array.from(current.parentNode?.children || []);
-    const index = siblings.indexOf(current);
-    if (siblings.length > 1) {
-      selector += `:nth-child(${index + 1})`;
-    }
-
-    path.unshift(selector);
-    current = current.parentNode;
-
-    if (path.length > 5) break; // Limit depth
-  }
-
-  return path.join(" > ");
-}
 
 async function startAutoExtraction() {
   const config = getConfig();
@@ -652,11 +521,8 @@ async function startAutoExtraction() {
     parseInt(document.getElementById("w2n-max-pages")?.value) || 500;
   const nextPageSelector =
     typeof GM_getValue === "function"
-      ? GM_getValue(
-          "w2n_next_page_selector",
-          "#zDocsContent > header > div.zDocsTopicActions > div.zDocsBundlePagination > div.zDocsNextTopicButton.zDocsNextTopicButton > span > a > svg > use"
-        )
-      : "#zDocsContent > header > div.zDocsTopicActions > div.zDocsBundlePagination > div.zDocsNextTopicButton.zDocsNextTopicButton > span > a > svg > use";
+      ? GM_getValue("w2n_next_page_selector", "div.zDocsNextTopicButton a")
+      : "div.zDocsNextTopicButton a";
 
   if (!nextPageSelector) {
     alert(
@@ -690,50 +556,114 @@ async function startAutoExtraction() {
     currentPage: 0,
     totalProcessed: 0,
     maxPages: maxPages,
-    reloadAttempts: 0,
     paused: false,
   };
 
-  // Check if we're resuming from a page reload
-  const savedState = localStorage.getItem("W2N_autoExtractState");
-  if (savedState) {
-    try {
-      const restoredState = JSON.parse(savedState);
-      if (restoredState.running && !restoredState.paused) {
-        Object.assign(autoExtractState, restoredState);
-        localStorage.removeItem("W2N_autoExtractState");
-        debug("Resumed AutoExtract state from page reload:", autoExtractState);
-        showToast(
-          `🔄 AutoExtract resumed after page reload\nProcessing page ${autoExtractState.currentPage}/${autoExtractState.maxPages}`,
-          5000
-        );
-      }
-    } catch (error) {
-      debug("Error restoring AutoExtract state:", error);
-      localStorage.removeItem("W2N_autoExtractState");
-    }
-  }
-
   try {
+    // Clear any existing overlays before starting
+    overlayModule.done({ success: true, autoCloseMs: 0 });
+
+    // Store state globally so stop button can access it
+    window.ServiceNowToNotion = window.ServiceNowToNotion || {};
+    window.ServiceNowToNotion.autoExtractState = autoExtractState;
+
     // Start the extraction process
     overlayModule.start("Starting multi-page extraction...");
 
     await runAutoExtractLoop(autoExtractState, app, nextPageSelector);
+
+    // Clean up global state
+    delete window.ServiceNowToNotion.autoExtractState;
   } catch (error) {
     debug("❌ Auto-extraction failed:", error);
     overlayModule.error({
       message: `Auto-extraction failed: ${error.message}`,
     });
+    // Clean up global state
+    delete window.ServiceNowToNotion.autoExtractState;
   }
+}
+
+/**
+ * Check if the current page is showing a 503 error
+ * @returns {boolean} True if 503 error is detected
+ */
+function isPage503Error() {
+  const errorHeader = document.querySelector(
+    ".zDocsSubHeaderErrorPage h3.zDocsBreadcrumbsLastItem"
+  );
+  const errorTitle = document.querySelector(
+    ".serverErrorPage.zDocsErrorPage h1"
+  );
+
+  if (errorHeader && errorHeader.textContent.includes("ERROR 503")) {
+    debug("🚨 Detected 503 error page");
+    return true;
+  }
+
+  if (errorTitle && errorTitle.textContent.includes("We'll be back soon")) {
+    debug('🚨 Detected "We\'ll be back soon" error page');
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Reload the page and wait for it to load
+ * @param {number} timeoutMs - Maximum time to wait for reload
+ * @returns {Promise<boolean>} True if reload successful and no error page
+ */
+async function reloadAndWait(timeoutMs = 15000) {
+  debug("🔄 Reloading page...");
+
+  return new Promise((resolve) => {
+    const startTime = Date.now();
+
+    // Set up listener for load event
+    const onLoad = () => {
+      debug("✅ Page reloaded");
+      window.removeEventListener("load", onLoad);
+
+      // Wait a bit for content to stabilize
+      setTimeout(() => {
+        const is503 = isPage503Error();
+        if (is503) {
+          debug("❌ Page still shows 503 error after reload");
+          resolve(false);
+        } else {
+          debug("✅ Page loaded successfully without errors");
+          resolve(true);
+        }
+      }, 2000);
+    };
+
+    // Set up timeout
+    const timeout = setTimeout(() => {
+      window.removeEventListener("load", onLoad);
+      debug("⏱️ Reload timeout reached");
+      resolve(false);
+    }, timeoutMs);
+
+    window.addEventListener("load", onLoad);
+
+    // Trigger reload
+    window.location.reload();
+  });
 }
 
 async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
   debug("🔄 Starting AutoExtract loop");
+  debug(
+    `📊 Initial state: currentPage=${autoExtractState.currentPage}, maxPages=${autoExtractState.maxPages}`
+  );
 
   // Get button reference for progress updates
   const button = document.getElementById("w2n-start-autoextract");
 
   while (autoExtractState.running && !autoExtractState.paused) {
+    debug(`\n🔄 Loop iteration: currentPage=${autoExtractState.currentPage}`);
+
     // Check if we've reached max pages
     if (autoExtractState.currentPage >= autoExtractState.maxPages) {
       showToast(
@@ -747,6 +677,7 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
 
     autoExtractState.currentPage++;
     const currentPageNum = autoExtractState.currentPage;
+    debug(`📄 Processing page number: ${currentPageNum}`);
 
     overlayModule.setMessage(
       `Extracting page ${currentPageNum} of ${autoExtractState.maxPages}...`
@@ -761,7 +692,44 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
     }
 
     try {
-      // Extract current page data with retry logic
+      // STEP 0: Check for 503 error and reload if necessary
+      let reloadAttempts = 0;
+      const maxReloadAttempts = 3;
+
+      while (isPage503Error() && reloadAttempts < maxReloadAttempts) {
+        reloadAttempts++;
+        debug(
+          `🚨 503 error detected, attempting reload ${reloadAttempts}/${maxReloadAttempts}...`
+        );
+        showToast(
+          `⚠️ 503 error detected, reloading page (attempt ${reloadAttempts}/${maxReloadAttempts})...`,
+          5000
+        );
+        if (button) {
+          button.textContent = `Reloading page (${reloadAttempts}/${maxReloadAttempts})...`;
+        }
+
+        const reloadSuccess = await reloadAndWait(15000);
+
+        if (!reloadSuccess && reloadAttempts < maxReloadAttempts) {
+          debug(
+            `⏳ Reload ${reloadAttempts} failed, waiting 5s before retry...`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+        }
+      }
+
+      // If still showing 503 after max reload attempts, stop
+      if (isPage503Error()) {
+        const errorMessage = `❌ AutoExtract STOPPED: Page ${currentPageNum} shows 503 error after ${maxReloadAttempts} reload attempts.\n\nTotal pages processed: ${autoExtractState.totalProcessed}`;
+        alert(errorMessage);
+        stopAutoExtract(autoExtractState);
+        if (button) button.textContent = `❌ Stopped: 503 Error`;
+        return;
+      }
+
+      // STEP 1: Extract and capture current page
+      debug(`📄 Step 1: Extracting page ${currentPageNum}...`);
       let captureSuccess = false;
       let captureAttempts = 0;
       const maxCaptureAttempts = 3;
@@ -774,13 +742,13 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
             showToast(
               `Retry ${
                 captureAttempts - 1
-              }/2: Processing page ${currentPageNum}...`,
+              }/2: Extracting page ${currentPageNum}...`,
               3000
             );
             if (button) {
               button.textContent = `Retry ${
                 captureAttempts - 1
-              }/2: Processing ${currentPageNum}/${
+              }/2: Extracting ${currentPageNum}/${
                 autoExtractState.maxPages
               }...`;
             }
@@ -788,14 +756,24 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
           }
 
           const extractedData = await app.extractCurrentPageData();
+
+          // STEP 2: Create Notion page and wait for success
+          debug(
+            `💾 Step 2: Creating Notion page for page ${currentPageNum}...`
+          );
+          overlayModule.setMessage(`Creating Notion page ${currentPageNum}...`);
           await app.processWithProxy(extractedData);
+
           captureSuccess = true;
           autoExtractState.totalProcessed++;
           debug(
-            `✅ Page ${currentPageNum} captured successfully${
+            `✅ Page ${currentPageNum} captured and saved to Notion successfully${
               captureAttempts > 1 ? ` (attempt ${captureAttempts})` : ""
             }`
           );
+
+          // Brief wait to ensure API call fully completes
+          await new Promise((resolve) => setTimeout(resolve, 2000));
         } catch (error) {
           debug(
             `❌ Capture attempt ${captureAttempts} failed for page ${currentPageNum}:`,
@@ -819,111 +797,146 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
         return;
       }
 
-      // Wait for save to complete
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-
-      // Reset reload attempts after successful capture
-      autoExtractState.reloadAttempts = 0;
+      // Check if stop was requested before continuing to next page
+      if (!autoExtractState.running) {
+        debug(`⏹ AutoExtract stopped by user after page ${currentPageNum}`);
+        showToast(
+          `⏹ AutoExtract stopped. Processed ${autoExtractState.totalProcessed} pages.`,
+          4000
+        );
+        stopAutoExtract(autoExtractState);
+        if (button) button.textContent = "Start AutoExtract";
+        return;
+      }
 
       // Check if we should continue to next page
       if (currentPageNum < autoExtractState.maxPages) {
-        // Try to find next page element with multiple strategies
-        let nextButton = findNextPageElement(nextPageSelector);
+        debug(`\n========================================`);
+        debug(
+          `📄 Completed page ${currentPageNum} of ${autoExtractState.maxPages}`
+        );
+        debug(`🎯 Now navigating to page ${currentPageNum + 1}...`);
+        debug(`========================================\n`);
+
+        // STEP 3: Find next page button
+        debug(`🔍 Step 3: Finding next page button...`);
+        overlayModule.setMessage(`Finding next page button...`);
+
+        const nextButton = await findAndClickNextButton(
+          nextPageSelector,
+          autoExtractState,
+          button
+        );
 
         if (!nextButton) {
-          debug(`⚠️ Next page element not found or not visible`);
-
-          // Try page reload first (max 2 attempts)
-          if (autoExtractState.reloadAttempts < 2) {
-            autoExtractState.reloadAttempts++;
-            debug(`🔄 Reload attempt ${autoExtractState.reloadAttempts}/2`);
-
-            showToast(
-              `Page reload attempt ${autoExtractState.reloadAttempts}/2 - trying to refresh content...`,
-              3000
-            );
-            if (button) {
-              button.textContent = `Reloading... (${autoExtractState.reloadAttempts}/2)`;
-            }
-
-            // Save state before reload
-            const stateToSave = {
-              running: autoExtractState.running,
-              currentPage: autoExtractState.currentPage,
-              totalProcessed: autoExtractState.totalProcessed,
-              maxPages: autoExtractState.maxPages,
-              reloadAttempts: autoExtractState.reloadAttempts,
-              paused: false,
-            };
-            localStorage.setItem(
-              "W2N_autoExtractState",
-              JSON.stringify(stateToSave)
-            );
-
-            // Wait then reload
-            await new Promise((resolve) => setTimeout(resolve, 2500));
-            window.location.reload();
-            return; // Exit - will resume after reload
-          }
-
-          // Max reloads reached - show end of book confirmation
-          const shouldContinue = await showEndOfBookConfirmation(
-            autoExtractState
-          );
-          if (!shouldContinue) {
-            showToast(
-              `AutoExtract complete: User confirmed end of book\nProcessed ${autoExtractState.totalProcessed} pages`,
-              4000
-            );
-            stopAutoExtract(autoExtractState);
-            if (button) button.textContent = "Start AutoExtract";
-            return;
-          } else {
-            showToast(
-              "Please select a new 'Next Page' element to continue AutoExtract",
-              5000
-            );
-            autoExtractState.paused = true;
-            if (button) button.textContent = "Paused - Select New Element";
-            return;
-          }
+          // Button not found after all retries
+          const errorMessage = `❌ AutoExtract STOPPED: Next page button could not be found.\n\nTotal pages processed: ${autoExtractState.totalProcessed}`;
+          alert(errorMessage);
+          stopAutoExtract(autoExtractState);
+          if (button) button.textContent = "Start AutoExtract";
+          return;
         }
 
-        // Navigate to next page
+        debug(`✅ Found next page button, preparing to click...`);
+
+        // Check if stop was requested before clicking
+        if (!autoExtractState.running) {
+          debug(
+            `⏹ AutoExtract stopped by user before navigating to page ${
+              currentPageNum + 1
+            }`
+          );
+          showToast(
+            `⏹ AutoExtract stopped. Processed ${autoExtractState.totalProcessed} pages.`,
+            4000
+          );
+          stopAutoExtract(autoExtractState);
+          if (button) button.textContent = "Start AutoExtract";
+          return;
+        }
+
+        // STEP 4: Click button and navigate to next page
+        debug(
+          `\n👆 Step 4: Clicking next page button to navigate to page ${
+            currentPageNum + 1
+          }...`
+        );
         overlayModule.setMessage(`Navigating to page ${currentPageNum + 1}...`);
         if (button) {
-          button.textContent = `Going to next page...`;
+          button.textContent = `Clicking next button for page ${
+            currentPageNum + 1
+          }/${autoExtractState.maxPages}...`;
         }
 
         const currentUrl = window.location.href;
         const currentTitle = document.title;
+        const currentPageId = getCurrentPageId();
+        const mainContent = document.querySelector(
+          'main, .main-content, [role="main"]'
+        );
+        const currentContentLength = mainContent
+          ? mainContent.innerHTML.length
+          : 0;
 
-        // Click next button with advanced methods
+        // Click the button
         await clickNextPageButton(nextButton);
+        debug(`✅ Click executed, waiting for page to navigate...`);
 
-        // Wait for navigation
+        // STEP 5: Wait for navigation to complete (15 second timeout)
+        debug(
+          `⏳ Step 5: Waiting for navigation to page ${currentPageNum + 1}...`
+        );
         const navigationSuccess = await waitForNavigationAdvanced(
           currentUrl,
-          currentTitle
+          currentTitle,
+          currentPageId,
+          currentContentLength,
+          15000
         );
 
         if (!navigationSuccess) {
-          const navErrorMessage = `❌ AutoExtract STOPPED: Page navigation failed.\n\nTotal pages processed: ${autoExtractState.totalProcessed}`;
+          const navErrorMessage = `❌ AutoExtract STOPPED: Navigation to page ${
+            currentPageNum + 1
+          } failed.\n\nTotal pages processed: ${
+            autoExtractState.totalProcessed
+          }`;
           alert(navErrorMessage);
           stopAutoExtract(autoExtractState);
           if (button) button.textContent = `❌ Stopped: Navigation failed`;
           return;
         }
 
-        // Wait for content to load - increased timeout and added content check
-        debug("⏳ Waiting for new page content to load...");
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        debug(`✅ Navigation detected! Page ${currentPageNum + 1} URL loaded.`);
 
-        // Wait for content to be available
-        await waitForContentReady();
+        // STEP 6: Wait for content to be fully loaded
+        debug(
+          `⏳ Step 6: Waiting for page ${currentPageNum + 1} content to load...`
+        );
+        overlayModule.setMessage(
+          `Loading page ${currentPageNum + 1} content...`
+        );
+        if (button) {
+          button.textContent = `Loading page ${currentPageNum + 1}/${
+            autoExtractState.maxPages
+          }...`;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 3000));
 
-        debug("✅ New page content ready, continuing...");
+        // Brief stabilization wait
+        debug(`⏳ Step 7: Stabilizing page ${currentPageNum + 1}...`);
         await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        debug(
+          `✅ Page ${currentPageNum + 1} fully loaded and ready for capture!`
+        );
+        debug(`\n========================================`);
+        debug(`🔄 Looping back to capture page ${currentPageNum + 1}...`);
+        debug(`========================================\n`);
+      } else {
+        debug(`\n========================================`);
+        debug(`🎉 Reached max pages (${autoExtractState.maxPages})`);
+        debug(`📊 Total pages processed: ${autoExtractState.totalProcessed}`);
+        debug(`========================================\n`);
       }
     } catch (error) {
       debug(`❌ Error in AutoExtract loop:`, error);
@@ -937,6 +950,279 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
   }
 }
 
+/**
+ * Resume auto-extraction after page reload
+ */
+async function resumeAutoExtraction(savedState) {
+  debug(`▶️ Resuming auto-extraction with saved state:`, savedState);
+
+  // Restore the autoExtractState
+  const autoExtractState = {
+    ...savedState,
+    running: true,
+    paused: false,
+  };
+
+  // Store state globally
+  window.ServiceNowToNotion = window.ServiceNowToNotion || {};
+  window.ServiceNowToNotion.autoExtractState = autoExtractState;
+
+  // Update UI to show we're resuming
+  const startBtn = document.querySelector("#w2n-start-autoextract");
+  const stopBtn = document.querySelector("#w2n-stop-autoextract");
+  if (startBtn) startBtn.style.display = "none";
+  if (stopBtn) stopBtn.style.display = "block";
+
+  showToast(
+    `🔄 Resumed auto-extraction after page reload (page ${
+      autoExtractState.currentPage + 1
+    }/${autoExtractState.maxPages})`,
+    5000
+  );
+
+  try {
+    // Continue the extraction loop from where we left off
+    await continueAutoExtractionLoop(autoExtractState);
+  } catch (error) {
+    debug(`❌ Error resuming auto-extraction:`, error);
+    const errorMessage = `❌ Resume AutoExtract ERROR: ${error.message}\n\nTotal pages processed: ${autoExtractState.totalProcessed}`;
+    alert(errorMessage);
+    stopAutoExtract(autoExtractState);
+  }
+}
+
+/**
+ * Continue the auto-extraction loop from a specific state (used after page reload)
+ */
+async function continueAutoExtractionLoop(autoExtractState) {
+  debug("🔄 Continuing AutoExtract loop from saved state");
+  debug(
+    `📊 Resumed state: currentPage=${autoExtractState.currentPage}, maxPages=${autoExtractState.maxPages}, totalProcessed=${autoExtractState.totalProcessed}`
+  );
+
+  // Get references
+  const app = window.ServiceNowToNotion?.app?.();
+  const nextPageSelector = getNextPageSelector();
+  const button = document.getElementById("w2n-start-autoextract");
+
+  // Continue the main loop
+  while (autoExtractState.running && !autoExtractState.paused) {
+    debug(`\n🔄 Loop iteration: currentPage=${autoExtractState.currentPage}`);
+
+    // Check if we've reached max pages
+    if (autoExtractState.currentPage >= autoExtractState.maxPages) {
+      showToast(
+        `AutoExtract complete: Reached max pages (${autoExtractState.maxPages})`,
+        4000
+      );
+      stopAutoExtract(autoExtractState);
+      if (button) button.textContent = "Start AutoExtract";
+      return;
+    }
+
+    autoExtractState.currentPage++;
+    const currentPageNum = autoExtractState.currentPage;
+    debug(`📄 Processing page number: ${currentPageNum}`);
+
+    overlayModule.setMessage(
+      `Extracting page ${currentPageNum} of ${autoExtractState.maxPages}...`
+    );
+    overlayModule.setProgress(
+      ((currentPageNum - 1) / autoExtractState.maxPages) * 100
+    );
+
+    // Update button with progress
+    if (button) {
+      button.textContent = `Processing ${currentPageNum}/${autoExtractState.maxPages}...`;
+    }
+
+    try {
+      // Extract current page content
+      debug(`📝 Step 1: Extracting content from page ${currentPageNum}...`);
+      const content = extractContent();
+
+      if (!content || !content.html) {
+        throw new Error("No content extracted from page");
+      }
+
+      debug(`📊 Content extracted: ${content.html.length} characters`);
+
+      // Send to Notion
+      debug(`📤 Step 2: Sending page ${currentPageNum} to Notion...`);
+      const result = await sendToNotion(content, app);
+
+      if (!result.success) {
+        throw new Error(`Failed to send to Notion: ${result.error}`);
+      }
+
+      autoExtractState.totalProcessed++;
+      debug(`✅ Page ${currentPageNum} successfully sent to Notion`);
+
+      // Check if this is the last page
+      if (autoExtractState.currentPage >= autoExtractState.maxPages) {
+        debug(`\n========================================`);
+        debug(`🎉 Reached max pages (${autoExtractState.maxPages})`);
+        debug(`📊 Total pages processed: ${autoExtractState.totalProcessed}`);
+        debug(`========================================\n`);
+        break;
+      }
+
+      // Navigate to next page
+      debug(`🔍 Step 3: Looking for next page button...`);
+      const nextButton = await findAndClickNextButton(
+        nextPageSelector,
+        autoExtractState,
+        button
+      );
+
+      if (!nextButton) {
+        debug(`❌ Could not find next page button after reload attempt`);
+        showToast(
+          `❌ Could not find next page button. AutoExtract stopped.`,
+          5000
+        );
+        stopAutoExtract(autoExtractState);
+        if (button) button.textContent = "Start AutoExtract";
+        return;
+      }
+
+      // Wait for page navigation
+      debug(`⏳ Step 4: Waiting for page navigation...`);
+      if (button) {
+        button.textContent = `Loading page ${currentPageNum + 1}/${
+          autoExtractState.maxPages
+        }...`;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+
+      // Brief stabilization wait
+      debug(`⏳ Step 5: Stabilizing page ${currentPageNum + 1}...`);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      debug(
+        `✅ Page ${currentPageNum + 1} fully loaded and ready for capture!`
+      );
+      debug(`\n========================================`);
+      debug(`🔄 Looping back to capture page ${currentPageNum + 1}...`);
+      debug(`========================================\n`);
+    } catch (error) {
+      debug(`❌ Error in AutoExtract loop:`, error);
+      const errorMessage = `❌ AutoExtract ERROR: ${error.message}\n\nTotal pages processed: ${autoExtractState.totalProcessed}`;
+      alert(errorMessage);
+      stopAutoExtract(autoExtractState);
+      if (button)
+        button.textContent = `❌ Error: ${error.message.substring(0, 20)}...`;
+      return;
+    }
+  }
+}
+
+/**
+ * Find and click the next page button with retry logic
+ * Returns the button element if found, null if not found after all attempts
+ */
+async function findAndClickNextButton(
+  nextPageSelector,
+  autoExtractState,
+  button
+) {
+  const maxFindAttempts = 3;
+  let findAttempts = 0;
+  let nextButton = null;
+
+  // Try to find the button with reloads after each failed attempt
+  while (!nextButton && findAttempts < maxFindAttempts) {
+    findAttempts++;
+    debug(
+      `🔍 Looking for next page button (attempt ${findAttempts}/${maxFindAttempts})...`
+    );
+
+    if (button) {
+      button.textContent = `Looking for next button (${findAttempts}/${maxFindAttempts})...`;
+    }
+
+    nextButton = findNextPageElement(nextPageSelector);
+
+    if (!nextButton && findAttempts < maxFindAttempts) {
+      debug(`⚠️ Next page button not found, reloading page and retrying...`);
+
+      // Save autoExtractState to localStorage before reload
+      if (autoExtractState) {
+        debug(`💾 Saving autoExtractState before reload:`, autoExtractState);
+        GM_setValue("w2n_autoExtractState", JSON.stringify(autoExtractState));
+      }
+
+      // Reload the page and wait for it to load
+      debug(
+        `🔄 Reloading page to refresh DOM elements (attempt ${findAttempts})...`
+      );
+      window.location.reload();
+
+      // Wait for page reload (this code won't execute after reload)
+      return null;
+    }
+  }
+
+  if (!nextButton) {
+    debug(
+      `❌ Next page button not found after ${maxFindAttempts} attempts with reloads`
+    );
+    alert(
+      `❌ Next page button could not be found after ${maxFindAttempts} attempts with page reloads.\n\nAutoExtract has been stopped.`
+    );
+
+    // Stop the auto-extraction process
+    if (autoExtractState) {
+      stopAutoExtract(autoExtractState);
+    }
+
+    return null;
+  }
+
+  return nextButton;
+}
+
+/**
+ * Get a unique identifier for the current page to detect navigation
+ * even when URL doesn't change (for SPAs)
+ */
+function getCurrentPageId() {
+  // Try to get page-specific identifiers that change with navigation
+  const identifiers = [
+    // URL hash/fragment
+    window.location.hash,
+    // URL search params
+    window.location.search,
+    // Page title
+    document.title,
+    // Any unique page content elements
+    document.querySelector("h1")?.textContent?.trim(),
+    // Current page number if visible in DOM
+    document
+      .querySelector('[class*="page"], [class*="chapter"]')
+      ?.textContent?.trim(),
+    // ServiceNow specific selectors
+    document.querySelector("article[id]")?.getAttribute("id"),
+    // Any data attributes that might indicate page state
+    document
+      .querySelector("[data-page], [data-chapter], [data-section]")
+      ?.getAttribute("data-page") ||
+      document
+        .querySelector("[data-page], [data-chapter], [data-section]")
+        ?.getAttribute("data-chapter") ||
+      document
+        .querySelector("[data-page], [data-chapter], [data-section]")
+        ?.getAttribute("data-section"),
+  ];
+
+  // Combine non-null identifiers into a unique string
+  const pageId =
+    identifiers.filter((id) => id && id.length > 0).join("|") ||
+    Date.now().toString(); // Fallback to timestamp
+
+  return pageId;
+}
+
 function stopAutoExtract(autoExtractState) {
   autoExtractState.running = false;
   overlayModule.setProgress(100);
@@ -944,6 +1230,17 @@ function stopAutoExtract(autoExtractState) {
     success: true,
     autoCloseMs: 5000,
   });
+
+  // Restore button visibility
+  const startBtn = document.getElementById("w2n-start-autoextract");
+  const stopBtn = document.getElementById("w2n-stop-autoextract");
+  if (startBtn) startBtn.style.display = "block";
+  if (stopBtn) stopBtn.style.display = "none";
+
+  // Clean up global state
+  if (window.ServiceNowToNotion && window.ServiceNowToNotion.autoExtractState) {
+    delete window.ServiceNowToNotion.autoExtractState;
+  }
 }
 
 // Helper function to wait for page navigation
@@ -972,10 +1269,12 @@ async function waitForNavigation(timeoutMs = 10000) {
   });
 }
 
-// Advanced navigation detection with multiple checks
+// Advanced navigation detection with multiple checks including pageId
 async function waitForNavigationAdvanced(
   originalUrl,
   originalTitle,
+  originalPageId,
+  originalContentLength,
   timeoutMs = 15000
 ) {
   const startTime = Date.now();
@@ -988,22 +1287,44 @@ async function waitForNavigationAdvanced(
 
       const currentUrl = window.location.href;
       const currentTitle = document.title;
+      const currentPageId = getCurrentPageId();
 
       // Check multiple indicators
       const urlChanged = currentUrl !== originalUrl;
       const titleChanged = currentTitle !== originalTitle;
+      const pageIdChanged = currentPageId !== originalPageId;
 
       // Content-based check
       const mainContent = document.querySelector(
         'main, .main-content, [role="main"]'
       );
       const contentLength = mainContent ? mainContent.innerHTML.length : 0;
+      const contentChanged =
+        mainContent &&
+        contentLength !== originalContentLength &&
+        contentLength > 100;
 
-      if (urlChanged || titleChanged || contentLength > 100) {
+      // Log detailed check every 3 seconds
+      if (attempts % 3 === 0) {
+        debug(`🔍 Navigation check ${attempts}/${maxAttempts}:`, {
+          urlChanged,
+          titleChanged,
+          pageIdChanged,
+          contentChanged,
+        });
+      }
+
+      if (urlChanged || titleChanged || pageIdChanged || contentChanged) {
+        const changeTypes = [];
+        if (urlChanged) changeTypes.push("URL");
+        if (titleChanged) changeTypes.push("Title");
+        if (pageIdChanged) changeTypes.push("PageID");
+        if (contentChanged) changeTypes.push("Content");
+
         debug(
-          `✅ Navigation detected after ${attempts} seconds (${
-            urlChanged ? "URL" : titleChanged ? "Title" : "Content"
-          } changed)`
+          `✅ Navigation detected after ${attempts} seconds (${changeTypes.join(
+            ", "
+          )} changed)`
         );
         resolve(true);
         return;
@@ -1011,6 +1332,12 @@ async function waitForNavigationAdvanced(
 
       if (attempts >= maxAttempts) {
         debug(`❌ Navigation timeout after ${maxAttempts} seconds`);
+        debug(`Final state:`, {
+          "Original URL": originalUrl,
+          "Current URL": currentUrl,
+          "Original PageID": originalPageId.substring(0, 50),
+          "Current PageID": currentPageId.substring(0, 50),
+        });
         resolve(false);
         return;
       }
@@ -1105,6 +1432,9 @@ async function clickNextPageButton(button) {
       button.tagName.toLowerCase() === "path" ||
       button.tagName.toLowerCase() === "svg"
     ) {
+      debug(
+        "🔍 Element is inside SVG, looking for parent clickable element..."
+      );
       // Walk up the DOM to find a clickable element
       let current = button;
       while (current && current !== document.body) {
@@ -1116,58 +1446,110 @@ async function clickNextPageButton(button) {
           current.getAttribute("href")
         ) {
           clickableElement = current;
+          debug(`✅ Found parent clickable: ${current.tagName}`);
           break;
         }
         current = current.parentElement;
       }
     }
 
-    debug(
-      `Clicking element: ${clickableElement.tagName}${
-        clickableElement.id ? "#" + clickableElement.id : ""
-      }${
-        clickableElement.className
-          ? "." + clickableElement.className.split(" ").join(".")
-          : ""
-      }`
-    );
+    const elementInfo = {
+      tag: clickableElement.tagName,
+      id: clickableElement.id || "(no id)",
+      classes: clickableElement.className || "(no classes)",
+      text:
+        clickableElement.textContent?.trim().substring(0, 50) || "(no text)",
+      href: clickableElement.getAttribute("href") || "(no href)",
+      disabled: clickableElement.disabled || false,
+      ariaDisabled: clickableElement.getAttribute("aria-disabled") || "false",
+    };
+
+    debug(`👆 Clicking element:`, elementInfo);
+
+    // Check if element is disabled
+    if (
+      clickableElement.disabled ||
+      clickableElement.getAttribute("aria-disabled") === "true"
+    ) {
+      debug("⚠️ WARNING: Element appears to be disabled!");
+    }
+
+    // Get current URL/page state for fallback detection
+    const currentUrl = window.location.href;
+    const currentPageId = getCurrentPageId();
+    debug(`📍 Current state before click:`, {
+      url: currentUrl.substring(0, 80),
+      pageId: currentPageId.substring(0, 80),
+    });
 
     // Focus the element
     clickableElement.focus();
     await new Promise((resolve) => setTimeout(resolve, 100));
 
-    // Method 1: Mouse events
+    // Primary click attempt
+    debug("👆 Executing primary click sequence...");
+
+    // Dispatch mouse events for better compatibility
     clickableElement.dispatchEvent(
       new MouseEvent("mousedown", { bubbles: true, cancelable: true })
     );
     clickableElement.dispatchEvent(
       new MouseEvent("mouseup", { bubbles: true, cancelable: true })
     );
+
+    // Primary click
     clickableElement.click();
 
-    // Method 2: Programmatic click after delay
+    debug("✅ Primary click executed (mousedown, mouseup, click)");
+
+    // Set up fallback click attempts if primary doesn't work
+    // These will only fire if navigation hasn't occurred
     setTimeout(() => {
-      if (window.location.href === window.location.href) {
-        // Still on same page
+      const newUrl = window.location.href;
+      const newPageId = getCurrentPageId();
+      const urlChanged = newUrl !== currentUrl;
+      const pageIdChanged = newPageId !== currentPageId;
+
+      debug(`🔍 Checking if fallback needed after 1 second:`, {
+        urlChanged,
+        pageIdChanged,
+      });
+
+      if (!urlChanged && !pageIdChanged) {
+        debug(
+          "⚠️ Primary click didn't trigger navigation, trying fallback methods..."
+        );
+
+        // Fallback 1: Event dispatch
         try {
           clickableElement.dispatchEvent(
             new Event("click", { bubbles: true, cancelable: true })
           );
+          debug("✅ Fallback 1: Event dispatch executed");
         } catch (e) {
-          debug("Programmatic click failed:", e);
+          debug("❌ Fallback 1: Event dispatch failed:", e);
         }
 
-        // Method 3: href navigation if available
-        if (clickableElement.href) {
-          setTimeout(() => {
-            if (window.location.href === window.location.href) {
-              // Still on same page
-              window.location.href = clickableElement.href;
-            }
-          }, 500);
+        // Fallback 2: Keyboard activation (Enter key)
+        try {
+          clickableElement.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key: "Enter",
+              keyCode: 13,
+              bubbles: true,
+              cancelable: true,
+            })
+          );
+          debug("✅ Fallback 2: Keyboard activation executed");
+        } catch (e) {
+          debug("❌ Fallback 2: Keyboard activation failed:", e);
         }
+      } else {
+        debug(`✅ Navigation detected after primary click, skipping fallbacks`);
       }
     }, 1000);
+
+    debug("Click initiated, fallbacks scheduled");
   } catch (error) {
     debug("Error clicking next page button:", error);
     // Provide more detailed error information
@@ -1331,11 +1713,8 @@ async function showEndOfBookConfirmation(autoExtractState) {
 function diagnoseAutoExtraction() {
   const nextPageSelector =
     typeof GM_getValue === "function"
-      ? GM_getValue(
-          "w2n_next_page_selector",
-          "#zDocsContent > header > div.zDocsTopicActions > div.zDocsBundlePagination > div.zDocsNextTopicButton.zDocsNextTopicButton > span > a > svg > use"
-        )
-      : "#zDocsContent > header > div.zDocsTopicActions > div.zDocsBundlePagination > div.zDocsNextTopicButton.zDocsNextTopicButton > span > a > svg > use";
+      ? GM_getValue("w2n_next_page_selector", "div.zDocsNextTopicButton a")
+      : "div.zDocsNextTopicButton a";
   const maxPages =
     parseInt(document.getElementById("w2n-max-pages")?.value) || 500;
 
@@ -1386,9 +1765,123 @@ function findNextPageElement(savedSelector) {
     }
   }
 
-  // Strategy 2: Look for common next page patterns
+  // Strategy 2: Look for navigation-specific containers first
+  // This helps avoid content links that happen to contain "next"
+  const navContainerSelectors = [
+    "nav",
+    '[role="navigation"]',
+    ".pagination",
+    ".pager",
+    ".navigation",
+    "footer",
+    ".topic-footer",
+    ".page-navigation",
+    ".doc-navigation",
+    '[class*="navigation"]',
+    '[class*="pager"]',
+  ];
+
+  // Try to find next button within navigation containers first
+  for (const containerSelector of navContainerSelectors) {
+    const containers = document.querySelectorAll(containerSelector);
+    for (const container of containers) {
+      // Look for SVG icons indicating next button
+      const svgElements = container.querySelectorAll(
+        'svg[class*="next" i], svg[class*="forward" i], use[xlink\\:href*="next" i], use[href*="next" i]'
+      );
+      for (const svg of svgElements) {
+        // Find the parent clickable element (a, button)
+        const clickable = svg.closest('a, button, [role="button"]');
+        if (
+          clickable &&
+          !isCurrentPageElement(clickable) &&
+          isElementVisible(clickable)
+        ) {
+          debug(
+            `🎯 Found next page element with SVG icon in ${containerSelector}: ${svg.className}`
+          );
+          return clickable;
+        }
+      }
+
+      // Look for elements with "next" in text within this container
+      const links = container.querySelectorAll('a, button, [role="button"]');
+      for (const link of links) {
+        // Skip current page indicators
+        if (isCurrentPageElement(link)) {
+          continue;
+        }
+
+        // Check for SVG children with "next" class or href
+        const hasSvgNext = link.querySelector(
+          'svg[class*="next" i], svg[class*="forward" i], use[xlink\\:href*="next" i], use[href*="next" i]'
+        );
+        if (hasSvgNext && isElementVisible(link)) {
+          debug(
+            `🎯 Found next page element containing SVG in ${containerSelector}`
+          );
+          return link;
+        }
+
+        const text = link.textContent?.toLowerCase() || "";
+        const ariaLabel = link.getAttribute("aria-label")?.toLowerCase() || "";
+        const title = link.getAttribute("title")?.toLowerCase() || "";
+
+        // Look for "next section" or just "next" with forward symbols
+        if (
+          text.includes("next section") ||
+          ariaLabel.includes("next section") ||
+          title.includes("next section") ||
+          text.trim() === "next" ||
+          (text.includes("next") && (text.includes(">") || text.includes("→")))
+        ) {
+          if (isElementVisible(link)) {
+            debug(
+              `🎯 Found next page element in ${containerSelector}: "${text.substring(
+                0,
+                50
+              )}"`
+            );
+            return link;
+          }
+        }
+      }
+    }
+  }
+
+  // Strategy 3: Look for SVG-based next buttons (common pattern)
+  const svgNextSelectors = [
+    "svg.ico-next",
+    'svg[class*="next"]',
+    'svg[class*="forward"]',
+    'use[xlink\\:href*="next"]',
+    'use[href*="next"]',
+  ];
+
+  for (const selector of svgNextSelectors) {
+    try {
+      const svgElements = document.querySelectorAll(selector);
+      for (const svg of svgElements) {
+        const clickable = svg.closest('a, button, [role="button"]');
+        if (
+          clickable &&
+          !isCurrentPageElement(clickable) &&
+          isElementVisible(clickable)
+        ) {
+          debug(`🎯 Found next page element with SVG selector: ${selector}`);
+          return clickable;
+        }
+      }
+    } catch (e) {
+      // Skip invalid selectors
+    }
+  }
+
+  // Strategy 4: Look for common next page patterns (broader search)
   const nextPagePatterns = [
-    // Text-based matching
+    // Text-based matching (prioritize specific patterns)
+    'button:contains("Next Section")',
+    'a:contains("Next Section")',
     'button:contains("Next")',
     'button:contains("Forward")',
     'button:contains(">")',
@@ -1426,6 +1919,12 @@ function findNextPageElement(savedSelector) {
       }
 
       for (const element of elements) {
+        // Filter out current page indicators
+        if (isCurrentPageElement(element)) {
+          debug(`⏭️ Skipping current page element: ${element.className}`);
+          continue;
+        }
+
         if (isElementVisible(element)) {
           debug(`🔍 Found next page element with pattern: ${pattern}`);
           return element;
@@ -1436,26 +1935,70 @@ function findNextPageElement(savedSelector) {
     }
   }
 
-  // Strategy 3: Look for elements with navigation-related attributes
+  // Strategy 5: Look for elements with navigation-related attributes (last resort, more selective)
   const navElements = document.querySelectorAll('button, a, [role="button"]');
   for (const element of navElements) {
-    const text = element.textContent?.toLowerCase() || "";
+    // Skip current page indicators
+    if (isCurrentPageElement(element)) {
+      continue;
+    }
+
+    // Check for SVG children indicating next button (even without specific class)
+    const hasSvg = element.querySelector("svg, use");
+    if (hasSvg) {
+      const svgClass =
+        hasSvg.className?.baseVal || hasSvg.getAttribute("class") || "";
+      const useHref =
+        hasSvg.getAttribute("xlink:href") || hasSvg.getAttribute("href") || "";
+      if (
+        svgClass.toLowerCase().includes("next") ||
+        useHref.toLowerCase().includes("next")
+      ) {
+        if (isElementVisible(element)) {
+          debug(`🎯 Found next page element with SVG child indicator`);
+          return element;
+        }
+      }
+    }
+
+    // Skip elements that are clearly content links (have too much text or are in article content)
+    const text = element.textContent?.trim() || "";
+    if (text.length > 50) {
+      // Navigation buttons are usually short
+      continue;
+    }
+
+    // Check if element is inside main content area (likely a content link, not navigation)
+    const isInMainContent = element.closest(
+      'article, main, .content, [role="main"]'
+    );
+    const isInNavArea = element.closest(
+      'nav, footer, .navigation, .pagination, [role="navigation"]'
+    );
+
+    // Prefer elements in navigation areas, avoid elements only in content
+    if (isInMainContent && !isInNavArea) {
+      continue;
+    }
+
+    const textLower = text.toLowerCase();
     const ariaLabel = element.getAttribute("aria-label")?.toLowerCase() || "";
     const title = element.getAttribute("title")?.toLowerCase() || "";
 
     if (
-      text.includes("next") ||
-      text.includes("forward") ||
-      text.includes(">") ||
-      text.includes("→") ||
-      ariaLabel.includes("next") ||
-      ariaLabel.includes("forward") ||
-      title.includes("next") ||
-      title.includes("forward")
+      textLower.includes("next section") ||
+      ariaLabel.includes("next section") ||
+      title.includes("next section") ||
+      textLower === "next" ||
+      (textLower.includes("next") &&
+        (textLower.includes(">") || textLower.includes("→")))
     ) {
       if (isElementVisible(element)) {
         debug(
-          `🔍 Found next page element by text/attribute analysis: ${element.tagName}`
+          `🔍 Found next page element by text/attribute analysis: "${text.substring(
+            0,
+            30
+          )}"`
         );
         return element;
       }
@@ -1464,4 +2007,44 @@ function findNextPageElement(savedSelector) {
 
   debug("❌ No next page element found with any strategy");
   return null;
+}
+
+// Helper function to check if an element is a current page indicator (not a navigation button)
+function isCurrentPageElement(element) {
+  if (!element) return false;
+
+  const classList = element.classList || [];
+  const className = element.className || "";
+
+  // Check for common "current page" class patterns
+  const currentPagePatterns = [
+    "current",
+    "active",
+    "selected",
+    "currentTopic",
+    "currentPage",
+    "aria-current",
+  ];
+
+  // Check class list
+  for (const pattern of currentPagePatterns) {
+    if (
+      Array.from(classList).some((c) =>
+        c.toLowerCase().includes(pattern.toLowerCase())
+      ) ||
+      className.toLowerCase().includes(pattern.toLowerCase())
+    ) {
+      return true;
+    }
+  }
+
+  // Check aria-current attribute
+  if (
+    element.getAttribute("aria-current") === "page" ||
+    element.getAttribute("aria-current") === "true"
+  ) {
+    return true;
+  }
+
+  return false;
 }
