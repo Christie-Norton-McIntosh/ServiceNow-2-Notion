@@ -1717,7 +1717,17 @@ async function htmlToNotionBlocks(html) {
                   block.paragraph.rich_text
                 );
                 if (result.replacement) {
-                  tempBlocks.push(result.replacement);
+                  // If replacement is an array (rich text), wrap it in a paragraph block
+                  if (Array.isArray(result.replacement)) {
+                    tempBlocks.push({
+                      object: "block",
+                      type: "paragraph",
+                      paragraph: { rich_text: result.replacement }
+                    });
+                  } else {
+                    // If replacement is already a block object, use it directly
+                    tempBlocks.push(result.replacement);
+                  }
                   if (result.codeBlockToAdd) {
                     tempBlocks.push(result.codeBlockToAdd);
                   }
@@ -1740,7 +1750,13 @@ async function htmlToNotionBlocks(html) {
                   tempBlocks.push(result.replacement);
                 } else if (result.replacement && result.codeBlockToAdd) {
                   // List item has text + placeholder - update text and add code block
-                  block.bulleted_list_item.rich_text = result.replacement;
+                  // Ensure replacement is properly formatted rich text array
+                  if (Array.isArray(result.replacement)) {
+                    block.bulleted_list_item.rich_text = result.replacement;
+                  } else {
+                    // If replacement is a block object, this shouldn't happen for list items
+                    log(`⚠️ Unexpected block replacement for list item, keeping original`);
+                  }
                   tempBlocks.push(block);
                   tempBlocks.push(result.codeBlockToAdd);
                 } else {
@@ -1756,7 +1772,17 @@ async function htmlToNotionBlocks(html) {
                           child.paragraph.rich_text
                         );
                         if (childResult.replacement) {
-                          updatedChildren.push(childResult.replacement);
+                          // If replacement is an array (rich text), wrap it in a paragraph block
+                          if (Array.isArray(childResult.replacement)) {
+                            updatedChildren.push({
+                              object: "block",
+                              type: "paragraph",
+                              paragraph: { rich_text: childResult.replacement }
+                            });
+                          } else {
+                            // If replacement is already a block object, use it directly
+                            updatedChildren.push(childResult.replacement);
+                          }
                           if (childResult.codeBlockToAdd) {
                             updatedChildren.push(childResult.codeBlockToAdd);
                           }
@@ -1802,7 +1828,17 @@ async function htmlToNotionBlocks(html) {
                           child.paragraph.rich_text
                         );
                         if (childResult.replacement) {
-                          updatedChildren.push(childResult.replacement);
+                          // If replacement is an array (rich text), wrap it in a paragraph block
+                          if (Array.isArray(childResult.replacement)) {
+                            updatedChildren.push({
+                              object: "block",
+                              type: "paragraph",
+                              paragraph: { rich_text: childResult.replacement }
+                            });
+                          } else {
+                            // If replacement is already a block object, use it directly
+                            updatedChildren.push(childResult.replacement);
+                          }
                           if (childResult.codeBlockToAdd) {
                             updatedChildren.push(childResult.codeBlockToAdd);
                           }
