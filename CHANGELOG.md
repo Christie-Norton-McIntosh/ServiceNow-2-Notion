@@ -1,3 +1,29 @@
+## [8.2.0] - 2025-10-07
+
+### Added
+
+- **Enhanced Figure Caption Handling**: Figcaption elements now appear as italic text above images in both list items and main content
+- **Soft Return Formatting**: Added automatic line breaks between links and short descriptions (`<p class="shortdesc">`) and between commands and additional content (`<div class="itemgroup info">`)
+- **Technical Identifier Detection**: Plugin names and table names in `<span class="ph">` tags are now automatically formatted as red inline code
+- **Improved Inline Code Patterns**: Enhanced regex to detect technical identifiers with optional whitespace (e.g., `( com.snc.incident.ml_solution )`)
+- **Comprehensive HTML Formatting**: Added support for section titles (`<p class="sectiontitle tasklabel">`) as bold text
+- **Timestamped Backup**: Created backup of key files in `backups/8.2.0-<timestamp>/`
+
+### Fixed
+
+- Figcaption text not appearing as italic in main content areas
+- Technical identifiers in `<span class="ph">` tags not being formatted as inline code
+- Missing line breaks between links and descriptions in list items
+- Missing line breaks between commands and additional content
+- Inline code patterns not matching identifiers with surrounding whitespace
+
+### Changed
+
+- Enhanced HTML-to-Notion rich text processing with additional marker types (`__SOFT_BREAK__`)
+- Improved regex patterns for technical identifier detection
+- Updated figcaption processing to consistently use italic formatting
+- Enhanced list item processing to handle figure elements with captions
+
 ## [8.1.0] - 2025-10-05
 
 ### Added

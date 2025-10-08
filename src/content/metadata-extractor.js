@@ -113,10 +113,24 @@ export function extractServiceNowMetadata() {
   try {
     // Extract basic metadata fields
     const titleText = getPrefixedMatch("title", SERVICENOW_SELECTORS.title);
-    const versionText = getPrefixedMatch(
-      "version",
-      SERVICENOW_SELECTORS.version
-    );
+    let versionText = getPrefixedMatch("version", SERVICENOW_SELECTORS.version);
+
+    // Fallback: Try to extract version from URL if not found in page
+    if (!versionText) {
+      const urlMatch = window.location.href.match(/\/bundle\/([^\/]+)/);
+      if (urlMatch && urlMatch[1]) {
+        // Extract version name from bundle URL (e.g., "yokohama-platform-user-interface" -> "Yokohama")
+        const bundleName = urlMatch[1];
+        const versionMatch = bundleName.match(/^([a-z]+)-/i);
+        if (versionMatch) {
+          // Capitalize first letter
+          versionText =
+            versionMatch[1].charAt(0).toUpperCase() + versionMatch[1].slice(1);
+          debug(`📦 Extracted version from URL bundle: "${versionText}"`);
+        }
+      }
+    }
+
     const updatedText = getPrefixedMatch(
       "updated",
       SERVICENOW_SELECTORS.updated
@@ -190,24 +204,40 @@ export function extractServiceNowMetadata() {
         SERVICENOW_SELECTORS.category
       ); // Handle misspelling
     }
+    // Fallback: Use title as category if no category found
+    if (!categoryText && titleText) {
+      categoryText = titleText;
+      debug(`📝 Category fallback: using title as category: "${categoryText}"`);
+    }
 
-    // Section extraction with special handling - only extract if 4th span exists
+    // Section extraction with special handling - use title if specific anchor not found
     let sectionText = "";
-    const sectionSpanSelector =
-      "#zDocsTopicPage > div.zDocsTopicPageTopicContainer > div.zDocsTopicPageBreadcrumbsContainer > div > span:nth-child(4)";
-    const sectionSpan = document.querySelector(sectionSpanSelector);
-    if (sectionSpan) {
-      // If 4th span exists, try to get text from anchor inside it, or span itself
+    const sectionAnchorSelector =
+      "#zDocsTopicPage > div.zDocsTopicPageTopicContainer > div.zDocsTopicPageBreadcrumbsContainer > div > span:nth-child(4) > a";
+    const sectionAnchor = document.querySelector(sectionAnchorSelector);
+    debug(
+      `🔍 Section anchor check: selector="${sectionAnchorSelector}", found=${!!sectionAnchor}`
+    );
+    if (sectionAnchor) {
+      debug(
+        `✅ Section anchor found, text: "${sectionAnchor.textContent?.trim()}"`
+      );
+      // If the specific anchor exists, extract text from it
       sectionText = getPrefixedMatch("section", SERVICENOW_SELECTORS.section);
       if (!sectionText) {
         sectionText = getPrefixedMatch("Section", SERVICENOW_SELECTORS.section);
       }
-      // If still no text but span exists, try getting text directly from span
+      // If still no text but anchor exists, try getting text directly from anchor
       if (!sectionText) {
-        sectionText = sectionSpan.textContent?.trim() || "";
+        sectionText = sectionAnchor.textContent?.trim() || "";
       }
+      debug(`📝 Final sectionText from anchor: "${sectionText}"`);
+    } else {
+      debug(`❌ Section anchor not found, using title as section`);
+      // Use the title as the section when the anchor is not found
+      sectionText = titleText;
+      debug(`📝 Section set to title: "${sectionText}"`);
     }
-    // If 4th span doesn't exist, sectionText remains empty
 
     const statusText = getPrefixedMatch("status", SERVICENOW_SELECTORS.status);
     const departmentText = getPrefixedMatch(
