@@ -292,12 +292,33 @@ class ServiceNowToNotionApp {
    * Find suitable container for buttons
    */
   findButtonContainer() {
-    // Try different selectors for different ServiceNow layouts
+    // Try different selectors for different ServiceNow layouts (old and new)
     const selectors = [
-      ".navbar-right",
+      // Modern ServiceNow Polaris UI
+      ".sn-polaris-nav .sn-action-buttons",
+      ".sn-polaris-header .action-bar",
+      ".sn-polaris-toolbar",
+      ".sn-polaris-nav",
+
+      // General header/action areas
       ".header-actions",
+      ".action-bar",
+      ".button-bar",
+      ".nav-actions",
+
+      // Legacy selectors (still used in some instances)
+      ".navbar-right",
       ".toolbar",
       "#gsft_main",
+
+      // Content header areas
+      ".content-header",
+      ".page-header .actions",
+      ".main-header",
+
+      // Generic fallbacks
+      "header .actions",
+      ".navbar .actions",
     ];
 
     for (const selector of selectors) {
