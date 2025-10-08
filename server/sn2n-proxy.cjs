@@ -507,6 +507,8 @@ async function htmlToNotionBlocks(html) {
     let result = html;
     let changed = true;
 
+    log(`🧹 Starting smartTable element removal...`);
+
     // Keep removing until no more matches found
     while (changed) {
       changed = false;
@@ -519,6 +521,8 @@ async function htmlToNotionBlocks(html) {
       while ((match = regex.exec(result)) !== null) {
         const startPos = match.index;
         const afterOpenTag = regex.lastIndex;
+
+        log(`🗑️ Found smartTable wrapper at position ${startPos}`);
 
         // Find the matching closing tag
         let depth = 1;
@@ -543,8 +547,39 @@ async function htmlToNotionBlocks(html) {
             pos = nextClose + 6;
 
             if (depth === 0) {
-              // Found the matching closing tag, remove the entire element
-              result = result.substring(0, startPos) + result.substring(pos);
+              // Found the matching closing tag
+              // Extract any tables from inside this wrapper before removing it
+              const wrapperContent = result.substring(startPos, pos);
+              const tableRegex = /<table[^>]*>[\s\S]*?<\/table>/gi;
+              const tablesInWrapper = [];
+              let tableMatch;
+
+              while ((tableMatch = tableRegex.exec(wrapperContent)) !== null) {
+                tablesInWrapper.push(tableMatch[0]);
+                log(
+                  `📋 Extracted table from smartTable wrapper: ${tableMatch[0].substring(
+                    0,
+                    100
+                  )}...`
+                );
+              }
+
+              // Replace the wrapper with just the extracted tables (or remove if no tables)
+              if (tablesInWrapper.length > 0) {
+                const tablesHtml = tablesInWrapper.join("\n");
+                result =
+                  result.substring(0, startPos) +
+                  tablesHtml +
+                  result.substring(pos);
+                log(
+                  `✅ Replaced smartTable wrapper with ${tablesInWrapper.length} extracted table(s)`
+                );
+              } else {
+                // No tables found, remove the entire wrapper
+                result = result.substring(0, startPos) + result.substring(pos);
+                log(`🗑️ Removed smartTable wrapper (no tables found)`);
+              }
+
               changed = true;
               break;
             }
@@ -650,8 +685,8 @@ async function htmlToNotionBlocks(html) {
       let tableMatch;
       while ((tableMatch = tableRegex.exec(textContent)) !== null) {
         try {
-          const tableContent = tableMatch[1];
-          const tableBlocks = await parseTableToNotionBlock(tableContent);
+          const fullTableHtml = tableMatch[0]; // Use full match including <table> tags
+          const tableBlocks = await parseTableToNotionBlock(fullTableHtml);
           if (tableBlocks && tableBlocks.length > 0) {
             blockElements.push(...tableBlocks);
             log(`✅ Found table in list item with ${tableBlocks.length} rows`);
@@ -2601,6 +2636,7 @@ async function parseTableToNotionBlock(tableHtml) {
   const blocks = [];
 
   // Log the raw table HTML to see if images are present
+  log(`🔍 Processing table (${tableHtml.length} chars)`);
   log(`🔍 Raw table HTML (first 500 chars): ${tableHtml.substring(0, 500)}...`);
   const hasImagesInTable = /<img[^>]*>/i.test(tableHtml);
   log(`🖼️ Table contains images: ${hasImagesInTable}`);
@@ -2760,7 +2796,13 @@ async function parseTableToNotionBlock(tableHtml) {
     }
   }
 
-  if (rows.length === 0) return blocks.length > 0 ? blocks : null;
+  if (rows.length === 0) {
+    log(`⚠️ Table skipped: no valid rows found in table HTML`);
+    log(`   theadRows: ${theadRows.length}, tbodyRows: ${tbodyRows.length}`);
+    return blocks.length > 0 ? blocks : null;
+  }
+
+  log(`📊 Table structure: ${rows.length} rows, max width: ${tableWidth}`);
 
   // Determine table structure
   // If first body row has images, don't treat it as a header row
@@ -2768,7 +2810,11 @@ async function parseTableToNotionBlock(tableHtml) {
   const tableWidth = Math.max(...rows.map((row) => row.length));
 
   // Skip tables with no columns
-  if (tableWidth === 0) return null;
+  if (tableWidth === 0) {
+    log(`⚠️ Table skipped: no columns found (tableWidth = 0)`);
+    log(`   Table HTML sample: ${cleanedTableHtml.substring(0, 300)}...`);
+    return null;
+  }
 
   // Create Notion table block
   const tableBlock = {
@@ -2781,6 +2827,10 @@ async function parseTableToNotionBlock(tableHtml) {
       children: [],
     },
   };
+
+  log(
+    `✅ Created Notion table: ${tableWidth} columns, ${rows.length} rows, headers: ${hasHeaders}`
+  );
 
   // Add table rows
   rows.forEach((row, rowIndex) => {
@@ -2942,7 +2992,9 @@ app.post("/api/W2N", async (req, res) => {
     const initialBlocks = children.slice(0, MAX_BLOCKS_PER_REQUEST);
     const remainingBlocks = children.slice(MAX_BLOCKS_PER_REQUEST);
 
-    log(`   Initial blocks: ${initialBlocks.length}, Remaining blocks: ${remainingBlocks.length}`);
+    log(
+      `   Initial blocks: ${initialBlocks.length}, Remaining blocks: ${remainingBlocks.length}`
+    );
 
     // Log block types for debugging
     const blockTypes = children.map((b) => b.type).join(", ");
@@ -2994,7 +3046,9 @@ app.post("/api/W2N", async (req, res) => {
 
     // Append remaining blocks in chunks if any
     if (remainingBlocks.length > 0) {
-      log(`📝 Appending ${remainingBlocks.length} remaining blocks in chunks...`);
+      log(
+        `📝 Appending ${remainingBlocks.length} remaining blocks in chunks...`
+      );
 
       // Split remaining blocks into chunks of 100
       const chunks = [];
@@ -3002,12 +3056,18 @@ app.post("/api/W2N", async (req, res) => {
         chunks.push(remainingBlocks.slice(i, i + MAX_BLOCKS_PER_REQUEST));
       }
 
-      log(`   Split into ${chunks.length} chunks of up to ${MAX_BLOCKS_PER_REQUEST} blocks each`);
+      log(
+        `   Split into ${chunks.length} chunks of up to ${MAX_BLOCKS_PER_REQUEST} blocks each`
+      );
 
       // Append each chunk
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i];
-        log(`   Appending chunk ${i + 1}/${chunks.length} (${chunk.length} blocks)...`);
+        log(
+          `   Appending chunk ${i + 1}/${chunks.length} (${
+            chunk.length
+          } blocks)...`
+        );
 
         await notion.blocks.children.append({
           block_id: response.id,
@@ -3017,7 +3077,9 @@ app.post("/api/W2N", async (req, res) => {
         log(`   ✅ Chunk ${i + 1} appended successfully`);
       }
 
-      log(`✅ All ${remainingBlocks.length} remaining blocks appended successfully`);
+      log(
+        `✅ All ${remainingBlocks.length} remaining blocks appended successfully`
+      );
     }
 
     log("🔗 Page URL:", response.url);
