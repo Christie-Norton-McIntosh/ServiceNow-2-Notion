@@ -1005,6 +1005,13 @@ async function continueAutoExtractionLoop(autoExtractState) {
   const nextPageSelector = getNextPageSelector();
   const button = document.getElementById("w2n-start-autoextract");
 
+  // Add extra delay after page reload to ensure page is fully loaded and stabilized
+  debug(`⏳ Waiting additional time after page reload for full stabilization...`);
+  if (button) {
+    button.textContent = "Waiting for page to load...";
+  }
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+
   // Continue the main loop
   while (autoExtractState.running && !autoExtractState.paused) {
     debug(`\n🔄 Loop iteration: currentPage=${autoExtractState.currentPage}`);
