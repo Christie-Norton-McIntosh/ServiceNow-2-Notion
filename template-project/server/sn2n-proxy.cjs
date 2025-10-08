@@ -1713,7 +1713,17 @@ async function htmlToNotionBlocks(html) {
                   block.paragraph.rich_text
                 );
                 if (result.replacement) {
-                  tempBlocks.push(result.replacement);
+                  // If replacement is an array (rich text), wrap it in a paragraph block
+                  if (Array.isArray(result.replacement)) {
+                    tempBlocks.push({
+                      object: "block",
+                      type: "paragraph",
+                      paragraph: { rich_text: result.replacement }
+                    });
+                  } else {
+                    // If replacement is already a block object, use it directly
+                    tempBlocks.push(result.replacement);
+                  }
                   if (result.codeBlockToAdd) {
                     tempBlocks.push(result.codeBlockToAdd);
                   }
@@ -1752,7 +1762,17 @@ async function htmlToNotionBlocks(html) {
                           child.paragraph.rich_text
                         );
                         if (childResult.replacement) {
-                          updatedChildren.push(childResult.replacement);
+                          // If replacement is an array (rich text), wrap it in a paragraph block
+                          if (Array.isArray(childResult.replacement)) {
+                            updatedChildren.push({
+                              object: "block",
+                              type: "paragraph",
+                              paragraph: { rich_text: childResult.replacement }
+                            });
+                          } else {
+                            // If replacement is already a block object, use it directly
+                            updatedChildren.push(childResult.replacement);
+                          }
                           if (childResult.codeBlockToAdd) {
                             updatedChildren.push(childResult.codeBlockToAdd);
                           }
@@ -1798,7 +1818,17 @@ async function htmlToNotionBlocks(html) {
                           child.paragraph.rich_text
                         );
                         if (childResult.replacement) {
-                          updatedChildren.push(childResult.replacement);
+                          // If replacement is an array (rich text), wrap it in a paragraph block
+                          if (Array.isArray(childResult.replacement)) {
+                            updatedChildren.push({
+                              object: "block",
+                              type: "paragraph",
+                              paragraph: { rich_text: childResult.replacement }
+                            });
+                          } else {
+                            // If replacement is already a block object, use it directly
+                            updatedChildren.push(childResult.replacement);
+                          }
                           if (childResult.codeBlockToAdd) {
                             updatedChildren.push(childResult.codeBlockToAdd);
                           }
