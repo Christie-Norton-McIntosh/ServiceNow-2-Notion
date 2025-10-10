@@ -393,6 +393,54 @@ const CODE_LANGUAGE_ALIASES = {
   glsl: "glsl",
 };
 
+const VALID_RICH_TEXT_COLORS = new Set([
+  "default",
+  "gray",
+  "brown",
+  "orange",
+  "yellow",
+  "green",
+  "blue",
+  "purple",
+  "pink",
+  "red",
+  "gray_background",
+  "brown_background",
+  "orange_background",
+  "yellow_background",
+  "green_background",
+  "blue_background",
+  "purple_background",
+  "pink_background",
+  "red_background",
+]);
+
+function normalizeAnnotations(annotations) {
+  const input =
+    annotations && typeof annotations === "object" ? annotations : {};
+  const normalized = {
+    bold: !!input.bold,
+    italic: !!input.italic,
+    strikethrough: !!input.strikethrough,
+    underline: !!input.underline,
+    code: !!input.code,
+    color: "default",
+  };
+
+  if (typeof input.color === "string") {
+    const candidate = input.color.toLowerCase();
+    if (VALID_RICH_TEXT_COLORS.has(candidate)) {
+      normalized.color = candidate;
+    }
+  }
+
+  if (!VALID_RICH_TEXT_COLORS.has(normalized.color)) {
+    normalized.color = "default";
+  }
+
+  return normalized;
+}
+
 function normalizeCodeLanguage(language) {
   if (!language || typeof language !== "string") {
     return "javascript";
@@ -418,7 +466,10 @@ let notion = null;
 if (process.env.NOTION_TOKEN) {
   try {
     if (NotionClient)
-      notion = new NotionClient({ auth: process.env.NOTION_TOKEN });
+      notion = new NotionClient({
+        auth: process.env.NOTION_TOKEN,
+        notionVersion: "2022-06-28",
+      });
     else notion = null;
     log("Notion token configured: true");
 
@@ -1033,14 +1084,7 @@ async function htmlToNotionBlocks(html) {
                   {
                     type: "text",
                     text: { content: captionText },
-                    annotations: {
-                      bold: false,
-                      italic: true,
-                      strikethrough: false,
-                      underline: false,
-                      code: false,
-                      color: "default",
-                    },
+                    annotations: normalizeAnnotations({ italic: true }),
                   },
                 ],
               },
@@ -1229,6 +1273,419 @@ async function htmlToNotionBlocks(html) {
     return items;
   }
 
+  function cloneRichText(rt) {
+    if (!rt || typeof rt !== "object") {
+      return null;
+    }
+    const cloned = {
+      ...rt,
+      annotations: normalizeAnnotations(rt.annotations),
+    };
+    if (rt.text && typeof rt.text === "object") {
+      cloned.text = { ...rt.text };
+    }
+    if (typeof cloned.plain_text !== "string" && cloned.text?.content) {
+      cloned.plain_text = cloned.text.content;
+    }
+    return cloned;
+  }
+
+  function sanitizeRichTextArray(items) {
+    if (!Array.isArray(items)) {
+      return [];
+    }
+    return items
+      .map((rt) => cloneRichText(rt))
+      .filter((rt) => {
+        if (!rt || typeof rt.type !== "string") {
+          return false;
+        }
+        if (rt.type === "text") {
+          const content = rt.text?.content;
+          if (typeof content !== "string") {
+            return false;
+          }
+          return content.trim().length > 0 || !!rt.text?.link;
+        }
+        return !!rt[rt.type];
+      });
+  }
+
+  function sanitizeBlocks(blocksToValidate, contextLabel = "root") {
+    if (!Array.isArray(blocksToValidate)) return [];
+
+    const ensureBlockHasTypedPayload = (block, path) => {
+      if (!block || typeof block !== "object") {
+        log(`⚠️ Dropping malformed block at ${path}: not an object`);
+        return null;
+      }
+
+      const { type } = block;
+      if (!type || typeof type !== "string") {
+        log(
+          `⚠️ Dropping block at ${path}: missing type ${JSON.stringify(block)}`
+        );
+        return null;
+      }
+
+      const payload = block[type];
+      if (!payload || typeof payload !== "object") {
+        const fallbackSources = [
+          Array.isArray(block.rich_text) ? block.rich_text : null,
+          Array.isArray(block.paragraph?.rich_text)
+            ? block.paragraph.rich_text
+            : null,
+          Array.isArray(block.quote?.rich_text) ? block.quote.rich_text : null,
+          Array.isArray(block.callout?.rich_text)
+            ? block.callout.rich_text
+            : null,
+        ].filter(
+          (candidate) => Array.isArray(candidate) && candidate.length > 0
+        );
+
+        if (fallbackSources.length > 0) {
+          const fallbackRichText = fallbackSources[0]
+            .map((rt) => cloneRichText(rt))
+            .filter(Boolean);
+          if (fallbackRichText.length > 0) {
+            log(
+              `⚠️ Coercing block at ${path} from type "${type}" to paragraph due to missing payload`
+            );
+            return {
+              object: "block",
+              type: "paragraph",
+              paragraph: { rich_text: fallbackRichText },
+            };
+          }
+        }
+
+        log(
+          `⚠️ Dropping block at ${path}: missing payload for type "${type}" (${JSON.stringify(
+            block
+          )})`
+        );
+        return null;
+      }
+
+      if (Array.isArray(block.children)) {
+        const cleanedChildren = block.children
+          .map((child, idx) =>
+            ensureBlockHasTypedPayload(child, `${path}.children[${idx}]`)
+          )
+          .filter(Boolean);
+        if (cleanedChildren.length > 0) {
+          block.children = cleanedChildren;
+        } else {
+          delete block.children;
+        }
+      }
+
+      if (Array.isArray(payload.children)) {
+        const cleanedChildren = payload.children
+          .map((child, idx) =>
+            ensureBlockHasTypedPayload(
+              child,
+              `${path}.${type}.children[${idx}]`
+            )
+          )
+          .filter(Boolean);
+        if (cleanedChildren.length > 0) {
+          payload.children = cleanedChildren;
+        } else {
+          delete payload.children;
+        }
+      }
+
+      return block;
+    };
+
+    return blocksToValidate
+      .map((block, index) =>
+        ensureBlockHasTypedPayload(block, `${contextLabel}[${index}]`)
+      )
+      .filter(Boolean);
+  }
+
+  function flattenListUnsupportedBlocks(blocksToProcess) {
+    if (!Array.isArray(blocksToProcess)) return [];
+
+    const result = [];
+    for (const block of blocksToProcess) {
+      const { primary, trailing } = flattenBlock(block);
+      if (primary) {
+        result.push(primary);
+      }
+      if (Array.isArray(trailing) && trailing.length > 0) {
+        result.push(...trailing);
+      }
+    }
+    return result;
+  }
+
+  function flattenBlock(block) {
+    if (!block || typeof block !== "object") {
+      return { primary: null, trailing: [] };
+    }
+
+    const cloned = { ...block };
+    let trailingBlocks = [];
+
+    if (Array.isArray(cloned.children)) {
+      const flattenedChildren = [];
+      for (const child of cloned.children) {
+        const { primary: childPrimary, trailing: childTrailing } =
+          flattenBlock(child);
+        if (childPrimary) {
+          flattenedChildren.push(childPrimary);
+        }
+        if (Array.isArray(childTrailing) && childTrailing.length > 0) {
+          trailingBlocks.push(...childTrailing);
+        }
+      }
+      if (flattenedChildren.length > 0) {
+        cloned.children = flattenedChildren;
+      } else {
+        delete cloned.children;
+      }
+    }
+
+    const { type } = cloned;
+    if (
+      (type === "numbered_list_item" || type === "bulleted_list_item") &&
+      cloned[type]
+    ) {
+      if (Array.isArray(cloned[type].rich_text)) {
+        cloned[type].rich_text = sanitizeRichTextArray(cloned[type].rich_text);
+      }
+
+      const originalChildren = Array.isArray(cloned[type].children)
+        ? cloned[type].children
+        : [];
+      const newChildren = [];
+
+      for (const child of originalChildren) {
+        const flattenedChild = flattenBlock(child);
+        const childPrimary = flattenedChild.primary;
+        let childTrailing = flattenedChild.trailing;
+
+        if (childPrimary && childPrimary.type === "table") {
+          let titleBlock = null;
+          if (newChildren.length > 0) {
+            const lastChild = newChildren[newChildren.length - 1];
+            if (
+              isHeadingBlock(lastChild) ||
+              isParagraphTitleCandidate(lastChild)
+            ) {
+              titleBlock = newChildren.pop();
+            }
+          }
+
+          if (!titleBlock) {
+            const { headingCandidate, remainingChildren } =
+              extractHeadingFromChildren(childTrailing);
+            if (headingCandidate) {
+              titleBlock = headingCandidate;
+              childTrailing = remainingChildren;
+            }
+          }
+
+          const tableTitle = getBlockPlainText(titleBlock) || "Table";
+
+          const titleRichText = titleBlock
+            ? getBlockRichText(titleBlock)
+            : null;
+          const referenceBlock = createTableReferenceParagraph(tableTitle);
+          if (referenceBlock) {
+            newChildren.push(referenceBlock);
+          }
+          const toggleBlock = createTableToggleBlock(
+            titleRichText,
+            tableTitle,
+            childPrimary
+          );
+          if (toggleBlock) {
+            trailingBlocks.push(toggleBlock);
+          }
+        } else if (childPrimary) {
+          newChildren.push(childPrimary);
+        }
+
+        if (Array.isArray(childTrailing) && childTrailing.length > 0) {
+          trailingBlocks.push(...childTrailing);
+        }
+      }
+
+      if (newChildren.length > 0) {
+        const cleanedChildren = newChildren.filter(
+          (child) => !isEmptyParagraphBlock(child)
+        );
+        if (cleanedChildren.length > 0) {
+          const payload = { ...cloned[type] };
+          payload.children = cleanedChildren;
+          cloned[type] = payload;
+          delete cloned.children;
+        } else {
+          const payload = { ...cloned[type] };
+          delete payload.children;
+          cloned[type] = payload;
+          delete cloned.children;
+        }
+      } else {
+        const payload = { ...cloned[type] };
+        delete payload.children;
+        cloned[type] = payload;
+        delete cloned.children;
+      }
+    }
+
+    return { primary: cloned, trailing: trailingBlocks };
+  }
+
+  function isEmptyParagraphBlock(block) {
+    if (!block || block.type !== "paragraph") return false;
+    const richText = Array.isArray(block.paragraph?.rich_text)
+      ? block.paragraph.rich_text
+      : [];
+    if (richText.length === 0) return true;
+    return richText.every((rt) => {
+      const content =
+        typeof rt?.text?.content === "string" ? rt.text.content : "";
+      return content.trim().length === 0;
+    });
+  }
+
+  function isHeadingBlock(block) {
+    if (!block || typeof block.type !== "string") return false;
+    return (
+      block.type === "heading_1" ||
+      block.type === "heading_2" ||
+      block.type === "heading_3"
+    );
+  }
+
+  function isParagraphTitleCandidate(block) {
+    if (!block || block.type !== "paragraph") return false;
+    const richText = block.paragraph?.rich_text;
+    if (!Array.isArray(richText) || richText.length === 0) return false;
+    const text = richText
+      .map((rt) =>
+        typeof rt?.text?.content === "string" ? rt.text.content : ""
+      )
+      .join(" ")
+      .trim();
+    return text.length > 0 && text.length <= 200;
+  }
+
+  function extractHeadingFromChildren(children) {
+    if (!Array.isArray(children) || children.length === 0) {
+      return { headingCandidate: null, remainingChildren: children };
+    }
+
+    const remaining = [...children];
+    let headingCandidate = null;
+
+    while (remaining.length > 0) {
+      const next = remaining.shift();
+      if (isHeadingBlock(next) || isParagraphTitleCandidate(next)) {
+        headingCandidate = next;
+        break;
+      }
+    }
+
+    if (headingCandidate) {
+      return { headingCandidate, remainingChildren: remaining };
+    }
+
+    return { headingCandidate: null, remainingChildren: children };
+  }
+
+  function getBlockPlainText(block) {
+    if (!block || typeof block !== "object") return "";
+
+    if (isHeadingBlock(block)) {
+      const richText = block[block.type]?.rich_text || [];
+      return richText
+        .map((rt) =>
+          typeof rt?.text?.content === "string" ? rt.text.content : ""
+        )
+        .join(" ")
+        .trim();
+    }
+
+    if (block.type === "paragraph") {
+      const richText = block.paragraph?.rich_text || [];
+      return richText
+        .map((rt) =>
+          typeof rt?.text?.content === "string" ? rt.text.content : ""
+        )
+        .join(" ")
+        .trim();
+    }
+
+    return "";
+  }
+
+  function getBlockRichText(block) {
+    if (!block || typeof block !== "object") return null;
+    const type = block.type;
+    if (!type) return null;
+    const payload = block[type];
+    if (!payload || !Array.isArray(payload.rich_text)) return null;
+    return sanitizeRichTextArray(payload.rich_text);
+  }
+
+  function createTableToggleBlock(titleRichText, fallbackTitle, tableBlock) {
+    let richText = Array.isArray(titleRichText) ? [...titleRichText] : [];
+    richText = sanitizeRichTextArray(richText);
+
+    if (richText.length === 0) {
+      const safeTitle =
+        typeof fallbackTitle === "string" && fallbackTitle.trim().length > 0
+          ? fallbackTitle.trim()
+          : "the table";
+      richText = [
+        {
+          type: "text",
+          text: { content: `See table "${safeTitle}" below.` },
+          annotations: normalizeAnnotations({ italic: true }),
+        },
+      ];
+    }
+
+    const toggleBlock = {
+      object: "block",
+      type: "toggle",
+      toggle: {
+        rich_text: richText,
+      },
+    };
+
+    toggleBlock.toggle.children = [tableBlock];
+
+    return toggleBlock;
+  }
+
+  function createTableReferenceParagraph(title) {
+    const safeTitle =
+      typeof title === "string" && title.trim().length > 0
+        ? title.trim()
+        : "table";
+
+    return {
+      object: "block",
+      type: "paragraph",
+      paragraph: {
+        rich_text: [
+          {
+            type: "text",
+            text: { content: `See table "${safeTitle}" below.` },
+            annotations: normalizeAnnotations({ italic: true }),
+          },
+        ],
+      },
+    };
+  }
+
   // Helper function to split rich text into chunks that fit Notion's 2000 character limit
   function splitRichTextIntoParagraphs(richTextArray) {
     const paragraphs = [];
@@ -1282,12 +1739,6 @@ async function htmlToNotionBlocks(html) {
     skipPlaceholderCleanup = false
   ) {
     const tempBlocks = [];
-
-    const cloneRichText = (rt) => ({
-      ...rt,
-      text: { ...(rt.text || {}) },
-      annotations: { ...(rt.annotations || {}) },
-    });
 
     const splitRichTextAtIndex = (richTextArray, index) => {
       if (!Array.isArray(richTextArray)) {
@@ -1792,12 +2243,7 @@ async function htmlToNotionBlocks(html) {
               block.bulleted_list_item.rich_text
             );
             if (result.replacement && !result.codeBlockToAdd) {
-              if (Array.isArray(result.replacement)) {
-                block.bulleted_list_item.rich_text = result.replacement;
-                processedBlocks.push(block);
-              } else {
-                processedBlocks.push(result.replacement);
-              }
+              processedBlocks.push(result.replacement);
             } else if (result.replacement && result.codeBlockToAdd) {
               if (Array.isArray(result.replacement)) {
                 block.bulleted_list_item.rich_text = result.replacement;
@@ -1863,12 +2309,7 @@ async function htmlToNotionBlocks(html) {
               block.numbered_list_item.rich_text
             );
             if (result.replacement && !result.codeBlockToAdd) {
-              if (Array.isArray(result.replacement)) {
-                block.numbered_list_item.rich_text = result.replacement;
-                processedBlocks.push(block);
-              } else {
-                processedBlocks.push(result.replacement);
-              }
+              processedBlocks.push(result.replacement);
             } else if (result.replacement && result.codeBlockToAdd) {
               block.numbered_list_item.rich_text = result.replacement;
               processedBlocks.push(block);
@@ -2074,7 +2515,7 @@ async function htmlToNotionBlocks(html) {
                 rich_text: paragraphRichText.map((rt) => ({
                   ...rt,
                   text: { ...rt.text },
-                  annotations: { ...rt.annotations },
+                  annotations: normalizeAnnotations(rt.annotations),
                 })),
               },
             });
@@ -2191,44 +2632,55 @@ async function htmlToNotionBlocks(html) {
           }
 
           if (hasTextContent) {
-            const richTextCopy = paragraphRichText.map((rt) => ({
+            const copiedRichText = paragraphRichText.map((rt) => ({
               ...rt,
               text: { ...rt.text },
-              annotations: { ...rt.annotations },
+              annotations: normalizeAnnotations(rt.annotations),
             }));
 
-            const combinedText = richTextCopy
+            const joinedCopy = copiedRichText
               .map((rt) => rt.text?.content || "")
               .join("");
-            const normalizedText = combinedText.replace(/^\s+/, "");
-            const isRoleRequired = /^role required:/i.test(normalizedText);
+            const isRoleRequired = joinedCopy
+              .replace(/^\s+/, "")
+              .toLowerCase()
+              .startsWith("role required:");
 
-            const blockType = isRoleRequired ? "quote" : "paragraph";
-            const blockPayload = {
-              object: "block",
-              type: blockType,
-              [blockType]: {
-                rich_text: richTextCopy,
-              },
-            };
-
+            let blockToPush;
             if (isRoleRequired) {
-              blockPayload.quote.color = "blue_background";
+              // Surface role requirement callouts as blue background quotes for emphasis
+              blockToPush = {
+                object: "block",
+                type: "quote",
+                quote: {
+                  rich_text: copiedRichText,
+                  color: "blue_background",
+                },
+              };
+            } else {
+              blockToPush = {
+                object: "block",
+                type: "paragraph",
+                paragraph: {
+                  rich_text: copiedRichText,
+                },
+              };
             }
 
-            tempBlocks.push(blockPayload);
-            if (hasPlaceholder) {
+            tempBlocks.push(blockToPush);
+
+            if (hasPlaceholder && blockToPush.type === "paragraph") {
               log(
                 `✅ Placeholder paragraph ADDED to tempBlocks at index ${
                   tempBlocks.length - 1
                 }`
               );
               log(
-                `   Pushed paragraph rich_text has ${paragraphBlock.paragraph.rich_text.length} items`
+                `   Pushed paragraph rich_text has ${blockToPush.paragraph.rich_text.length} items`
               );
               log(
                 `   First item text.content: "${
-                  paragraphBlock.paragraph.rich_text[0]?.text?.content ||
+                  blockToPush.paragraph.rich_text[0]?.text?.content ||
                   "UNDEFINED"
                 }"`
               );
@@ -2514,14 +2966,7 @@ async function htmlToNotionBlocks(html) {
                 {
                   type: "text",
                   text: { content: captionText },
-                  annotations: {
-                    bold: false,
-                    italic: true,
-                    strikethrough: false,
-                    underline: false,
-                    code: false,
-                    color: "default",
-                  },
+                  annotations: normalizeAnnotations({ italic: true }),
                 },
               ],
             },
@@ -2647,6 +3092,7 @@ async function htmlToNotionBlocks(html) {
           const processedBlocks = processBlocksWithPlaceholders(nestedBlocks);
 
           let calloutRichText = [];
+          let calloutSourceParagraph = null;
           const calloutChildren = [];
 
           for (const block of processedBlocks) {
@@ -2656,11 +3102,10 @@ async function htmlToNotionBlocks(html) {
               block.paragraph?.rich_text &&
               block.paragraph.rich_text.length > 0
             ) {
-              calloutRichText = block.paragraph.rich_text.map((rt) => ({
-                ...rt,
-                text: { ...rt.text },
-                annotations: { ...rt.annotations },
-              }));
+              calloutRichText = sanitizeRichTextArray(
+                block.paragraph.rich_text
+              );
+              calloutSourceParagraph = block;
               continue;
             }
             calloutChildren.push(block);
@@ -2669,34 +3114,61 @@ async function htmlToNotionBlocks(html) {
           if (calloutRichText.length === 0) {
             const fallback = await htmlToNotionRichText(content);
             if (fallback.richText.length > 0) {
-              calloutRichText = fallback.richText.map((rt) => ({
-                ...rt,
-                text: { ...rt.text },
-                annotations: { ...rt.annotations },
-              }));
+              calloutRichText = sanitizeRichTextArray(fallback.richText);
             } else {
-              calloutRichText = [
-                { type: "text", text: { content: "" }, annotations: {} },
-              ];
+              calloutRichText = [];
             }
           }
 
-          if (calloutRichText.length > 0) {
-            const calloutBlock = {
-              object: "block",
-              type: "callout",
-              callout: {
-                rich_text: calloutRichText,
-                icon: { type: "emoji", emoji },
-                color,
-              },
-            };
+          calloutRichText = calloutRichText.filter(Boolean);
 
-            if (calloutChildren.length > 0) {
-              calloutBlock.children = calloutChildren;
+          if (calloutRichText.length === 0) {
+            if (calloutSourceParagraph) {
+              tempBlocks.push(calloutSourceParagraph);
             }
+            if (calloutChildren.length > 0) {
+              tempBlocks.push(...calloutChildren);
+            }
+            continue;
+          }
 
-            tempBlocks.push(calloutBlock);
+          const calloutBlock = {
+            object: "block",
+            type: "callout",
+            callout: {
+              rich_text: calloutRichText,
+              icon: { type: "emoji", emoji },
+              color,
+            },
+          };
+
+          tempBlocks.push(calloutBlock);
+
+          if (calloutChildren.length > 0) {
+            for (const child of calloutChildren) {
+              if (
+                child.type === "paragraph" &&
+                Array.isArray(child.paragraph?.rich_text) &&
+                child.paragraph.rich_text.length > 0
+              ) {
+                const childRichText = sanitizeRichTextArray(
+                  child.paragraph.rich_text
+                );
+                if (childRichText.length > 0) {
+                  tempBlocks.push({
+                    object: "block",
+                    type: "callout",
+                    callout: {
+                      rich_text: childRichText,
+                      icon: { type: "emoji", emoji },
+                      color,
+                    },
+                  });
+                  continue;
+                }
+              }
+              tempBlocks.push(child);
+            }
           }
         } else {
           // Check if this container has pre elements that should be extracted as code blocks
@@ -3059,7 +3531,8 @@ async function htmlToNotionBlocks(html) {
   }
 
   const extractedBlocks = await extractBlocksFromHTML(html);
-  blocks.push(...extractedBlocks);
+  const validatedExtractedBlocks = sanitizeBlocks(extractedBlocks, "extracted");
+  blocks.push(...validatedExtractedBlocks);
 
   // If no blocks extracted, try text extraction with formatting as last resort
   if (blocks.length === 0) {
@@ -3113,7 +3586,9 @@ async function htmlToNotionBlocks(html) {
     log(`🎥 Detected video content in HTML`);
   }
 
-  return { blocks, hasVideos: hasDetectedVideos };
+  const listSafeBlocks = flattenListUnsupportedBlocks(blocks);
+  const finalBlocks = sanitizeBlocks(listSafeBlocks, "final");
+  return { blocks: finalBlocks, hasVideos: hasDetectedVideos };
 }
 
 // Helper function to clean HTML text
@@ -3500,17 +3975,23 @@ async function htmlToNotionRichText(html) {
     } else if (part === "__ITALIC_END__") {
       currentAnnotations.italic = false;
     } else if (part === "__CODE_START__") {
+      currentAnnotations._colorBeforeCode = currentAnnotations.color;
       currentAnnotations.code = true;
       currentAnnotations.color = "red";
     } else if (part === "__CODE_END__") {
       currentAnnotations.code = false;
-      currentAnnotations.color = "default";
+      if (currentAnnotations._colorBeforeCode !== undefined) {
+        currentAnnotations.color = currentAnnotations._colorBeforeCode;
+        delete currentAnnotations._colorBeforeCode;
+      } else {
+        currentAnnotations.color = "default";
+      }
     } else if (part === "__SOFT_BREAK__") {
       // Add a soft line break
       richText.push({
         type: "text",
         text: { content: "\n" },
-        annotations: { ...currentAnnotations },
+        annotations: normalizeAnnotations(currentAnnotations),
       });
     } else if (part.match(/^__LINK_(\d+)__$/)) {
       const linkMatch = part.match(/^__LINK_(\d+)__$/);
@@ -3522,13 +4003,13 @@ async function htmlToNotionRichText(html) {
           richText.push({
             type: "text",
             text: { content: linkInfo.content.trim(), link: { url } },
-            annotations: { ...currentAnnotations },
+            annotations: normalizeAnnotations(currentAnnotations),
           });
         } else {
           richText.push({
             type: "text",
             text: { content: linkInfo.content.trim() },
-            annotations: { ...currentAnnotations },
+            annotations: normalizeAnnotations(currentAnnotations),
           });
         }
       }
@@ -3547,7 +4028,7 @@ async function htmlToNotionRichText(html) {
         richText.push({
           type: "text",
           text: { content: cleanedText },
-          annotations: { ...currentAnnotations },
+          annotations: normalizeAnnotations(currentAnnotations),
         });
       }
     }
@@ -3560,14 +4041,7 @@ async function htmlToNotionRichText(html) {
       richText.push({
         type: "text",
         text: { content: cleanedText },
-        annotations: {
-          bold: false,
-          italic: false,
-          strikethrough: false,
-          underline: false,
-          code: false,
-          color: "default",
-        },
+        annotations: normalizeAnnotations({}),
       });
     }
   }
@@ -4024,243 +4498,6 @@ async function parseTableToNotionBlock(tableHtml) {
   return blocks;
 }
 
-const KNOWN_BLOCK_TYPE_KEYS = [
-  "paragraph",
-  "heading_1",
-  "heading_2",
-  "heading_3",
-  "bulleted_list_item",
-  "numbered_list_item",
-  "code",
-  "quote",
-  "callout",
-  "toggle",
-  "divider",
-  "embed",
-  "image",
-  "table",
-  "table_row",
-];
-
-const TEXT_BLOCK_TYPES = new Set([
-  "paragraph",
-  "heading_1",
-  "heading_2",
-  "heading_3",
-  "bulleted_list_item",
-  "numbered_list_item",
-  "quote",
-  "callout",
-  "toggle",
-  "code",
-]);
-
-const DEFAULT_RICH_TEXT_ANNOTATIONS = {
-  bold: false,
-  italic: false,
-  strikethrough: false,
-  underline: false,
-  code: false,
-  color: "default",
-};
-
-function guessBlockTypeFromPayload(block) {
-  if (!block || typeof block !== "object") return null;
-  for (const key of KNOWN_BLOCK_TYPE_KEYS) {
-    if (block[key] && typeof block[key] === "object") {
-      return key;
-    }
-  }
-  return null;
-}
-
-function sanitizeRichTextArray(richText, contextPath) {
-  const sanitized = [];
-
-  if (Array.isArray(richText)) {
-    richText.forEach((item, index) => {
-      if (!item || typeof item !== "object") return;
-      const textPayload =
-        item.text && typeof item.text === "object"
-          ? item.text
-          : { content: "" };
-      const content =
-        typeof textPayload.content === "string" ? textPayload.content : "";
-      const linkUrl =
-        textPayload.link && typeof textPayload.link.url === "string"
-          ? textPayload.link.url
-          : null;
-
-      sanitized.push({
-        type: "text",
-        text: Object.assign(
-          { content },
-          linkUrl ? { link: { url: linkUrl } } : {}
-        ),
-        annotations: Object.assign(
-          {},
-          DEFAULT_RICH_TEXT_ANNOTATIONS,
-          item.annotations && typeof item.annotations === "object"
-            ? item.annotations
-            : {}
-        ),
-      });
-    });
-  }
-
-  if (sanitized.length === 0) {
-    sanitized.push({
-      type: "text",
-      text: { content: "" },
-      annotations: { ...DEFAULT_RICH_TEXT_ANNOTATIONS },
-    });
-  }
-
-  if (SN2N_EXTRA_DEBUG && sanitized.length !== (richText || []).length) {
-    log(
-      `⚠️ Sanitized rich text length mismatch at ${contextPath}: input ${
-        (richText || []).length
-      }, output ${sanitized.length}`
-    );
-  }
-
-  return sanitized;
-}
-
-function sanitizeBlocks(blocks, contextPath = "root") {
-  if (!Array.isArray(blocks)) return [];
-
-  const sanitized = [];
-  blocks.forEach((block, index) => {
-    const blockPath = `${contextPath}[${index}]`;
-    const safeBlock = sanitizeSingleBlock(block, blockPath);
-    if (safeBlock) {
-      sanitized.push(safeBlock);
-    }
-  });
-  return sanitized;
-}
-
-function sanitizeSingleBlock(block, contextPath) {
-  if (!block || typeof block !== "object") {
-    log(`⚠️ Dropping non-object block at ${contextPath}`);
-    return null;
-  }
-
-  const candidate = { ...block };
-  if (!candidate.object) {
-    candidate.object = "block";
-  }
-
-  let type =
-    typeof candidate.type === "string" && candidate.type.length > 0
-      ? candidate.type
-      : null;
-
-  if (!type) {
-    const guess = guessBlockTypeFromPayload(candidate);
-    if (guess) {
-      type = candidate.type = guess;
-      log(`⚠️ Inferred block type '${guess}' at ${contextPath}`);
-    }
-  }
-
-  if (!type) {
-    log(`⚠️ Dropping block with missing type at ${contextPath}`);
-    return null;
-  }
-
-  if (!candidate[type] || typeof candidate[type] !== "object") {
-    const guess = guessBlockTypeFromPayload(candidate);
-    if (guess && candidate[guess]) {
-      type = candidate.type = guess;
-    } else {
-      log(
-        `⚠️ Dropping block '${type}' at ${contextPath} - missing payload for type`
-      );
-      return null;
-    }
-  }
-
-  const payload = { ...candidate[type] };
-  candidate[type] = payload;
-
-  if (TEXT_BLOCK_TYPES.has(type)) {
-    payload.rich_text = sanitizeRichTextArray(
-      payload.rich_text,
-      `${contextPath}.${type}.rich_text`
-    );
-  }
-
-  if (Array.isArray(payload.children)) {
-    payload.children = sanitizeBlocks(
-      payload.children,
-      `${contextPath}.${type}.children`
-    );
-  }
-
-  if (type === "table") {
-    payload.children = sanitizeBlocks(
-      Array.isArray(payload.children) ? payload.children : [],
-      `${contextPath}.table`
-    );
-  }
-
-  if (type === "table_row") {
-    const cells = Array.isArray(payload.cells) ? payload.cells : [];
-    payload.cells = cells.map((cell, cellIndex) =>
-      sanitizeRichTextArray(
-        Array.isArray(cell) ? cell : [],
-        `${contextPath}.table_row.cells[${cellIndex}]`
-      )
-    );
-    if (payload.cells.length === 0) {
-      payload.cells.push(
-        sanitizeRichTextArray([], `${contextPath}.table_row.cells[0]`)
-      );
-    }
-  }
-
-  if (type === "code") {
-    if (!payload.language || typeof payload.language !== "string") {
-      payload.language = "javascript";
-    }
-  }
-
-  return candidate;
-}
-
-function capturePayloadSnapshot(databaseId, properties, blocks, meta = {}) {
-  try {
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const fileName = `notion-payload-${timestamp}.json`;
-    const filePath = path.join(__dirname, "logs", fileName);
-
-    const snapshot = {
-      ts: new Date().toISOString(),
-      databaseId,
-      propertyKeys: Object.keys(properties || {}),
-      blockCount: Array.isArray(blocks) ? blocks.length : 0,
-      blockTypes: Array.isArray(blocks)
-        ? blocks.map((block) => (block && block.type) || "unknown")
-        : [],
-      meta,
-    };
-
-    if (SN2N_EXTRA_DEBUG) {
-      snapshot.sample = Array.isArray(blocks) ? blocks.slice(0, 25) : [];
-      if (Array.isArray(blocks) && blocks.length > 25) {
-        snapshot.truncated = blocks.length - 25;
-      }
-    }
-
-    fs.writeFileSync(filePath, JSON.stringify(snapshot, null, 2));
-    log(`📝 Payload snapshot saved to ${fileName}`);
-  } catch (err) {
-    log(`⚠️ Failed to capture payload snapshot: ${err.message}`);
-  }
-}
-
 app.post("/api/W2N", async (req, res) => {
   try {
     const payload = req.body;
@@ -4377,16 +4614,7 @@ app.post("/api/W2N", async (req, res) => {
     if (payload.contentHtml) {
       log("🔄 Converting HTML content to Notion blocks");
       const result = await htmlToNotionBlocks(payload.contentHtml);
-      const rawBlocks = Array.isArray(result.blocks) ? result.blocks : [];
-      const sanitizedBlocks = sanitizeBlocks(rawBlocks, "html");
-      if (sanitizedBlocks.length !== rawBlocks.length) {
-        log(
-          `⚠️ Sanitized HTML blocks removed ${
-            rawBlocks.length - sanitizedBlocks.length
-          } invalid entries`
-        );
-      }
-      children = sanitizedBlocks;
+      children = result.blocks;
       hasVideos = result.hasVideos;
       log(`✅ Converted HTML to ${children.length} Notion blocks`);
       if (hasVideos) {
@@ -4405,18 +4633,6 @@ app.post("/api/W2N", async (req, res) => {
       ];
     }
 
-    if (children.length > 0) {
-      const sanitizedChildren = sanitizeBlocks(children, "root");
-      if (sanitizedChildren.length !== children.length) {
-        log(
-          `⚠️ Sanitizer removed ${
-            children.length - sanitizedChildren.length
-          } blocks before submission`
-        );
-      }
-      children = sanitizedChildren;
-    }
-
     // Note: Video detection is handled by userscript's property mappings
     // The server detects videos during HTML conversion and logs it,
     // but the userscript is responsible for setting the appropriate property
@@ -4431,14 +4647,38 @@ app.post("/api/W2N", async (req, res) => {
     log(`   Properties: ${JSON.stringify(properties, null, 2)}`);
     log(`   Children blocks: ${children.length}`);
 
+    try {
+      const dumpDir = path.join(__dirname, "logs");
+      if (!fs.existsSync(dumpDir)) {
+        fs.mkdirSync(dumpDir, { recursive: true });
+      }
+      const dumpPayload = {
+        ts: new Date().toISOString(),
+        databaseId: payload.databaseId,
+        propertyKeys: Object.keys(properties || {}),
+        blockCount: children.length,
+        blockTypes: children.map((block) => block.type),
+        meta: { hasVideos },
+        sample: children.slice(0, 20),
+      };
+      const dumpName = `notion-payload-${dumpPayload.ts
+        .replace(/:/g, "-")
+        .replace(/\./g, "-")}.json`;
+      fs.writeFileSync(
+        path.join(dumpDir, dumpName),
+        JSON.stringify(dumpPayload, null, 2)
+      );
+    } catch (err) {
+      log(
+        "⚠️ Failed to write notion payload dump:",
+        err && err.message ? err.message : err
+      );
+    }
+
     // Split children into chunks of 100 (Notion's limit per request)
     const MAX_BLOCKS_PER_REQUEST = 100;
     const initialBlocks = children.slice(0, MAX_BLOCKS_PER_REQUEST);
     const remainingBlocks = children.slice(MAX_BLOCKS_PER_REQUEST);
-
-    capturePayloadSnapshot(payload.databaseId, properties, children, {
-      hasVideos,
-    });
 
     log(
       `   Initial blocks: ${initialBlocks.length}, Remaining blocks: ${remainingBlocks.length}`
@@ -4447,6 +4687,20 @@ app.post("/api/W2N", async (req, res) => {
     // Log block types for debugging
     const blockTypes = children.map((b) => b.type).join(", ");
     log(`   Block types: ${blockTypes}`);
+
+    if (getExtraDebug()) {
+      children.slice(0, 5).forEach((child, idx) => {
+        try {
+          log(
+            `   🔬 Child ${idx} structure: ${JSON.stringify(child, null, 2)}`
+          );
+        } catch (serializationError) {
+          log(
+            `   ⚠️ Failed to serialize child ${idx} for debug: ${serializationError.message}`
+          );
+        }
+      });
+    }
 
     // Debug: Show the actual children structure being sent to Notion
     children.forEach((child, idx) => {
@@ -4542,6 +4796,16 @@ app.post("/api/W2N", async (req, res) => {
     });
   } catch (error) {
     log("❌ Error creating Notion page:", error.message);
+    if (error && error.body) {
+      try {
+        const parsed =
+          typeof error.body === "string" ? JSON.parse(error.body) : error.body;
+        log("❌ Notion error body:", JSON.stringify(parsed, null, 2));
+      } catch (parseErr) {
+        log("❌ Failed to parse Notion error body:", parseErr.message);
+        log("❌ Raw error body:", error.body);
+      }
+    }
     return sendError(res, "PAGE_CREATION_FAILED", error.message, null, 500);
   }
 });
