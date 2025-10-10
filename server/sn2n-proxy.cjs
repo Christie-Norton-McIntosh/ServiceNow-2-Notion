@@ -74,8 +74,35 @@ app.use((req, res, next) => {
 let SN2N_VERBOSE = !!(
   process.env.SN2N_VERBOSE && String(process.env.SN2N_VERBOSE) === "1"
 );
+let SN2N_EXTRA_DEBUG = !!(
+  process.env.SN2N_EXTRA_DEBUG && String(process.env.SN2N_EXTRA_DEBUG) === "1"
+);
+
+const DEBUG_PATTERNS = [
+  /^🔍/,
+  /^🔧/,
+  /^📊/,
+  /^📄/,
+  /^📝/,
+  /^🎯/,
+  /^📦/,
+  /^🔄/,
+  /^✅ (Placeholder|Found|Code|Adding)/,
+  /^❌ Placeholder/,
+  /^⚠️ Placeholder/,
+  /^\s{3}/,
+];
+
 function log(...args) {
   if (!SN2N_VERBOSE) return;
+  if (
+    !SN2N_EXTRA_DEBUG &&
+    args.length > 0 &&
+    typeof args[0] === "string" &&
+    DEBUG_PATTERNS.some((pattern) => pattern.test(args[0]))
+  ) {
+    return;
+  }
   console.log(new Date().toISOString(), "[SN2N]", ...args);
 }
 function getVerbose() {
@@ -84,6 +111,13 @@ function getVerbose() {
 function setVerbose(v) {
   SN2N_VERBOSE = !!v;
   return SN2N_VERBOSE;
+}
+function getExtraDebug() {
+  return !!SN2N_EXTRA_DEBUG;
+}
+function setExtraDebug(v) {
+  SN2N_EXTRA_DEBUG = !!v;
+  return SN2N_EXTRA_DEBUG;
 }
 
 try {
@@ -159,6 +193,225 @@ function isValidImageUrl(url) {
   } catch (e) {
     return false;
   }
+}
+
+const NOTION_CODE_LANGUAGES = new Set(
+  [
+    "abap",
+    "abc",
+    "agda",
+    "arduino",
+    "ascii art",
+    "assembly",
+    "bash",
+    "basic",
+    "bnf",
+    "c",
+    "c#",
+    "c++",
+    "clojure",
+    "coffeescript",
+    "coq",
+    "css",
+    "dart",
+    "dhall",
+    "diff",
+    "docker",
+    "ebnf",
+    "elixir",
+    "elm",
+    "erlang",
+    "f#",
+    "flow",
+    "fortran",
+    "gherkin",
+    "glsl",
+    "go",
+    "graphql",
+    "groovy",
+    "haskell",
+    "hcl",
+    "html",
+    "idris",
+    "java",
+    "javascript",
+    "json",
+    "julia",
+    "kotlin",
+    "latex",
+    "less",
+    "lisp",
+    "livescript",
+    "llvm ir",
+    "lua",
+    "makefile",
+    "markdown",
+    "markup",
+    "matlab",
+    "mathematica",
+    "mermaid",
+    "nix",
+    "notion formula",
+    "objective-c",
+    "ocaml",
+    "pascal",
+    "perl",
+    "php",
+    "plain text",
+    "powershell",
+    "prolog",
+    "protobuf",
+    "purescript",
+    "python",
+    "r",
+    "racket",
+    "reason",
+    "ruby",
+    "rust",
+    "sass",
+    "scala",
+    "scheme",
+    "scss",
+    "shell",
+    "smalltalk",
+    "solidity",
+    "sql",
+    "swift",
+    "toml",
+    "typescript",
+    "vb.net",
+    "verilog",
+    "vhdl",
+    "visual basic",
+    "webassembly",
+    "xml",
+    "yaml",
+    "java/c/c++/c#",
+  ].map((lang) => lang.toLowerCase())
+);
+
+const CODE_LANGUAGE_ALIASES = {
+  js: "javascript",
+  jsx: "javascript",
+  javascript: "javascript",
+  ts: "typescript",
+  tsx: "typescript",
+  typescript: "typescript",
+  py: "python",
+  python: "python",
+  rb: "ruby",
+  ruby: "ruby",
+  php: "php",
+  java: "java",
+  kotlin: "kotlin",
+  swift: "swift",
+  go: "go",
+  golang: "go",
+  rust: "rust",
+  sql: "sql",
+  tsql: "sql",
+  groovy: "groovy",
+  gradle: "groovy",
+  bash: "bash",
+  sh: "shell",
+  shell: "shell",
+  zsh: "shell",
+  fish: "shell",
+  powershell: "powershell",
+  ps1: "powershell",
+  c: "c",
+  cpp: "c++",
+  cc: "c++",
+  "c++": "c++",
+  csharp: "c#",
+  cs: "c#",
+  "c#": "c#",
+  objectivec: "objective-c",
+  "objective-c": "objective-c",
+  objc: "objective-c",
+  h: "objective-c",
+  scala: "scala",
+  clj: "clojure",
+  clojure: "clojure",
+  coffee: "coffeescript",
+  coffeescript: "coffeescript",
+  dart: "dart",
+  elixir: "elixir",
+  elm: "elm",
+  erlang: "erlang",
+  haskell: "haskell",
+  hs: "haskell",
+  hcl: "hcl",
+  html: "html",
+  xhtml: "html",
+  xml: "xml",
+  css: "css",
+  scss: "scss",
+  sass: "sass",
+  less: "less",
+  json: "json",
+  yaml: "yaml",
+  yml: "yaml",
+  markdown: "markdown",
+  md: "markdown",
+  markup: "markup",
+  latex: "latex",
+  tex: "latex",
+  matlab: "matlab",
+  mathematica: "mathematica",
+  mermaid: "mermaid",
+  nix: "nix",
+  protobuf: "protobuf",
+  proto: "protobuf",
+  r: "r",
+  racket: "racket",
+  reason: "reason",
+  scheme: "scheme",
+  solidity: "solidity",
+  toml: "toml",
+  vb: "visual basic",
+  "visual basic": "visual basic",
+  vbnet: "vb.net",
+  "vb.net": "vb.net",
+  plain: "plain text",
+  plaintext: "plain text",
+  "plain-text": "plain text",
+  plain_text: "plain text",
+  text: "plain text",
+  none: "plain text",
+  generic: "plain text",
+  properties: "plain text",
+  ini: "plain text",
+  conf: "plain text",
+  log: "plain text",
+  diff: "diff",
+  dockerfile: "docker",
+  docker: "docker",
+  make: "makefile",
+  makefile: "makefile",
+  graphql: "graphql",
+  glsl: "glsl",
+};
+
+function normalizeCodeLanguage(language) {
+  if (!language || typeof language !== "string") {
+    return "javascript";
+  }
+
+  const cleaned = language.trim().toLowerCase();
+  if (!cleaned) {
+    return "javascript";
+  }
+
+  if (CODE_LANGUAGE_ALIASES[cleaned]) {
+    return CODE_LANGUAGE_ALIASES[cleaned];
+  }
+
+  if (NOTION_CODE_LANGUAGES.has(cleaned)) {
+    return cleaned;
+  }
+
+  return "javascript";
 }
 
 let notion = null;
@@ -321,14 +574,30 @@ app.get("/api/status", (req, res) => {
 
 // Runtime logging control endpoints
 app.get("/api/logging", (req, res) =>
-  sendSuccess(res, { verbose: getVerbose() })
+  sendSuccess(res, {
+    verbose: getVerbose(),
+    extraDebug: getExtraDebug(),
+  })
 );
 
 app.post("/api/logging", (req, res) => {
   try {
-    const { verbose } = req.body || {};
-    const newVal = setVerbose(!!verbose);
-    return sendSuccess(res, { verbose: newVal });
+    const { verbose, extraDebug } = req.body || {};
+    const response = {};
+
+    if (typeof verbose !== "undefined") {
+      response.verbose = setVerbose(!!verbose);
+    } else {
+      response.verbose = getVerbose();
+    }
+
+    if (typeof extraDebug !== "undefined") {
+      response.extraDebug = setExtraDebug(!!extraDebug);
+    } else {
+      response.extraDebug = getExtraDebug();
+    }
+
+    return sendSuccess(res, response);
   } catch (e) {
     return sendError(res, "SERVER_ERROR", e.message || String(e));
   }
@@ -364,6 +633,10 @@ async function htmlToNotionBlocks(html) {
 
   log(`🔄 Converting HTML to Notion blocks (${html.length} chars)`);
   log(`📄 HTML sample: ${html.substring(0, 500)}...`);
+
+  // DEBUG: Check for pre tags in input HTML
+  const hasPreInInput = html.includes("<pre");
+  log(`🔍 DEBUG: Input HTML contains <pre tags: ${hasPreInInput}`);
 
   // DISABLED: Martian conversion bypasses our custom image processing
   // Images need to be processed directly with our image handling code
@@ -407,6 +680,24 @@ async function htmlToNotionBlocks(html) {
   // Remove script and style tags
   html = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
   html = html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
+
+  // Remove ServiceNow documentation helper UI elements that shouldn't appear in Notion output
+  html = html.replace(
+    /<div[^>]*class="[^"]*zDocsCodeExplanationContainer[^"]*"[^>]*>[\s\S]*?<\/div>/gi,
+    ""
+  );
+  html = html.replace(
+    /<button[^>]*class="[^"]*zDocsAiActionsButton[^"]*"[^>]*>[\s\S]*?<\/button>/gi,
+    ""
+  );
+  html = html.replace(
+    /<div[^>]*class="(?![^"]*code-toolbar)[^"]*\btoolbar\b[^"]*"[^>]*>[\s\S]*?<\/div>/gi,
+    ""
+  );
+  html = html.replace(
+    /<button[^>]*class="[^"]*copy-to-clipboard-button[^"]*"[^>]*>[\s\S]*?<\/button>/gi,
+    ""
+  );
 
   // Don't extract images at the top - they'll be processed inline within their context
   // This ensures images appear in their proper position in the document flow
@@ -642,12 +933,27 @@ async function htmlToNotionBlocks(html) {
     const MAX_DEPTH = 2; // Notion's maximum nesting depth
     const items = [];
 
-    // Match list items at this level (non-greedy to avoid matching nested items)
-    const liRegex = /<li[^>]*>([\s\S]*?)<\/li>/gi;
-    let match;
+    const closingTagLength = "</li>".length;
+    let searchPos = 0;
 
-    while ((match = liRegex.exec(html)) !== null) {
-      const fullItemContent = match[1];
+    while (searchPos < html.length) {
+      const liStart = html.toLowerCase().indexOf("<li", searchPos);
+      if (liStart === -1) break;
+
+      const openTagEnd = html.indexOf(">", liStart);
+      if (openTagEnd === -1) break;
+
+      const contentStart = openTagEnd + 1;
+      const closingPos = findMatchingClosingTag(html, contentStart, "li");
+      if (closingPos === -1) {
+        // Fallback: advance by a single character to avoid infinite loops
+        searchPos = contentStart;
+        continue;
+      }
+
+      const contentEnd = closingPos - closingTagLength;
+      const fullItemContent = html.substring(contentStart, contentEnd);
+      searchPos = closingPos;
 
       // Check if this item contains a nested list
       const nestedListRegex = /<(ul|ol)[^>]*>([\s\S]*?)<\/\1>/i;
@@ -677,7 +983,8 @@ async function htmlToNotionBlocks(html) {
       }
 
       // Extract block elements like <pre>, <table>, <img> from the text content
-      const blockElements = [];
+      const childBlocks = [];
+      const siblingBlocks = [];
       let processedTextContent = textContent;
 
       // Extract <table> elements
@@ -688,7 +995,11 @@ async function htmlToNotionBlocks(html) {
           const fullTableHtml = tableMatch[0]; // Use full match including <table> tags
           const tableBlocks = await parseTableToNotionBlock(fullTableHtml);
           if (tableBlocks && tableBlocks.length > 0) {
-            blockElements.push(...tableBlocks);
+            if (currentDepth < MAX_DEPTH) {
+              childBlocks.push(...tableBlocks);
+            } else {
+              siblingBlocks.push(...tableBlocks);
+            }
             log(`✅ Found table in list item with ${tableBlocks.length} rows`);
           }
           // Remove the <table> element from the text content
@@ -714,7 +1025,7 @@ async function htmlToNotionBlocks(html) {
         if (figcaptionMatch) {
           const captionText = cleanHtmlText(figcaptionMatch[1]);
           if (captionText && captionText.trim().length > 0) {
-            blockElements.push({
+            childBlocks.push({
               object: "block",
               type: "paragraph",
               paragraph: {
@@ -757,7 +1068,7 @@ async function htmlToNotionBlocks(html) {
             if (src && isValidImageUrl(src)) {
               const imageBlock = await createImageBlock(src, alt);
               if (imageBlock) {
-                blockElements.push(imageBlock);
+                childBlocks.push(imageBlock);
                 log(
                   `✅ Found image in figure in list item: ${src.substring(
                     0,
@@ -788,7 +1099,7 @@ async function htmlToNotionBlocks(html) {
           if (src && isValidImageUrl(src)) {
             const imageBlock = await createImageBlock(src, alt);
             if (imageBlock) {
-              blockElements.push(imageBlock);
+              childBlocks.push(imageBlock);
               log(
                 `✅ Found standalone image in list item: ${src.substring(
                   0,
@@ -810,66 +1121,40 @@ async function htmlToNotionBlocks(html) {
         const preContent = preMatch[1];
 
         // Create a code block
-        let language = "plain text";
+        let language = "";
         const classMatch = preAttributes.match(/class=["']([^"']*)["']/i);
         if (classMatch) {
-          const classes = classMatch[1];
-          const languageMatch = classes.match(/language-(\w+)/);
-          if (languageMatch) {
-            language = languageMatch[1];
+          const classes = classMatch[1]
+            .split(/\s+/)
+            .map((cls) => cls.trim())
+            .filter(Boolean);
+          const languageClass = classes.find((cls) =>
+            cls.toLowerCase().startsWith("language-")
+          );
+          if (languageClass) {
+            language = languageClass.substring("language-".length);
           }
         }
 
-        // Map common language names
-        const languageMap = {
-          javascript: "javascript",
-          js: "javascript",
-          python: "python",
-          py: "python",
-          java: "java",
-          cpp: "cpp",
-          "c++": "cpp",
-          csharp: "csharp",
-          "c#": "csharp",
-          php: "php",
-          ruby: "ruby",
-          go: "go",
-          rust: "rust",
-          swift: "swift",
-          kotlin: "kotlin",
-          scala: "scala",
-          html: "html",
-          xml: "xml",
-          css: "css",
-          scss: "scss",
-          sass: "sass",
-          less: "less",
-          json: "json",
-          yaml: "yaml",
-          yml: "yaml",
-          markdown: "markdown",
-          md: "markdown",
-          sql: "sql",
-          bash: "bash",
-          shell: "bash",
-          sh: "bash",
-          powershell: "powershell",
-          plaintext: "plain text",
-          text: "plain text",
-        };
-
-        if (languageMap[language.toLowerCase()]) {
-          language = languageMap[language.toLowerCase()];
+        if (!language) {
+          const dataLanguageMatch = preAttributes.match(
+            /data-language=["']([^"']+)["']/i
+          );
+          if (dataLanguageMatch) {
+            language = dataLanguageMatch[1];
+          }
         }
 
-        const codeText = cleanHtmlText(preContent);
+        const normalizedLanguage = normalizeCodeLanguage(language);
+
+        const codeText = extractPreCodeText(preContent);
         if (codeText && codeText.length > 0) {
-          blockElements.push({
+          childBlocks.push({
             object: "block",
             type: "code",
             code: {
               rich_text: [{ type: "text", text: { content: codeText } }],
-              language: language,
+              language: normalizedLanguage,
             },
           });
           log(
@@ -885,6 +1170,8 @@ async function htmlToNotionBlocks(html) {
       const result = await htmlToNotionRichText(processedTextContent);
       const richText = result.richText;
 
+      let handledChildBlocks = false;
+
       if (richText.length > 0 && richText[0].text.content.trim().length > 0) {
         const item = {
           object: "block",
@@ -899,11 +1186,44 @@ async function htmlToNotionBlocks(html) {
           item[listType].children = children;
         }
 
+        if (childBlocks.length > 0) {
+          if (currentDepth < MAX_DEPTH) {
+            if (!item[listType].children) {
+              item[listType].children = [];
+            }
+            item[listType].children.push(...childBlocks);
+            handledChildBlocks = true;
+          } else {
+            siblingBlocks.push(...childBlocks);
+            handledChildBlocks = true;
+          }
+        }
+
         items.push(item);
+      } else if (childBlocks.length > 0) {
+        if (currentDepth < MAX_DEPTH) {
+          const emptyItem = {
+            object: "block",
+            type: listType,
+            [listType]: {
+              rich_text: [],
+              children: [...childBlocks],
+            },
+          };
+          items.push(emptyItem);
+          handledChildBlocks = true;
+        } else {
+          siblingBlocks.push(...childBlocks);
+          handledChildBlocks = true;
+        }
       }
 
-      // Add any block elements found in this list item
-      items.push(...blockElements);
+      if (!handledChildBlocks && childBlocks.length > 0) {
+        siblingBlocks.push(...childBlocks);
+      }
+
+      // Add any block elements that should remain siblings
+      items.push(...siblingBlocks);
     }
 
     return items;
@@ -957,8 +1277,661 @@ async function htmlToNotionBlocks(html) {
   }
 
   // Simple function to extract text blocks from HTML by walking the tree
-  async function extractBlocksFromHTML(htmlStr) {
+  async function extractBlocksFromHTML(
+    htmlStr,
+    skipPlaceholderCleanup = false
+  ) {
     const tempBlocks = [];
+
+    const cloneRichText = (rt) => ({
+      ...rt,
+      text: { ...(rt.text || {}) },
+      annotations: { ...(rt.annotations || {}) },
+    });
+
+    const splitRichTextAtIndex = (richTextArray, index) => {
+      if (!Array.isArray(richTextArray)) {
+        return { before: [], after: [] };
+      }
+
+      const before = [];
+      const after = [];
+
+      if (index <= 0) {
+        for (const rt of richTextArray) {
+          after.push(cloneRichText(rt));
+        }
+        return { before, after };
+      }
+
+      let consumed = 0;
+      let splitCompleted = false;
+
+      for (const rt of richTextArray) {
+        const textValue = rt.text?.content || "";
+        const length = textValue.length;
+        const start = consumed;
+        const end = consumed + length;
+
+        if (!splitCompleted) {
+          if (index >= end) {
+            before.push(cloneRichText(rt));
+          } else if (index <= start) {
+            after.push(cloneRichText(rt));
+            splitCompleted = true;
+          } else {
+            const splitPos = index - start;
+            const beforeText = textValue.slice(0, splitPos);
+            const afterText = textValue.slice(splitPos);
+
+            if (beforeText.length > 0) {
+              const beforeClone = cloneRichText(rt);
+              beforeClone.text = {
+                ...(beforeClone.text || {}),
+                content: beforeText,
+              };
+              before.push(beforeClone);
+            }
+
+            if (afterText.length > 0) {
+              const afterClone = cloneRichText(rt);
+              afterClone.text = {
+                ...(afterClone.text || {}),
+                content: afterText,
+              };
+              after.push(afterClone);
+            }
+
+            splitCompleted = true;
+          }
+        } else {
+          after.push(cloneRichText(rt));
+        }
+
+        consumed += length;
+      }
+
+      return { before, after };
+    };
+
+    const trimTrailingWhitespaceRichText = (richTextArray) => {
+      for (let i = richTextArray.length - 1; i >= 0; i--) {
+        const rt = richTextArray[i];
+        const textValue = rt.text?.content || "";
+        const trimmed = textValue.replace(/\s+$/g, "");
+
+        if (trimmed.length === 0) {
+          richTextArray.splice(i, 1);
+        } else {
+          richTextArray[i] = {
+            ...rt,
+            text: { ...(rt.text || {}), content: trimmed },
+          };
+          break;
+        }
+      }
+    };
+
+    const trimLeadingWhitespaceRichText = (richTextArray) => {
+      for (let i = 0; i < richTextArray.length; i++) {
+        const rt = richTextArray[i];
+        const textValue = rt.text?.content || "";
+        const trimmed = textValue.replace(/^\s+/g, "");
+
+        if (trimmed.length === 0) {
+          richTextArray.splice(i, 1);
+          i--;
+        } else {
+          richTextArray[i] = {
+            ...rt,
+            text: { ...(rt.text || {}), content: trimmed },
+          };
+          break;
+        }
+      }
+    };
+
+    const maybeSplitParagraphForTrailingText = (
+      blocks,
+      contextTag,
+      { skipWhenTrailingHandled = false } = {}
+    ) => {
+      if (!blocks || blocks.length === 0) return;
+
+      const codeIndex = blocks.length - 1;
+      const codeBlock = blocks[codeIndex];
+      if (!codeBlock || codeBlock.type !== "code") return;
+
+      let paragraphIndex = -1;
+      for (let i = codeIndex - 1; i >= 0; i--) {
+        if (blocks[i].type === "paragraph") {
+          paragraphIndex = i;
+          break;
+        }
+      }
+
+      if (paragraphIndex === -1) return;
+
+      const paragraphBlock = blocks[paragraphIndex];
+      const richTextArray = paragraphBlock.paragraph?.rich_text || [];
+      if (!Array.isArray(richTextArray) || richTextArray.length === 0) return;
+
+      const combinedText = richTextArray
+        .map((rt) => rt.text?.content || "")
+        .join("");
+
+      const colonIndex = combinedText.lastIndexOf(":");
+      if (colonIndex === -1) return;
+
+      const trailingText = combinedText.substring(colonIndex + 1);
+      if (!trailingText || !trailingText.trim()) return;
+
+      if (!/^\s*[A-Z0-9]/.test(trailingText)) {
+        return;
+      }
+
+      const { before, after } = splitRichTextAtIndex(
+        richTextArray,
+        colonIndex + 1
+      );
+
+      if (!after || after.length === 0) return;
+
+      trimTrailingWhitespaceRichText(before);
+      trimLeadingWhitespaceRichText(after);
+
+      if (before.length === 0 || after.length === 0) {
+        return;
+      }
+
+      const afterTextCombined = after
+        .map((rt) => rt.text?.content || "")
+        .join("");
+      if (!afterTextCombined.trim()) {
+        return;
+      }
+
+      if (skipWhenTrailingHandled && afterTextCombined.trim().length === 0) {
+        return;
+      }
+
+      paragraphBlock.paragraph.rich_text = before;
+
+      const trailingParagraph = {
+        object: "block",
+        type: "paragraph",
+        paragraph: {
+          rich_text: after,
+        },
+      };
+
+      const [extractedCodeBlock] = blocks.splice(codeIndex, 1);
+      const insertionIndex = paragraphIndex + 1;
+      blocks.splice(insertionIndex, 0, extractedCodeBlock);
+      blocks.splice(insertionIndex + 1, 0, trailingParagraph);
+
+      if (process.env.SN2N_DEBUG_SPLIT) {
+        console.log(
+          `helper-split context=${contextTag} paragraphIndex=${paragraphIndex} codeIndex=${codeIndex} colonIndex=${colonIndex} beforeLen=${before.length} afterLen=${after.length}`
+        );
+      }
+      log(
+        `🔧 Split paragraph to position code block correctly (context=${
+          contextTag || "unknown"
+        })`
+      );
+    };
+
+    const createPlaceholderProcessor = (preElements) => {
+      const splitRichTextByPlaceholder = (richTextArray, placeholder) => {
+        const before = [];
+        const after = [];
+        let seenPlaceholder = false;
+
+        richTextArray.forEach((rt) => {
+          const textContent = rt.text?.content ?? "";
+          if (!textContent.includes(placeholder)) {
+            const target = seenPlaceholder ? after : before;
+            if (textContent.trim().length > 0) {
+              target.push({
+                ...rt,
+                text: { ...rt.text, content: textContent },
+              });
+            }
+            return;
+          }
+
+          const parts = textContent.split(placeholder);
+          parts.forEach((part, idx) => {
+            if (part.trim().length === 0) {
+              return;
+            }
+            const cloned = {
+              ...rt,
+              text: { ...rt.text, content: part },
+            };
+            if (!seenPlaceholder) {
+              before.push(cloned);
+            } else {
+              after.push(cloned);
+            }
+            if (idx < parts.length - 1) {
+              seenPlaceholder = true;
+            }
+          });
+
+          if (parts.length > 1) {
+            seenPlaceholder = true;
+          }
+        });
+
+        if (after.length === 0 && before.length > 0) {
+          const lastIdx = before.length - 1;
+          const original = before[lastIdx];
+          const textContent = original.text?.content ?? "";
+          const colonIndex = textContent.lastIndexOf(":");
+
+          if (colonIndex !== -1) {
+            const trailingRaw = textContent.substring(colonIndex + 1);
+            const trailingClean = trailingRaw.trim();
+            const leadingClean = textContent
+              .substring(0, colonIndex + 1)
+              .replace(/\s+$/g, "");
+
+            if (trailingClean.length > 0 && leadingClean.length > 0) {
+              log(
+                `   ➗ Splitting trailing colon text for placeholder positioning`
+              );
+              before[lastIdx] = {
+                ...original,
+                text: {
+                  ...original.text,
+                  content: leadingClean,
+                },
+              };
+              after.unshift({
+                ...original,
+                text: {
+                  ...original.text,
+                  content: trailingClean,
+                },
+              });
+            }
+          }
+        }
+
+        return { before, after };
+      };
+
+      const checkAndReplacePlaceholder = (richTextArray) => {
+        if (!richTextArray || richTextArray.length === 0) {
+          return {
+            replacement: null,
+            codeBlockToAdd: null,
+            trailingRichText: null,
+          };
+        }
+
+        const allText = richTextArray
+          .map((rt) => rt.text?.content || "")
+          .join("");
+        const placeholderMatch = allText.match(/___PRE_PLACEHOLDER_(\d+)___/);
+
+        if (placeholderMatch) {
+          log(`🔍 checkAndReplacePlaceholder: Found placeholder match`);
+          log(`   allText: "${allText}"`);
+          log(`   allText.trim(): "${allText.trim()}"`);
+          log(`   placeholderMatch[0]: "${placeholderMatch[0]}"`);
+          log(`   Equals check: ${allText.trim() === placeholderMatch[0]}`);
+        }
+
+        if (placeholderMatch && allText.trim() === placeholderMatch[0]) {
+          const index = parseInt(placeholderMatch[1]);
+          const preInfo = preElements[index];
+          if (preInfo && preInfo.codeText && preInfo.codeText.length > 0) {
+            log(
+              `✅ Replacing placeholder ${index} with code block: ${preInfo.codeText.substring(
+                0,
+                50
+              )}...`
+            );
+            return {
+              replacement: {
+                object: "block",
+                type: "code",
+                code: {
+                  rich_text: [
+                    { type: "text", text: { content: preInfo.codeText } },
+                  ],
+                  language: preInfo.language,
+                },
+              },
+              codeBlockToAdd: null,
+              trailingRichText: null,
+            };
+          }
+        } else if (placeholderMatch) {
+          const index = parseInt(placeholderMatch[1]);
+          const preInfo = preElements[index];
+
+          if (preInfo && preInfo.codeText && preInfo.codeText.length > 0) {
+            log(
+              `🔧 Removing placeholder ${index} from text and adding code block separately`
+            );
+
+            const { before, after } = splitRichTextByPlaceholder(
+              richTextArray,
+              placeholderMatch[0]
+            );
+
+            log(
+              `   splitRichTextByPlaceholder before=${
+                before.map((rt) => rt.text?.content).join(" | ") || "<empty>"
+              }`
+            );
+            log(
+              `   splitRichTextByPlaceholder after=${
+                after.map((rt) => rt.text?.content).join(" | ") || "<empty>"
+              }`
+            );
+
+            const codeBlock = {
+              object: "block",
+              type: "code",
+              code: {
+                rich_text: [
+                  { type: "text", text: { content: preInfo.codeText } },
+                ],
+                language: preInfo.language,
+              },
+            };
+
+            return {
+              replacement: before.length > 0 ? before : null,
+              codeBlockToAdd: codeBlock,
+              trailingRichText: after.length > 0 ? after : null,
+            };
+          } else {
+            log(
+              `⚠️ Placeholder ${
+                placeholderMatch[1]
+              } mixed with text but no code found: ${allText.substring(0, 100)}`
+            );
+          }
+        }
+
+        return {
+          replacement: null,
+          codeBlockToAdd: null,
+          trailingRichText: null,
+        };
+      };
+
+      const processBlocksWithPlaceholders = (blocks) => {
+        const processedBlocks = [];
+        let blockIndex = 0;
+
+        for (const block of blocks) {
+          log(`🔍 Checking block ${blockIndex} type: ${block.type}`);
+
+          if (block.type === "paragraph" && block.paragraph?.rich_text) {
+            const allText = block.paragraph.rich_text
+              .map((rt) => rt.text?.content || "")
+              .join("");
+            log(
+              `🔍 Block ${blockIndex} paragraph contains: "${allText.substring(
+                0,
+                100
+              )}"`
+            );
+            log(
+              `🔍 Block ${blockIndex} rich_text array length: ${block.paragraph.rich_text.length}`
+            );
+            if (block.paragraph.rich_text.length > 0) {
+              log(
+                `🔍 Block ${blockIndex} first rich_text item: ${JSON.stringify(
+                  block.paragraph.rich_text[0]
+                ).substring(0, 200)}`
+              );
+            }
+            const result = checkAndReplacePlaceholder(
+              block.paragraph.rich_text
+            );
+            if (result.replacement) {
+              if (
+                Array.isArray(result.replacement) &&
+                result.replacement.length > 0
+              ) {
+                log(
+                  `   ✏️ Updating paragraph before placeholder: ${result.replacement
+                    .map((rt) => rt.text?.content)
+                    .join("")}`
+                );
+                block.paragraph.rich_text = result.replacement;
+                processedBlocks.push(block);
+              } else {
+                processedBlocks.push(result.replacement);
+                if (result.replacement.type === "code") {
+                  maybeSplitParagraphForTrailingText(
+                    processedBlocks,
+                    "placeholder-direct",
+                    {
+                      skipWhenTrailingHandled:
+                        Array.isArray(result.trailingRichText) &&
+                        result.trailingRichText.length > 0,
+                    }
+                  );
+                }
+              }
+              if (result.codeBlockToAdd) {
+                log(
+                  `   ➕ Adding code block after placeholder (language=${result.codeBlockToAdd.code.language})`
+                );
+                processedBlocks.push(result.codeBlockToAdd);
+                maybeSplitParagraphForTrailingText(
+                  processedBlocks,
+                  "placeholder-replacement",
+                  {
+                    skipWhenTrailingHandled:
+                      Array.isArray(result.trailingRichText) &&
+                      result.trailingRichText.length > 0,
+                  }
+                );
+              }
+              if (
+                Array.isArray(result.trailingRichText) &&
+                result.trailingRichText.length > 0
+              ) {
+                log(
+                  `   ➕ Adding trailing paragraph: ${result.trailingRichText
+                    .map((rt) => rt.text?.content)
+                    .join("")}`
+                );
+                processedBlocks.push({
+                  object: "block",
+                  type: "paragraph",
+                  paragraph: { rich_text: result.trailingRichText },
+                });
+              }
+            } else if (result.codeBlockToAdd) {
+              log(`   ➕ Keeping original paragraph and inserting code block`);
+              processedBlocks.push(block);
+              processedBlocks.push(result.codeBlockToAdd);
+              maybeSplitParagraphForTrailingText(
+                processedBlocks,
+                "placeholder-original",
+                {
+                  skipWhenTrailingHandled:
+                    Array.isArray(result.trailingRichText) &&
+                    result.trailingRichText.length > 0,
+                }
+              );
+              if (
+                Array.isArray(result.trailingRichText) &&
+                result.trailingRichText.length > 0
+              ) {
+                log(
+                  `   ➕ Adding trailing paragraph after preserved block: ${result.trailingRichText
+                    .map((rt) => rt.text?.content)
+                    .join("")}`
+                );
+                processedBlocks.push({
+                  object: "block",
+                  type: "paragraph",
+                  paragraph: { rich_text: result.trailingRichText },
+                });
+              }
+            } else {
+              processedBlocks.push(block);
+            }
+          } else if (
+            block.type === "bulleted_list_item" &&
+            block.bulleted_list_item?.rich_text
+          ) {
+            const result = checkAndReplacePlaceholder(
+              block.bulleted_list_item.rich_text
+            );
+            if (result.replacement && !result.codeBlockToAdd) {
+              if (Array.isArray(result.replacement)) {
+                block.bulleted_list_item.rich_text = result.replacement;
+                processedBlocks.push(block);
+              } else {
+                processedBlocks.push(result.replacement);
+              }
+            } else if (result.replacement && result.codeBlockToAdd) {
+              if (Array.isArray(result.replacement)) {
+                block.bulleted_list_item.rich_text = result.replacement;
+              } else {
+                log(
+                  `⚠️ Unexpected block replacement for list item, keeping original`
+                );
+              }
+              processedBlocks.push(block);
+              processedBlocks.push(result.codeBlockToAdd);
+              maybeSplitParagraphForTrailingText(
+                processedBlocks,
+                "placeholder-list",
+                {
+                  skipWhenTrailingHandled: false,
+                }
+              );
+            } else {
+              if (block.bulleted_list_item.children) {
+                const updatedChildren = [];
+                for (const child of block.bulleted_list_item.children) {
+                  if (
+                    child.type === "paragraph" &&
+                    child.paragraph?.rich_text
+                  ) {
+                    const childResult = checkAndReplacePlaceholder(
+                      child.paragraph.rich_text
+                    );
+                    if (childResult.replacement) {
+                      if (Array.isArray(childResult.replacement)) {
+                        updatedChildren.push({
+                          object: "block",
+                          type: "paragraph",
+                          paragraph: {
+                            rich_text: childResult.replacement,
+                          },
+                        });
+                      } else {
+                        updatedChildren.push(childResult.replacement);
+                      }
+                      if (childResult.codeBlockToAdd) {
+                        updatedChildren.push(childResult.codeBlockToAdd);
+                      }
+                    } else if (childResult.codeBlockToAdd) {
+                      updatedChildren.push(child);
+                      updatedChildren.push(childResult.codeBlockToAdd);
+                    } else {
+                      updatedChildren.push(child);
+                    }
+                  } else {
+                    updatedChildren.push(child);
+                  }
+                }
+                block.bulleted_list_item.children = updatedChildren;
+              }
+              processedBlocks.push(block);
+            }
+          } else if (
+            block.type === "numbered_list_item" &&
+            block.numbered_list_item?.rich_text
+          ) {
+            const result = checkAndReplacePlaceholder(
+              block.numbered_list_item.rich_text
+            );
+            if (result.replacement && !result.codeBlockToAdd) {
+              if (Array.isArray(result.replacement)) {
+                block.numbered_list_item.rich_text = result.replacement;
+                processedBlocks.push(block);
+              } else {
+                processedBlocks.push(result.replacement);
+              }
+            } else if (result.replacement && result.codeBlockToAdd) {
+              block.numbered_list_item.rich_text = result.replacement;
+              processedBlocks.push(block);
+              processedBlocks.push(result.codeBlockToAdd);
+              maybeSplitParagraphForTrailingText(
+                processedBlocks,
+                "placeholder-numbered-list",
+                {
+                  skipWhenTrailingHandled: false,
+                }
+              );
+            } else {
+              if (block.numbered_list_item.children) {
+                const updatedChildren = [];
+                for (const child of block.numbered_list_item.children) {
+                  if (
+                    child.type === "paragraph" &&
+                    child.paragraph?.rich_text
+                  ) {
+                    const childResult = checkAndReplacePlaceholder(
+                      child.paragraph.rich_text
+                    );
+                    if (childResult.replacement) {
+                      if (Array.isArray(childResult.replacement)) {
+                        updatedChildren.push({
+                          object: "block",
+                          type: "paragraph",
+                          paragraph: {
+                            rich_text: childResult.replacement,
+                          },
+                        });
+                      } else {
+                        updatedChildren.push(childResult.replacement);
+                      }
+                      if (childResult.codeBlockToAdd) {
+                        updatedChildren.push(childResult.codeBlockToAdd);
+                      }
+                    } else if (childResult.codeBlockToAdd) {
+                      updatedChildren.push(child);
+                      updatedChildren.push(childResult.codeBlockToAdd);
+                    } else {
+                      updatedChildren.push(child);
+                    }
+                  } else {
+                    updatedChildren.push(child);
+                  }
+                }
+                block.numbered_list_item.children = updatedChildren;
+              }
+              processedBlocks.push(block);
+            }
+          } else {
+            processedBlocks.push(block);
+          }
+
+          blockIndex++;
+        }
+
+        return processedBlocks;
+      };
+
+      return { processBlocksWithPlaceholders };
+    };
 
     // Match opening tags for block elements
     const blockTags = [
@@ -986,11 +1959,11 @@ async function htmlToNotionBlocks(html) {
     ];
     const selfClosingTags = ["hr", "img", "iframe"];
     const allTags = [...blockTags, ...selfClosingTags];
+    const tagPattern = [...allTags]
+      .sort((a, b) => b.length - a.length)
+      .join("|");
 
-    const openingTagRegex = new RegExp(
-      `<(${allTags.join("|")})([^>]*)(/?)>`,
-      "gi"
-    );
+    const openingTagRegex = new RegExp(`<(${tagPattern})([^>]*)(/?)>`, "gi");
     let match;
     const matches = [];
 
@@ -1001,6 +1974,14 @@ async function htmlToNotionBlocks(html) {
       const isSelfClosing = !!match[3] || selfClosingTags.includes(tag);
       const startPos = match.index;
       const afterOpenTag = openingTagRegex.lastIndex;
+
+      // DEBUG: Log every tag match, especially pre tags
+      if (tag === "pre") {
+        log(`🔍 REGEX MATCHED: <${tag}> at position ${startPos}`);
+        log(`   Attributes: ${attributes}`);
+        log(`   After tag position: ${afterOpenTag}`);
+        log(`   HTML snippet: ${htmlStr.substring(startPos, startPos + 150)}`);
+      }
 
       if (isSelfClosing) {
         // Self-closing tag - no content
@@ -1030,6 +2011,11 @@ async function htmlToNotionBlocks(html) {
           });
           // Skip past the closing tag
           openingTagRegex.lastIndex = endPos;
+        } else if (tag === "pre") {
+          // DEBUG: Log when pre tag doesn't have a closing tag
+          log(`❌ DEBUG: Pre tag at position ${startPos} has no closing tag!`);
+          const snippet = htmlStr.substring(startPos, startPos + 300);
+          log(`   Snippet: ${snippet}`);
         }
       }
     }
@@ -1045,6 +2031,10 @@ async function htmlToNotionBlocks(html) {
     if (matches.length > 0) {
       const matchedTags = matches.map((m) => m.tag).join(", ");
       log(`   Matched tags: ${matchedTags}`);
+
+      // DEBUG: Check specifically for pre tags
+      const preCount = matches.filter((m) => m.tag === "pre").length;
+      log(`🔍 DEBUG: Found ${preCount} <pre> tag(s) in matches`);
     }
 
     // Process matches and text between them
@@ -1053,6 +2043,19 @@ async function htmlToNotionBlocks(html) {
       // Extract any text before this match
       if (m.index > lastEndPos) {
         const textBetween = htmlStr.substring(lastEndPos, m.index);
+
+        // DEBUG: Log textBetween for placeholder debugging
+        if (
+          textBetween.includes("___PRE_PLACEHOLDER_") ||
+          (textBetween.trim() === "" && m.tag === "p")
+        ) {
+          log(
+            `🔍 TEXT BETWEEN: "${textBetween.substring(0, 100)}" (${
+              textBetween.length
+            } chars) before <${m.tag}>`
+          );
+        }
+
         const result = await htmlToNotionRichText(textBetween);
         const richText = result.richText;
 
@@ -1067,7 +2070,12 @@ async function htmlToNotionBlocks(html) {
               object: "block",
               type: "paragraph",
               paragraph: {
-                rich_text: paragraphRichText,
+                // Deep copy to prevent modifications to shared objects
+                rich_text: paragraphRichText.map((rt) => ({
+                  ...rt,
+                  text: { ...rt.text },
+                  annotations: { ...rt.annotations },
+                })),
               },
             });
           }
@@ -1082,6 +2090,7 @@ async function htmlToNotionBlocks(html) {
       const tag = m.tag.toLowerCase();
       const content = m.content;
       const isSelfClosing = m.isSelfClosing;
+      const attributes = m.attributes || "";
 
       // Update lastEndPos to the end of this match
       lastEndPos = m.index + m.fullMatch.length;
@@ -1107,6 +2116,16 @@ async function htmlToNotionBlocks(html) {
       }
       // Paragraphs
       else if (tag === "p") {
+        // DEBUG: Log if this is the placeholder paragraph
+        if (content && content.includes("___PRE_PLACEHOLDER_")) {
+          log(
+            `🎯 Found placeholder in <p> tag! Content: "${content.substring(
+              0,
+              150
+            )}"`
+          );
+        }
+
         // Check if paragraph has sectiontitle tasklabel class
         const classMatch = m.attributes.match(/class=["']([^"']*)["']/i);
         const hasSectionTitle =
@@ -1149,17 +2168,73 @@ async function htmlToNotionBlocks(html) {
         // Split into multiple paragraphs if needed to respect 2000 char limit
         const textParagraphs = splitRichTextIntoParagraphs(richText);
         for (const paragraphRichText of textParagraphs) {
-          if (
-            paragraphRichText.length > 0 &&
-            paragraphRichText[0].text.content.trim().length > 0
-          ) {
-            tempBlocks.push({
+          // DEBUG: Log placeholder paragraph filtering
+          const joinedContent = paragraphRichText
+            .map((rt) => rt.text?.content || "")
+            .join("");
+          const hasPlaceholder = joinedContent.includes("___PRE_PLACEHOLDER_");
+          const hasTextContent = paragraphRichText.some((rt) => {
+            const textValue = rt.text?.content || "";
+            if (textValue.includes("___PRE_PLACEHOLDER_")) return true;
+            return textValue.trim().length > 0;
+          });
+          const previewText =
+            paragraphRichText.find((rt) => {
+              const textValue = rt.text?.content || "";
+              return textValue.trim().length > 0;
+            })?.text?.content ||
+            (hasPlaceholder ? "___PRE_PLACEHOLDER___" : "");
+          if (hasPlaceholder) {
+            log(
+              `🔍 Placeholder paragraph: length=${paragraphRichText.length}, preview="${previewText}", hasTextContent=${hasTextContent}`
+            );
+          }
+
+          if (hasTextContent) {
+            const richTextCopy = paragraphRichText.map((rt) => ({
+              ...rt,
+              text: { ...rt.text },
+              annotations: { ...rt.annotations },
+            }));
+
+            const combinedText = richTextCopy
+              .map((rt) => rt.text?.content || "")
+              .join("");
+            const normalizedText = combinedText.replace(/^\s+/, "");
+            const isRoleRequired = /^role required:/i.test(normalizedText);
+
+            const blockType = isRoleRequired ? "quote" : "paragraph";
+            const blockPayload = {
               object: "block",
-              type: "paragraph",
-              paragraph: {
-                rich_text: paragraphRichText,
+              type: blockType,
+              [blockType]: {
+                rich_text: richTextCopy,
               },
-            });
+            };
+
+            if (isRoleRequired) {
+              blockPayload.quote.color = "blue_background";
+            }
+
+            tempBlocks.push(blockPayload);
+            if (hasPlaceholder) {
+              log(
+                `✅ Placeholder paragraph ADDED to tempBlocks at index ${
+                  tempBlocks.length - 1
+                }`
+              );
+              log(
+                `   Pushed paragraph rich_text has ${paragraphBlock.paragraph.rich_text.length} items`
+              );
+              log(
+                `   First item text.content: "${
+                  paragraphBlock.paragraph.rich_text[0]?.text?.content ||
+                  "UNDEFINED"
+                }"`
+              );
+            }
+          } else if (hasPlaceholder) {
+            log(`❌ Placeholder paragraph SKIPPED (failed condition check)`);
           }
         }
 
@@ -1222,77 +2297,56 @@ async function htmlToNotionBlocks(html) {
       // Code blocks
       else if (tag === "pre") {
         log(`🔍 Found pre element with attributes: ${attributes}`);
-        const codeText = cleanHtmlText(content);
+        const codeText = extractPreCodeText(content);
         log(
           `🔍 Pre element content length: ${content.length}, cleaned text length: ${codeText.length}`
         );
-        log(`🔍 Pre element content sample: ${content.substring(0, 100)}`);
+        log(`🔍 Pre element content sample: ${codeText.substring(0, 100)}`);
         if (codeText && codeText.length > 0) {
           // Try to detect language from class or data attribute
-          let language = "plain text";
+          let language = "";
           const classMatch = attributes.match(/class=["']([^"']*)["']/i);
           if (classMatch) {
             const classes = classMatch[1];
             log(`🔍 Pre element classes: ${classes}`);
-            const languageMatch = classes.match(/language-(\w+)/);
-            if (languageMatch) {
-              language = languageMatch[1];
+            const languageClass = classes
+              .split(/\s+/)
+              .map((cls) => cls.trim())
+              .find((cls) => cls.toLowerCase().startsWith("language-"));
+            if (languageClass) {
+              language = languageClass.substring("language-".length);
               log(`🔍 Detected language: ${language}`);
             }
           }
 
-          // Map common language names
-          const languageMap = {
-            javascript: "javascript",
-            js: "javascript",
-            python: "python",
-            py: "python",
-            java: "java",
-            cpp: "cpp",
-            "c++": "cpp",
-            csharp: "csharp",
-            "c#": "csharp",
-            php: "php",
-            ruby: "ruby",
-            go: "go",
-            rust: "rust",
-            swift: "swift",
-            kotlin: "kotlin",
-            scala: "scala",
-            html: "html",
-            xml: "xml",
-            css: "css",
-            scss: "scss",
-            sass: "sass",
-            less: "less",
-            json: "json",
-            yaml: "yaml",
-            yml: "yaml",
-            markdown: "markdown",
-            md: "markdown",
-            sql: "sql",
-            bash: "bash",
-            shell: "bash",
-            sh: "bash",
-            powershell: "powershell",
-            plaintext: "plain text",
-            text: "plain text",
-          };
-
-          if (languageMap[language.toLowerCase()]) {
-            language = languageMap[language.toLowerCase()];
+          if (!language) {
+            const dataLanguageMatch = attributes.match(
+              /data-language=["']([^"']+)["']/i
+            );
+            if (dataLanguageMatch) {
+              language = dataLanguageMatch[1];
+              log(`🔍 Detected data-language: ${language}`);
+            }
           }
 
-          log(`🔍 Creating code block with language: ${language}`);
+          const normalizedLanguage = normalizeCodeLanguage(language);
+
+          log(`🔍 Creating code block with language: ${normalizedLanguage}`);
           tempBlocks.push({
             object: "block",
             type: "code",
             code: {
               rich_text: [{ type: "text", text: { content: codeText } }],
-              language: language,
+              language: normalizedLanguage,
             },
           });
           log(`✅ Code block added to blocks array`);
+          if (process.env.SN2N_DEBUG_SPLIT) {
+            console.log(
+              `pre-tag helper before split: tempBlocks length=${tempBlocks.length}`
+            );
+          }
+          maybeSplitParagraphForTrailingText(tempBlocks, "pre-tag");
         } else {
           log(`⚠️ Pre element had no valid text content`);
         }
@@ -1513,40 +2567,136 @@ async function htmlToNotionBlocks(html) {
           /\b(note|important|warning|tip|caution|info|related)\b/.test(classes);
 
         if (isNoteCallout) {
-          // Convert to Notion callout block
-          const result = await htmlToNotionRichText(content);
-          const richText = result.richText;
-          if (
-            richText.length > 0 &&
-            richText[0].text.content.trim().length > 0
-          ) {
-            // Determine emoji and color based on class
-            let emoji = "📝"; // default note emoji
-            let color = "blue_background"; // default note color
+          let emoji = "📝";
+          let color = "blue_background";
 
-            if (/\b(important|warning|caution)\b/.test(classes)) {
-              emoji = "⚠️";
-              color = "green_background";
-            } else if (/\btip\b/.test(classes)) {
-              emoji = "💡";
-              color = "yellow_background";
-            } else if (/\binfo\b/.test(classes)) {
-              emoji = "ℹ️";
-              color = "blue_background";
-            } else if (/\brelated\b/.test(classes)) {
-              emoji = "🔗";
-              color = "gray_background";
+          if (/\b(important|warning|caution)\b/.test(classes)) {
+            emoji = "⚠️";
+            color = "green_background";
+          } else if (/\btip\b/.test(classes)) {
+            emoji = "💡";
+            color = "yellow_background";
+          } else if (/\binfo\b/.test(classes)) {
+            emoji = "ℹ️";
+            color = "blue_background";
+          } else if (/\brelated\b/.test(classes)) {
+            emoji = "🔗";
+            color = "gray_background";
+          }
+
+          const preElements = [];
+          const preRegex = /<pre([^>]*?)>([\s\S]*?)<\/pre>/gi;
+          let preMatch;
+          let modifiedContent = content;
+          let preIndex = 0;
+
+          while ((preMatch = preRegex.exec(content)) !== null) {
+            const preAttributes = preMatch[1];
+            const preContent = preMatch[2];
+            const placeholder = `___PRE_PLACEHOLDER_${preIndex}___`;
+
+            let language = "";
+            const classMatchInner = preAttributes.match(
+              /class=["']([^"']*)["']/i
+            );
+            if (classMatchInner) {
+              const classesInner = classMatchInner[1]
+                .split(/\s+/)
+                .map((cls) => cls.trim())
+                .filter(Boolean);
+              const languageClass = classesInner.find((cls) =>
+                cls.toLowerCase().startsWith("language-")
+              );
+              if (languageClass) {
+                language = languageClass.substring("language-".length);
+              }
             }
 
-            tempBlocks.push({
+            if (!language) {
+              const dataLanguageMatch = preAttributes.match(
+                /data-language=["']([^"']+)["']/i
+              );
+              if (dataLanguageMatch) {
+                language = dataLanguageMatch[1];
+              }
+            }
+
+            const normalizedLanguage = normalizeCodeLanguage(language);
+            const codeText = extractPreCodeText(preContent);
+
+            preElements.push({
+              placeholder,
+              language: normalizedLanguage,
+              codeText,
+            });
+
+            log(
+              `🔧 (callout) Replacing <pre> with placeholder: ${placeholder}`
+            );
+            modifiedContent = modifiedContent.replace(preMatch[0], placeholder);
+            preIndex++;
+          }
+
+          const { processBlocksWithPlaceholders } =
+            createPlaceholderProcessor(preElements);
+
+          const nestedBlocks = await extractBlocksFromHTML(
+            preElements.length > 0 ? modifiedContent : content,
+            preElements.length > 0
+          );
+          const processedBlocks = processBlocksWithPlaceholders(nestedBlocks);
+
+          let calloutRichText = [];
+          const calloutChildren = [];
+
+          for (const block of processedBlocks) {
+            if (
+              calloutRichText.length === 0 &&
+              block.type === "paragraph" &&
+              block.paragraph?.rich_text &&
+              block.paragraph.rich_text.length > 0
+            ) {
+              calloutRichText = block.paragraph.rich_text.map((rt) => ({
+                ...rt,
+                text: { ...rt.text },
+                annotations: { ...rt.annotations },
+              }));
+              continue;
+            }
+            calloutChildren.push(block);
+          }
+
+          if (calloutRichText.length === 0) {
+            const fallback = await htmlToNotionRichText(content);
+            if (fallback.richText.length > 0) {
+              calloutRichText = fallback.richText.map((rt) => ({
+                ...rt,
+                text: { ...rt.text },
+                annotations: { ...rt.annotations },
+              }));
+            } else {
+              calloutRichText = [
+                { type: "text", text: { content: "" }, annotations: {} },
+              ];
+            }
+          }
+
+          if (calloutRichText.length > 0) {
+            const calloutBlock = {
               object: "block",
               type: "callout",
               callout: {
-                rich_text: richText,
-                icon: { type: "emoji", emoji: emoji },
-                color: color,
+                rich_text: calloutRichText,
+                icon: { type: "emoji", emoji },
+                color,
               },
-            });
+            };
+
+            if (calloutChildren.length > 0) {
+              calloutBlock.children = calloutChildren;
+            }
+
+            tempBlocks.push(calloutBlock);
           }
         } else {
           // Check if this container has pre elements that should be extracted as code blocks
@@ -1564,35 +2714,48 @@ async function htmlToNotionBlocks(html) {
             const placeholder = `___PRE_PLACEHOLDER_${preIndex}___`;
 
             // Store pre element info
-            let language = "plain text";
+            let language = "";
             const classMatch = preAttributes.match(/class=["']([^"']*)["']/i);
             if (classMatch) {
-              const classes = classMatch[1];
-              const languageMatch = classes.match(/language-(\w+)/);
-              if (languageMatch) {
-                language = languageMatch[1];
+              const classes = classMatch[1]
+                .split(/\s+/)
+                .map((cls) => cls.trim())
+                .filter(Boolean);
+              const languageClass = classes.find((cls) =>
+                cls.toLowerCase().startsWith("language-")
+              );
+              if (languageClass) {
+                language = languageClass.substring("language-".length);
               }
             }
 
-            // Map language names
-            const languageMap = {
-              javascript: "javascript",
-              js: "javascript",
-              python: "python",
-              java: "java",
-              plaintext: "plain text",
-              text: "plain text",
-            };
-
-            if (languageMap[language.toLowerCase()]) {
-              language = languageMap[language.toLowerCase()];
+            if (!language) {
+              const dataLanguageMatch = preAttributes.match(
+                /data-language=["']([^"']+)["']/i
+              );
+              if (dataLanguageMatch) {
+                language = dataLanguageMatch[1];
+              }
             }
 
-            const codeText = cleanHtmlText(preContent);
-            preElements.push({ placeholder, language, codeText });
+            const normalizedLanguage = normalizeCodeLanguage(language);
 
-            // Replace in content
+            const codeText = extractPreCodeText(preContent);
+            preElements.push({
+              placeholder,
+              language: normalizedLanguage,
+              codeText,
+            });
+
+            // Replace in content with raw placeholder so surrounding text stays intact
+            log(`🔧 Replacing <pre> with placeholder: ${placeholder}`);
+            log(`   Pre tag to replace: ${preMatch[0].substring(0, 100)}...`);
             modifiedContent = modifiedContent.replace(preMatch[0], placeholder);
+            log(
+              `   Modified content now contains placeholder: ${modifiedContent.includes(
+                placeholder
+              )}`
+            );
             preIndex++;
           }
 
@@ -1602,265 +2765,33 @@ async function htmlToNotionBlocks(html) {
             );
 
             // Process the modified content with placeholders
-            const nestedBlocks = await extractBlocksFromHTML(modifiedContent);
+            // Skip placeholder cleanup in the recursive call - we'll replace them here
+            const nestedBlocks = await extractBlocksFromHTML(
+              modifiedContent,
+              true
+            );
 
-            // Helper function to check and replace placeholder in a block
-            // Returns: { replacement: block|null, codeBlockToAdd: block|null }
-            const checkAndReplacePlaceholder = (richTextArray) => {
-              if (!richTextArray || richTextArray.length === 0)
-                return { replacement: null, codeBlockToAdd: null };
-
-              const allText = richTextArray
-                .map((rt) => rt.text?.content || "")
-                .join("");
-              const placeholderMatch = allText.match(
-                /___PRE_PLACEHOLDER_(\d+)___/
-              );
-
-              if (placeholderMatch && allText.trim() === placeholderMatch[0]) {
-                // This is just a placeholder, replace with code block
-                const index = parseInt(placeholderMatch[1]);
-                const preInfo = preElements[index];
-                if (
-                  preInfo &&
-                  preInfo.codeText &&
-                  preInfo.codeText.length > 0
-                ) {
-                  log(
-                    `✅ Replacing placeholder ${index} with code block: ${preInfo.codeText.substring(
-                      0,
-                      50
-                    )}...`
-                  );
-                  return {
-                    replacement: {
-                      object: "block",
-                      type: "code",
-                      code: {
-                        rich_text: [
-                          { type: "text", text: { content: preInfo.codeText } },
-                        ],
-                        language: preInfo.language,
-                      },
-                    },
-                    codeBlockToAdd: null,
-                  };
-                }
-              } else if (placeholderMatch) {
-                // Placeholder is mixed with text - remove placeholder, add code block separately
-                const index = parseInt(placeholderMatch[1]);
-                const preInfo = preElements[index];
-
-                if (
-                  preInfo &&
-                  preInfo.codeText &&
-                  preInfo.codeText.length > 0
-                ) {
-                  log(
-                    `🔧 Removing placeholder ${index} from text and adding code block separately`
-                  );
-
-                  // Remove the placeholder from the rich text
-                  const cleanedRichText = richTextArray
-                    .map((rt) => {
-                      if (rt.text?.content?.includes(placeholderMatch[0])) {
-                        return {
-                          ...rt,
-                          text: {
-                            ...rt.text,
-                            content: rt.text.content
-                              .replace(placeholderMatch[0], "")
-                              .trim(),
-                          },
-                        };
-                      }
-                      return rt;
-                    })
-                    .filter((rt) => rt.text?.content); // Remove empty items
-
-                  const codeBlock = {
-                    object: "block",
-                    type: "code",
-                    code: {
-                      rich_text: [
-                        { type: "text", text: { content: preInfo.codeText } },
-                      ],
-                      language: preInfo.language,
-                    },
-                  };
-
-                  return {
-                    replacement: cleanedRichText,
-                    codeBlockToAdd: codeBlock,
-                  };
-                } else {
-                  log(
-                    `⚠️ Placeholder ${
-                      placeholderMatch[1]
-                    } mixed with text but no code found: ${allText.substring(
-                      0,
-                      100
-                    )}`
-                  );
-                }
-              }
-
-              return { replacement: null, codeBlockToAdd: null };
-            };
-
-            // Replace placeholder blocks with actual code blocks
-            for (const block of nestedBlocks) {
-              log(`🔍 Checking block type: ${block.type}`);
-
-              if (block.type === "paragraph" && block.paragraph.rich_text) {
-                const result = checkAndReplacePlaceholder(
-                  block.paragraph.rich_text
+            // DEBUG: Log blocks right after recursive call
+            log(`📊 Recursive call returned ${nestedBlocks.length} blocks`);
+            nestedBlocks.forEach((b, i) => {
+              if (b.type === "paragraph" && b.paragraph?.rich_text) {
+                const text = b.paragraph.rich_text
+                  .map((rt) => rt.text?.content || "")
+                  .join("");
+                log(
+                  `   Block ${i} (${b.type}): length=${
+                    b.paragraph.rich_text.length
+                  }, text="${text.substring(0, 50)}"`
                 );
-                if (result.replacement) {
-                  // If replacement is an array (rich text), wrap it in a paragraph block
-                  if (Array.isArray(result.replacement)) {
-                    tempBlocks.push({
-                      object: "block",
-                      type: "paragraph",
-                      paragraph: { rich_text: result.replacement }
-                    });
-                  } else {
-                    // If replacement is already a block object, use it directly
-                    tempBlocks.push(result.replacement);
-                  }
-                  if (result.codeBlockToAdd) {
-                    tempBlocks.push(result.codeBlockToAdd);
-                  }
-                } else if (result.codeBlockToAdd) {
-                  // Keep original block, add code block after
-                  tempBlocks.push(block);
-                  tempBlocks.push(result.codeBlockToAdd);
-                } else {
-                  tempBlocks.push(block);
-                }
-              } else if (
-                block.type === "bulleted_list_item" &&
-                block.bulleted_list_item?.rich_text
-              ) {
-                const result = checkAndReplacePlaceholder(
-                  block.bulleted_list_item.rich_text
-                );
-                if (result.replacement && !result.codeBlockToAdd) {
-                  // Entire list item is just a placeholder - replace with code block
-                  tempBlocks.push(result.replacement);
-                } else if (result.replacement && result.codeBlockToAdd) {
-                  // List item has text + placeholder - update text and add code block
-                  // Ensure replacement is properly formatted rich text array
-                  if (Array.isArray(result.replacement)) {
-                    block.bulleted_list_item.rich_text = result.replacement;
-                  } else {
-                    // If replacement is a block object, this shouldn't happen for list items
-                    log(`⚠️ Unexpected block replacement for list item, keeping original`);
-                  }
-                  tempBlocks.push(block);
-                  tempBlocks.push(result.codeBlockToAdd);
-                } else {
-                  // No placeholder in main text, check children
-                  if (block.bulleted_list_item.children) {
-                    const updatedChildren = [];
-                    for (const child of block.bulleted_list_item.children) {
-                      if (
-                        child.type === "paragraph" &&
-                        child.paragraph?.rich_text
-                      ) {
-                        const childResult = checkAndReplacePlaceholder(
-                          child.paragraph.rich_text
-                        );
-                        if (childResult.replacement) {
-                          // If replacement is an array (rich text), wrap it in a paragraph block
-                          if (Array.isArray(childResult.replacement)) {
-                            updatedChildren.push({
-                              object: "block",
-                              type: "paragraph",
-                              paragraph: { rich_text: childResult.replacement }
-                            });
-                          } else {
-                            // If replacement is already a block object, use it directly
-                            updatedChildren.push(childResult.replacement);
-                          }
-                          if (childResult.codeBlockToAdd) {
-                            updatedChildren.push(childResult.codeBlockToAdd);
-                          }
-                        } else if (childResult.codeBlockToAdd) {
-                          updatedChildren.push(child);
-                          updatedChildren.push(childResult.codeBlockToAdd);
-                        } else {
-                          updatedChildren.push(child);
-                        }
-                      } else {
-                        updatedChildren.push(child);
-                      }
-                    }
-                    block.bulleted_list_item.children = updatedChildren;
-                  }
-                  tempBlocks.push(block);
-                }
-              } else if (
-                block.type === "numbered_list_item" &&
-                block.numbered_list_item?.rich_text
-              ) {
-                const result = checkAndReplacePlaceholder(
-                  block.numbered_list_item.rich_text
-                );
-                if (result.replacement && !result.codeBlockToAdd) {
-                  // Entire list item is just a placeholder - replace with code block
-                  tempBlocks.push(result.replacement);
-                } else if (result.replacement && result.codeBlockToAdd) {
-                  // List item has text + placeholder - update text and add code block
-                  block.numbered_list_item.rich_text = result.replacement;
-                  tempBlocks.push(block);
-                  tempBlocks.push(result.codeBlockToAdd);
-                } else {
-                  // No placeholder in main text, check children
-                  if (block.numbered_list_item.children) {
-                    const updatedChildren = [];
-                    for (const child of block.numbered_list_item.children) {
-                      if (
-                        child.type === "paragraph" &&
-                        child.paragraph?.rich_text
-                      ) {
-                        const childResult = checkAndReplacePlaceholder(
-                          child.paragraph.rich_text
-                        );
-                        if (childResult.replacement) {
-                          // If replacement is an array (rich text), wrap it in a paragraph block
-                          if (Array.isArray(childResult.replacement)) {
-                            updatedChildren.push({
-                              object: "block",
-                              type: "paragraph",
-                              paragraph: { rich_text: childResult.replacement }
-                            });
-                          } else {
-                            // If replacement is already a block object, use it directly
-                            updatedChildren.push(childResult.replacement);
-                          }
-                          if (childResult.codeBlockToAdd) {
-                            updatedChildren.push(childResult.codeBlockToAdd);
-                          }
-                        } else if (childResult.codeBlockToAdd) {
-                          updatedChildren.push(child);
-                          updatedChildren.push(childResult.codeBlockToAdd);
-                        } else {
-                          updatedChildren.push(child);
-                        }
-                      } else {
-                        updatedChildren.push(child);
-                      }
-                    }
-                    block.numbered_list_item.children = updatedChildren;
-                  }
-                  tempBlocks.push(block);
-                }
               } else {
-                // Other block types
-                tempBlocks.push(block);
+                log(`   Block ${i} (${b.type})`);
               }
-            }
+            });
+
+            const { processBlocksWithPlaceholders } =
+              createPlaceholderProcessor(preElements);
+            const processedBlocks = processBlocksWithPlaceholders(nestedBlocks);
+            tempBlocks.push(...processedBlocks);
           } else {
             // No pre elements, process normally
             log(
@@ -1888,7 +2819,10 @@ async function htmlToNotionBlocks(html) {
               log(`   Found block tags: ${foundTags.join(", ")}`);
             }
 
-            const nestedBlocks = await extractBlocksFromHTML(content);
+            const nestedBlocks = await extractBlocksFromHTML(
+              content,
+              skipPlaceholderCleanup
+            );
             if (nestedBlocks.length > 0) {
               log(
                 `🔄 Recursive call returned ${
@@ -1984,7 +2918,10 @@ async function htmlToNotionBlocks(html) {
       if (hasBlockElements) {
         // Recursively process remaining text to extract blocks
         log(`📝 Processing remaining text recursively (has block elements)...`);
-        const remainingBlocks = await extractBlocksFromHTML(textAfter);
+        const remainingBlocks = await extractBlocksFromHTML(
+          textAfter,
+          skipPlaceholderCleanup
+        );
         tempBlocks.push(...remainingBlocks);
       } else {
         // No block elements, treat as inline text with formatting
@@ -2014,6 +2951,108 @@ async function htmlToNotionBlocks(html) {
           tempBlocks.push(...result.inlineImages);
         }
       }
+    }
+
+    // Final cleanup: Remove any remaining placeholders from all text content
+    // Skip this cleanup if we're processing content with placeholders (they'll be replaced by the parent)
+    if (!skipPlaceholderCleanup) {
+      for (const block of tempBlocks) {
+        if (block.type === "paragraph" && block.paragraph?.rich_text) {
+          block.paragraph.rich_text = block.paragraph.rich_text
+            .map((rt) => ({
+              ...rt,
+              text: {
+                ...rt.text,
+                content:
+                  rt.text?.content?.replace(/___PRE_PLACEHOLDER_\d+___/g, "") ||
+                  "",
+              },
+            }))
+            .filter((rt) => rt.text?.content); // Remove empty text items
+        } else if (
+          block.type === "bulleted_list_item" &&
+          block.bulleted_list_item?.rich_text
+        ) {
+          block.bulleted_list_item.rich_text =
+            block.bulleted_list_item.rich_text
+              .map((rt) => ({
+                ...rt,
+                text: {
+                  ...rt.text,
+                  content:
+                    rt.text?.content?.replace(
+                      /___PRE_PLACEHOLDER_\d+___/g,
+                      ""
+                    ) || "",
+                },
+              }))
+              .filter((rt) => rt.text?.content);
+        } else if (
+          block.type === "numbered_list_item" &&
+          block.numbered_list_item?.rich_text
+        ) {
+          block.numbered_list_item.rich_text =
+            block.numbered_list_item.rich_text
+              .map((rt) => ({
+                ...rt,
+                text: {
+                  ...rt.text,
+                  content:
+                    rt.text?.content?.replace(
+                      /___PRE_PLACEHOLDER_\d+___/g,
+                      ""
+                    ) || "",
+                },
+              }))
+              .filter((rt) => rt.text?.content);
+        }
+
+        // Also clean children of list items
+        if (
+          (block.type === "bulleted_list_item" ||
+            block.type === "numbered_list_item") &&
+          block[block.type]?.children
+        ) {
+          for (const child of block[block.type].children) {
+            if (child.type === "paragraph" && child.paragraph?.rich_text) {
+              child.paragraph.rich_text = child.paragraph.rich_text
+                .map((rt) => ({
+                  ...rt,
+                  text: {
+                    ...rt.text,
+                    content:
+                      rt.text?.content?.replace(
+                        /___PRE_PLACEHOLDER_\d+___/g,
+                        ""
+                      ) || "",
+                  },
+                }))
+                .filter((rt) => rt.text?.content);
+            }
+          }
+        }
+      }
+    }
+
+    // DEBUG: Log tempBlocks before returning
+    if (skipPlaceholderCleanup) {
+      log(
+        `🔍 DEBUG: About to return ${tempBlocks.length} blocks (skipPlaceholderCleanup=${skipPlaceholderCleanup})`
+      );
+      tempBlocks.forEach((b, i) => {
+        if (b.type === "paragraph" && b.paragraph?.rich_text) {
+          const text = b.paragraph.rich_text
+            .map((rt) => rt.text?.content || "")
+            .join("");
+          if (text.includes("___PRE_PLACEHOLDER") || text === "") {
+            log(
+              `   BEFORE RETURN Block ${i} (${b.type}): length=${
+                b.paragraph.rich_text.length
+              }, text="${text.substring(0, 80)}"`
+            );
+          }
+        }
+      });
     }
 
     return tempBlocks;
@@ -2235,6 +3274,16 @@ async function createImageBlock(src, alt = "") {
 
 // Helper function to convert HTML to Notion rich text format
 async function htmlToNotionRichText(html) {
+  // Debug: Check if input contains placeholder
+  if (html && html.includes("___PRE_PLACEHOLDER_")) {
+    log(
+      `🔍 htmlToNotionRichText received placeholder: "${html.substring(
+        0,
+        150
+      )}"`
+    );
+  }
+
   if (!html)
     return {
       richText: [{ type: "text", text: { content: "" } }],
@@ -2274,15 +3323,6 @@ async function htmlToNotionRichText(html) {
     text = text.replace(imgTag, "");
   }
 
-  // Handle technical identifiers in parentheses/brackets with dots or underscores as inline code
-  // Matches patterns like: (com.snc.software_asset_management), ( com.snc.incident.ml_solution ), [sys.user_table], etc.
-  text = text.replace(
-    /([(\[])\s*([a-zA-Z0-9_.]+\.[a-zA-Z0-9_.]+)\s*([)\]])/g,
-    (match, open, code, close) => {
-      return `${open}__CODE_START__${code}__CODE_END__${close}`;
-    }
-  );
-
   // First, handle bold/strong tags by replacing with markers
   text = text.replace(
     /<(b|strong)([^>]*)>([\s\S]*?)<\/\1>/gi,
@@ -2307,15 +3347,77 @@ async function htmlToNotionRichText(html) {
     }
   );
 
-  // Handle span with class="ph" containing technical identifiers (plugin names, table names, etc.) as inline code
+  // Handle spans with technical identifier classes (ph, keyword, parmname, codeph, etc.) as inline code
   text = text.replace(
-    /<span[^>]*class=["'][^"']*\bph\b[^"']*["'][^>]*>([^<]*\.[^<]+)<\/span>/gi,
+    /<span[^>]*class=["'][^"']*(?:\bph\b|\bkeyword\b|\bparmname\b|\bcodeph\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi,
     (match, content) => {
-      // Check if content looks like a technical identifier (contains dots or underscores)
-      if (/[._]/.test(content)) {
-        return `__CODE_START__${content.trim()}__CODE_END__`;
+      const cleanedContent = cleanHtmlText(content);
+      if (!cleanedContent || !cleanedContent.trim()) return match;
+
+      const technicalTokenRegex =
+        /[A-Za-z0-9][A-Za-z0-9._-]*[._][A-Za-z0-9._-]*/g;
+      const strictTechnicalTokenRegex =
+        /[A-Za-z0-9][A-Za-z0-9._-]*[._][A-Za-z0-9._-]+/g;
+
+      let replaced = cleanedContent;
+
+      replaced = replaced.replace(strictTechnicalTokenRegex, (token) => {
+        const bareToken = token.trim();
+
+        if (!bareToken) {
+          return token;
+        }
+
+        // Skip uppercase acronyms without lowercase characters after removing separators
+        const bareAlphaNumeric = bareToken.replace(/[._-]/g, "");
+        if (bareAlphaNumeric && /^[A-Z0-9]+$/.test(bareAlphaNumeric)) {
+          return token;
+        }
+
+        return `__CODE_START__${bareToken}__CODE_END__`;
+      });
+
+      if (replaced !== cleanedContent) {
+        return replaced;
       }
-      return match; // Return unchanged if not a technical identifier
+
+      return match;
+    }
+  );
+
+  // Remove surrounding parentheses/brackets around inline code markers
+  text = text.replace(
+    /([\(\[])(\s*(?:__CODE_START__[\s\S]*?__CODE_END__\s*)+)([\)\]])/g,
+    (match, open, codes, close) => {
+      const codeRegex = /__CODE_START__([\s\S]*?)__CODE_END__/g;
+      let codeMatch;
+      let shouldStrip = true;
+
+      while ((codeMatch = codeRegex.exec(codes)) !== null) {
+        const codeContent = codeMatch[1].trim();
+        if (
+          !codeContent ||
+          !/^[A-Za-z0-9._-]+$/.test(codeContent) ||
+          !/[._]/.test(codeContent)
+        ) {
+          shouldStrip = false;
+          break;
+        }
+      }
+
+      if (!shouldStrip) {
+        return match;
+      }
+
+      return codes.trim();
+    }
+  );
+
+  // Handle raw technical identifiers in parentheses/brackets as inline code (after removing wrappers above)
+  text = text.replace(
+    /([\(\[])[ \t\n\r]*([^\s()[\]]*[_.][^\s()[\]]*)[ \t\n\r]*([\)\]])/g,
+    (match, open, code, close) => {
+      return `__CODE_START__${code.trim()}__CODE_END__`;
     }
   );
 
@@ -2366,6 +3468,12 @@ async function htmlToNotionRichText(html) {
   const parts = text.split(
     /(__BOLD_START__|__BOLD_END__|__BOLD_BLUE_START__|__BOLD_BLUE_END__|__ITALIC_START__|__ITALIC_END__|__CODE_START__|__CODE_END__|__LINK_\d+__|__SOFT_BREAK__)/
   );
+
+  // DEBUG: Log if placeholder in parts
+  if (text.includes("___PRE_PLACEHOLDER_")) {
+    log(`🔍 After split, parts array has ${parts.length} elements`);
+    log(`🔍 Parts: ${JSON.stringify(parts)}`);
+  }
 
   let currentAnnotations = {
     bold: false,
@@ -2427,6 +3535,14 @@ async function htmlToNotionRichText(html) {
     } else if (part) {
       // Regular text
       const cleanedText = cleanHtmlText(part);
+
+      // DEBUG: Log placeholder processing
+      if (part.includes("___PRE_PLACEHOLDER_")) {
+        log(`🔍 Processing placeholder part: "${part}"`);
+        log(`🔍 After cleanHtmlText: "${cleanedText}"`);
+        log(`🔍 cleanedText.trim(): "${cleanedText.trim()}"`);
+      }
+
       if (cleanedText.trim()) {
         richText.push({
           type: "text",
@@ -2453,6 +3569,14 @@ async function htmlToNotionRichText(html) {
           color: "default",
         },
       });
+    }
+  }
+
+  // DEBUG: Log final richText for placeholder
+  if (html && html.includes("___PRE_PLACEHOLDER_")) {
+    log(`🔍 Final richText array length: ${richText.length}`);
+    if (richText.length > 0) {
+      log(`🔍 First richText item: ${JSON.stringify(richText[0])}`);
     }
   }
 
@@ -2509,6 +3633,15 @@ function cleanTextPreserveNewlines(html, preserveLeadingTrailing = false) {
   }
 
   return text;
+}
+
+function extractPreCodeText(preContent) {
+  if (!preContent) return "";
+  let codeHtml = preContent.trim();
+  if (/^<code[^>]*>/i.test(codeHtml) && /<\/code>$/i.test(codeHtml)) {
+    codeHtml = codeHtml.replace(/^<code[^>]*>/i, "").replace(/<\/code>$/i, "");
+  }
+  return cleanTextPreserveNewlines(codeHtml, true);
 }
 
 // Helper function to convert HTML to rich text while preserving newlines
@@ -2838,12 +3971,12 @@ async function parseTableToNotionBlock(tableHtml) {
     return blocks.length > 0 ? blocks : null;
   }
 
+  const tableWidth = Math.max(...rows.map((row) => row.length));
   log(`📊 Table structure: ${rows.length} rows, max width: ${tableWidth}`);
 
   // Determine table structure
   // If first body row has images, don't treat it as a header row
   const hasHeaders = theadRows.length > 0 && !firstBodyRowHasImages;
-  const tableWidth = Math.max(...rows.map((row) => row.length));
 
   // Skip tables with no columns
   if (tableWidth === 0) {
@@ -2891,10 +4024,264 @@ async function parseTableToNotionBlock(tableHtml) {
   return blocks;
 }
 
+const KNOWN_BLOCK_TYPE_KEYS = [
+  "paragraph",
+  "heading_1",
+  "heading_2",
+  "heading_3",
+  "bulleted_list_item",
+  "numbered_list_item",
+  "code",
+  "quote",
+  "callout",
+  "toggle",
+  "divider",
+  "embed",
+  "image",
+  "table",
+  "table_row",
+];
+
+const TEXT_BLOCK_TYPES = new Set([
+  "paragraph",
+  "heading_1",
+  "heading_2",
+  "heading_3",
+  "bulleted_list_item",
+  "numbered_list_item",
+  "quote",
+  "callout",
+  "toggle",
+  "code",
+]);
+
+const DEFAULT_RICH_TEXT_ANNOTATIONS = {
+  bold: false,
+  italic: false,
+  strikethrough: false,
+  underline: false,
+  code: false,
+  color: "default",
+};
+
+function guessBlockTypeFromPayload(block) {
+  if (!block || typeof block !== "object") return null;
+  for (const key of KNOWN_BLOCK_TYPE_KEYS) {
+    if (block[key] && typeof block[key] === "object") {
+      return key;
+    }
+  }
+  return null;
+}
+
+function sanitizeRichTextArray(richText, contextPath) {
+  const sanitized = [];
+
+  if (Array.isArray(richText)) {
+    richText.forEach((item, index) => {
+      if (!item || typeof item !== "object") return;
+      const textPayload =
+        item.text && typeof item.text === "object"
+          ? item.text
+          : { content: "" };
+      const content =
+        typeof textPayload.content === "string" ? textPayload.content : "";
+      const linkUrl =
+        textPayload.link && typeof textPayload.link.url === "string"
+          ? textPayload.link.url
+          : null;
+
+      sanitized.push({
+        type: "text",
+        text: Object.assign(
+          { content },
+          linkUrl ? { link: { url: linkUrl } } : {}
+        ),
+        annotations: Object.assign(
+          {},
+          DEFAULT_RICH_TEXT_ANNOTATIONS,
+          item.annotations && typeof item.annotations === "object"
+            ? item.annotations
+            : {}
+        ),
+      });
+    });
+  }
+
+  if (sanitized.length === 0) {
+    sanitized.push({
+      type: "text",
+      text: { content: "" },
+      annotations: { ...DEFAULT_RICH_TEXT_ANNOTATIONS },
+    });
+  }
+
+  if (SN2N_EXTRA_DEBUG && sanitized.length !== (richText || []).length) {
+    log(
+      `⚠️ Sanitized rich text length mismatch at ${contextPath}: input ${
+        (richText || []).length
+      }, output ${sanitized.length}`
+    );
+  }
+
+  return sanitized;
+}
+
+function sanitizeBlocks(blocks, contextPath = "root") {
+  if (!Array.isArray(blocks)) return [];
+
+  const sanitized = [];
+  blocks.forEach((block, index) => {
+    const blockPath = `${contextPath}[${index}]`;
+    const safeBlock = sanitizeSingleBlock(block, blockPath);
+    if (safeBlock) {
+      sanitized.push(safeBlock);
+    }
+  });
+  return sanitized;
+}
+
+function sanitizeSingleBlock(block, contextPath) {
+  if (!block || typeof block !== "object") {
+    log(`⚠️ Dropping non-object block at ${contextPath}`);
+    return null;
+  }
+
+  const candidate = { ...block };
+  if (!candidate.object) {
+    candidate.object = "block";
+  }
+
+  let type =
+    typeof candidate.type === "string" && candidate.type.length > 0
+      ? candidate.type
+      : null;
+
+  if (!type) {
+    const guess = guessBlockTypeFromPayload(candidate);
+    if (guess) {
+      type = candidate.type = guess;
+      log(`⚠️ Inferred block type '${guess}' at ${contextPath}`);
+    }
+  }
+
+  if (!type) {
+    log(`⚠️ Dropping block with missing type at ${contextPath}`);
+    return null;
+  }
+
+  if (!candidate[type] || typeof candidate[type] !== "object") {
+    const guess = guessBlockTypeFromPayload(candidate);
+    if (guess && candidate[guess]) {
+      type = candidate.type = guess;
+    } else {
+      log(
+        `⚠️ Dropping block '${type}' at ${contextPath} - missing payload for type`
+      );
+      return null;
+    }
+  }
+
+  const payload = { ...candidate[type] };
+  candidate[type] = payload;
+
+  if (TEXT_BLOCK_TYPES.has(type)) {
+    payload.rich_text = sanitizeRichTextArray(
+      payload.rich_text,
+      `${contextPath}.${type}.rich_text`
+    );
+  }
+
+  if (Array.isArray(payload.children)) {
+    payload.children = sanitizeBlocks(
+      payload.children,
+      `${contextPath}.${type}.children`
+    );
+  }
+
+  if (type === "table") {
+    payload.children = sanitizeBlocks(
+      Array.isArray(payload.children) ? payload.children : [],
+      `${contextPath}.table`
+    );
+  }
+
+  if (type === "table_row") {
+    const cells = Array.isArray(payload.cells) ? payload.cells : [];
+    payload.cells = cells.map((cell, cellIndex) =>
+      sanitizeRichTextArray(
+        Array.isArray(cell) ? cell : [],
+        `${contextPath}.table_row.cells[${cellIndex}]`
+      )
+    );
+    if (payload.cells.length === 0) {
+      payload.cells.push(
+        sanitizeRichTextArray([], `${contextPath}.table_row.cells[0]`)
+      );
+    }
+  }
+
+  if (type === "code") {
+    if (!payload.language || typeof payload.language !== "string") {
+      payload.language = "javascript";
+    }
+  }
+
+  return candidate;
+}
+
+function capturePayloadSnapshot(databaseId, properties, blocks, meta = {}) {
+  try {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const fileName = `notion-payload-${timestamp}.json`;
+    const filePath = path.join(__dirname, "logs", fileName);
+
+    const snapshot = {
+      ts: new Date().toISOString(),
+      databaseId,
+      propertyKeys: Object.keys(properties || {}),
+      blockCount: Array.isArray(blocks) ? blocks.length : 0,
+      blockTypes: Array.isArray(blocks)
+        ? blocks.map((block) => (block && block.type) || "unknown")
+        : [],
+      meta,
+    };
+
+    if (SN2N_EXTRA_DEBUG) {
+      snapshot.sample = Array.isArray(blocks) ? blocks.slice(0, 25) : [];
+      if (Array.isArray(blocks) && blocks.length > 25) {
+        snapshot.truncated = blocks.length - 25;
+      }
+    }
+
+    fs.writeFileSync(filePath, JSON.stringify(snapshot, null, 2));
+    log(`📝 Payload snapshot saved to ${fileName}`);
+  } catch (err) {
+    log(`⚠️ Failed to capture payload snapshot: ${err.message}`);
+  }
+}
+
 app.post("/api/W2N", async (req, res) => {
   try {
     const payload = req.body;
     log("📝 Processing W2N request for:", payload.title);
+
+    // DEBUG: Check if HTML contains pre tags at the API entry point
+    if (payload.contentHtml) {
+      const hasPreTags = payload.contentHtml.includes("<pre");
+      const hasClosingPreTags = payload.contentHtml.includes("</pre>");
+      log(
+        `🔍 DEBUG API: contentHtml has <pre>: ${hasPreTags}, has </pre>: ${hasClosingPreTags}`
+      );
+      if (hasPreTags) {
+        const preIndex = payload.contentHtml.indexOf("<pre");
+        const preSnippet = payload.contentHtml.substring(
+          preIndex,
+          preIndex + 200
+        );
+        log(`🔍 DEBUG API: Pre tag snippet: ${preSnippet}`);
+      }
+    }
 
     if (!payload.title || (!payload.content && !payload.contentHtml)) {
       return sendError(
@@ -2990,7 +4377,16 @@ app.post("/api/W2N", async (req, res) => {
     if (payload.contentHtml) {
       log("🔄 Converting HTML content to Notion blocks");
       const result = await htmlToNotionBlocks(payload.contentHtml);
-      children = result.blocks;
+      const rawBlocks = Array.isArray(result.blocks) ? result.blocks : [];
+      const sanitizedBlocks = sanitizeBlocks(rawBlocks, "html");
+      if (sanitizedBlocks.length !== rawBlocks.length) {
+        log(
+          `⚠️ Sanitized HTML blocks removed ${
+            rawBlocks.length - sanitizedBlocks.length
+          } invalid entries`
+        );
+      }
+      children = sanitizedBlocks;
       hasVideos = result.hasVideos;
       log(`✅ Converted HTML to ${children.length} Notion blocks`);
       if (hasVideos) {
@@ -3007,6 +4403,18 @@ app.post("/api/W2N", async (req, res) => {
           },
         },
       ];
+    }
+
+    if (children.length > 0) {
+      const sanitizedChildren = sanitizeBlocks(children, "root");
+      if (sanitizedChildren.length !== children.length) {
+        log(
+          `⚠️ Sanitizer removed ${
+            children.length - sanitizedChildren.length
+          } blocks before submission`
+        );
+      }
+      children = sanitizedChildren;
     }
 
     // Note: Video detection is handled by userscript's property mappings
@@ -3027,6 +4435,10 @@ app.post("/api/W2N", async (req, res) => {
     const MAX_BLOCKS_PER_REQUEST = 100;
     const initialBlocks = children.slice(0, MAX_BLOCKS_PER_REQUEST);
     const remainingBlocks = children.slice(MAX_BLOCKS_PER_REQUEST);
+
+    capturePayloadSnapshot(payload.databaseId, properties, children, {
+      hasVideos,
+    });
 
     log(
       `   Initial blocks: ${initialBlocks.length}, Remaining blocks: ${remainingBlocks.length}`
@@ -3488,16 +4900,26 @@ app.post("/api/databases/:id/query", async (req, res) => {
 
 app.options("/*", (req, res) => res.sendStatus(204));
 
-app.listen(PORT, () => {
-  // Always print a concise startup message; verbose logs use log()
-  console.log(
-    new Date().toISOString(),
-    "[SN2N] SN2N proxy listening on port",
-    PORT
-  );
-  console.log(
-    new Date().toISOString(),
-    "[SN2N] Notion configured:",
-    !!process.env.NOTION_TOKEN
-  );
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    // Always print a concise startup message; verbose logs use log()
+    console.log(
+      new Date().toISOString(),
+      "[SN2N] SN2N proxy listening on port",
+      PORT
+    );
+    console.log(
+      new Date().toISOString(),
+      "[SN2N] Notion configured:",
+      !!process.env.NOTION_TOKEN
+    );
+  });
+}
+
+module.exports = {
+  app,
+  htmlToNotionBlocks,
+  htmlToNotionRichText,
+  cleanHtmlText,
+  normalizeCodeLanguage,
+};
