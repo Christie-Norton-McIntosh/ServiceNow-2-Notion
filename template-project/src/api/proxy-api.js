@@ -53,6 +53,11 @@ export async function apiCall(method, endpoint, data = null) {
       },
       onerror: function (error) {
         debug("❌ API call failed:", error);
+        if (typeof fetch === "function") {
+          debug("⚠️ GM_xmlhttpRequest failed, attempting fetch fallback");
+          fallbackFetchCall(method, url, data).then(resolve).catch(reject);
+          return;
+        }
         reject(new Error(`API call failed: ${error.error || "Network error"}`));
       },
     });

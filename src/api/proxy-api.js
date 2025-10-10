@@ -4,120 +4,44 @@ import { debug, getConfig } from "../config.js";
 import { normalizeUrl, isValidImageUrl } from "../utils/url-utils.js";
 import { hyphenateNotionId, findProperty } from "../utils/notion-utils.js";
 
-const RETRYABLE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
-const NETWORK_ERROR_CODES = new Set(["network", "timeout", "abort"]);
-
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function createRequestError(code, detail = {}) {
-  const status =
-    typeof detail.status === "number"
-      ? detail.status
-      : typeof detail.responseStatus === "number"
-      ? detail.responseStatus
-      : undefined;
-
-  const messageSource =
-    detail.error || detail.message || detail.statusText || code || "error";
-
-  const error = new Error(
-    code === "timeout"
-      ? "Proxy request timed out before completion"
-      : code === "abort"
-      ? "Proxy request was aborted"
-      : typeof messageSource === "string"
-      ? messageSource
-      : "Network error contacting proxy"
-  );
-
-  error.code = code;
-  if (status) error.status = status;
-  error.detail = detail;
-  return error;
-}
-
-function shouldRetryRequest(error, attempt, maxAttempts) {
-  if (!error || attempt >= maxAttempts - 1) {
-    return false;
-  }
-
-  if (error.code && NETWORK_ERROR_CODES.has(error.code)) {
-    return true;
-  }
-
-  if (typeof error.status === "number") {
-    return RETRYABLE_STATUS_CODES.has(error.status);
-  }
-
-  const message = (error.message || "").toLowerCase();
-  if (!message) return false;
-
-  return (
-    message.includes("network error") ||
-    message.includes("failed to fetch") ||
-    message.includes("timeout")
-  );
-}
-
-function sanitizeTimeoutValue(timeoutFromConfig) {
-  const parsed = Number(timeoutFromConfig);
-  if (Number.isFinite(parsed) && parsed >= 1000) {
-    return parsed;
-  }
-  return null;
-}
-
 /**
- * Make an API call to the proxy server with optional retries.
+ * Make an API call to the proxy server
  * @param {string} method - HTTP method (GET, POST, etc.)
- * @param {string} endpoint - API endpoint path (e.g. /api/W2N)
- * @param {Object|null} data - Request payload for POST/PUT requests
+ * @param {string} endpoint - API e    if (result && result.success) {
+      debug("Upload result:", result);
+      let pageUrl = result.data ? result.data.pageUrl : result.pageUrl;
+      const page = result.data ? result.data.page : result.page;
+      if (!pageUrl && page && page.id) {
+        pageUrl = `https://www.notion.so/${page.id.replace(/-/g, '')}`;
+      }
+      if (!pageUrl) {
+        debug("❌ No page URL or page ID returned from proxy - page creation may have failed");
+        throw new Error("Page creation failed - no page URL returned");
+      }
+      debug("✅ Content uploaded to Notion successfully:", pageUrl);
+      return result;
+    }path
+ * @param {Object} data - Request data for POST/PUT requests
  * @returns {Promise<Object>} API response
  */
 export async function apiCall(method, endpoint, data = null) {
-  const config = getConfig();
-  const url = config.proxyUrl + endpoint;
-  const timeout = sanitizeTimeoutValue(config.proxyTimeoutMs);
-  const maxAttempts = 3;
-
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    try {
-      if (typeof GM_xmlhttpRequest === "undefined") {
-        return await fallbackFetchCall(method, url, data, timeout);
-      }
-
-      return await sendWithGM(method, url, data, timeout);
-    } catch (error) {
-      if (!shouldRetryRequest(error, attempt, maxAttempts)) {
-        throw error;
-      }
-
-      const backoffMs = Math.min(5000, 750 * (attempt + 1));
-      debug(
-        `⏳ Proxy request retry ${attempt + 1}/${
-          maxAttempts - 1
-        } in ${backoffMs}ms`
-      );
-      await delay(backoffMs);
-    }
-  }
-
-  throw new Error("Unable to reach proxy after retries");
-}
-
-function sendWithGM(method, url, data, timeout) {
-  const payload = data ? JSON.stringify(data) : undefined;
-
   return new Promise((resolve, reject) => {
-    const request = {
-      method,
-      url,
+    const config = getConfig();
+    const url = config.proxyUrl + endpoint;
+
+    if (typeof GM_xmlhttpRequest === "undefined") {
+      // Fallback to fetch if GM_xmlhttpRequest is not available
+      fallbackFetchCall(method, url, data).then(resolve).catch(reject);
+      return;
+    }
+
+    GM_xmlhttpRequest({
+      method: method,
+      url: url,
       headers: {
         "Content-Type": "application/json",
       },
-      data: payload,
+      data: data ? JSON.stringify(data) : undefined,
       onload: function (response) {
         try {
           const result = JSON.parse(response.responseText);
@@ -127,59 +51,28 @@ function sendWithGM(method, url, data, timeout) {
           resolve({ success: false, error: "Invalid API response" });
         }
       },
-      onabort: function (error) {
-        debug("❌ API call aborted:", error);
-        reject(createRequestError("abort", error || {}));
-      },
-      ontimeout: function (error) {
-        debug("❌ API call timed out:", error);
-        reject(createRequestError("timeout", error || { status: 408 }));
-      },
       onerror: function (error) {
         debug("❌ API call failed:", error);
-        reject(createRequestError("network", error || {}));
+        reject(new Error(`API call failed: ${error.error || "Network error"}`));
       },
-    };
-
-    if (typeof timeout === "number" && timeout > 0) {
-      request.timeout = timeout;
-    }
-
-    GM_xmlhttpRequest(request);
+    });
   });
 }
 
 /**
- * Fallback API call using fetch when GM_xmlhttpRequest is not available.
+ * Fallback API call using fetch when GM_xmlhttpRequest is not available
  * @param {string} method - HTTP method
  * @param {string} url - Full URL
- * @param {Object|null} data - Request data
- * @param {number|null} timeout - Optional timeout in milliseconds
+ * @param {Object} data - Request data
  * @returns {Promise<Object>} API response
  */
-async function fallbackFetchCall(method, url, data = null, timeout = null) {
+async function fallbackFetchCall(method, url, data = null) {
   try {
-    const hasTimeout = typeof timeout === "number" && timeout > 0;
-    const controller =
-      hasTimeout && typeof AbortController !== "undefined"
-        ? new AbortController()
-        : null;
-    const abortTimer = controller
-      ? setTimeout(() => {
-          try {
-            controller.abort();
-          } catch (e) {
-            // ignore abort errors
-          }
-        }, timeout)
-      : null;
-
     const options = {
-      method,
+      method: method,
       headers: {
         "Content-Type": "application/json",
       },
-      signal: controller ? controller.signal : undefined,
     };
 
     if (data) {
@@ -188,34 +81,15 @@ async function fallbackFetchCall(method, url, data = null, timeout = null) {
 
     const response = await fetch(url, options);
 
-    if (abortTimer) {
-      clearTimeout(abortTimer);
-    }
-
     if (!response.ok) {
-      const error = new Error(`HTTP error! status: ${response.status}`);
-      error.status = response.status;
-      throw error;
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
 
-    const text = await response.text();
-    try {
-      return JSON.parse(text);
-    } catch (error) {
-      debug("❌ Failed to parse fallback API response:", text);
-      return { success: false, error: "Invalid API response" };
-    }
+    const result = await response.json();
+    return result;
   } catch (error) {
     debug("❌ Fallback API call failed:", error);
-    if (error && error.name === "AbortError") {
-      throw createRequestError("timeout", {
-        status: 408,
-        message: error.message,
-      });
-    }
-    throw error instanceof Error
-      ? error
-      : new Error("Network error contacting proxy");
+    throw error;
   }
 }
 
