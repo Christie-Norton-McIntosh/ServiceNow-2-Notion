@@ -121,12 +121,18 @@ export function setupAdvancedSettingsModal(modal) {
       const resp = await fetch("/api/logging");
       if (resp.ok) {
         const body = await resp.json();
-        serverVerbose = body && body.verbose;
+        serverVerbose = !!(body && body.verbose);
+        // Treat extraDebug as the indicator that a deep debug session is active
+        if (body && typeof body.extraDebug !== "undefined") {
+          combinedCheckbox.checked = !!body.extraDebug;
+        }
       }
     } catch (e) {
       debug("Could not fetch /api/logging for combined checkbox:", e);
     }
-    combinedCheckbox.checked = config.debugMode && serverVerbose;
+    if (typeof combinedCheckbox.checked === "undefined") {
+      combinedCheckbox.checked = config.debugMode && serverVerbose;
+    }
     debug("Populated combined debugging checkbox:", combinedCheckbox.checked);
   })();
 
@@ -183,9 +189,12 @@ export function setupAdvancedSettingsModal(modal) {
           await fetch("/api/logging", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ verbose: !!enableDebugging }),
+            body: JSON.stringify({
+              verbose: !!enableDebugging,
+              extraDebug: !!enableDebugging,
+            }),
           });
-          debug("Updated server verbose logging:", enableDebugging);
+          debug("Updated server logging flags:", enableDebugging);
         } catch (err) {
           debug("Failed to update server logging setting:", err);
         }

@@ -35,6 +35,7 @@ export const defaultConfig = {
   databaseId: "24ca89fe-dba5-806f-91a6-e831a6efe344",
   databaseName: "ServiceNow-2-Notion (API DB)",
   proxyUrl: "http://localhost:3004",
+  proxyTimeoutMs: null,
   useMartian: true,
   directSDKImages: true,
   debugMode: true,

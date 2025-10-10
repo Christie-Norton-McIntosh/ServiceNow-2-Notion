@@ -42,6 +42,7 @@ import {
 import {
   checkProxyHealth,
   createNotionPage,
+  queryDatabase,
   sendProcessedContentToProxy,
 } from "./api/proxy-api.js";
 import {
@@ -551,6 +552,72 @@ class ServiceNowToNotionApp {
         pageData.cover = extractedData.cover;
       }
 
+      let duplicateCheckResult = null;
+      if (config.enableDuplicateDetection) {
+        const shouldAttemptDuplicateCheck =
+          (pageData.title && pageData.title.trim().length > 0) ||
+          (pageData.url && pageData.url.trim().length > 0);
+
+        if (shouldAttemptDuplicateCheck) {
+          overlayModule.setMessage("Checking for duplicates...");
+          try {
+            duplicateCheckResult = await this.findDuplicatePages(
+              database,
+              pageData
+            );
+          } catch (duplicateError) {
+            debug("Duplicate detection failed:", duplicateError);
+            showToast(
+              "Duplicate check failed. Continuing with Notion save.",
+              4000
+            );
+          }
+        }
+      }
+
+      if (
+        duplicateCheckResult &&
+        duplicateCheckResult.duplicates &&
+        duplicateCheckResult.duplicates.length > 0
+      ) {
+        const summaryText = buildDuplicateSummary(
+          duplicateCheckResult.duplicates,
+          duplicateCheckResult.titlePropertyName
+        );
+        const reasonSummary = buildReasonSummary(
+          duplicateCheckResult.reasonLabels
+        );
+        const promptMessage =
+          `Found ${duplicateCheckResult.duplicates.length} Notion page${
+            duplicateCheckResult.duplicates.length > 1 ? "s" : ""
+          } matching by ${reasonSummary}.` +
+          (summaryText ? `\n\n${summaryText}` : "") +
+          "\n\nPress OK to create a new page anyway, or Cancel to open the first match.";
+
+        const proceed = window.confirm(promptMessage);
+        if (!proceed) {
+          overlayModule.close && overlayModule.close();
+          const firstDuplicateWithUrl = duplicateCheckResult.duplicates.find(
+            (entry) => entry.page && entry.page.url
+          );
+          if (firstDuplicateWithUrl && firstDuplicateWithUrl.page.url) {
+            window.open(firstDuplicateWithUrl.page.url, "_blank");
+          }
+          showToast(
+            "Skipped creating a new Notion page because a duplicate exists.",
+            5000
+          );
+          return;
+        }
+
+        showToast(
+          "Duplicate detected. Creating a new Notion page anyway.",
+          4000
+        );
+      }
+
+      overlayModule.setMessage("Saving to Notion...");
+
       // DEBUG: Log payload structure before sending to proxy
       debug("🔍 DEBUG: pageData structure being sent to proxy:", {
         title: pageData.title,
@@ -610,6 +677,189 @@ class ServiceNowToNotionApp {
       debug("❌ Proxy processing failed:", error);
       throw error;
     }
+  }
+
+  async findDuplicatePages(database, pageData) {
+    const databaseId = database?.id || database?.database_id;
+    if (!databaseId) {
+      debug("Duplicate detection skipped: database id missing");
+      return null;
+    }
+
+    const titlePropertyName = this.getTitlePropertyName(database);
+    const filters = [];
+    const reasonLabels = new Set();
+
+    const titleText = (pageData.title || "").trim();
+    if (titlePropertyName && titleText) {
+      filters.push({
+        property: titlePropertyName,
+        title: { equals: titleText },
+      });
+      reasonLabels.add("Title");
+    }
+
+    const urlCandidates = [];
+    Object.entries(pageData.properties || {}).forEach(
+      ([propertyName, propertyValue]) => {
+        if (
+          propertyValue &&
+          typeof propertyValue === "object" &&
+          typeof propertyValue.url === "string" &&
+          propertyValue.url.trim()
+        ) {
+          const trimmed = propertyValue.url.trim();
+          urlCandidates.push({
+            property: propertyName,
+            value: trimmed,
+            label: propertyName,
+          });
+        }
+      }
+    );
+
+    const uniqueUrlCandidates = [];
+    const seenUrlKeys = new Set();
+    urlCandidates.forEach((candidate) => {
+      const key = `${candidate.property}::${candidate.value}`;
+      if (!seenUrlKeys.has(key)) {
+        seenUrlKeys.add(key);
+        uniqueUrlCandidates.push(candidate);
+      }
+    });
+
+    uniqueUrlCandidates.forEach((candidate) => {
+      filters.push({
+        property: candidate.property,
+        url: { equals: candidate.value },
+      });
+      reasonLabels.add(candidate.label || candidate.property);
+    });
+
+    if (filters.length === 0) {
+      debug("Duplicate detection skipped: no filters available");
+      return null;
+    }
+
+    const filterClause = filters.length === 1 ? filters[0] : { or: filters };
+
+    debug("🔎 Checking for duplicates with filters:", filterClause);
+
+    const queryBody = {
+      filter: filterClause,
+      page_size: 5,
+      sorts: [
+        {
+          timestamp: "last_edited_time",
+          direction: "descending",
+        },
+      ],
+    };
+
+    const response = await queryDatabase(databaseId, queryBody);
+    const results = Array.isArray(response?.results) ? response.results : [];
+
+    if (results.length === 0) {
+      return {
+        duplicates: [],
+        reasonLabels: Array.from(reasonLabels),
+        titlePropertyName,
+      };
+    }
+
+    const duplicates = results.map((page) => {
+      const pageTitle = this.extractPageTitle(page, titlePropertyName);
+      const pageUrl = page?.url || null;
+      const entryReasons = new Set();
+
+      if (
+        titlePropertyName &&
+        titleText &&
+        this.areStringsEquivalent(pageTitle, titleText)
+      ) {
+        entryReasons.add("Title match");
+      }
+
+      uniqueUrlCandidates.forEach((candidate) => {
+        const pageProp = page?.properties?.[candidate.property];
+        const candidateUrl = this.extractUrlFromProperty(pageProp);
+        if (
+          candidateUrl &&
+          this.areStringsEquivalent(candidateUrl, candidate.value)
+        ) {
+          entryReasons.add(`${candidate.property} match`);
+        }
+      });
+
+      return {
+        id: page.id,
+        page: {
+          id: page.id,
+          title: pageTitle,
+          url: pageUrl,
+        },
+        reasons: Array.from(entryReasons),
+      };
+    });
+
+    return {
+      duplicates,
+      reasonLabels: Array.from(reasonLabels),
+      titlePropertyName,
+    };
+  }
+
+  getTitlePropertyName(database) {
+    const properties = database?.properties || {};
+    return (
+      Object.keys(properties).find(
+        (name) => properties[name]?.type === "title"
+      ) || null
+    );
+  }
+
+  extractPageTitle(page, titlePropertyName) {
+    let effectiveTitleProperty = titlePropertyName;
+    if (!effectiveTitleProperty) {
+      effectiveTitleProperty = this.getTitlePropertyName({
+        properties: page?.properties || {},
+      });
+    }
+
+    if (!effectiveTitleProperty) {
+      return "";
+    }
+
+    const titleProp = page?.properties?.[effectiveTitleProperty];
+    if (!titleProp || !Array.isArray(titleProp.title)) {
+      return "";
+    }
+
+    return titleProp.title
+      .map((rich) => rich.plain_text || "")
+      .join("")
+      .trim();
+  }
+
+  extractUrlFromProperty(propertyValue) {
+    if (!propertyValue || typeof propertyValue !== "object") return null;
+    if (typeof propertyValue.url === "string") {
+      return propertyValue.url.trim();
+    }
+
+    if (Array.isArray(propertyValue.rich_text)) {
+      return propertyValue.rich_text
+        .map((rich) => rich.plain_text || "")
+        .join("")
+        .trim();
+    }
+
+    return null;
+  }
+
+  areStringsEquivalent(a, b) {
+    if (!a || !b) return false;
+    return a.trim().toLowerCase() === b.trim().toLowerCase();
   }
 
   /**
@@ -706,6 +956,50 @@ class ServiceNowToNotionApp {
       debug("Failed to inject/show icon cover modal:", e);
     }
   }
+}
+
+function buildDuplicateSummary(duplicates) {
+  if (!Array.isArray(duplicates) || duplicates.length === 0) {
+    return "";
+  }
+
+  return duplicates
+    .map((entry, index) => {
+      const title = entry?.page?.title || "Untitled";
+      const pageUrl = entry?.page?.url;
+      const reasons = Array.isArray(entry?.reasons)
+        ? entry.reasons.filter(Boolean)
+        : [];
+      const reasonSuffix = reasons.length > 0 ? ` — ${reasons.join(", ")}` : "";
+      const urlSuffix = pageUrl ? `\n   ${pageUrl}` : "";
+      return `${index + 1}. ${title}${reasonSuffix}${urlSuffix}`;
+    })
+    .join("\n");
+}
+
+function buildReasonSummary(reasonLabels) {
+  if (!Array.isArray(reasonLabels) || reasonLabels.length === 0) {
+    return "Title";
+  }
+
+  const normalized = reasonLabels
+    .map((label) => (typeof label === "string" ? label.trim() : ""))
+    .filter(Boolean);
+
+  if (normalized.length === 0) {
+    return "Title";
+  }
+
+  if (normalized.length === 1) {
+    return normalized[0];
+  }
+
+  if (normalized.length === 2) {
+    return `${normalized[0]} or ${normalized[1]}`;
+  }
+
+  const last = normalized.pop();
+  return `${normalized.join(", ")}, or ${last}`;
 }
 
 // Global app instance
