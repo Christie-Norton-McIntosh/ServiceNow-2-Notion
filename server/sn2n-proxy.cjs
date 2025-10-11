@@ -108,9 +108,59 @@ function log(...args) {
 function getVerbose() {
   return !!SN2N_VERBOSE;
 }
-function setVerbose(v) {
-  SN2N_VERBOSE = !!v;
-  return SN2N_VERBOSE;
+// Verify that no blocks on the page still contain any (sn2n:...) markers.
+async function verifyNoMarkersOnPage(rootPageId) {
+  if (!notion) throw new Error("Notion client not initialized");
+  const markerRegex = /\(sn2n:[^)]+\)/g;
+
+  async function listChildren(blockId, cursor) {
+    return await notion.blocks.children.list({
+      block_id: blockId,
+      page_size: 100,
+      start_cursor: cursor,
+    });
+  }
+
+  const queue = [rootPageId];
+  const visited = new Set();
+  const found = [];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (visited.has(current)) continue;
+    visited.add(current);
+
+    let cursor = undefined;
+    do {
+      const res = await listChildren(current, cursor);
+      cursor = res.has_more ? res.next_cursor : undefined;
+      const children = res.results || [];
+      for (const child of children) {
+        try {
+          const t = child.type;
+          const payload = child[t] || child.paragraph || {};
+          const rich = Array.isArray(payload.rich_text)
+            ? payload.rich_text
+            : [];
+          const plain = rich.map((r) => r?.text?.content || "").join("");
+          const matches = plain.match(markerRegex) || [];
+          if (matches.length > 0) {
+            found.push({
+              id: child.id,
+              type: child.type,
+              preview: plain,
+              matches,
+            });
+          }
+          if (child.has_children) queue.push(child.id);
+        } catch (e) {
+          log("⚠️ verifyNoMarkersOnPage inner error:", e && e.message);
+        }
+      }
+    } while (cursor);
+  }
+
+  return { found };
 }
 function getExtraDebug() {
   return !!SN2N_EXTRA_DEBUG;
@@ -1013,6 +1063,12 @@ async function htmlToNotionBlocks(html) {
       let textContent = fullItemContent;
       let children = [];
 
+      // Detect li open tag classes (e.g., class="link ulchildlink") so we can apply special handling
+      const liOpenTag = html.substring(liStart, openTagEnd + 1);
+      const liClassMatch = liOpenTag.match(/class=["']([^"']*)["']/i);
+      const liClasses = liClassMatch ? liClassMatch[1].toLowerCase() : "";
+      const isUlChildLink = /\bulchildlink\b/.test(liClasses);
+
       if (nestedMatch && currentDepth < MAX_DEPTH) {
         // Extract text before the nested list
         textContent = fullItemContent.substring(0, nestedMatch.index);
@@ -1155,6 +1211,21 @@ async function htmlToNotionBlocks(html) {
         }
         // Remove the <img> element from the text content
         processedTextContent = processedTextContent.replace(imgMatch[0], "");
+      }
+
+      // If this list item is a 'ulchildlink', ensure a soft return marker between </a> and following <p>
+      // Insert the internal __SOFT_BREAK__ token so htmlToNotionRichText will convert it to a newline run.
+      if (isUlChildLink) {
+        const before = processedTextContent;
+        processedTextContent = processedTextContent.replace(
+          /(<\/a>)(\s*<p\b)/gi,
+          "$1__SOFT_BREAK__$2"
+        );
+        if (processedTextContent !== before) {
+          log(
+            `🔧 ulchildlink: inserted __SOFT_BREAK__ between </a> and <p> for list item at pos ${liStart}`
+          );
+        }
       }
 
       // Extract <pre> elements
@@ -1494,17 +1565,53 @@ async function htmlToNotionBlocks(html) {
           const titleRichText = titleBlock
             ? getBlockRichText(titleBlock)
             : null;
-          const referenceBlock = createTableReferenceParagraph(tableTitle);
-          if (referenceBlock) {
-            newChildren.push(referenceBlock);
+
+          // Create a short unique marker for this table and attach it to the
+          // preserved title (or a generated paragraph) so the orchestrator can
+          // reliably locate the parent list-item later. We'll remove this
+          // visible marker after appending the table.
+          const marker = generateMarker();
+
+          // Keep the original title block inside the list item when present;
+          // when absent, create a small paragraph title to keep table context.
+          if (titleBlock) {
+            try {
+              const tType = titleBlock.type;
+              if (
+                tType &&
+                titleBlock[tType] &&
+                Array.isArray(titleBlock[tType].rich_text)
+              ) {
+                titleBlock[tType].rich_text.push({
+                  type: "text",
+                  text: { content: ` (sn2n:${marker})` },
+                });
+              }
+            } catch (e) {
+              // ignore marker attach failures and proceed
+            }
+            newChildren.push(titleBlock);
+          } else {
+            const safeTitle = tableTitle || "Table";
+            newChildren.push({
+              object: "block",
+              type: "paragraph",
+              paragraph: {
+                rich_text: [
+                  {
+                    type: "text",
+                    text: { content: safeTitle + ` (sn2n:${marker})` },
+                  },
+                ],
+              },
+            });
           }
-          const toggleBlock = createTableToggleBlock(
-            titleRichText,
-            tableTitle,
-            childPrimary
-          );
-          if (toggleBlock) {
-            trailingBlocks.push(toggleBlock);
+
+          // Move the table to trailing blocks but tag it with the same marker so the orchestrator
+          // can append it as a child of this list item afterwards.
+          if (childPrimary && typeof childPrimary === "object") {
+            childPrimary._sn2n_marker = marker;
+            trailingBlocks.push(childPrimary);
           }
         } else if (childPrimary) {
           newChildren.push(childPrimary);
@@ -1633,58 +1740,9 @@ async function htmlToNotionBlocks(html) {
     if (!payload || !Array.isArray(payload.rich_text)) return null;
     return sanitizeRichTextArray(payload.rich_text);
   }
-
-  function createTableToggleBlock(titleRichText, fallbackTitle, tableBlock) {
-    let richText = Array.isArray(titleRichText) ? [...titleRichText] : [];
-    richText = sanitizeRichTextArray(richText);
-
-    if (richText.length === 0) {
-      const safeTitle =
-        typeof fallbackTitle === "string" && fallbackTitle.trim().length > 0
-          ? fallbackTitle.trim()
-          : "the table";
-      richText = [
-        {
-          type: "text",
-          text: { content: `See table "${safeTitle}" below.` },
-          annotations: normalizeAnnotations({ italic: true }),
-        },
-      ];
-    }
-
-    const toggleBlock = {
-      object: "block",
-      type: "toggle",
-      toggle: {
-        rich_text: richText,
-      },
-    };
-
-    toggleBlock.toggle.children = [tableBlock];
-
-    return toggleBlock;
-  }
-
-  function createTableReferenceParagraph(title) {
-    const safeTitle =
-      typeof title === "string" && title.trim().length > 0
-        ? title.trim()
-        : "table";
-
-    return {
-      object: "block",
-      type: "paragraph",
-      paragraph: {
-        rich_text: [
-          {
-            type: "text",
-            text: { content: `See table "${safeTitle}" below.` },
-            annotations: normalizeAnnotations({ italic: true }),
-          },
-        ],
-      },
-    };
-  }
+  // Toggle/reference helpers removed: tables will keep their original title inside
+  // the list item and the table block will be moved to trailing blocks with a marker
+  // so the orchestrator can append it as a child of the list item.
 
   // Helper function to split rich text into chunks that fit Notion's 2000 character limit
   function splitRichTextIntoParagraphs(richTextArray) {
@@ -2648,13 +2706,12 @@ async function htmlToNotionBlocks(html) {
 
             let blockToPush;
             if (isRoleRequired) {
-              // Surface role requirement callouts as blue background quotes for emphasis
+              // Surface role requirement as a default-colored callout (no emoji prefix)
               blockToPush = {
                 object: "block",
-                type: "quote",
-                quote: {
+                type: "callout",
+                callout: {
                   rich_text: copiedRichText,
-                  color: "blue_background",
                 },
               };
             } else {
@@ -3012,7 +3069,7 @@ async function htmlToNotionBlocks(html) {
           /\b(note|important|warning|tip|caution|info|related)\b/.test(classes);
 
         if (isNoteCallout) {
-          let emoji = "📝";
+          let emoji = "📍";
           let color = "blue_background";
 
           if (/\b(important|warning|caution)\b/.test(classes)) {
@@ -3589,6 +3646,112 @@ async function htmlToNotionBlocks(html) {
   const listSafeBlocks = flattenListUnsupportedBlocks(blocks);
   const finalBlocks = sanitizeBlocks(listSafeBlocks, "final");
   return { blocks: finalBlocks, hasVideos: hasDetectedVideos };
+}
+
+// Remove a marker token from a rich_text array even if it is split across elements.
+// Returns a new sanitized rich_text array (does not mutate input).
+function removeMarkerFromRichTextArray(richArray, marker) {
+  if (!Array.isArray(richArray)) return [];
+  const token = `(sn2n:${marker})`;
+
+  // Local clone helper (don't rely on cloneRichText being in scope)
+  function _clone(rt) {
+    if (!rt || typeof rt !== "object") return null;
+    const cloned = { ...rt };
+    cloned.annotations = rt.annotations ? { ...rt.annotations } : {};
+    if (rt.text && typeof rt.text === "object") cloned.text = { ...rt.text };
+    if (typeof cloned.plain_text !== "string" && cloned.text?.content) {
+      cloned.plain_text = cloned.text.content;
+    }
+    return cloned;
+  }
+
+  // Quick path: if any single element equals the token, drop it.
+  const anyExact = richArray.some(
+    (rt) => rt?.text?.content && rt.text.content.trim() === token
+  );
+  if (anyExact) {
+    return richArray
+      .filter((rt) => !(rt?.text?.content && rt.text.content.trim() === token))
+      .map(_clone)
+      .filter(Boolean);
+  }
+
+  // Otherwise we need to scan concatenated content and remove the token across boundaries while preserving annotations.
+  // Build list of contents and track element boundaries.
+  const parts = richArray.map((rt, idx) => ({
+    idx,
+    text: rt?.text?.content || "",
+    raw: rt,
+  }));
+  const concat = parts.map((p) => p.text).join("");
+  const pos = concat.indexOf(token);
+  if (pos === -1) {
+    // Nothing to remove; return sanitized clones using local _clone
+    return richArray
+      .map(_clone)
+      .filter(
+        (rt) =>
+          rt &&
+          rt.text &&
+          typeof rt.text.content === "string" &&
+          (rt.text.content.trim().length > 0 || !!rt.text.link)
+      );
+  }
+
+  // Remove token by reconstructing the rich_text sequence with the token removed.
+  const before = concat.slice(0, pos);
+  const after = concat.slice(pos + token.length);
+
+  // Re-slice into new rich_text pieces: keep existing annotations where possible by taking whole source elements
+  // but trim leading/trailing content as needed.
+  const newArray = [];
+  let cursor = 0;
+  for (const p of parts) {
+    const len = p.text.length;
+    const segStart = cursor;
+    const segEnd = cursor + len;
+    cursor = segEnd;
+
+    // Determine portion of this element that remains (relative to concat)
+    const keepParts = [];
+    if (segEnd <= pos || segStart >= pos + token.length) {
+      // Entire element is outside token range — keep whole element
+      newArray.push(_clone(p.raw));
+      continue;
+    }
+
+    // Element overlaps token — keep head and/or tail portions
+    const headLen = Math.max(0, Math.min(len, Math.max(0, pos - segStart)));
+    const tailLen = Math.max(
+      0,
+      Math.min(len, Math.max(0, segEnd - (pos + token.length)))
+    );
+
+    if (headLen > 0) {
+      const headText = p.text.slice(0, headLen);
+      const clone = _clone(p.raw);
+      clone.text = { ...clone.text, content: headText };
+      newArray.push(clone);
+    }
+    if (tailLen > 0) {
+      const tailText = p.text.slice(len - tailLen);
+      const clone = _clone(p.raw);
+      clone.text = { ...clone.text, content: tailText };
+      newArray.push(clone);
+    }
+  }
+
+  // Finally sanitize and return using local rules (avoid external clone dependency)
+  return newArray
+    .map((rt) => _clone(rt))
+    .filter(
+      (rt) =>
+        rt &&
+        rt.text &&
+        typeof rt.text.content === "string" &&
+        (rt.text.content.trim().length > 0 || !!rt.text.link)
+    );
 }
 
 // Helper function to clean HTML text
@@ -4641,6 +4804,29 @@ app.post("/api/W2N", async (req, res) => {
       log("🎥 Videos detected in content during HTML conversion");
     }
 
+    // Collect any in-memory markers that were attached to trailing blocks
+    // These will be used by the orchestrator after the page is created
+    const markerMap = collectAndStripMarkers(children, {});
+    // Remove collected trailing blocks from the main children list so we don't
+    // create duplicates on the page root. They'll be appended later by the
+    // orchestrator to their intended parents.
+    const removedCount = removeCollectedBlocks(children);
+    if (removedCount > 0) {
+      log(
+        `🔖 Removed ${removedCount} collected trailing block(s) from initial children`
+      );
+    }
+    if (Object.keys(markerMap).length > 0) {
+      log(
+        `🔖 Found ${
+          Object.keys(markerMap).length
+        } marker(s) to orchestrate after create`
+      );
+    }
+
+    // Before creating the page, strip any internal helper keys from blocks
+    deepStripPrivateKeys(children);
+
     // Create the page (handling Notion's 100-block limit)
     log("🔍 Creating Notion page with:");
     log(`   Database ID: ${payload.databaseId}`);
@@ -4771,6 +4957,8 @@ app.post("/api/W2N", async (req, res) => {
           } blocks)...`
         );
 
+        // Ensure no private keys in chunk
+        deepStripPrivateKeys(chunk);
         await notion.blocks.children.append({
           block_id: response.id,
           children: chunk,
@@ -4782,6 +4970,17 @@ app.post("/api/W2N", async (req, res) => {
       log(
         `✅ All ${remainingBlocks.length} remaining blocks appended successfully`
       );
+    }
+
+    // After initial page creation and appending remaining blocks, run the orchestrator
+    try {
+      if (markerMap && Object.keys(markerMap).length > 0) {
+        log("🔧 Running deep-nesting orchestrator...");
+        const orch = await orchestrateDeepNesting(response.id, markerMap);
+        log("🔧 Orchestrator result:", orch);
+      }
+    } catch (e) {
+      log("⚠️ Orchestrator failed:", e && e.message);
     }
 
     log("🔗 Page URL:", response.url);
@@ -4902,6 +5101,472 @@ app.post("/upload-to-notion", async (req, res) => {
       null,
       500
     );
+  }
+});
+
+// Append blocks helper: appends children to a given block id using Notion API with chunking and retries
+async function appendBlocksToBlockId(blockId, blocks, opts = {}) {
+  if (!notion) throw new Error("Notion client not initialized");
+  if (!blockId) throw new Error("Missing blockId");
+  if (!Array.isArray(blocks) || blocks.length === 0) return { appended: 0 };
+
+  const MAX = opts.maxPerRequest || 100;
+  const chunks = [];
+  for (let i = 0; i < blocks.length; i += MAX) {
+    chunks.push(blocks.slice(i, i + MAX));
+  }
+
+  let appended = 0;
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    let attempts = 0;
+    const maxAttempts = opts.maxAttempts || 3;
+    while (attempts < maxAttempts) {
+      attempts++;
+      try {
+        // Ensure private helper keys are removed from the chunk before sending
+        deepStripPrivateKeys(chunk);
+        await notion.blocks.children.append({
+          block_id: blockId,
+          children: chunk,
+        });
+        appended += chunk.length;
+        break;
+      } catch (err) {
+        log(
+          `⚠️ appendBlocksToBlockId chunk ${i + 1}/${
+            chunks.length
+          } failed (attempt ${attempts}): ${err.message}`
+        );
+        if (attempts >= maxAttempts) throw err;
+        // small backoff
+        await new Promise((r) => setTimeout(r, 250 * attempts));
+      }
+    }
+  }
+
+  return { appended };
+}
+
+// Top-level marker/orchestrator helpers (make available outside htmlToNotionBlocks)
+function generateMarker() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function collectAndStripMarkers(blocks, map = {}) {
+  if (!Array.isArray(blocks)) return map;
+  for (const b of blocks) {
+    if (b && typeof b === "object") {
+      if (b._sn2n_marker) {
+        const m = String(b._sn2n_marker);
+        if (!map[m]) map[m] = [];
+        map[m].push(b);
+        // mark this block as collected so we can remove it from the
+        // top-level children before sending to Notion (avoids duplicates)
+        b._sn2n_collected = true;
+        delete b._sn2n_marker;
+      }
+      const type = b.type;
+      if (type && b[type] && Array.isArray(b[type].children)) {
+        collectAndStripMarkers(b[type].children, map);
+      }
+      if (Array.isArray(b.children)) {
+        collectAndStripMarkers(b.children, map);
+      }
+    }
+  }
+  return map;
+}
+
+// Remove collected blocks (marked by _sn2n_collected) from an array of blocks
+function removeCollectedBlocks(blocks) {
+  if (!Array.isArray(blocks)) return 0;
+  let removed = 0;
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const b = blocks[i];
+    if (!b || typeof b !== "object") continue;
+    if (b._sn2n_collected) {
+      blocks.splice(i, 1);
+      removed++;
+      continue;
+    }
+    // Recurse into typed children areas if present
+    const type = b.type;
+    if (type && b[type] && Array.isArray(b[type].children)) {
+      removed += removeCollectedBlocks(b[type].children);
+    }
+    if (Array.isArray(b.children)) {
+      removed += removeCollectedBlocks(b.children);
+    }
+  }
+  return removed;
+}
+
+// Deep-strip internal helper keys (any key starting with _sn2n_)
+function deepStripPrivateKeys(blocks) {
+  if (!Array.isArray(blocks)) return;
+  for (const b of blocks) {
+    if (!b || typeof b !== "object") continue;
+    for (const k of Object.keys(b)) {
+      if (k.startsWith("_sn2n_")) delete b[k];
+    }
+    const type = b.type;
+    if (type && b[type] && Array.isArray(b[type].children)) {
+      deepStripPrivateKeys(b[type].children);
+    }
+    if (Array.isArray(b.children)) deepStripPrivateKeys(b.children);
+  }
+}
+
+async function findParentListItemByMarker(rootBlockId, marker) {
+  if (!notion) throw new Error("Notion client not initialized");
+  const token = `sn2n:${marker}`;
+
+  async function listChildren(blockId, cursor) {
+    const res = await notion.blocks.children.list({
+      block_id: blockId,
+      page_size: 100,
+      start_cursor: cursor,
+    });
+    return res;
+  }
+
+  const queue = [rootBlockId];
+  const visited = new Set();
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (visited.has(current)) continue;
+    visited.add(current);
+
+    let cursor = undefined;
+    do {
+      const res = await listChildren(current, cursor);
+      cursor = res.has_more ? res.next_cursor : undefined;
+      const children = res.results || [];
+      for (const child of children) {
+        try {
+          if (
+            child.type === "numbered_list_item" ||
+            child.type === "bulleted_list_item"
+          ) {
+            // First, check the list-item's own rich_text for the token
+            try {
+              const ownPayload = child[child.type] || {};
+              const ownRich = Array.isArray(ownPayload.rich_text)
+                ? ownPayload.rich_text
+                : [];
+              const ownPlain = ownRich
+                .map((rt) => rt?.text?.content || "")
+                .join(" ");
+              if (ownPlain.includes(token)) {
+                return { parentId: child.id, paragraphId: null };
+              }
+            } catch (e) {
+              // ignore and continue
+            }
+
+            if (child.has_children) {
+              let cCursor = undefined;
+              do {
+                const childList = await notion.blocks.children.list({
+                  block_id: child.id,
+                  page_size: 100,
+                  start_cursor: cCursor,
+                });
+                cCursor = childList.has_more
+                  ? childList.next_cursor
+                  : undefined;
+                const subChildren = childList.results || [];
+                for (const sc of subChildren) {
+                  try {
+                    const scPayload = sc[sc.type] || sc.paragraph || {};
+                    const r = Array.isArray(scPayload.rich_text)
+                      ? scPayload.rich_text
+                      : [];
+                    const plain = r
+                      .map((rt) => rt?.text?.content || "")
+                      .join(" ");
+                    if (plain.includes(token)) {
+                      // return both the parent list-item id and the matching child id
+                      return { parentId: child.id, paragraphId: sc.id };
+                    }
+                  } catch (e) {
+                    // continue on errors for individual children
+                  }
+                }
+              } while (cCursor);
+            }
+          }
+
+          if (child.has_children) queue.push(child.id);
+        } catch (err) {
+          log("⚠️ findParentListItemByMarker inner error:", err && err.message);
+        }
+      }
+    } while (cursor);
+  }
+
+  return null;
+}
+
+async function orchestrateDeepNesting(pageId, markerMap) {
+  if (!markerMap || Object.keys(markerMap).length === 0) return { appended: 0 };
+  let totalAppended = 0;
+  for (const marker of Object.keys(markerMap)) {
+    const blocksToAppend = markerMap[marker] || [];
+    if (blocksToAppend.length === 0) continue;
+    try {
+      log(`🔄 Orchestrator: locating parent for marker sn2n:${marker}`);
+      const parentInfo = await findParentListItemByMarker(pageId, marker);
+      const parentId = parentInfo ? parentInfo.parentId : null;
+      const paragraphId = parentInfo ? parentInfo.paragraphId : null;
+      if (!parentId) {
+        log(
+          `⚠️ Orchestrator: parent not found for marker sn2n:${marker}. Appending to page root instead.`
+        );
+        // Ensure no private keys on blocks before appending to page root
+        deepStripPrivateKeys(blocksToAppend);
+        await appendBlocksToBlockId(pageId, blocksToAppend);
+        totalAppended += blocksToAppend.length;
+        continue;
+      }
+
+      log(
+        `🔄 Orchestrator: appending ${blocksToAppend.length} block(s) to parent ${parentId} for marker sn2n:${marker}`
+      );
+      // Ensure no private helper keys are present before appending under parent
+      deepStripPrivateKeys(blocksToAppend);
+      const result = await appendBlocksToBlockId(parentId, blocksToAppend);
+      totalAppended += result.appended || 0;
+      log(
+        `✅ Orchestrator: appended ${
+          result.appended || 0
+        } blocks for marker sn2n:${marker}`
+      );
+      // Attempt to clean up the inline marker from the paragraph we used to locate the parent
+      if (paragraphId) {
+        try {
+          const retrieved = await notion.blocks.retrieve({
+            block_id: paragraphId,
+          });
+          const existingRt = retrieved.paragraph?.rich_text || [];
+          const newRt = removeMarkerFromRichTextArray(existingRt, marker);
+          const joinedOld = existingRt
+            .map((r) => r.text?.content || "")
+            .join(" ");
+          const joinedNew = newRt.map((r) => r.text?.content || "").join(" ");
+          if (joinedOld !== joinedNew) {
+            const safeNewRt = sanitizeRichTextArray(newRt);
+            await notion.blocks.update({
+              block_id: paragraphId,
+              paragraph: { rich_text: safeNewRt },
+            });
+            log(
+              `✅ Orchestrator: removed marker from paragraph ${paragraphId}`
+            );
+          }
+        } catch (e) {
+          log(
+            "⚠️ Orchestrator: failed to remove marker from paragraph:",
+            e && e.message
+          );
+        }
+      }
+
+      // If the marker was found on the list-item's own rich_text (paragraphId === null),
+      // attempt to retrieve and update the list-item block to remove the inline marker.
+      if (!paragraphId) {
+        try {
+          const listItem = await notion.blocks.retrieve({ block_id: parentId });
+          const payload = listItem[listItem.type] || {};
+          const existingRt = Array.isArray(payload.rich_text)
+            ? payload.rich_text
+            : [];
+          const newRt = removeMarkerFromRichTextArray(existingRt, marker);
+          const joinedOld = existingRt
+            .map((r) => r.text?.content || "")
+            .join(" ");
+          const joinedNew = newRt.map((r) => r.text?.content || "").join(" ");
+          if (joinedOld !== joinedNew) {
+            const safeNewRt = sanitizeRichTextArray(newRt);
+            await notion.blocks.update({
+              block_id: parentId,
+              [listItem.type]: { rich_text: safeNewRt },
+            });
+            log(`✅ Orchestrator: removed marker from list-item ${parentId}`);
+          }
+        } catch (e) {
+          log(
+            "⚠️ Orchestrator: failed to remove marker from list-item:",
+            e && e.message
+          );
+        }
+      }
+    } catch (err) {
+      log(
+        `❌ Orchestrator error for marker sn2n:${marker}:`,
+        err && err.message
+      );
+      try {
+        await appendBlocksToBlockId(pageId, blocksToAppend);
+      } catch (e) {
+        log("❌ Orchestrator fallback append failed:", e && e.message);
+      }
+    }
+  }
+  // After orchestrating individual markers, run a final sweep to remove any residual marker tokens
+  try {
+    const sweep = await sweepAndRemoveMarkersFromPage(pageId);
+    if (sweep && sweep.updated) {
+      log(
+        `🔍 Sweeper finished: updated ${sweep.updated} blocks to remove residual markers`
+      );
+    }
+  } catch (e) {
+    log("⚠️ Orchestrator: sweeper failed:", e && e.message);
+  }
+
+  return { appended: totalAppended };
+}
+
+// Sweep the page children and remove any remaining (sn2n:...) markers from rich_text
+// This is append-only safe: it only updates blocks to remove visible marker tokens.
+async function sweepAndRemoveMarkersFromPage(rootPageId) {
+  if (!notion) throw new Error("Notion client not initialized");
+  const tokenPrefix = "(sn2n:";
+
+  async function listChildren(blockId, cursor) {
+    return await notion.blocks.children.list({
+      block_id: blockId,
+      page_size: 100,
+      start_cursor: cursor,
+    });
+  }
+
+  const queue = [rootPageId];
+  const visited = new Set();
+  let updated = 0;
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (visited.has(current)) continue;
+    visited.add(current);
+
+    let cursor = undefined;
+    do {
+      const res = await listChildren(current, cursor);
+      cursor = res.has_more ? res.next_cursor : undefined;
+      const children = res.results || [];
+      for (const child of children) {
+        try {
+          // Check for rich_text on the block's typed payload
+          const t = child.type;
+          const payload = child[t] || child.paragraph || {};
+          const rich = Array.isArray(payload.rich_text)
+            ? payload.rich_text
+            : [];
+          const plain = rich.map((r) => r?.text?.content || "").join("");
+          if (plain.includes("sn2n:") || plain.includes(tokenPrefix)) {
+            // Attempt to remove any marker occurrence(s)
+            // We'll try to remove all tokens found for any marker-like substring
+            // Find all markers in the plain text matching sn2n:xxxx
+            const markerRegex = /\(sn2n:[^)]+\)/g;
+            const matches = plain.match(markerRegex) || [];
+            let newRich = rich;
+            for (const m of matches) {
+              // remove each marker using existing helper
+              const markerName =
+                (m || "").replace(/^\(|\)$/g, "").split(":")[1] || null;
+              if (markerName) {
+                newRich = removeMarkerFromRichTextArray(newRich, markerName);
+              } else {
+                // fallback: remove literal m from concatenated content by a general pass
+                newRich = newRich.map((rt) => {
+                  if (!rt || !rt.text || typeof rt.text.content !== "string")
+                    return rt;
+                  const cleaned = rt.text.content.replace(m, "");
+                  return { ...rt, text: { ...rt.text, content: cleaned } };
+                });
+              }
+            }
+
+            const joinedOld = rich.map((r) => r.text?.content || "").join(" ");
+            const joinedNew = newRich
+              .map((r) => r.text?.content || "")
+              .join(" ");
+            if (joinedOld !== joinedNew) {
+              // Use newRich directly (it's produced by removeMarkerFromRichTextArray or a simple map)
+              const safeNewRt = Array.isArray(newRich) ? newRich : [];
+              const updateBody = {};
+              updateBody[child.type] = { rich_text: safeNewRt };
+              try {
+                await notion.blocks.update({
+                  block_id: child.id,
+                  [child.type]: { rich_text: safeNewRt },
+                });
+                updated++;
+                log(`🔧 Sweeper: removed marker(s) from block ${child.id}`);
+              } catch (e) {
+                log(
+                  `⚠️ Sweeper: failed to update block ${child.id}:`,
+                  e && e.message
+                );
+              }
+            }
+          }
+
+          if (child.has_children) queue.push(child.id);
+        } catch (e) {
+          log("⚠️ Sweeper inner error:", e && e.message);
+        }
+      }
+    } while (cursor);
+  }
+
+  return { updated };
+}
+
+// Public endpoint to append blocks to an existing block id. Useful for multi-request orchestration.
+app.post("/api/blocks/append", async (req, res) => {
+  try {
+    if (!notion)
+      return sendError(
+        res,
+        "NOTION_CLIENT_UNINITIALIZED",
+        "Notion client not initialized",
+        null,
+        500
+      );
+    const { blockId, children } = req.body || {};
+    if (!blockId)
+      return sendError(
+        res,
+        "MISSING_BLOCK_ID",
+        "Missing blockId in request body",
+        null,
+        400
+      );
+    if (!Array.isArray(children) || children.length === 0)
+      return sendError(
+        res,
+        "NO_CHILDREN",
+        "Missing children blocks array",
+        null,
+        400
+      );
+
+    // Sanitize blocks before sending
+    const safeChildren = sanitizeBlocks(children, "append_children");
+
+    const result = await appendBlocksToBlockId(blockId, safeChildren, {
+      maxPerRequest: 100,
+      maxAttempts: 3,
+    });
+    return sendSuccess(res, { appended: result.appended });
+  } catch (err) {
+    log("❌ /api/blocks/append error:", err && err.message);
+    return sendError(res, "APPEND_FAILED", err && err.message, null, 500);
   }
 });
 
@@ -5186,4 +5851,13 @@ module.exports = {
   htmlToNotionRichText,
   cleanHtmlText,
   normalizeCodeLanguage,
+  // Expose marker/orchestrator helpers for testing and external orchestration
+  collectAndStripMarkers,
+  generateMarker,
+  appendBlocksToBlockId,
+  findParentListItemByMarker,
+  orchestrateDeepNesting,
+  notion,
+  removeCollectedBlocks,
+  deepStripPrivateKeys,
 };
