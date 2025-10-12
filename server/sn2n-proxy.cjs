@@ -1091,382 +1091,38 @@ async function htmlToNotionBlocks(html) {
 
       // Extract block elements like <pre>, <table>, <img> from the text content
       const childBlocks = [];
-      const siblingBlocks = [];
-      let processedTextContent = textContent;
+      let siblingBlocks = [];
+      let processedTextContent = '';
 
-      // Extract callout/note divs that may appear inside list items and treat them
-      // as sibling callout blocks so they are not flattened into the list item's text.
-      // This handles nested <div> structures correctly using findMatchingClosingTag.
-      try {
-        const noteClassPattern = /(note|important|warning|tasklabel|caution|info|related)/i;
-        let searchIdx = 0;
-        while (true) {
-          // Find next opening div with a class attribute
-          const divOpenMatch = /<div[^>]*class=["'][^"']*["'][^>]*>/gi;
-          divOpenMatch.lastIndex = searchIdx;
-          const mDiv = divOpenMatch.exec(fullItemContent);
-          if (!mDiv) break;
-
-          const openTagStart = mDiv.index;
-          const openTagEnd = divOpenMatch.lastIndex; // position after opening tag
-          const attrMatch = mDiv[0].match(/class=["']([^"']*)["']/i);
-          const classes = attrMatch ? attrMatch[1] : "";
-
-          if (!noteClassPattern.test(classes)) {
-            // advance search past this open tag
-            searchIdx = openTagEnd;
-            continue;
+      // Use extractBlocksFromHTML to process the text content and separate blocks
+      const extractedBlocks = await extractBlocksFromHTML(textContent);
+      
+      // Separate blocks into child blocks (tables, notes, etc.) and text content
+      for (const block of extractedBlocks) {
+        if (block.type === 'table' || block.type === 'callout' || block.type === 'code') {
+          // These are special blocks that should be children
+          if (currentDepth < MAX_DEPTH) {
+            childBlocks.push(block);
+          } else {
+            siblingBlocks.push(block);
           }
-
-          // Find matching closing </div> for this opening tag
-          const closingPos = findMatchingClosingTag(fullItemContent, openTagEnd, 'div');
-          if (closingPos === -1) {
-            // Can't find a matching close - advance to avoid infinite loop
-            searchIdx = openTagEnd;
-            continue;
+        } else if (block.type === 'paragraph' && block.paragraph?.rich_text?.length > 0) {
+          // Convert paragraph back to text content
+          const text = block.paragraph.rich_text.map(rt => rt.text?.content || '').join('');
+          if (text.trim().length > 0) {
+            processedTextContent += text + '\n';
           }
-
-          const fullDivHtml = fullItemContent.substring(openTagStart, closingPos);
-
-          // Convert the callout HTML to Notion blocks and append as siblings
-          try {
-            const extracted = await extractBlocksFromHTML(fullDivHtml);
-            if (Array.isArray(extracted) && extracted.length > 0) {
-              // Prefer callout blocks first, otherwise include everything
-              for (const ex of extracted) {
-                // if it's a callout or paragraph, keep as sibling block
-                siblingBlocks.push(ex);
-              }
-            }
-          } catch (e) {
-            log('⚠️ Failed to extract callout from list item:', e && e.message);
+        } else {
+          // Other blocks go to child blocks
+          if (currentDepth < MAX_DEPTH) {
+            childBlocks.push(block);
+          } else {
+            siblingBlocks.push(block);
           }
-
-          // Remove the callout HTML from the processedTextContent so it isn't duplicated
-          processedTextContent = processedTextContent.replace(fullDivHtml, '');
-
-          // Advance search index past the removed section
-          searchIdx = openTagStart + 1;
-        }
-      } catch (e) {
-        log('⚠️ Error while extracting callouts from list item:', e && e.message);
-      }
-
-      // Extract <table> elements
-      const tableRegex = /<table[^>]*>([\s\S]*?)<\/table>/gi;
-      let tableMatch;
-      while ((tableMatch = tableRegex.exec(textContent)) !== null) {
-        try {
-          const fullTableHtml = tableMatch[0]; // Use full match including <table> tags
-          const tableBlocks = await parseTableToNotionBlock(fullTableHtml);
-          if (tableBlocks && tableBlocks.length > 0) {
-            if (currentDepth < MAX_DEPTH) {
-              childBlocks.push(...tableBlocks);
-            } else {
-              siblingBlocks.push(...tableBlocks);
-            }
-            log(`✅ Found table in list item with ${tableBlocks.length} rows`);
-          }
-          // Remove the <table> element from the text content
-          processedTextContent = processedTextContent.replace(
-            tableMatch[0],
-            ""
-          );
-        } catch (tableError) {
-          log(`⚠️ Error parsing table in list item: ${tableError.message}`);
         }
       }
 
-      // Extract <figure> elements (which contain figcaption + img)
-      const figureRegex = /<figure[^>]*>([\s\S]*?)<\/figure>/gi;
-      let figureMatch;
-      while ((figureMatch = figureRegex.exec(textContent)) !== null) {
-        const figureContent = figureMatch[1];
 
-        // Extract figcaption
-        const figcaptionMatch = figureContent.match(
-          /<figcaption[^>]*>([\s\S]*?)<\/figcaption>/i
-        );
-        if (figcaptionMatch) {
-          const captionText = cleanHtmlText(figcaptionMatch[1]);
-          if (captionText && captionText.trim().length > 0) {
-            childBlocks.push({
-              object: "block",
-              type: "paragraph",
-              paragraph: {
-                rich_text: [
-                  {
-                    type: "text",
-                    text: { content: captionText },
-                    annotations: normalizeAnnotations({ italic: true }),
-                  },
-                ],
-              },
-            });
-            log(
-              `✅ Found figcaption in list item: ${captionText.substring(
-                0,
-                50
-              )}...`
-            );
-          }
-        }
-
-        // Extract image from figure
-        const imgMatch = figureContent.match(/<img[^>]*>/i);
-        if (imgMatch) {
-          const srcMatch = imgMatch[0].match(/src=["']([^"']*)["\']/i);
-          const altMatch = imgMatch[0].match(/alt=["']([^"']*)["\']/i);
-
-          if (srcMatch && srcMatch[1]) {
-            let src = srcMatch[1];
-            const alt = altMatch ? altMatch[1] : "";
-            src = convertServiceNowUrl(src);
-
-            if (src && isValidImageUrl(src)) {
-              const imageBlock = await createImageBlock(src, alt);
-              if (imageBlock) {
-                childBlocks.push(imageBlock);
-                log(
-                  `✅ Found image in figure in list item: ${src.substring(
-                    0,
-                    50
-                  )}...`
-                );
-              }
-            }
-          }
-        }
-
-        // Remove the entire <figure> element from the text content
-        processedTextContent = processedTextContent.replace(figureMatch[0], "");
-      }
-
-      // Extract standalone <img> elements (not inside figures)
-      const imgRegex = /<img[^>]*>/gi;
-      let imgMatch;
-      while ((imgMatch = imgRegex.exec(processedTextContent)) !== null) {
-        const srcMatch = imgMatch[0].match(/src=["']([^"']*)["\']/i);
-        const altMatch = imgMatch[0].match(/alt=["']([^"']*)["\']/i);
-
-        if (srcMatch && srcMatch[1]) {
-          let src = srcMatch[1];
-          const alt = altMatch ? altMatch[1] : "";
-          src = convertServiceNowUrl(src);
-
-          if (src && isValidImageUrl(src)) {
-            const imageBlock = await createImageBlock(src, alt);
-            if (imageBlock) {
-              childBlocks.push(imageBlock);
-              log(
-                `✅ Found standalone image in list item: ${src.substring(
-                  0,
-                  50
-                )}...`
-              );
-            }
-          }
-        }
-        // Remove the <img> element from the text content
-        processedTextContent = processedTextContent.replace(imgMatch[0], "");
-      }
-
-  // If this list item is a 'ulchildlink', ensure a soft return marker between </a> and following <p>
-      // Insert the internal __SOFT_BREAK__ token so htmlToNotionRichText will convert it to a newline run.
-      if (isUlChildLink) {
-        // Only insert the soft-break when the anchor has a data-bundleid attribute
-        // and the following paragraph is a shortdesc. This targets ServiceNow bundle
-        // links which require a visible separation between the link title and shortdesc.
-        const before = processedTextContent;
-        processedTextContent = processedTextContent.replace(
-          /(<a[^>]*\bdata-bundleid=["'][^"']*["'][^>]*>[\s\S]*?<\/a>)(\s*<p[^>]*class=["'][^"']*shortdesc[^"']*["'][^>]*>)/gi,
-          "$1__SOFT_BREAK__$2"
-        );
-        if (processedTextContent !== before) {
-          log(
-            `🔧 ulchildlink: inserted __SOFT_BREAK__ for data-bundleid anchor at pos ${liStart}`
-          );
-        }
-
-        // As a fallback (or reinforcement), explicitly extract any <p class="shortdesc"> from the
-        // original fullItemContent and convert it to a paragraph child block so it does not become
-        // flattened into the list item's main rich text.
-        try {
-          const shortDescRegex = /<p[^>]*class=["'][^"']*shortdesc[^"']*["'][^>]*>([\s\S]*?)<\/p>/i;
-          const sdMatch = shortDescRegex.exec(fullItemContent);
-          if (sdMatch) {
-            const shortdescHtml = sdMatch[1];
-            // Remove the shortdesc from processedTextContent to avoid duplication
-            processedTextContent = processedTextContent.replace(sdMatch[0], "");
-            try {
-              const paraRt = (await htmlToNotionRichText(shortdescHtml)).richText || [];
-              if (paraRt.length > 0) {
-                childBlocks.unshift({
-                  object: "block",
-                  type: "paragraph",
-                  paragraph: { rich_text: paraRt },
-                });
-              }
-            } catch (e) {
-              // ignore conversion errors
-            }
-          }
-        } catch (e) {
-          // ignore
-        }
-
-        // If the SOFT_BREAK approach didn't trigger, fallback to an explicit
-        // anchor + shortdesc extraction: capture the anchor and the following
-        // <p class="shortdesc">...</p> and make the paragraph a child block.
-        try {
-          const anchorShortdescRegex = /(<a[^>]*\bdata-bundleid=["'][^"']*["'][\s\S]*?<\/a>)[\s\n\r\t]*<p[^>]*class=["'][^"']*shortdesc[^"']*["'][^>]*>([\s\S]*?)<\/p>/i;
-          const asMatch = anchorShortdescRegex.exec(processedTextContent);
-          if (asMatch) {
-            const anchorHtml = asMatch[1];
-            const shortdescHtml = asMatch[2];
-            // Remove the matched section from processed text
-            processedTextContent = processedTextContent.replace(asMatch[0], anchorHtml);
-            // Convert the shortdesc to a paragraph child block
-            try {
-              const paraRt = (await htmlToNotionRichText(shortdescHtml)).richText || [];
-              if (paraRt.length > 0) {
-                childBlocks.unshift({
-                  object: "block",
-                  type: "paragraph",
-                  paragraph: { rich_text: paraRt },
-                });
-              }
-            } catch (pe) {
-              // ignore conversion errors
-            }
-          }
-        } catch (e) {
-          // ignore
-        }
-      }
-
-      // If the remaining processedTextContent contains explicit <p>...</p> paragraphs,
-      // preserve them as child paragraph blocks instead of flattening all into the
-      // list item's rich_text. If a SOFT_BREAK marker was already used earlier
-      // we should not re-process paragraphs (avoids duplicates). For 'ulchildlink'
-      // list items prefer keeping paragraphs as child blocks so the anchor remains
-      // the list-item text.
-      try {
-        const SOFT = "__SOFT_BREAK__";
-        if (isUlChildLink) {
-          log(`🔍 DEBUG parseListItems: ulchildlink processedTextContent preview: ${processedTextContent.substring(0,200)}`);
-        }
-        if (!processedTextContent || processedTextContent.indexOf(SOFT) === -1) {
-          const pRegexAll = /<p[^>]*>([\s\S]*?)<\/p>/gi;
-          const pMatches = [];
-          let pM;
-          while ((pM = pRegexAll.exec(processedTextContent)) !== null) {
-            pMatches.push(pM[1]);
-          }
-          if (isUlChildLink) {
-            log(`🔍 DEBUG parseListItems: found ${pMatches.length} <p> matches in processedTextContent`);
-          }
-          if (pMatches.length > 0) {
-            // Remove all <p> elements from the processed text so they aren't duplicated
-            processedTextContent = processedTextContent.replace(/<p[^>]*>[\s\S]*?<\/p>/gi, "");
-
-            if (isUlChildLink) {
-              // For ulchildlink, make every paragraph a child block (keep order)
-              for (let i = pMatches.length - 1; i >= 0; i--) {
-                try {
-                  const paraHtml = pMatches[i];
-                  const paraRt = (await htmlToNotionRichText(paraHtml)).richText || [];
-                  if (paraRt.length > 0) {
-                    childBlocks.unshift({
-                      object: "block",
-                      type: "paragraph",
-                      paragraph: { rich_text: paraRt },
-                    });
-                  }
-                } catch (e) {
-                  // ignore paragraph conversion errors
-                }
-              }
-            } else {
-              // For non-ulchildlink lists, behave as before: first paragraph becomes
-              // the inline text for the list item and subsequent paragraphs become children.
-              for (let i = pMatches.length - 1; i >= 1; i--) {
-                try {
-                  const paraHtml = pMatches[i];
-                  const paraRt = (await htmlToNotionRichText(paraHtml)).richText || [];
-                  if (paraRt.length > 0) {
-                    childBlocks.unshift({
-                      object: "block",
-                      type: "paragraph",
-                      paragraph: { rich_text: paraRt },
-                    });
-                  }
-                } catch (e) {
-                  // ignore paragraph conversion errors
-                }
-              }
-              if (pMatches[0] && pMatches[0].trim().length > 0) {
-                processedTextContent = pMatches[0] + "\n" + processedTextContent;
-              }
-            }
-          }
-        }
-      } catch (e) {
-        // ignore
-      }
-
-      // Extract <pre> elements
-      const preRegex = /<pre[^>]*>([\s\S]*?)<\/pre>/gi;
-      let preMatch;
-      while ((preMatch = preRegex.exec(textContent)) !== null) {
-        const preAttributes = preMatch[0].match(/<pre([^>]*)>/i)?.[1] || "";
-        const preContent = preMatch[1];
-
-        // Create a code block
-        let language = "";
-        const classMatch = preAttributes.match(/class=["']([^"']*)["']/i);
-        if (classMatch) {
-          const classes = classMatch[1]
-            .split(/\s+/)
-            .map((cls) => cls.trim())
-            .filter(Boolean);
-          const languageClass = classes.find((cls) =>
-            cls.toLowerCase().startsWith("language-")
-          );
-          if (languageClass) {
-            language = languageClass.substring("language-".length);
-          }
-        }
-
-        if (!language) {
-          const dataLanguageMatch = preAttributes.match(
-            /data-language=["']([^"']+)["']/i
-          );
-          if (dataLanguageMatch) {
-            language = dataLanguageMatch[1];
-          }
-        }
-
-        const normalizedLanguage = normalizeCodeLanguage(language);
-
-        const codeText = extractPreCodeText(preContent);
-        if (codeText && codeText.length > 0) {
-          childBlocks.push({
-            object: "block",
-            type: "code",
-            code: {
-              rich_text: [{ type: "text", text: { content: codeText } }],
-              language: normalizedLanguage,
-            },
-          });
-          log(
-            `✅ Found code block in list item: ${codeText.substring(0, 50)}...`
-          );
-        }
-
-        // Remove the <pre> element from the text content
-        processedTextContent = processedTextContent.replace(preMatch[0], "");
-      }
 
       // Clean the remaining text content and convert to rich text
       // If we inserted an internal __SOFT_BREAK__ token, split the content
@@ -1521,6 +1177,18 @@ async function htmlToNotionBlocks(html) {
       let handledChildBlocks = false;
 
       if (richText.length > 0 && richText[0].text.content.trim().length > 0) {
+        // If we have both rich text and child blocks, treat the rich text as a child paragraph
+        // instead of the list item text to maintain proper content ordering
+        if (childBlocks.length > 0) {
+          const textParagraph = {
+            object: "block",
+            type: "paragraph",
+            paragraph: { rich_text: richText },
+          };
+          childBlocks.unshift(textParagraph);
+          richText = [{ type: "text", text: { content: "\u00A0" }, annotations: { color: "default" } }]; // Use non-breaking space instead of empty array
+        }
+
         const item = {
           object: "block",
           type: listType,
@@ -1529,10 +1197,9 @@ async function htmlToNotionBlocks(html) {
           },
         };
 
-        // Add children if there are any and we haven't exceeded depth
         if (children.length > 0 && currentDepth < MAX_DEPTH) {
           item[listType].children = children;
-          log(`🔍 DEBUG parseListItems: attached ${children.length} nested list children to list item at depth ${currentDepth}`);
+          handledChildBlocks = true;
         }
 
         if (childBlocks.length > 0) {
@@ -1541,12 +1208,20 @@ async function htmlToNotionBlocks(html) {
               item[listType].children = [];
             }
             item[listType].children.push(...childBlocks);
-            log(`🔍 DEBUG parseListItems: pushed ${childBlocks.length} childBlocks into item[listType].children`);
             handledChildBlocks = true;
           } else {
             siblingBlocks.push(...childBlocks);
             handledChildBlocks = true;
           }
+        }
+
+        // Add siblingBlocks as children of the list item for proper indentation
+        if (siblingBlocks.length > 0) {
+          if (!item[listType].children) {
+            item[listType].children = [];
+          }
+          item[listType].children.push(...siblingBlocks);
+          siblingBlocks = []; // Clear so not added as separate items
         }
 
         items.push(item);
@@ -1556,11 +1231,10 @@ async function htmlToNotionBlocks(html) {
             object: "block",
             type: listType,
             [listType]: {
-              rich_text: [],
+              rich_text: [{ type: "text", text: { content: "\u00A0" }, annotations: { color: "default" } }],
               children: [...childBlocks],
             },
           };
-          log(`🔍 DEBUG parseListItems: created empty list item with ${childBlocks.length} childBlocks`);
           items.push(emptyItem);
           handledChildBlocks = true;
         } else {
@@ -1570,12 +1244,10 @@ async function htmlToNotionBlocks(html) {
       }
 
       if (!handledChildBlocks && childBlocks.length > 0) {
-        log(`🔍 DEBUG parseListItems: moving ${childBlocks.length} childBlocks to siblingBlocks (not handled)`);
         siblingBlocks.push(...childBlocks);
       }
 
-      // Add any block elements that should remain siblings
-      items.push(...siblingBlocks);
+      // siblingBlocks are now added as children above, so don't add as separate items
     }
 
     return items;
@@ -1613,7 +1285,8 @@ async function htmlToNotionBlocks(html) {
           if (typeof content !== "string") {
             return false;
           }
-          return content.trim().length > 0 || !!rt.text?.link;
+          // Allow content that has visible characters (including non-breaking space) or links
+          return content.length > 0 || !!rt.text?.link;
         }
         return !!rt[rt.type];
       });
@@ -1724,7 +1397,11 @@ async function htmlToNotionBlocks(html) {
         result.push(primary);
       }
       if (Array.isArray(trailing) && trailing.length > 0) {
-        result.push(...trailing);
+        // Filter out blocks that have _sn2n_marker, as they are moved to markers
+        const filteredTrailing = trailing.filter(b => !b._sn2n_marker);
+        if (filteredTrailing.length > 0) {
+          result.push(...filteredTrailing);
+        }
       }
     }
     return result;
@@ -1776,81 +1453,7 @@ async function htmlToNotionBlocks(html) {
         const childPrimary = flattenedChild.primary;
         let childTrailing = flattenedChild.trailing;
 
-        if (childPrimary && childPrimary.type === "table") {
-          let titleBlock = null;
-          if (newChildren.length > 0) {
-            const lastChild = newChildren[newChildren.length - 1];
-            if (
-              isHeadingBlock(lastChild) ||
-              isParagraphTitleCandidate(lastChild)
-            ) {
-              titleBlock = newChildren.pop();
-            }
-          }
-
-          if (!titleBlock) {
-            const { headingCandidate, remainingChildren } =
-              extractHeadingFromChildren(childTrailing);
-            if (headingCandidate) {
-              titleBlock = headingCandidate;
-              childTrailing = remainingChildren;
-            }
-          }
-
-          const tableTitle = getBlockPlainText(titleBlock) || "Table";
-
-          const titleRichText = titleBlock
-            ? getBlockRichText(titleBlock)
-            : null;
-
-          // Create a short unique marker for this table and attach it to the
-          // preserved title (or a generated paragraph) so the orchestrator can
-          // reliably locate the parent list-item later. We'll remove this
-          // visible marker after appending the table.
-          const marker = generateMarker();
-
-          // Keep the original title block inside the list item when present;
-          // when absent, create a small paragraph title to keep table context.
-          if (titleBlock) {
-            try {
-              const tType = titleBlock.type;
-              if (
-                tType &&
-                titleBlock[tType] &&
-                Array.isArray(titleBlock[tType].rich_text)
-              ) {
-                titleBlock[tType].rich_text.push({
-                  type: "text",
-                  text: { content: ` (sn2n:${marker})` },
-                });
-              }
-            } catch (e) {
-              // ignore marker attach failures and proceed
-            }
-            newChildren.push(titleBlock);
-          } else {
-            const safeTitle = tableTitle || "Table";
-            newChildren.push({
-              object: "block",
-              type: "paragraph",
-              paragraph: {
-                rich_text: [
-                  {
-                    type: "text",
-                    text: { content: safeTitle + ` (sn2n:${marker})` },
-                  },
-                ],
-              },
-            });
-          }
-
-          // Move the table to trailing blocks but tag it with the same marker so the orchestrator
-          // can append it as a child of this list item afterwards.
-          if (childPrimary && typeof childPrimary === "object") {
-            childPrimary._sn2n_marker = marker;
-            trailingBlocks.push(childPrimary);
-          }
-        } else if (childPrimary) {
+        if (childPrimary) {
           newChildren.push(childPrimary);
         }
 
@@ -5650,7 +5253,7 @@ async function orchestrateDeepNesting(pageId, markerMap) {
   if (!markerMap || Object.keys(markerMap).length === 0) return { appended: 0 };
   let totalAppended = 0;
   for (const marker of Object.keys(markerMap)) {
-    const blocksToAppend = markerMap[marker] || [];
+    let blocksToAppend = markerMap[marker] || [];
     if (blocksToAppend.length === 0) continue;
     try {
       log(`🔄 Orchestrator: locating parent for marker sn2n:${marker}`);
