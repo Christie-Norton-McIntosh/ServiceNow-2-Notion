@@ -1094,6 +1094,64 @@ async function htmlToNotionBlocks(html) {
       const siblingBlocks = [];
       let processedTextContent = textContent;
 
+      // Extract callout/note divs that may appear inside list items and treat them
+      // as sibling callout blocks so they are not flattened into the list item's text.
+      // This handles nested <div> structures correctly using findMatchingClosingTag.
+      try {
+        const noteClassPattern = /(note|important|warning|tasklabel|caution|info|related)/i;
+        let searchIdx = 0;
+        while (true) {
+          // Find next opening div with a class attribute
+          const divOpenMatch = /<div[^>]*class=["'][^"']*["'][^>]*>/gi;
+          divOpenMatch.lastIndex = searchIdx;
+          const mDiv = divOpenMatch.exec(fullItemContent);
+          if (!mDiv) break;
+
+          const openTagStart = mDiv.index;
+          const openTagEnd = divOpenMatch.lastIndex; // position after opening tag
+          const attrMatch = mDiv[0].match(/class=["']([^"']*)["']/i);
+          const classes = attrMatch ? attrMatch[1] : "";
+
+          if (!noteClassPattern.test(classes)) {
+            // advance search past this open tag
+            searchIdx = openTagEnd;
+            continue;
+          }
+
+          // Find matching closing </div> for this opening tag
+          const closingPos = findMatchingClosingTag(fullItemContent, openTagEnd, 'div');
+          if (closingPos === -1) {
+            // Can't find a matching close - advance to avoid infinite loop
+            searchIdx = openTagEnd;
+            continue;
+          }
+
+          const fullDivHtml = fullItemContent.substring(openTagStart, closingPos);
+
+          // Convert the callout HTML to Notion blocks and append as siblings
+          try {
+            const extracted = await extractBlocksFromHTML(fullDivHtml);
+            if (Array.isArray(extracted) && extracted.length > 0) {
+              // Prefer callout blocks first, otherwise include everything
+              for (const ex of extracted) {
+                // if it's a callout or paragraph, keep as sibling block
+                siblingBlocks.push(ex);
+              }
+            }
+          } catch (e) {
+            log('⚠️ Failed to extract callout from list item:', e && e.message);
+          }
+
+          // Remove the callout HTML from the processedTextContent so it isn't duplicated
+          processedTextContent = processedTextContent.replace(fullDivHtml, '');
+
+          // Advance search index past the removed section
+          searchIdx = openTagStart + 1;
+        }
+      } catch (e) {
+        log('⚠️ Error while extracting callouts from list item:', e && e.message);
+      }
+
       // Extract <table> elements
       const tableRegex = /<table[^>]*>([\s\S]*?)<\/table>/gi;
       let tableMatch;
@@ -1213,19 +1271,62 @@ async function htmlToNotionBlocks(html) {
         processedTextContent = processedTextContent.replace(imgMatch[0], "");
       }
 
-      // If this list item is a 'ulchildlink', ensure a soft return marker between </a> and following <p>
+  // If this list item is a 'ulchildlink', ensure a soft return marker between </a> and following <p>
       // Insert the internal __SOFT_BREAK__ token so htmlToNotionRichText will convert it to a newline run.
       if (isUlChildLink) {
+        // Only insert the soft-break when the anchor has a data-bundleid attribute
+        // and the following paragraph is a shortdesc. This targets ServiceNow bundle
+        // links which require a visible separation between the link title and shortdesc.
         const before = processedTextContent;
         processedTextContent = processedTextContent.replace(
-          /(<\/a>)(\s*<p\b)/gi,
+          /(<a[^>]*\bdata-bundleid=["'][^"']*["'][^>]*>[\s\S]*?<\/a>)(\s*<p[^>]*class=["'][^"']*shortdesc[^"']*["'][^>]*>)/gi,
           "$1__SOFT_BREAK__$2"
         );
         if (processedTextContent !== before) {
           log(
-            `🔧 ulchildlink: inserted __SOFT_BREAK__ between </a> and <p> for list item at pos ${liStart}`
+            `🔧 ulchildlink: inserted __SOFT_BREAK__ for data-bundleid anchor at pos ${liStart}`
           );
         }
+      }
+
+      // If the remaining processedTextContent contains explicit <p>...</p> paragraphs,
+      // preserve them as child paragraph blocks instead of flattening all into the
+      // list item's rich_text. The first paragraph will be used as the list item's
+      // primary rich_text (if present) and subsequent paragraphs become child blocks.
+      try {
+        const pRegexAll = /<p[^>]*>([\s\S]*?)<\/p>/gi;
+        const pMatches = [];
+        let pM;
+        while ((pM = pRegexAll.exec(processedTextContent)) !== null) {
+          pMatches.push(pM[1]);
+        }
+        if (pMatches.length > 0) {
+          // Remove the <p> tags from the processed text so they are not duplicated
+          processedTextContent = processedTextContent.replace(/<p[^>]*>[\s\S]*?<\/p>/gi, "");
+          // The first paragraph (if any) will be treated as part of the list item's main rich text
+          // and the rest will become paragraph child blocks (preserve order)
+          for (let i = pMatches.length - 1; i >= 1; i--) {
+            try {
+              const paraHtml = pMatches[i];
+              const paraRt = (await htmlToNotionRichText(paraHtml)).richText || [];
+              if (paraRt.length > 0) {
+                childBlocks.unshift({
+                  object: "block",
+                  type: "paragraph",
+                  paragraph: { rich_text: paraRt },
+                });
+              }
+            } catch (e) {
+              // ignore paragraph conversion errors
+            }
+          }
+          // If there is at least one paragraph, ensure the first paragraph becomes the processedTextContent
+          if (pMatches[0] && pMatches[0].trim().length > 0) {
+            processedTextContent = pMatches[0] + "\n" + processedTextContent;
+          }
+        }
+      } catch (e) {
+        // ignore
       }
 
       // Extract <pre> elements
@@ -1282,8 +1383,47 @@ async function htmlToNotionBlocks(html) {
       }
 
       // Clean the remaining text content and convert to rich text
-      const result = await htmlToNotionRichText(processedTextContent);
-      const richText = result.richText;
+      // If we inserted an internal __SOFT_BREAK__ token, split the content
+      // and emit the trailing description as a separate paragraph child block
+      // so Notion renders a visible separation (inline \n runs are sometimes
+      // collapsed by the UI). This preserves the original conversion for
+      // non-ulchildlink items.
+      let richText = [];
+      // If the marker exists, split into left (list item) and right (description)
+      const SOFT = "__SOFT_BREAK__";
+      if (processedTextContent && processedTextContent.indexOf(SOFT) !== -1) {
+        const idx = processedTextContent.indexOf(SOFT);
+        const leftHtml = processedTextContent.substring(0, idx);
+        const rightHtml = processedTextContent.substring(idx + SOFT.length);
+
+        const leftResult = await htmlToNotionRichText(leftHtml);
+        const rightResult = await htmlToNotionRichText(rightHtml);
+
+        richText = leftResult.richText || [];
+
+        // If the right side contains visible text, create a paragraph child block
+        const rightHasText = Array.isArray(rightResult.richText)
+          ? rightResult.richText.some(
+              (r) => (r?.text?.content || "").trim().length > 0
+            )
+          : false;
+        if (rightHasText) {
+          const paraBlock = {
+            object: "block",
+            type: "paragraph",
+            paragraph: {
+              rich_text: rightResult.richText,
+            },
+          };
+
+          // Ensure this paragraph will be attached as a child block under the list item
+          // by adding it to childBlocks so it's later pushed into item[listType].children
+          childBlocks.unshift(paraBlock);
+        }
+      } else {
+        const result = await htmlToNotionRichText(processedTextContent);
+        richText = result.richText;
+      }
 
       let handledChildBlocks = false;
 
@@ -3065,25 +3205,25 @@ async function htmlToNotionBlocks(html) {
         const classes = classMatch ? classMatch[1].toLowerCase() : "";
 
         // Check for note-like classes (note, important, warning, tip, caution, info, related)
-        const isNoteCallout =
-          /\b(note|important|warning|tip|caution|info|related)\b/.test(classes);
+        const isCallout =
+          /\b(note|important|warning|stasklabel|caution|related)\b/.test(classes);
 
-        if (isNoteCallout) {
-          let emoji = "📍";
-          let color = "blue_background";
+        if (isCallout) {
+          let emoji = "📎";
+          let color = "default";
 
           if (/\b(important|warning|caution)\b/.test(classes)) {
             emoji = "⚠️";
             color = "green_background";
-          } else if (/\btip\b/.test(classes)) {
-            emoji = "💡";
-            color = "yellow_background";
-          } else if (/\binfo\b/.test(classes)) {
-            emoji = "ℹ️";
+          } else if (/\btasklabel\b/.test(classes)) {
+            emoji = "📍";
+            color = "default";
+//          } else if (/\binfo\b/.test(classes)) {
+//            emoji = "ℹ️";
+//            color = "gray_background";
+          } else if (/\bnote\b/.test(classes)) {
+            emoji = "📝";
             color = "blue_background";
-          } else if (/\brelated\b/.test(classes)) {
-            emoji = "🔗";
-            color = "gray_background";
           }
 
           const preElements = [];
@@ -4826,6 +4966,105 @@ app.post("/api/W2N", async (req, res) => {
 
     // Before creating the page, strip any internal helper keys from blocks
     deepStripPrivateKeys(children);
+
+    // Remove unwanted callouts (info) and dedupe identical blocks to avoid
+    // duplicate callouts/tables introduced by nested-extraction logic.
+    const computeBlockKey = (blk) => {
+      const plainTextFromRich = (richArr) => {
+        if (!Array.isArray(richArr)) return "";
+        return richArr.map((rt) => rt.text?.content || "").join("").replace(/\s+/g, " ").trim();
+      };
+
+      if (!blk || typeof blk !== "object") return JSON.stringify(blk);
+      try {
+        if (blk.type === "callout" && blk.callout) {
+          const txt = plainTextFromRich(blk.callout.rich_text || []);
+          const emoji = blk.callout.icon?.type === "emoji" ? blk.callout.icon.emoji : "";
+          const color = blk.callout.color || "";
+          return `callout:${txt}|${emoji}|${color}`;
+        }
+        if (blk.type === "table" && blk.table) {
+          const w = blk.table.table_width || 0;
+          const rows = Array.isArray(blk.table.children) ? blk.table.children.length : 0;
+          const normalizeCellText = (txt) =>
+            String(txt || "")
+              .replace(/\(sn2n:[a-z0-9\-]+\)/gi, "")
+              .replace(/\s+/g, " ")
+              .trim()
+              .toLowerCase()
+              .substring(0, 200);
+
+          let firstRow = "";
+          if (Array.isArray(blk.table.children) && blk.table.children[0]) {
+            const cells = blk.table.children[0].table_row?.cells || [];
+            firstRow = cells
+              .map((c) => {
+                if (Array.isArray(c)) {
+                  return c.map((rt) => normalizeCellText(rt?.text?.content || "")).join("|");
+                }
+                return normalizeCellText(c);
+              })
+              .join("|");
+          }
+          return `table:${w}x${rows}:${firstRow}`;
+        }
+        if (blk.type === "numbered_list_item" || blk.type === "bulleted_list_item") {
+          const txt = plainTextFromRich(blk[blk.type]?.rich_text || []);
+          return `${blk.type}:${txt.substring(0, 200)}`;
+        }
+        if (blk.type === "paragraph") {
+          const txt = plainTextFromRich(blk.paragraph?.rich_text || []);
+          return `paragraph:${txt.substring(0, 200)}`;
+        }
+        if (blk.type === "code") {
+          const codeTxt = blk.code?.rich_text?.map((r) => r.text?.content || "").join("") || "";
+          const lang = blk.code?.language || "";
+          return `code:${lang}:${codeTxt.substring(0, 200)}`;
+        }
+        return JSON.stringify(blk);
+      } catch (e) {
+        return JSON.stringify(blk);
+      }
+    };
+
+    function dedupeAndFilterBlocks(blockArray) {
+      if (!Array.isArray(blockArray)) return blockArray;
+      const seen = new Set();
+      const out = [];
+      let removed = 0;
+      for (const blk of blockArray) {
+        try {
+          // Filter out info callouts (ℹ️ emoji or gray_background color)
+          if (
+            blk &&
+            blk.type === "callout" &&
+            blk.callout &&
+            ((blk.callout.icon && blk.callout.icon.type === "emoji" && String(blk.callout.icon.emoji).includes("ℹ")) || blk.callout.color === "gray_background")
+          ) {
+            removed++;
+            continue;
+          }
+
+          const key = computeBlockKey(blk);
+          if (seen.has(key)) {
+            removed++;
+            continue;
+          }
+          seen.add(key);
+          out.push(blk);
+        } catch (e) {
+          out.push(blk);
+        }
+      }
+
+      if (removed > 0) {
+        log(`🔧 dedupeAndFilterBlocks: removed ${removed} duplicate/filtered block(s)`);
+      }
+
+      return out;
+    }
+
+    children = dedupeAndFilterBlocks(children);
 
     // Create the page (handling Notion's 100-block limit)
     log("🔍 Creating Notion page with:");
