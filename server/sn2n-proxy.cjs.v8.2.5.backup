@@ -443,10 +443,53 @@ const CODE_LANGUAGE_ALIASES = {
   glsl: "glsl",
 };
 
-// Extracted formatting helpers
-const { VALID_RICH_TEXT_COLORS, normalizeAnnotations } = require("./utils/notion-format.cjs");
+const VALID_RICH_TEXT_COLORS = new Set([
+  "default",
+  "gray",
+  "brown",
+  "orange",
+  "yellow",
+  "green",
+  "blue",
+  "purple",
+  "pink",
+  "red",
+  "gray_background",
+  "brown_background",
+  "orange_background",
+  "yellow_background",
+  "green_background",
+  "blue_background",
+  "purple_background",
+  "pink_background",
+  "red_background",
+]);
 
-// normalizeAnnotations provided by utils/notion-format.cjs
+function normalizeAnnotations(annotations) {
+  const input =
+    annotations && typeof annotations === "object" ? annotations : {};
+  const normalized = {
+    bold: !!input.bold,
+    italic: !!input.italic,
+    strikethrough: !!input.strikethrough,
+    underline: !!input.underline,
+    code: !!input.code,
+    color: "default",
+  };
+
+  if (typeof input.color === "string") {
+    const candidate = input.color.toLowerCase();
+    if (VALID_RICH_TEXT_COLORS.has(candidate)) {
+      normalized.color = candidate;
+    }
+  }
+
+  if (!VALID_RICH_TEXT_COLORS.has(normalized.color)) {
+    normalized.color = "default";
+  }
+
+  return normalized;
+}
 
 function normalizeCodeLanguage(language) {
   if (!language || typeof language !== "string") {
@@ -4111,9 +4154,6 @@ function extractPreCodeText(preContent) {
 
 // Helper function to convert HTML to rich text while preserving newlines
 async function htmlToNotionRichTextPreserveNewlines(html) {
-  // TODO(modularization): Move to converters/rich-text.cjs along with
-  // htmlToNotionRichText(), cleanHtmlText(), and related helpers.
-  // Keep API consistent: return { richText, inlineImages }.
   if (!html)
     return {
       richText: [{ type: "text", text: { content: "" } }],
@@ -4270,8 +4310,6 @@ async function processTableCellContent(html) {
 
 // Helper function to parse HTML table to Notion table block
 async function parseTableToNotionBlock(tableHtml) {
-  // TODO(modularization): Move to converters/tables.cjs and export a
-  // pure function that takes HTML and returns blocks.
   const blocks = [];
 
   // Log the raw table HTML to see if images are present
@@ -4495,8 +4533,6 @@ async function parseTableToNotionBlock(tableHtml) {
 }
 
 app.post("/api/W2N", async (req, res) => {
-  // TODO(modularization): Move route handlers under server/routes and wire
-  // with an Express app in server/server.cjs. Keep payload contract intact.
   try {
     const payload = req.body;
     log("📝 Processing W2N request for:", payload.title);

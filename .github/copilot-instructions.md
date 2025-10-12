@@ -42,6 +42,13 @@ npm start                        # Starts proxy server with nodemon watch
 npm version patch/minor/major    # Updates package.json + rollup.config.js
 ```
 
+**Post-Update Procedures** (required after each code change):
+
+```bash
+npm run build                    # Rebuild the userscript
+npm start                        # Restart the proxy server
+```
+
 ### 🎨 Project-Specific Patterns
 
 **UI Component Pattern** (exemplified in `src/ui/property-mapping-modal.js`):
@@ -78,6 +85,8 @@ const app = window.ServiceNowToNotion?.app?.();
 - Handles mixed content (text + code blocks) in containers
 - Extracts `<pre>` elements as separate code blocks with language detection
 - Processes nested lists up to Notion's 2-level depth limit
+- Converts tables with thead/tbody structure and image handling
+- Preserves rich text formatting (bold, italic, code, links, colors)
 
 ### 🔍 Integration Points & Dependencies
 
@@ -92,6 +101,7 @@ const app = window.ServiceNowToNotion?.app?.();
 - Page creation with custom properties and rich text content
 - Database schema introspection and property mapping
 - Image upload for covers/icons via Notion's file upload API
+- Block deduplication and deep nesting orchestration
 
 **Proxy Server Communication**:
 
@@ -118,6 +128,13 @@ const app = window.ServiceNowToNotion?.app?.();
 - Use `npm start` for auto-restart during server changes
 - Server processes HTML with complex recursive block parsing
 - Debug with `SN2N_VERBOSE=1` environment variable
+- Handle Notion's 100-block limit with chunking and retries
+
+**Code Quality**:
+
+- Strip private `_sn2n_` keys before sending to Notion API
+- Use marker-based deep nesting for complex content structures
+- Implement deduplication for tables and callouts to avoid duplicates
 
 ### 📋 Code-Edit Checklist
 
@@ -127,6 +144,8 @@ const app = window.ServiceNowToNotion?.app?.();
 4. Run `npm run build` and verify dist file generation
 5. Manual smoke test in Tampermonkey on ServiceNow page
 6. Bump version with `npm version` for behavioral changes
+7. Strip private keys from blocks before Notion API calls
+8. Test HTML conversion edge cases (tables, lists, code blocks)
 
 ### 🎯 Where to Start Reading
 
