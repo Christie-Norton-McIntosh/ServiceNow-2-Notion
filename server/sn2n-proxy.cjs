@@ -1287,28 +1287,19 @@ async function htmlToNotionBlocks(html) {
             `🔧 ulchildlink: inserted __SOFT_BREAK__ for data-bundleid anchor at pos ${liStart}`
           );
         }
-      }
 
-      // If the remaining processedTextContent contains explicit <p>...</p> paragraphs,
-      // preserve them as child paragraph blocks instead of flattening all into the
-      // list item's rich_text. The first paragraph will be used as the list item's
-      // primary rich_text (if present) and subsequent paragraphs become child blocks.
-      try {
-        const pRegexAll = /<p[^>]*>([\s\S]*?)<\/p>/gi;
-        const pMatches = [];
-        let pM;
-        while ((pM = pRegexAll.exec(processedTextContent)) !== null) {
-          pMatches.push(pM[1]);
-        }
-        if (pMatches.length > 0) {
-          // Remove the <p> tags from the processed text so they are not duplicated
-          processedTextContent = processedTextContent.replace(/<p[^>]*>[\s\S]*?<\/p>/gi, "");
-          // The first paragraph (if any) will be treated as part of the list item's main rich text
-          // and the rest will become paragraph child blocks (preserve order)
-          for (let i = pMatches.length - 1; i >= 1; i--) {
+        // As a fallback (or reinforcement), explicitly extract any <p class="shortdesc"> from the
+        // original fullItemContent and convert it to a paragraph child block so it does not become
+        // flattened into the list item's main rich text.
+        try {
+          const shortDescRegex = /<p[^>]*class=["'][^"']*shortdesc[^"']*["'][^>]*>([\s\S]*?)<\/p>/i;
+          const sdMatch = shortDescRegex.exec(fullItemContent);
+          if (sdMatch) {
+            const shortdescHtml = sdMatch[1];
+            // Remove the shortdesc from processedTextContent to avoid duplication
+            processedTextContent = processedTextContent.replace(sdMatch[0], "");
             try {
-              const paraHtml = pMatches[i];
-              const paraRt = (await htmlToNotionRichText(paraHtml)).richText || [];
+              const paraRt = (await htmlToNotionRichText(shortdescHtml)).richText || [];
               if (paraRt.length > 0) {
                 childBlocks.unshift({
                   object: "block",
@@ -1317,12 +1308,107 @@ async function htmlToNotionBlocks(html) {
                 });
               }
             } catch (e) {
-              // ignore paragraph conversion errors
+              // ignore conversion errors
             }
           }
-          // If there is at least one paragraph, ensure the first paragraph becomes the processedTextContent
-          if (pMatches[0] && pMatches[0].trim().length > 0) {
-            processedTextContent = pMatches[0] + "\n" + processedTextContent;
+        } catch (e) {
+          // ignore
+        }
+
+        // If the SOFT_BREAK approach didn't trigger, fallback to an explicit
+        // anchor + shortdesc extraction: capture the anchor and the following
+        // <p class="shortdesc">...</p> and make the paragraph a child block.
+        try {
+          const anchorShortdescRegex = /(<a[^>]*\bdata-bundleid=["'][^"']*["'][\s\S]*?<\/a>)[\s\n\r\t]*<p[^>]*class=["'][^"']*shortdesc[^"']*["'][^>]*>([\s\S]*?)<\/p>/i;
+          const asMatch = anchorShortdescRegex.exec(processedTextContent);
+          if (asMatch) {
+            const anchorHtml = asMatch[1];
+            const shortdescHtml = asMatch[2];
+            // Remove the matched section from processed text
+            processedTextContent = processedTextContent.replace(asMatch[0], anchorHtml);
+            // Convert the shortdesc to a paragraph child block
+            try {
+              const paraRt = (await htmlToNotionRichText(shortdescHtml)).richText || [];
+              if (paraRt.length > 0) {
+                childBlocks.unshift({
+                  object: "block",
+                  type: "paragraph",
+                  paragraph: { rich_text: paraRt },
+                });
+              }
+            } catch (pe) {
+              // ignore conversion errors
+            }
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      // If the remaining processedTextContent contains explicit <p>...</p> paragraphs,
+      // preserve them as child paragraph blocks instead of flattening all into the
+      // list item's rich_text. If a SOFT_BREAK marker was already used earlier
+      // we should not re-process paragraphs (avoids duplicates). For 'ulchildlink'
+      // list items prefer keeping paragraphs as child blocks so the anchor remains
+      // the list-item text.
+      try {
+        const SOFT = "__SOFT_BREAK__";
+        if (isUlChildLink) {
+          log(`🔍 DEBUG parseListItems: ulchildlink processedTextContent preview: ${processedTextContent.substring(0,200)}`);
+        }
+        if (!processedTextContent || processedTextContent.indexOf(SOFT) === -1) {
+          const pRegexAll = /<p[^>]*>([\s\S]*?)<\/p>/gi;
+          const pMatches = [];
+          let pM;
+          while ((pM = pRegexAll.exec(processedTextContent)) !== null) {
+            pMatches.push(pM[1]);
+          }
+          if (isUlChildLink) {
+            log(`🔍 DEBUG parseListItems: found ${pMatches.length} <p> matches in processedTextContent`);
+          }
+          if (pMatches.length > 0) {
+            // Remove all <p> elements from the processed text so they aren't duplicated
+            processedTextContent = processedTextContent.replace(/<p[^>]*>[\s\S]*?<\/p>/gi, "");
+
+            if (isUlChildLink) {
+              // For ulchildlink, make every paragraph a child block (keep order)
+              for (let i = pMatches.length - 1; i >= 0; i--) {
+                try {
+                  const paraHtml = pMatches[i];
+                  const paraRt = (await htmlToNotionRichText(paraHtml)).richText || [];
+                  if (paraRt.length > 0) {
+                    childBlocks.unshift({
+                      object: "block",
+                      type: "paragraph",
+                      paragraph: { rich_text: paraRt },
+                    });
+                  }
+                } catch (e) {
+                  // ignore paragraph conversion errors
+                }
+              }
+            } else {
+              // For non-ulchildlink lists, behave as before: first paragraph becomes
+              // the inline text for the list item and subsequent paragraphs become children.
+              for (let i = pMatches.length - 1; i >= 1; i--) {
+                try {
+                  const paraHtml = pMatches[i];
+                  const paraRt = (await htmlToNotionRichText(paraHtml)).richText || [];
+                  if (paraRt.length > 0) {
+                    childBlocks.unshift({
+                      object: "block",
+                      type: "paragraph",
+                      paragraph: { rich_text: paraRt },
+                    });
+                  }
+                } catch (e) {
+                  // ignore paragraph conversion errors
+                }
+              }
+              if (pMatches[0] && pMatches[0].trim().length > 0) {
+                processedTextContent = pMatches[0] + "\n" + processedTextContent;
+              }
+            }
           }
         }
       } catch (e) {
@@ -1396,6 +1482,10 @@ async function htmlToNotionBlocks(html) {
         const leftHtml = processedTextContent.substring(0, idx);
         const rightHtml = processedTextContent.substring(idx + SOFT.length);
 
+        if (isUlChildLink) {
+          log(`🔍 DEBUG SOFT_SPLIT: leftHtml preview: ${leftHtml.substring(0,120)}`);
+          log(`🔍 DEBUG SOFT_SPLIT: rightHtml preview: ${rightHtml.substring(0,120)}`);
+        }
         const leftResult = await htmlToNotionRichText(leftHtml);
         const rightResult = await htmlToNotionRichText(rightHtml);
 
@@ -1408,6 +1498,9 @@ async function htmlToNotionBlocks(html) {
             )
           : false;
         if (rightHasText) {
+          if (isUlChildLink) {
+            log(`🔍 DEBUG SOFT_SPLIT: rightHasText=true, creating para child for ulchildlink`);
+          }
           const paraBlock = {
             object: "block",
             type: "paragraph",
@@ -1439,6 +1532,7 @@ async function htmlToNotionBlocks(html) {
         // Add children if there are any and we haven't exceeded depth
         if (children.length > 0 && currentDepth < MAX_DEPTH) {
           item[listType].children = children;
+          log(`🔍 DEBUG parseListItems: attached ${children.length} nested list children to list item at depth ${currentDepth}`);
         }
 
         if (childBlocks.length > 0) {
@@ -1447,6 +1541,7 @@ async function htmlToNotionBlocks(html) {
               item[listType].children = [];
             }
             item[listType].children.push(...childBlocks);
+            log(`🔍 DEBUG parseListItems: pushed ${childBlocks.length} childBlocks into item[listType].children`);
             handledChildBlocks = true;
           } else {
             siblingBlocks.push(...childBlocks);
@@ -1465,6 +1560,7 @@ async function htmlToNotionBlocks(html) {
               children: [...childBlocks],
             },
           };
+          log(`🔍 DEBUG parseListItems: created empty list item with ${childBlocks.length} childBlocks`);
           items.push(emptyItem);
           handledChildBlocks = true;
         } else {
@@ -1474,6 +1570,7 @@ async function htmlToNotionBlocks(html) {
       }
 
       if (!handledChildBlocks && childBlocks.length > 0) {
+        log(`🔍 DEBUG parseListItems: moving ${childBlocks.length} childBlocks to siblingBlocks (not handled)`);
         siblingBlocks.push(...childBlocks);
       }
 
@@ -5574,6 +5671,94 @@ async function orchestrateDeepNesting(pageId, markerMap) {
       log(
         `🔄 Orchestrator: appending ${blocksToAppend.length} block(s) to parent ${parentId} for marker sn2n:${marker}`
       );
+      // Before appending, perform an append-time dedupe check for table blocks
+      // to avoid duplicating tables that may already exist under the parent.
+      try {
+        // helper: compute a lightweight signature for table blocks
+        const computeTableSignature = (blk) => {
+          try {
+            if (!blk || blk.type !== 'table' || !blk.table) return null;
+            const w = blk.table.table_width || 0;
+            const rows = Array.isArray(blk.table.children)
+              ? blk.table.children.length
+              : 0;
+            const normalizeCell = (txt) =>
+              String(txt || '')
+                .replace(/\(sn2n:[a-z0-9\-]+\)/gi, '')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .toLowerCase()
+                .substring(0, 200);
+
+            let firstRow = '';
+            if (Array.isArray(blk.table.children) && blk.table.children[0]) {
+              const cells = blk.table.children[0].table_row?.cells || [];
+              firstRow = cells
+                .map((c) => {
+                  if (Array.isArray(c)) {
+                    return c
+                      .map((rt) => normalizeCell(rt?.text?.content || ''))
+                      .join('|');
+                  }
+                  return normalizeCell(c);
+                })
+                .join('|');
+            }
+            return `table:${w}x${rows}:${firstRow}`;
+          } catch (e) {
+            return null;
+          }
+        };
+
+        // If there are table blocks to append, fetch existing children of the parent
+        // and compute existing table signatures to filter out duplicates.
+        const tablesToAppend = blocksToAppend.filter((b) => b && b.type === 'table');
+        if (tablesToAppend.length > 0) {
+          const existingSignatures = new Set();
+          // list children of parent (may be page or block)
+          let cursor = undefined;
+          do {
+            const listing = await notion.blocks.children.list({
+              block_id: parentId,
+              page_size: 100,
+              start_cursor: cursor,
+            });
+            cursor = listing.has_more ? listing.next_cursor : undefined;
+            const results = listing.results || [];
+            for (const r of results) {
+              try {
+                if (r.type === 'table') {
+                  const sig = computeTableSignature(r);
+                  if (sig) existingSignatures.add(sig);
+                }
+              } catch (e) {
+                // ignore individual child errors
+              }
+            }
+          } while (cursor);
+
+          // Filter out any blocksToAppend whose table signature already exists
+          const beforeCount = blocksToAppend.length;
+          blocksToAppend = blocksToAppend.filter((b) => {
+            if (!b || b.type !== 'table') return true;
+            const sig = computeTableSignature(b);
+            if (!sig) return true;
+            if (existingSignatures.has(sig)) {
+              log(`🔎 Orchestrator dedupe: skipping append of duplicate table (${sig}) for marker sn2n:${marker}`);
+              return false;
+            }
+            return true;
+          });
+          const removed = beforeCount - blocksToAppend.length;
+          if (removed > 0) {
+            log(`🔧 Orchestrator dedupe: removed ${removed} duplicate block(s) before append for marker sn2n:${marker}`);
+          }
+        }
+      } catch (e) {
+        log('⚠️ Orchestrator dedupe check failed:', e && e.message);
+        // fall through to normal append behavior
+      }
+
       // Ensure no private helper keys are present before appending under parent
       deepStripPrivateKeys(blocksToAppend);
       const result = await appendBlocksToBlockId(parentId, blocksToAppend);
