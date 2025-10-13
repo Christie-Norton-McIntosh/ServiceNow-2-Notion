@@ -15,7 +15,7 @@ export default {
     name: "ServiceNowToNotion",
     banner: `// ==UserScript==
 // @name         ServiceNow-2-Notion
-// @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
+// @namespace    https://github.com/nortonglitz/ServiceNow-2-Notion
 // @version      ${version}
 // @description  Extract ServiceNow content and send to Notion via Universal Workflow or proxy
 // @author       Norton-McIntosh

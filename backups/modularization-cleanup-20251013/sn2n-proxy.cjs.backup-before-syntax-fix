@@ -36,9 +36,8 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const fs = require("fs");
 const path = require("path");
-// Use service modules for Notion and ServiceNow integration
-const { initNotionClient, getNotionClient, isNotionConfigured, createPage, uploadImageToNotion, uploadBufferToNotion } = require("./services/notion.cjs");
-const { extractContentFromServiceNow, parseServiceNowMetadata } = require("./services/servicenow.cjs");
+const axios = require("axios");
+const FormData = require("form-data");
 
 // Import Martian helper for advanced HTML-to-Notion conversion
 let martianHelper = null;
@@ -47,10 +46,18 @@ try {
 } catch (e) {
   console.log("⚠️ Martian helper not available:", e.message);
 
+let { Client: NotionClient } = {};
+try {
+  NotionClient = require("@notionhq/client").Client;
+} catch (e) {
+  NotionClient = null;
+}
+
 // Prefer loading .env from the server folder (robust when starting from project root or server/)
 try {
   dotenv.config({ path: path.join(__dirname, ".env") });
 } catch (e) {
+  // Fallback to default behavior
   dotenv.config();
 }
 
@@ -492,16 +499,36 @@ function normalizeCodeLanguage(language) {
   return "javascript";
 }
 
-// Initialize Notion client using service
 let notion = null;
 if (process.env.NOTION_TOKEN) {
-  notion = initNotionClient(process.env.NOTION_TOKEN);
-  log("Notion token configured: true");
+  try {
+    if (NotionClient)
+      notion = new NotionClient({
+        auth: process.env.NOTION_TOKEN,
+        notionVersion: "2022-06-28",
+      });
+    else notion = null;
+    log("Notion token configured: true");
+
+    // Initialize Martian helper with Notion client
+    if (martianHelper && typeof martianHelper.setNotionClient === "function") {
+      martianHelper.setNotionClient(notion);
+      log("✅ Martian helper initialized with Notion client");
+    }
+  } catch (e) {
+    notion = null;
+    log("Notion client init failed:", e.message);
+  }
 } else {
+  // Minimal startup notice when not verbose
   if (SN2N_VERBOSE) log("Notion token not configured (NOTION_TOKEN missing)");
 }
 
-// File upload availability now handled in Notion service
+function ensureFileUploadAvailable() {
+  if (process.env.NOTION_TOKEN && process.env.NOTION_TOKEN.length > 10)
+    return true;
+  return false;
+}
 
 // Standard response helpers: success/data/meta and error shape
 function sendSuccess(res, data = {}, meta = {}) {
@@ -517,9 +544,96 @@ function sendError(res, errorCode, message, details = null, statusCode = 500) {
   });
 }
 
-// Use uploadImageToNotion from Notion service
+async function downloadAndUploadImage(imageUrl, alt = "image") {
+  try {
+    if (SN2N_VERBOSE)
+      log(`⬇️ Downloading image: ${String(imageUrl).substring(0, 120)}`);
+    const response = await axios.get(imageUrl, {
+      responseType: "arraybuffer",
+      timeout: 30000,
+      headers: { "User-Agent": "SN2N-Proxy/1.0" },
+    });
 
-// Use uploadBufferToNotion from Notion service
+    const buffer = Buffer.from(response.data);
+    const contentType = response.headers["content-type"] || "image/png";
+    const ext = contentType.split("/").pop().split(";")[0] || "png";
+    const filename = `${(alt || "image")
+      .replace(/[^a-zA-Z0-9]/g, "_")
+      .substring(0, 20)}.${ext}`;
+
+    const uploadId = await uploadBufferToNotion(buffer, filename, contentType);
+    return uploadId;
+  } catch (err) {
+    if (SN2N_VERBOSE) log("downloadAndUploadImage failed:", err.message || err);
+    return null;
+  }
+}
+
+async function uploadBufferToNotion(
+  buffer,
+  filename,
+  contentType = "image/png"
+) {
+  if (!ensureFileUploadAvailable()) {
+    log("File upload not available: NOTION_TOKEN missing");
+    return null;
+  }
+
+  try {
+    if (SN2N_VERBOSE) log(`📤 Creating file upload object for ${filename}`);
+    const createRes = await axios.post(
+      "https://api.notion.com/v1/file_uploads",
+      { mode: "single_part", filename, content_type: contentType },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.NOTION_TOKEN}`,
+          "Content-Type": "application/json",
+          "Notion-Version": process.env.NOTION_VERSION || "2022-06-28",
+        },
+        timeout: 20000,
+      }
+    );
+
+    const fileUploadId =
+      createRes.data && (createRes.data.id || createRes.data.file_upload_id);
+    const uploadUrl = createRes.data && createRes.data.upload_url;
+
+    if (!uploadUrl) {
+      log("No upload_url returned from Notion file_uploads create");
+      return null;
+    }
+
+    if (SN2N_VERBOSE)
+      log(`📤 Uploading file bytes to Notion upload URL (truncated)...`);
+    const form = new FormData();
+    form.append("file", buffer, { filename, contentType });
+
+    const uploadRes = await axios.post(uploadUrl, form, {
+      headers: {
+        Authorization: `Bearer ${process.env.NOTION_TOKEN}`,
+        "Notion-Version": process.env.NOTION_VERSION || "2022-06-28",
+        ...form.getHeaders(),
+      },
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+      timeout: 60000,
+    });
+
+    const returnedId = uploadRes.data && (uploadRes.data.id || fileUploadId);
+    if (SN2N_VERBOSE)
+      log(
+        `✅ Upload response status: ${uploadRes.status}, id: ${String(
+          returnedId
+        ).substring(0, 20)}...`
+      );
+    return returnedId || fileUploadId || null;
+  } catch (err) {
+    if (SN2N_VERBOSE) log("uploadBufferToNotion failed:", err.message || err);
+    if (SN2N_VERBOSE && err.response)
+      log("Upload error response:", err.response.data);
+    return null;
+  }
+}
 
 app.get("/health", (req, res) => {
   return sendSuccess(res, {
@@ -5621,7 +5735,7 @@ module.exports = {
   appendBlocksToBlockId,
   findParentListItemByMarker,
   orchestrateDeepNesting,
-  notion: getNotionClient(),
+  notion,
   removeCollectedBlocks,
   deepStripPrivateKeys
 };
