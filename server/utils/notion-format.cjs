@@ -56,4 +56,36 @@ function normalizeAnnotations(annotations) {
   return normalized;
 }
 
-module.exports = { VALID_RICH_TEXT_COLORS, normalizeAnnotations };
+/**
+ * Cleans HTML text by removing tags and decoding entities
+ * @param {string} html - HTML string to clean
+ * @returns {string} Clean text
+ */
+function cleanHtmlText(html) {
+  if (!html) return "";
+
+  // Remove HTML tags
+  let text = html.replace(/<[^>]*>/g, " ");
+
+  // Decode HTML entities (both named and numeric)
+  text = text
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#xa0;/gi, " ") // Non-breaking space (hex)
+    .replace(/&#160;/g, " ") // Non-breaking space (decimal)
+    .replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(dec)) // All decimal entities
+    .replace(/&#x([0-9a-f]+);/gi, (match, hex) =>
+      String.fromCharCode(parseInt(hex, 16))
+    ); // All hex entities
+
+  // Clean up whitespace
+  text = text.replace(/\s+/g, " ").trim();
+
+  return text;
+}
+
+module.exports = { VALID_RICH_TEXT_COLORS, normalizeAnnotations, cleanHtmlText };

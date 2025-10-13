@@ -109,6 +109,15 @@ const app = window.ServiceNowToNotion?.app?.();
 - CORS-enabled for browser userscript communication
 - Environment-based configuration (.env files)
 
+
+### ⚡️ Server Restart & Startup Best Practices
+
+- **Always kill lingering node processes before restarting** (`killall node` or `pkill -f sn2n-proxy.cjs`).
+- **Use a single nodemon instance** to avoid overlapping restarts and port conflicts.
+- **Avoid synchronous file I/O in startup paths** (e.g., reading/writing large files, logs, or .env files synchronously).
+- **Add robust error handling for all async code**—wrap all async startup logic in try/catch and log errors.
+- **Add a short delay between stop/start if restarting rapidly** to avoid port binding race conditions.
+
 ### ⚠️ Common Pitfalls & Required Checks
 
 **Before UI Changes**:

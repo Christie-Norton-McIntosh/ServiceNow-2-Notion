@@ -1,42 +1,35 @@
-  // Helper to split rich text at __SOFT_BREAK__ and create multiple paragraph blocks
-  function splitRichTextAtSoftBreak(richText) {
-    const SOFT = "__SOFT_BREAK__";
-    const resultBlocks = [];
-    let current = [];
-    for (const rt of richText) {
-      const content = rt?.text?.content || "";
-      const idx = content.indexOf(SOFT);
-      if (idx === -1) {
-        current.push(rt);
-      } else {
-        // Split this rich text item
-        if (idx > 0) {
-          current.push({ ...rt, text: { ...rt.text, content: content.substring(0, idx) } });
-        }
-        if (current.length > 0) {
-          resultBlocks.push({
-            object: "block",
-            type: "paragraph",
-            paragraph: { rich_text: current },
-          });
-        }
-        // Start new block with remainder
-        const remainder = content.substring(idx + SOFT.length);
-        current = [];
-        if (remainder.trim()) {
-          current.push({ ...rt, text: { ...rt.text, content: remainder } });
-        }
-      }
-    }
-    if (current.length > 0) {
-      resultBlocks.push({
-        object: "block",
-        type: "paragraph",
-        paragraph: { rich_text: current },
-      });
-    }
-    return resultBlocks;
-  }
+#!/usr/bin/env node
+/**
+ * TODO: Modularization Roadmap
+ *
+ * 1. Extract rich-text converter logic to server/converters/rich-text.cjs
+ *    - Move all rich-text block conversion helpers and annotation logic.
+ *    - Ensure all dependencies are imported from utils/notion-format.cjs.
+ *    - Backward compatible: keep require path fallback for monolith.
+ *
+ * 2. Extract table converter logic to server/converters/table.cjs
+ *    - Move table parsing, thead/tbody handling, and image extraction.
+ *    - Ensure deep-nesting and deduplication logic is preserved.
+ *
+ * 3. Split route handlers to server/routes/
+ *    - Move Express route definitions (API endpoints) to separate files.
+ *    - Use central router import in main server file.
+ *
+ * 4. Move Notion API and ServiceNow integration to server/services/
+ *    - Encapsulate Notion API calls, page creation, and property mapping.
+ *    - Encapsulate ServiceNow content extraction and metadata parsing.
+ *
+ * 5. Orchestration and block chunking to server/orchestration/
+ *    - Move block chunking, retry logic, and deep nesting orchestration.
+ *
+ * 6. Update all require/import paths and add fallback for legacy monolith usage.
+ *
+ * 7. Add JSDoc to all new modules for maintainability.
+ *
+ * 8. Manual smoke test after each extraction (npm run build, npm start).
+ *
+ * 9. Update README and architecture docs after refactor.
+ */
 // SN2N proxy (CommonJS copy) - runnable even when package.json sets "type": "module"
 const express = require("express");
 const cors = require("cors");
@@ -47,16 +40,11 @@ const axios = require("axios");
 const FormData = require("form-data");
 
 // Import Martian helper for advanced HTML-to-Notion conversion
-// Import table converter
-const { convertTableBlock, deduplicateTableBlocks } = require("./converters/table.cjs");
-
 let martianHelper = null;
 try {
   martianHelper = require(path.join(__dirname, "martian-helper.cjs"));
 } catch (e) {
   console.log("⚠️ Martian helper not available:", e.message);
-}
-
 
 let { Client: NotionClient } = {};
 try {
@@ -111,8 +99,8 @@ app.use((req, res, next) => {
   next();
 });
 
-
 // Logging helper: quiet by default, enable verbose output with SN2N_VERBOSE=1
+// Mutable at runtime via API below
 let SN2N_VERBOSE = !!(
   process.env.SN2N_VERBOSE && String(process.env.SN2N_VERBOSE) === "1"
 );
@@ -120,24 +108,396 @@ let SN2N_EXTRA_DEBUG = !!(
   process.env.SN2N_EXTRA_DEBUG && String(process.env.SN2N_EXTRA_DEBUG) === "1"
 );
 
+const DEBUG_PATTERNS = [
+  /^🔍/,
+  /^🔧/,
+  /^📊/,
+  /^📄/,
+  /^📝/,
+  /^🎯/,
+  /^📦/,
+  /^🔄/,
+  /^✅ (Placeholder|Found|Code|Adding)/,
+  /^❌ Placeholder/,
+  /^⚠️ Placeholder/,
+  /^\s{3}/,
+];
+
 function log(...args) {
   if (!SN2N_VERBOSE) return;
   if (
     !SN2N_EXTRA_DEBUG &&
     args.length > 0 &&
     typeof args[0] === "string" &&
-    [
-      /^🔍/, /^🔧/, /^📊/, /^📄/, /^📝/, /^🎯/, /^📦/, /^🔄/,
-      /^✅ (Placeholder|Found|Code|Adding)/, /^❌ Placeholder/, /^⚠️ Placeholder/, /^\s{3}/
-    ].some((pattern) => pattern.test(args[0]))
+    DEBUG_PATTERNS.some((pattern) => pattern.test(args[0]))
   ) {
     return;
   }
   console.log(new Date().toISOString(), "[SN2N]", ...args);
 }
+function getVerbose() {
+  return !!SN2N_VERBOSE;
+}
+// Verify that no blocks on the page still contain any (sn2n:...) markers.
+async function verifyNoMarkersOnPage(rootPageId) {
+  if (!notion) throw new Error("Notion client not initialized");
+  const markerRegex = /\(sn2n:[^)]+\)/g;
 
-// Central router import for W2N route
-app.use(require('./routes/w2n.cjs'));
+  async function listChildren(blockId, cursor) {
+    return await notion.blocks.children.list({
+      block_id: blockId,
+      page_size: 100,
+      start_cursor: cursor,
+    });
+  }
+
+  const queue = [rootPageId];
+  const visited = new Set();
+  const found = [];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (visited.has(current)) continue;
+    visited.add(current);
+
+    let cursor = undefined;
+    do {
+      const res = await listChildren(current, cursor);
+      cursor = res.has_more ? res.next_cursor : undefined;
+      const children = res.results || [];
+      for (const child of children) {
+        try {
+          const t = child.type;
+          const payload = child[t] || child.paragraph || {};
+          const rich = Array.isArray(payload.rich_text)
+            ? payload.rich_text
+            : [];
+          const plain = rich.map((r) => r?.text?.content || "").join("");
+          const matches = plain.match(markerRegex) || [];
+          if (matches.length > 0) {
+            found.push({
+              id: child.id,
+              type: child.type,
+              preview: plain,
+              matches,
+            });
+          }
+          if (child.has_children) queue.push(child.id);
+        } catch (e) {
+          log("⚠️ verifyNoMarkersOnPage inner error:", e && e.message);
+        }
+      }
+    } while (cursor);
+  }
+
+  return { found };
+}
+function getExtraDebug() {
+  return !!SN2N_EXTRA_DEBUG;
+}
+function setExtraDebug(v) {
+  SN2N_EXTRA_DEBUG = !!v;
+  return SN2N_EXTRA_DEBUG;
+}
+
+try {
+  const logsDir = path.join(__dirname, "logs");
+  if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir);
+} catch (e) {}
+
+function hyphenateNotionId(id) {
+  if (!id || typeof id !== "string") return id;
+  const clean = id.replace(/[^a-f0-9]/gi, "");
+  if (clean.length !== 32) return id;
+  return clean.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, "$1-$2-$3-$4-$5");
+}
+
+function normalizeUrl(url, baseUrl = null) {
+  if (!url || typeof url !== "string") return url;
+  const decodedUrl = url
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+
+  if (decodedUrl.startsWith("#")) return decodedUrl;
+  if (decodedUrl.startsWith("/")) {
+    if (baseUrl) {
+      try {
+        const base = new URL(baseUrl);
+        return new URL(decodedUrl, base).href;
+      } catch (e) {
+        return decodedUrl;
+      }
+    }
+    return decodedUrl;
+  }
+  try {
+    const u = new URL(decodedUrl);
+    const segments = u.pathname.split("/").filter(Boolean);
+    const resolved = [];
+    for (const s of segments) {
+      if (s === "..") resolved.pop();
+      else if (s !== ".") resolved.push(s);
+    }
+    u.pathname = "/" + resolved.join("/");
+    return u.href;
+  } catch (e) {
+    return decodedUrl;
+  }
+}
+
+function isValidImageUrl(url) {
+  if (!url || typeof url !== "string") return false;
+  const normalized = normalizeUrl(url);
+  if (normalized.startsWith("#")) return false;
+  if (
+    normalized.startsWith("../") ||
+    normalized.startsWith("./") ||
+    normalized.startsWith("/")
+  )
+    return false;
+  try {
+    const u = new URL(normalized);
+    if (!["http:", "https:"].includes(u.protocol)) return false;
+    const hasExt = /\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(u.pathname);
+    const hasQuery = u.search.length > 0;
+    if (u.hostname.includes("servicenow") && !hasExt && hasQuery) return false;
+    if (!hasExt && hasQuery && u.search.length > 20) return false;
+    const isDoc = /\/(docs?|documentation|bundle|page|help|guide)/i.test(
+      u.pathname
+    );
+    if (isDoc && !hasExt) return false;
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+const NOTION_CODE_LANGUAGES = new Set(
+  [
+    "abap",
+    "abc",
+    "agda",
+    "arduino",
+    "ascii art",
+    "assembly",
+    "bash",
+    "basic",
+    "bnf",
+    "c",
+    "c#",
+    "c++",
+    "clojure",
+    "coffeescript",
+    "coq",
+    "css",
+    "dart",
+    "dhall",
+    "diff",
+    "docker",
+    "ebnf",
+    "elixir",
+    "elm",
+    "erlang",
+    "f#",
+    "flow",
+    "fortran",
+    "gherkin",
+    "glsl",
+    "go",
+    "graphql",
+    "groovy",
+    "haskell",
+    "hcl",
+    "html",
+    "idris",
+    "java",
+    "javascript",
+    "json",
+    "julia",
+    "kotlin",
+    "latex",
+    "less",
+    "lisp",
+    "livescript",
+    "llvm ir",
+    "lua",
+    "makefile",
+    "markdown",
+    "markup",
+    "matlab",
+    "mathematica",
+    "mermaid",
+    "nix",
+    "notion formula",
+    "objective-c",
+    "ocaml",
+    "pascal",
+    "perl",
+    "php",
+    "plain text",
+    "powershell",
+    "prolog",
+    "protobuf",
+    "purescript",
+    "python",
+    "r",
+    "racket",
+    "reason",
+    "ruby",
+    "rust",
+    "sass",
+    "scala",
+    "scheme",
+    "scss",
+    "shell",
+    "smalltalk",
+    "solidity",
+    "sql",
+    "swift",
+    "toml",
+    "typescript",
+    "vb.net",
+    "verilog",
+    "vhdl",
+    "visual basic",
+    "webassembly",
+    "xml",
+    "yaml",
+    "java/c/c++/c#",
+  ].map((lang) => lang.toLowerCase())
+);
+
+const CODE_LANGUAGE_ALIASES = {
+  js: "javascript",
+  jsx: "javascript",
+  javascript: "javascript",
+  ts: "typescript",
+  tsx: "typescript",
+  typescript: "typescript",
+  py: "python",
+  python: "python",
+  rb: "ruby",
+  ruby: "ruby",
+  php: "php",
+  java: "java",
+  kotlin: "kotlin",
+  swift: "swift",
+  go: "go",
+  golang: "go",
+  rust: "rust",
+  sql: "sql",
+  tsql: "sql",
+  groovy: "groovy",
+  gradle: "groovy",
+  bash: "bash",
+  sh: "shell",
+  shell: "shell",
+  zsh: "shell",
+  fish: "shell",
+  powershell: "powershell",
+  ps1: "powershell",
+  c: "c",
+  cpp: "c++",
+  cc: "c++",
+  "c++": "c++",
+  csharp: "c#",
+  cs: "c#",
+  "c#": "c#",
+  objectivec: "objective-c",
+  "objective-c": "objective-c",
+  objc: "objective-c",
+  h: "objective-c",
+  scala: "scala",
+  clj: "clojure",
+  clojure: "clojure",
+  coffee: "coffeescript",
+  coffeescript: "coffeescript",
+  dart: "dart",
+  elixir: "elixir",
+  elm: "elm",
+  erlang: "erlang",
+  haskell: "haskell",
+  hs: "haskell",
+  hcl: "hcl",
+  html: "html",
+  xhtml: "html",
+  xml: "xml",
+  css: "css",
+  scss: "scss",
+  sass: "sass",
+  less: "less",
+  json: "json",
+  yaml: "yaml",
+  yml: "yaml",
+  markdown: "markdown",
+  md: "markdown",
+  markup: "markup",
+  latex: "latex",
+  tex: "latex",
+  matlab: "matlab",
+  mathematica: "mathematica",
+  mermaid: "mermaid",
+  nix: "nix",
+  protobuf: "protobuf",
+  proto: "protobuf",
+  r: "r",
+  racket: "racket",
+  reason: "reason",
+  scheme: "scheme",
+  solidity: "solidity",
+  toml: "toml",
+  vb: "visual basic",
+  "visual basic": "visual basic",
+  vbnet: "vb.net",
+  "vb.net": "vb.net",
+  plain: "plain text",
+  plaintext: "plain text",
+  "plain-text": "plain text",
+  plain_text: "plain text",
+  text: "plain text",
+  none: "plain text",
+  generic: "plain text",
+  properties: "plain text",
+  ini: "plain text",
+  conf: "plain text",
+  log: "plain text",
+  diff: "diff",
+  dockerfile: "docker",
+  docker: "docker",
+  make: "makefile",
+  makefile: "makefile",
+  graphql: "graphql",
+  glsl: "glsl",
+};
+
+// Extracted formatting helpers
+const { VALID_RICH_TEXT_COLORS, normalizeAnnotations } = require("./utils/notion-format.cjs");
+
+// normalizeAnnotations provided by utils/notion-format.cjs
+
+function normalizeCodeLanguage(language) {
+  if (!language || typeof language !== "string") {
+    return "javascript";
+  }
+
+  const cleaned = language.trim().toLowerCase();
+  if (!cleaned) {
+    return "javascript";
+  }
+
+  if (CODE_LANGUAGE_ALIASES[cleaned]) {
+    return CODE_LANGUAGE_ALIASES[cleaned];
+  }
+
+  if (NOTION_CODE_LANGUAGES.has(cleaned)) {
+    return cleaned;
+  }
+
+  return "javascript";
+}
 
 let notion = null;
 if (process.env.NOTION_TOKEN) {
@@ -152,12 +512,8 @@ if (process.env.NOTION_TOKEN) {
 
     // Initialize Martian helper with Notion client
     if (martianHelper && typeof martianHelper.setNotionClient === "function") {
-      try {
-        martianHelper.setNotionClient(notion);
-        log("✅ Martian helper initialized with Notion client");
-      } catch (err) {
-        log("⚠️ Martian helper setNotionClient failed:", err.message);
-      }
+      martianHelper.setNotionClient(notion);
+      log("✅ Martian helper initialized with Notion client");
     }
   } catch (e) {
     notion = null;
@@ -279,11 +635,61 @@ async function uploadBufferToNotion(
   }
 }
 
-// Central router imports
-app.use(require('./routes/health.cjs'));
-app.use(require('./routes/ping.cjs'));
-app.use(require('./routes/status.cjs'));
-app.use(require('./routes/logging.cjs'));
+app.get("/health", (req, res) => {
+  return sendSuccess(res, {
+    status: "ok",
+    version: process.env.npm_package_version || "dev",
+    notion: {
+      tokenConfigured: !!process.env.NOTION_TOKEN,
+      clientInitialized: !!notion,
+    },
+    ts: new Date().toISOString(),
+  });
+});
+
+app.get("/ping", (req, res) =>
+  sendSuccess(res, { pong: true, ts: Date.now() })
+);
+
+app.get("/api/status", (req, res) => {
+  return sendSuccess(res, {
+    service: "sn2n-proxy",
+    version: process.env.npm_package_version || "dev",
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Runtime logging control endpoints
+app.get("/api/logging", (req, res) =>
+  sendSuccess(res, {
+    verbose: getVerbose(),
+    extraDebug: getExtraDebug(),
+  })
+);
+
+app.post("/api/logging", (req, res) => {
+  try {
+    const { verbose, extraDebug } = req.body || {};
+    const response = {};
+
+    if (typeof verbose !== "undefined") {
+      response.verbose = setVerbose(!!verbose);
+    } else {
+      response.verbose = getVerbose();
+    }
+
+    if (typeof extraDebug !== "undefined") {
+      response.extraDebug = setExtraDebug(!!extraDebug);
+    } else {
+      response.extraDebug = getExtraDebug();
+    }
+
+    return sendSuccess(res, response);
+  } catch (e) {
+    return sendError(res, "SERVER_ERROR", e.message || String(e));
+  }
+});
 
 // Global tracker for video detection (reset per conversion)
 let hasDetectedVideos = false;
@@ -642,6 +1048,15 @@ async function htmlToNotionBlocks(html) {
       const nestedMatch = nestedListRegex.exec(fullItemContent);
 
       let textContent = fullItemContent;
+
+      // Ensure a visible break between trailing link and short description inside list items
+      // e.g., </a><p class="shortdesc"> -> </a>__SOFT_BREAK__<p class="shortdesc">
+      try {
+        textContent = textContent.replace(
+          /(\<\/a\>)(\s*)(\<p[^>]*class=["'][^"']*shortdesc[^"']*["'][^>]*\>)/gi,
+          (match, closingA, whitespace, openingP) => `${closingA}__SOFT_BREAK__${openingP}`
+        );
+      } catch (_) {}
       let children = [];
 
       // Detect li open tag classes (e.g., class="link ulchildlink") so we can apply special handling
@@ -664,157 +1079,62 @@ async function htmlToNotionBlocks(html) {
         );
       } else if (nestedMatch && currentDepth >= MAX_DEPTH) {
         // At max depth, flatten the nested content into the parent item
-        log(
-          `⚠️ List nesting exceeds Notion's limit (${MAX_DEPTH} levels). Flattening nested content.`
-        );
-        textContent = fullItemContent; // Include nested list as text
+        textContent = fullItemContent;
       }
 
-      // Extract block elements like <pre>, <table>, <img> from the text content
-      const childBlocks = [];
-      let siblingBlocks = [];
-      let collectedRichText = [];
+      // Convert the text content to rich text
+      const result = await htmlToNotionRichText(textContent);
+      const richText = result.richText;
 
-      // Insert soft break between </a> and <p> tags for "Related Content" formatting
-      let processedTextContent = textContent.replace(/(<\/a>)(\s*<p[^>]*>)/gi, '$1__SOFT_BREAK__$2');
+      // Create the list item
+      const item = {
+        object: "block",
+        type: listType,
+        [listType]: {
+          rich_text: sanitizeRichTextArray(richText),
+          children: children.length > 0 ? children : undefined,
+        },
+      };
 
-      // Use extractBlocksFromHTML to process the text content and separate blocks
-      const extractedBlocks = await extractBlocksFromHTML(processedTextContent);
-      
-      // Separate blocks into child blocks (tables, notes, etc.) and text content
-      for (const block of extractedBlocks) {
-        if (block.type === 'table' || block.type === 'callout' || block.type === 'code') {
-          // These are special blocks that should be children
-          if (currentDepth < MAX_DEPTH) {
-            childBlocks.push(block);
-          } else {
-            siblingBlocks.push(block);
-          }
-        } else if (block.type === 'paragraph' && block.paragraph?.rich_text?.length > 0) {
-          // Collect rich text to preserve annotations (bold, color, etc.)
-          collectedRichText.push(...block.paragraph.rich_text);
-        } else {
-          // Other blocks go to child blocks
-          if (currentDepth < MAX_DEPTH) {
-            childBlocks.push(block);
-          } else {
-            siblingBlocks.push(block);
-          }
-        }
+      // Remove undefined children property if empty
+      if (!item[listType].children || item[listType].children.length === 0) {
+        delete item[listType].children;
       }
 
-      // Use the collected rich text which preserves all formatting (bold, colors, etc.)
-      // If no rich text was collected, fall back to processing the original text content
-      let richText = [];
-      let paraBlocks = [];
-      if (collectedRichText.length > 0) {
-        paraBlocks = splitRichTextAtSoftBreak(collectedRichText);
-      } else {
-        const result = await htmlToNotionRichText(textContent);
-        paraBlocks = splitRichTextAtSoftBreak(result.richText);
-      }
-
-      let handledChildBlocks = false;
-
-      if (paraBlocks.length > 0) {
-        // First block: list item for the link
-        const item = {
-          object: "block",
-          type: listType,
-          [listType]: {
-            rich_text: paraBlocks[0].paragraph.rich_text,
-          },
-        };
-        if (children.length > 0 && currentDepth < MAX_DEPTH) {
-          item[listType].children = children;
-          handledChildBlocks = true;
-        }
-        items.push(item);
-        // All subsequent blocks: paragraph for description or trailing text
-        for (let i = 1; i < paraBlocks.length; i++) {
-          items.push(paraBlocks[i]);
-        }
-        // Attach childBlocks and siblingBlocks to the last paragraph block
-        if (childBlocks.length > 0 && paraBlocks.length > 1) {
-          if (!paraBlocks[paraBlocks.length - 1].paragraph.children) {
-            paraBlocks[paraBlocks.length - 1].paragraph.children = [];
-          }
-          paraBlocks[paraBlocks.length - 1].paragraph.children.push(...childBlocks);
-          handledChildBlocks = true;
-        }
-        if (siblingBlocks.length > 0 && paraBlocks.length > 1) {
-          if (!paraBlocks[paraBlocks.length - 1].paragraph.children) {
-            paraBlocks[paraBlocks.length - 1].paragraph.children = [];
-          }
-          paraBlocks[paraBlocks.length - 1].paragraph.children.push(...siblingBlocks);
-          siblingBlocks = [];
-        }
-      } else if (childBlocks.length > 0) {
-        if (currentDepth < MAX_DEPTH) {
-          const emptyItem = {
-            object: "block",
-            type: listType,
-            [listType]: {
-              rich_text: [{ type: "text", text: { content: "\u00A0" }, annotations: { color: "default" } }],
-              children: [...childBlocks],
-            },
-          };
-          items.push(emptyItem);
-          handledChildBlocks = true;
-        } else {
-          siblingBlocks.push(...childBlocks);
-          handledChildBlocks = true;
-        }
-      }
-
-      if (!handledChildBlocks && childBlocks.length > 0) {
-        siblingBlocks.push(...childBlocks);
-      }
-
-      // siblingBlocks are now added as children above, so don't add as separate items
+      items.push(item);
     }
 
     return items;
   }
 
-  function cloneRichText(rt) {
-    if (!rt || typeof rt !== "object") {
-      return null;
-    }
-    const cloned = {
-      ...rt,
-      annotations: normalizeAnnotations(rt.annotations),
-    };
-    if (rt.text && typeof rt.text === "object") {
-      cloned.text = { ...rt.text };
-    }
-    if (typeof cloned.plain_text !== "string" && cloned.text?.content) {
-      cloned.plain_text = cloned.text.content;
-    }
-    return cloned;
-  }
 
-  function sanitizeRichTextArray(items) {
-    if (!Array.isArray(items)) {
-      return [];
-    }
-    return items
-      .map((rt) => cloneRichText(rt))
-      .filter((rt) => {
-        if (!rt || typeof rt.type !== "string") {
-          return false;
-        }
-        if (rt.type === "text") {
-          const content = rt.text?.content;
-          if (typeof content !== "string") {
-            return false;
-          }
-          // Allow content that has visible characters (including non-breaking space) or links
-          return content.length > 0 || !!rt.text?.link;
-        }
-        return !!rt[rt.type];
-      });
-  }
+
+// Rich-text conversion helpers extracted to server/converters/rich-text.cjs
+let richTextConverter;
+try {
+  richTextConverter = require('./converters/rich-text.cjs');
+} catch (e) {
+  richTextConverter = {
+    convertRichTextBlock: () => [],
+    normalizeAnnotations,
+    VALID_RICH_TEXT_COLORS,
+    cloneRichText: (rt) => rt,
+    sanitizeRichTextArray: (arr) => arr
+  };
+}
+const { cloneRichText, sanitizeRichTextArray } = richTextConverter;
+
+// Table converter helpers extracted to server/converters/table.cjs
+let tableConverter;
+try {
+  tableConverter = require('./converters/table.cjs');
+} catch (e) {
+  tableConverter = {
+    convertTableBlock: () => [],
+    deduplicateTableBlocks: (arr) => arr
+  };
+}
+const { convertTableBlock, deduplicateTableBlocks } = tableConverter;
 
   function sanitizeBlocks(blocksToValidate, contextLabel = "root") {
     if (!Array.isArray(blocksToValidate)) return [];
@@ -1537,7 +1857,7 @@ async function htmlToNotionBlocks(html) {
           replacement: null,
           codeBlockToAdd: null,
           trailingRichText: null,
-        };
+
       };
 
       const processBlocksWithPlaceholders = (blocks) => {
@@ -3008,8 +3328,7 @@ async function htmlToNotionBlocks(html) {
   }
 
   const listSafeBlocks = flattenListUnsupportedBlocks(blocks);
-  const deduplicatedBlocks = deduplicateTableBlocks(listSafeBlocks);
-  const finalBlocks = sanitizeBlocks(deduplicatedBlocks, "final");
+  const finalBlocks = sanitizeBlocks(listSafeBlocks, "final");
   return { blocks: finalBlocks, hasVideos: hasDetectedVideos };
 }
 
@@ -3440,9 +3759,9 @@ async function htmlToNotionRichText(html) {
     }
   );
 
-  // Add soft return between </a> and any <p> tag (including <p class="shortdesc">)
+  // Add soft return between </a> and <p class="shortdesc">
   text = text.replace(
-    /(<\/a>)(\s*)(<p[^>]*>)/gi,
+    /(<\/a>)(\s*)(<p[^>]*class=["'][^"']*shortdesc[^"']*["'][^>]*>)/gi,
     (match, closingA, whitespace, openingP) => {
       return `${closingA}__SOFT_BREAK__${openingP}`;
     }
@@ -3515,7 +3834,7 @@ async function htmlToNotionRichText(html) {
         currentAnnotations.color = "default";
       }
     } else if (part === "__SOFT_BREAK__") {
-      // Add a soft line break
+      // Add a soft line break; use a single newline to avoid extra blank lines.
       richText.push({
         type: "text",
         text: { content: "\n" },
@@ -3648,6 +3967,9 @@ function extractPreCodeText(preContent) {
 
 // Helper function to convert HTML to rich text while preserving newlines
 async function htmlToNotionRichTextPreserveNewlines(html) {
+  // TODO(modularization): Move to converters/rich-text.cjs along with
+  // htmlToNotionRichText(), cleanHtmlText(), and related helpers.
+  // Keep API consistent: return { richText, inlineImages }.
   if (!html)
     return {
       richText: [{ type: "text", text: { content: "" } }],
@@ -3804,6 +4126,8 @@ async function processTableCellContent(html) {
 
 // Helper function to parse HTML table to Notion table block
 async function parseTableToNotionBlock(tableHtml) {
+  // TODO(modularization): Move to converters/tables.cjs and export a
+  // pure function that takes HTML and returns blocks.
   const blocks = [];
 
   // Log the raw table HTML to see if images are present
@@ -4027,6 +4351,8 @@ async function parseTableToNotionBlock(tableHtml) {
 }
 
 app.post("/api/W2N", async (req, res) => {
+  // TODO(modularization): Move route handlers under server/routes and wire
+  // with an Express app in server/server.cjs. Keep payload contract intact.
   try {
     const payload = req.body;
     log("📝 Processing W2N request for:", payload.title);
@@ -5411,5 +5737,5 @@ module.exports = {
   orchestrateDeepNesting,
   notion,
   removeCollectedBlocks,
-  deepStripPrivateKeys,
+  deepStripPrivateKeys
 };
