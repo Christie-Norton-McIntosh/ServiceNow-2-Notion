@@ -1,0 +1,215 @@
+{
+  "ts": "2025-10-10T05:54:15.486Z",
+  "databaseId": "282a89fe-dba5-815e-91f0-db972912ef9f",
+  "propertyKeys": [
+    "Name",
+    "URL",
+    "Source",
+    "Category",
+    "Section",
+    "Version",
+    "Updated",
+    "CurrentReleaseURL",
+    "Breadcrumb",
+    "Video",
+    "Image"
+  ],
+  "blockCount": 3,
+  "blockTypes": [
+    "paragraph",
+    "paragraph",
+    "paragraph"
+  ],
+  "meta": {
+    "hasVideos": false
+  },
+  "sample": [
+    {
+      "object": "block",
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "The legacy Software Asset Management "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "com.snc.software_asset_management "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": true,
+              "color": "red"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "plugin allows asset managers to track and organize the number of licenses available to the organization."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Software licenses are based on "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "models ",
+              "link": {
+                "url": "https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/product/product-catalog/concept/c_Models.html"
+              }
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "that you create to organize software licenses in meaningful ways. Different "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "license calculation types ",
+              "link": {
+                "url": "https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/product/asset-management/reference/r_LicenseCalculationTypes.html"
+              }
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "determine how software is counted."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Software licenses can also be associated with a contract which enables a company to cover software licenses for multiple assets or users. You can manage and track software contracts using the "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "Contract Management ",
+              "link": {
+                "url": "https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/product/contract-management/concept/c_ContractManagement.html"
+              }
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "application."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

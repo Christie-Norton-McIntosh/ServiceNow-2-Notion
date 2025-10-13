@@ -1,0 +1,309 @@
+{
+  "ts": "2025-10-11T06:50:12.127Z",
+  "databaseId": "282a89fe-dba5-815e-91f0-db972912ef9f",
+  "propertyKeys": [
+    "Name",
+    "URL",
+    "Source",
+    "Category",
+    "Section",
+    "Version",
+    "Updated",
+    "CurrentReleaseURL",
+    "Breadcrumb",
+    "Video",
+    "Image"
+  ],
+  "blockCount": 8,
+  "blockTypes": [
+    "paragraph",
+    "paragraph",
+    "paragraph",
+    "bulleted_list_item",
+    "code",
+    "bulleted_list_item",
+    "paragraph",
+    "code"
+  ],
+  "meta": {
+    "hasVideos": false
+  },
+  "sample": [
+    {
+      "object": "block",
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Many Script Includes are provided by default with the ITSM products. You can call existing script includes from a script or create your own script includes."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "You can find script includes by navigating to "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "Self Service "
+            },
+            "annotations": {
+              "bold": true,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "blue"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "> "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "System Definition "
+            },
+            "annotations": {
+              "bold": true,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "blue"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "or "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "Self Service "
+            },
+            "annotations": {
+              "bold": true,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "blue"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "> "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "System UI "
+            },
+            "annotations": {
+              "bold": true,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "blue"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": ". To get the latest features and problem fixes without breaking the existing functionality during an upgrade, remember the following points:"
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "To modify or customize an existing script include:"
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "bulleted_list_item",
+      "bulleted_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Do not use the script includes that are suffixed by SNC. Those script includes are read-only and must not be customized. For example, the following script include must not be customized."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Do not use the script includes that are suffixed by SNC. Those script includes are read-only and must not be customized. For example, the following script include must not be customized."
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "code",
+      "code": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "var ChangeProcessSNC = Class.create();\nChangeProcessSNC.prototype = {\n // SNC functions\n type: \""
+            }
+          }
+        ],
+        "language": "javascript"
+      }
+    },
+    {
+      "object": "block",
+      "type": "bulleted_list_item",
+      "bulleted_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Do not override methods that start with an underscore. Those methods indicate that the functions are private."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Do not override methods that start with an underscore. Those methods indicate that the functions are private."
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "You can override the functions of the non-SNC script includes that extend the SNC scripts. For example, the following script include can be overridden."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "code",
+      "code": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "var ChangeProcess = Class.create(); \nChangeProcess.prototype = Object.extendsObject(ChangeProcessSNC, \n{ // Customer overridden functions type: \"ChangeProcess\" });"
+            }
+          }
+        ],
+        "language": "javascript"
+      }
+    }
+  ]
+}

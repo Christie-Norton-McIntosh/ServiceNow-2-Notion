@@ -1,6 +1,12 @@
-/*
- - W2N-Proxy/martian-helper.js
- - Clean implementation: conversion helpers and Notion upload utilities.
+/**
+ * @file Martian Helper - Markdown/HTML to Notion blocks conversion and file upload utilities.
+ * @module server/martian-helper
+ * 
+ * Provides:
+ * - Markdown-to-Notion block conversion via @tryfabric/martian
+ * - HTML-to-Notion block conversion with custom parsing
+ * - File upload to Notion's internal storage
+ * - Image download and upload orchestration
  */
 
 const axios = require("axios");
@@ -16,10 +22,25 @@ try {
 }
 
 let notionClient = null;
+
+/**
+ * Sets the Notion client instance for file upload operations.
+ * @param {object} client - Notion API client instance
+ */
 function setNotionClient(client) {
   notionClient = client;
 }
 
+/**
+ * Converts Markdown or HTML content to Notion block format using Martian.
+ * 
+ * @param {string} input - The content to convert (Markdown or HTML)
+ * @param {object} [options] - Conversion options
+ * @param {string} [options.from='markdown'] - Source format: 'markdown' or 'html'
+ * @param {object} [options.options={}] - Martian-specific conversion options
+ * @returns {Promise<Array>} Array of Notion block objects
+ * @throws {Error} If Martian is not installed or conversion fails
+ */
 async function convertToNotionBlocks(
   input,
   { from = "markdown", options = {} } = {}
@@ -593,6 +614,14 @@ function convertTogglePatterns(blocks) {
   return result;
 }
 
+/**
+ * Uploads a file buffer to Notion's internal storage using the file upload API.
+ * 
+ * @param {Buffer} buffer - File content as a Buffer
+ * @param {string} filename - Name of the file with extension (used for content type detection)
+ * @returns {Promise<string>} Notion file upload ID
+ * @throws {Error} If Notion client is not set or file upload API is unavailable
+ */
 async function uploadFileToNotion(buffer, filename) {
   if (!notionClient)
     throw new Error("Notion client not injected. Call setNotionClient(notion)");
@@ -758,6 +787,16 @@ async function uploadFileToNotion(buffer, filename) {
   }
 }
 
+/**
+ * Converts base64-encoded images to Notion image blocks with uploaded files.
+ * 
+ * @param {Array<object>} [images=[]] - Array of image objects with base64 data
+ * @param {boolean} images[].isBase64 - Whether the image is base64 encoded
+ * @param {string} images[].data - Base64 data URL or raw base64 string
+ * @param {string} [images[].alt] - Alt text for the image (used as filename if not provided)
+ * @param {string} [images[].filename] - Filename for the uploaded image
+ * @returns {Promise<Array>} Array of Notion image block objects
+ */
 async function prepareImageBlocks(images = []) {
   if (!Array.isArray(images) || images.length === 0) return [];
   const blocks = [];

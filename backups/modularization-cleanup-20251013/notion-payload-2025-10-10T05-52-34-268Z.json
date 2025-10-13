@@ -1,0 +1,481 @@
+{
+  "ts": "2025-10-10T05:52:34.268Z",
+  "databaseId": "282a89fe-dba5-815e-91f0-db972912ef9f",
+  "propertyKeys": [
+    "Name",
+    "URL",
+    "Source",
+    "Category",
+    "Section",
+    "Version",
+    "Updated",
+    "CurrentReleaseURL",
+    "Breadcrumb",
+    "Video",
+    "Image"
+  ],
+  "blockCount": 8,
+  "blockTypes": [
+    "paragraph",
+    "callout",
+    "paragraph",
+    "callout",
+    "heading_3",
+    "table",
+    "bulleted_list_item",
+    "bulleted_list_item"
+  ],
+  "meta": {
+    "hasVideos": false
+  },
+  "sample": [
+    {
+      "object": "block",
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "The software asset management features of the ITSM suite can be activated using one of the plugins in the feature table."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "callout",
+      "callout": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Note: These features support IT service management processes related to software assets."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Note: These features support IT service management processes related to software assets."
+          }
+        ],
+        "icon": {
+          "type": "emoji",
+          "emoji": "📝"
+        },
+        "color": "blue_background"
+      }
+    },
+    {
+      "object": "block",
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "For the Software Asset Management product (requires a separate subscription), see "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "Software Asset Management ",
+              "link": {
+                "url": "https://www.servicenow.com/docs/csh?topicname=c_SAMOverview&amp;version=yokohama&amp;pubname=yokohama-it-asset-management"
+              }
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "callout",
+      "callout": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Note: The Software Asset Management product is a standalone application supporting advanced use cases for software asset management."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Note: The Software Asset Management product is a standalone application supporting advanced use cases for software asset management."
+          }
+        ],
+        "icon": {
+          "type": "emoji",
+          "emoji": "📝"
+        },
+        "color": "blue_background"
+      }
+    },
+    {
+      "object": "block",
+      "type": "heading_3",
+      "heading_3": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "ITSM Software Asset Management feature plugins"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "table",
+      "table": {
+        "table_width": 3,
+        "has_column_header": true,
+        "has_row_header": false,
+        "children": [
+          {
+            "object": "block",
+            "type": "table_row",
+            "table_row": {
+              "cells": [
+                [
+                  {
+                    "type": "text",
+                    "text": {
+                      "content": "Release"
+                    },
+                    "annotations": {
+                      "bold": false,
+                      "italic": false,
+                      "strikethrough": false,
+                      "underline": false,
+                      "code": false,
+                      "color": "default"
+                    }
+                  }
+                ],
+                [
+                  {
+                    "type": "text",
+                    "text": {
+                      "content": "Plugin"
+                    },
+                    "annotations": {
+                      "bold": false,
+                      "italic": false,
+                      "strikethrough": false,
+                      "underline": false,
+                      "code": false,
+                      "color": "default"
+                    }
+                  }
+                ],
+                [
+                  {
+                    "type": "text",
+                    "text": {
+                      "content": "Description"
+                    },
+                    "annotations": {
+                      "bold": false,
+                      "italic": false,
+                      "strikethrough": false,
+                      "underline": false,
+                      "code": false,
+                      "color": "default"
+                    }
+                  }
+                ]
+              ]
+            }
+          },
+          {
+            "object": "block",
+            "type": "table_row",
+            "table_row": {
+              "cells": [
+                [
+                  {
+                    "type": "text",
+                    "text": {
+                      "content": "• Activation: Kingston \n• Introduced: Kingston "
+                    }
+                  }
+                ],
+                [
+                  {
+                    "type": "text",
+                    "text": {
+                      "content": "Software Asset Management Foundation plugin",
+                      "link": {
+                        "url": "https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/product/software-asset-management2/concept/c_SoftwareAssetMgmtSAMF.html"
+                      }
+                    },
+                    "annotations": {
+                      "bold": false,
+                      "italic": false,
+                      "strikethrough": false,
+                      "underline": false,
+                      "code": false,
+                      "color": "default"
+                    }
+                  }
+                ],
+                [
+                  {
+                    "type": "text",
+                    "text": {
+                      "content": "Manage your software assets using manual normalization and reconciliation to determine software compliance."
+                    },
+                    "annotations": {
+                      "bold": false,
+                      "italic": false,
+                      "strikethrough": false,
+                      "underline": false,
+                      "code": false,
+                      "color": "default"
+                    }
+                  }
+                ]
+              ]
+            }
+          },
+          {
+            "object": "block",
+            "type": "table_row",
+            "table_row": {
+              "cells": [
+                [
+                  {
+                    "type": "text",
+                    "text": {
+                      "content": "• Activation: Jakarta and\n earlier\n• Introduced: Berlin\n Note: Customers who have the Software Asset Management plugin enabled on a release prior to Kingston can continue to use\n the Software Asset Management plugin . "
+                    }
+                  }
+                ],
+                [
+                  {
+                    "type": "text",
+                    "text": {
+                      "content": "Legacy Software Asset Management plugin",
+                      "link": {
+                        "url": "https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/product/asset-management/concept/c_SoftwareAssetManagement.html"
+                      }
+                    },
+                    "annotations": {
+                      "bold": false,
+                      "italic": false,
+                      "strikethrough": false,
+                      "underline": false,
+                      "code": false,
+                      "color": "default"
+                    }
+                  }
+                ],
+                [
+                  {
+                    "type": "text",
+                    "text": {
+                      "content": "Manage your software licenses."
+                    },
+                    "annotations": {
+                      "bold": false,
+                      "italic": false,
+                      "strikethrough": false,
+                      "underline": false,
+                      "code": false,
+                      "color": "default"
+                    }
+                  }
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "bulleted_list_item",
+      "bulleted_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Legacy Software Asset Management plugin ",
+              "link": {
+                "url": "https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/product/asset-management/concept/c_SoftwareAssetManagement.html"
+              }
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "\n "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "The legacy Software Asset Management "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "com.snc.software_asset_management "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": true,
+              "color": "red"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "plugin activates the legacy ITSM Software Asset Management feature that is provided with the Asset Management application."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "bulleted_list_item",
+      "bulleted_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Software Asset Management Foundation plugin ",
+              "link": {
+                "url": "https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/product/software-asset-management2/concept/c_SoftwareAssetMgmtSAMF.html"
+              }
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "\n "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "The Software Asset Management Foundation plugin activates the ITSM Software Asset Management feature provided with the Asset Management application."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

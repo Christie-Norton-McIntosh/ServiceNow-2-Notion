@@ -1,0 +1,530 @@
+{
+  "ts": "2025-10-10T05:55:04.179Z",
+  "databaseId": "282a89fe-dba5-815e-91f0-db972912ef9f",
+  "propertyKeys": [
+    "Name",
+    "URL",
+    "Source",
+    "Category",
+    "Section",
+    "Version",
+    "Updated",
+    "CurrentReleaseURL",
+    "Breadcrumb",
+    "Video",
+    "Image"
+  ],
+  "blockCount": 6,
+  "blockTypes": [
+    "paragraph",
+    "paragraph",
+    "paragraph",
+    "paragraph",
+    "numbered_list_item",
+    "numbered_list_item"
+  ],
+  "meta": {
+    "hasVideos": false
+  },
+  "sample": [
+    {
+      "object": "block",
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "You can entitle a user to use one of your software licenses."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Before you begin"
+            },
+            "annotations": {
+              "bold": true,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Role required: asset"
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Procedure"
+            },
+            "annotations": {
+              "bold": true,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "numbered_list_item",
+      "numbered_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Navigate to "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "All "
+            },
+            "annotations": {
+              "bold": true,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "blue"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "> "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "Asset "
+            },
+            "annotations": {
+              "bold": true,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "blue"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "> "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "Software "
+            },
+            "annotations": {
+              "bold": true,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "blue"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "> "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "User License Entitlements "
+            },
+            "annotations": {
+              "bold": true,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "blue"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "and create a new record (see table for field descriptions). "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "\n"
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ],
+        "children": [
+          {
+            "object": "block",
+            "type": "table",
+            "table": {
+              "table_width": 2,
+              "has_column_header": true,
+              "has_row_header": false,
+              "children": [
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Field"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Description"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Display name"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Read-only. Name used in record lists."
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Assigned to"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "User of the entitlement token."
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Licensed by"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "License granting this token."
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Cached"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Read-only. Internal flag set and used by software counters logic."
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "numbered_list_item",
+      "numbered_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Click "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "Submit "
+            },
+            "annotations": {
+              "bold": true,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "blue"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

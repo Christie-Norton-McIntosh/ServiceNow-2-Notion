@@ -1,0 +1,1658 @@
+{
+  "ts": "2025-10-10T05:54:22.862Z",
+  "databaseId": "282a89fe-dba5-815e-91f0-db972912ef9f",
+  "propertyKeys": [
+    "Name",
+    "URL",
+    "Source",
+    "Category",
+    "Section",
+    "Version",
+    "Updated",
+    "CurrentReleaseURL",
+    "Breadcrumb",
+    "Video",
+    "Image"
+  ],
+  "blockCount": 8,
+  "blockTypes": [
+    "paragraph",
+    "paragraph",
+    "quote",
+    "paragraph",
+    "numbered_list_item",
+    "numbered_list_item",
+    "numbered_list_item",
+    "numbered_list_item"
+  ],
+  "meta": {
+    "hasVideos": false
+  },
+  "sample": [
+    {
+      "object": "block",
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "You can add a new software license using the legacy Software Asset Management "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "com.snc.software_asset_management "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": true,
+              "color": "red"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "plugin."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Before you begin"
+            },
+            "annotations": {
+              "bold": true,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "quote",
+      "quote": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Role required: sam"
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ],
+        "color": "blue_background"
+      }
+    },
+    {
+      "object": "block",
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Procedure"
+            },
+            "annotations": {
+              "bold": true,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "numbered_list_item",
+      "numbered_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Navigate to "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "All "
+            },
+            "annotations": {
+              "bold": true,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "blue"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "> "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "Software Asset "
+            },
+            "annotations": {
+              "bold": true,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "blue"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "> "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "Software Licenses "
+            },
+            "annotations": {
+              "bold": true,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "blue"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "numbered_list_item",
+      "numbered_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Click "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "New "
+            },
+            "annotations": {
+              "bold": true,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "blue"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "numbered_list_item",
+      "numbered_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Complete the form. "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "\n "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "For information about the fields in the "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "Financial "
+            },
+            "annotations": {
+              "bold": true,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "blue"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "and "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "Contracts "
+            },
+            "annotations": {
+              "bold": true,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "blue"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "sections of the form, see "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "Create assets ",
+              "link": {
+                "url": "https://www.servicenow.com/docs/csh?topicname=t_CreatingAssets&amp;version=yokohama&amp;pubname=yokohama-it-asset-management"
+              }
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ],
+        "children": [
+          {
+            "object": "block",
+            "type": "table",
+            "table": {
+              "table_width": 2,
+              "has_column_header": true,
+              "has_row_header": false,
+              "children": [
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Field"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Description"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Display name"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Read-only. Name of the software license. Created automatically."
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Model category"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Model category for the software license. "
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        },
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Software License "
+                          },
+                          "annotations": {
+                            "bold": true,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "blue"
+                          }
+                        },
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "is selected by default."
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Model"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Software model of the license you are matching to. For example, Microsoft Excel."
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Rights"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Number of entitlements to be granted by this license. If an enterprise contract is attached to the license, the Rights field does not display."
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "General"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": ""
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Asset tag"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Number from the asset tag. The tag contains the serial number and bar code for tracking the software license."
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "State"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Current status of the software license, such as "
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        },
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "On order "
+                          },
+                          "annotations": {
+                            "bold": true,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "blue"
+                          }
+                        },
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "or "
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        },
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "In use "
+                          },
+                          "annotations": {
+                            "bold": true,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "blue"
+                          }
+                        },
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "."
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Assigned to"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "User currently assigned to this software license."
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Managed by"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "User or department that maintains the software license. Can be different than the owner. For example, a specified user can own a software license, but the IT department manages it."
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Owned by"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "User or department with financial ownership of the software license. Can be different than the manager."
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Parent"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Parent asset of the software license, if any. For example, the parent asset of Microsoft Word software is often the Microsoft Office suite."
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Class"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "[Read-only] Automatically created as Software License."
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "License metric"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "[Optional] A single metric which the software license is counted against."
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Serial number"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Unique number assigned for identification."
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Substate"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "More details about the software license stage. The available substate settings depend on the "
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        },
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "State "
+                          },
+                          "annotations": {
+                            "bold": true,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "blue"
+                          }
+                        },
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "selected. For example, if you select the "
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        },
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Retired "
+                          },
+                          "annotations": {
+                            "bold": true,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "blue"
+                          }
+                        },
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "state, the substate options available are "
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        },
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Disposed "
+                          },
+                          "annotations": {
+                            "bold": true,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "blue"
+                          }
+                        },
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": ", "
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        },
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Sold "
+                          },
+                          "annotations": {
+                            "bold": true,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "blue"
+                          }
+                        },
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": ", "
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        },
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Donated "
+                          },
+                          "annotations": {
+                            "bold": true,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "blue"
+                          }
+                        },
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": ", and "
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        },
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Vendor credit "
+                          },
+                          "annotations": {
+                            "bold": true,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "blue"
+                          }
+                        },
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "."
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Location"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Where the license will be used. For example, a specific site, country, or region."
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Department"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Department of the person "
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        },
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Assigned to "
+                          },
+                          "annotations": {
+                            "bold": true,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "blue"
+                          }
+                        },
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "this software license."
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Company"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Company that created the software."
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Assigned"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Date on which the software license was assigned."
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Installed"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Date on which the software license was installed."
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Comments"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Information about the software license that would be helpful for others to know."
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "numbered_list_item",
+      "numbered_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Click "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "Submit "
+            },
+            "annotations": {
+              "bold": true,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "blue"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,685 @@
+{
+  "ts": "2025-10-11T07:44:03.863Z",
+  "databaseId": "282a89fe-dba5-815e-91f0-db972912ef9f",
+  "propertyKeys": [
+    "Name",
+    "URL",
+    "Source",
+    "Category",
+    "Section",
+    "Version",
+    "Updated",
+    "CurrentReleaseURL",
+    "Breadcrumb",
+    "Video",
+    "Image"
+  ],
+  "blockCount": 19,
+  "blockTypes": [
+    "paragraph",
+    "callout",
+    "paragraph",
+    "bulleted_list_item",
+    "bulleted_list_item",
+    "bulleted_list_item",
+    "bulleted_list_item",
+    "bulleted_list_item",
+    "bulleted_list_item",
+    "bulleted_list_item",
+    "paragraph",
+    "paragraph",
+    "paragraph",
+    "bulleted_list_item",
+    "bulleted_list_item",
+    "bulleted_list_item",
+    "bulleted_list_item",
+    "heading_3",
+    "bulleted_list_item"
+  ],
+  "meta": {
+    "hasVideos": false
+  },
+  "sample": [
+    {
+      "object": "block",
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "The ServiceNow® Asset Management application integrates the physical, technological, contractual, and financial aspects of information technology assets."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "callout",
+      "callout": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Note: Beginning with the ServiceNow AI Platform® Washington DC release, limited support is provided for the Asset Management Core UI interface. While it remains active in your instance, including when you upgrade to a new ServiceNow AI Platform release, the best approach is to move to the new workspace experience. For more information, see "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Note: Beginning with the ServiceNow AI Platform® Washington DC release, limited support is provided for the Asset Management Core UI interface. While it remains active in your instance, including when you upgrade to a new ServiceNow AI Platform release, the best approach is to move to the new workspace experience. For more information, see "
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "KB1584548 ",
+              "link": {
+                "url": "https://support.servicenow.com/kb?id=kb_article_view&amp;sysparm_article=KB1584548"
+              }
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "KB1584548 "
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": ", "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": ", "
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "Exploring Asset Management Workspace ",
+              "link": {
+                "url": "https://www.servicenow.com/docs/csh?topicname=exploring-asset-management&amp;version=yokohama&amp;pubname=yokohama-it-asset-management"
+              }
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Exploring Asset Management Workspace "
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "and "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "and "
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "Next Experience UI ",
+              "link": {
+                "url": "https://www.servicenow.com/docs/csh?topicname=next-experience-landing-page&amp;version=yokohama&amp;pubname=yokohama-platform-user-interface"
+              }
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Next Experience UI "
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "."
+          }
+        ],
+        "icon": {
+          "type": "emoji",
+          "emoji": "📍"
+        },
+        "color": "blue_background"
+      }
+    },
+    {
+      "object": "block",
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Asset management business practices have a common set of goals."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "bulleted_list_item",
+      "bulleted_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Control inventory that is purchased and used."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Control inventory that is purchased and used."
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "bulleted_list_item",
+      "bulleted_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Reduce the cost of purchasing and managing assets."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Reduce the cost of purchasing and managing assets."
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "bulleted_list_item",
+      "bulleted_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Select the proper tools for managing assets."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Select the proper tools for managing assets."
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "bulleted_list_item",
+      "bulleted_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Manage the asset life cycle from planning to disposal."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Manage the asset life cycle from planning to disposal."
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "bulleted_list_item",
+      "bulleted_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Achieve compliance with relevant standards and regulations."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Achieve compliance with relevant standards and regulations."
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "bulleted_list_item",
+      "bulleted_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Improve IT service to end users."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Improve IT service to end users."
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "bulleted_list_item",
+      "bulleted_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Create standards and processes for managing assets."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Create standards and processes for managing assets."
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Most successful ITAM programs involve various people and departments, including IT, finance, services, and end users."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "For detailed documentation about Asset Management features, see "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "Asset Management ",
+              "link": {
+                "url": "https://www.servicenow.com/docs/csh?topicname=am-landing-page&amp;version=yokohama&amp;pubname=yokohama-it-asset-management"
+              }
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Asset Management and the Configuration Management Database (CMDB) are related, but have different goals. Asset Management focuses on the financial tracking of company property. Configuration management focuses on building and maintaining elements that create an available network of services."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "bulleted_list_item",
+      "bulleted_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "ITSM Software Asset Management ",
+              "link": {
+                "url": "https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/product/asset-management/concept/itsm-sam.html"
+              }
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "ITSM Software Asset Management "
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "The software asset management features of the ITSM suite can be activated using one of the plugins in the feature table."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "The software asset management features of the ITSM suite can be activated using one of the plugins in the feature table."
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "bulleted_list_item",
+      "bulleted_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Contract Management ",
+              "link": {
+                "url": "https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/product/contract-management/concept/c_ContractManagement.html"
+              }
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Contract Management "
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "Manage and track contracts with the ServiceNow® Contract Management application."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Manage and track contracts with the ServiceNow® Contract Management application."
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "bulleted_list_item",
+      "bulleted_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Procurement ",
+              "link": {
+                "url": "https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/product/procurement/concept/c_Procurement.html"
+              }
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Procurement "
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "Procurement managers can use the ServiceNow® Procurement application to create purchase orders and to obtain items for fulfilling service catalog requests."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Procurement managers can use the ServiceNow® Procurement application to create purchase orders and to obtain items for fulfilling service catalog requests."
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "bulleted_list_item",
+      "bulleted_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Product Catalog ",
+              "link": {
+                "url": "https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/product/product-catalog/concept/c_ProductCatalog.html"
+              }
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Product Catalog "
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "The product catalog is a set of information about individual models. Models are specific versions or various configurations of an asset. Asset managers use the product catalog as a centralized repository for model information."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "The product catalog is a set of information about individual models. Models are specific versions or various configurations of an asset. Asset managers use the product catalog as a centralized repository for model information."
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "heading_3",
+      "heading_3": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Related Content"
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "bulleted_list_item",
+      "bulleted_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Domain separation and Asset Management",
+              "link": {
+                "url": "https://docs.servicenow.com/csh?topicname=domain-separation-asset-management&amp;version=yokohama&amp;pubname=yokohama-it-asset-management"
+              }
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": "Domain separation and Asset Management"
+          }
+        ]
+      }
+    }
+  ]
+}
