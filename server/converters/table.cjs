@@ -1,31 +1,68 @@
 /**
- * Table Converter for Notion blocks
- * Extracted from sn2n-proxy.cjs
- *
- * Exports:
- *   - convertTableBlock
- *   - deduplicateTableBlocks
- *
+ * @fileoverview Table Converter for Notion blocks
+ * 
+ * This module provides utilities for converting HTML tables to Notion's table format,
+ * handling complex table structures, captions, headers, and content processing.
+ * 
+ * Key Features:
+ * - HTML table parsing with thead/tbody structure preservation
+ * - Table caption extraction and conversion to heading blocks
+ * - Rich text processing for table cell content
+ * - Image handling and bullet point conversion
+ * - Table deduplication to prevent duplicate content
+ * - Support for nested lists within table cells
+ * 
  * Dependencies:
- *   - server/utils/notion-format.cjs
- */
-
-// TODO: Move table parsing, thead/tbody handling, image extraction, deep-nesting, and deduplication logic from sn2n-proxy.cjs
-
-/**
- * Converts HTML table to Notion table block array.
- * @param {string|object} input - HTML string or parsed node
- * @param {object} [options] - Conversion options
- * @returns {Array} Notion table block array
+ * - server/utils/notion-format.cjs (cleanHtmlText)
+ * - server/converters/rich-text.cjs (convertRichTextBlock)
+ * 
+ * @module converters/table
+ * @since 8.2.5
  */
 
 const { cleanHtmlText } = require("../utils/notion-format.cjs");
 
 /**
- * Converts HTML table to Notion table block array.
- * @param {string|object} tableHtml - HTML string of the table
- * @param {object} [options] - Conversion options
- * @returns {Promise<Array>} Notion table block array
+ * Converts HTML table content to Notion table block array.
+ * 
+ * This function processes HTML table markup and converts it to Notion's table format,
+ * preserving structure, headers, and content formatting. It handles table captions,
+ * thead/tbody sections, nested lists, images, and complex formatting within cells.
+ * 
+ * @async
+ * @param {string} tableHtml - HTML string containing the table markup to convert
+ * @param {object} [options={}] - Conversion options for customizing behavior
+ * @param {boolean} [options.preserveImages=false] - Whether to preserve images (default: convert to bullets)
+ * @param {boolean} [options.extractCaptions=true] - Whether to extract table captions as headings
+ * @param {boolean} [options.processLists=true] - Whether to convert nested lists to bullet points
+ * 
+ * @returns {Promise<Array<object>|null>} Array of Notion blocks (heading + table), or null if no valid table found
+ * 
+ * @example
+ * // Convert simple HTML table
+ * const tableBlocks = await convertTableBlock(`
+ *   <table>
+ *     <thead><tr><th>Name</th><th>Value</th></tr></thead>
+ *     <tbody><tr><td>Item 1</td><td>100</td></tr></tbody>
+ *   </table>
+ * `);
+ * // Returns: [{ type: "table", table: { has_column_header: true, children: [...] } }]
+ * 
+ * @example
+ * // Table with caption becomes heading + table
+ * const tableBlocks = await convertTableBlock(`
+ *   <table>
+ *     <caption>Product Comparison</caption>
+ *     <tr><td>Feature A</td><td>Available</td></tr>
+ *   </table>
+ * `);
+ * // Returns: [
+ * //   { type: "heading_3", heading_3: { rich_text: [...] } },
+ * //   { type: "table", table: { children: [...] } }
+ * // ]
+ * 
+ * @throws {Error} If table processing fails due to malformed HTML
+ * @see {@link deduplicateTableBlocks} for removing duplicate tables from arrays
  */
 async function convertTableBlock(tableHtml, options = {}) {
   // Remove table dropdown/filter elements
@@ -180,15 +217,27 @@ async function convertTableBlock(tableHtml, options = {}) {
 }
 
 /**
- * Deduplicate Notion table blocks.
- * @param {Array} blocks - Array of Notion table blocks
- * @returns {Array} Deduplicated table blocks
- */
-
-/**
- * Deduplicate Notion table blocks by comparing cell content.
- * @param {Array} blocks - Array of Notion table blocks
- * @returns {Array} Deduplicated table blocks
+ * Removes duplicate table blocks from an array by comparing cell content.
+ * 
+ * This function identifies and removes duplicate table blocks by comparing their
+ * cell content. Two tables are considered duplicates if they have identical
+ * cell content structure, regardless of block metadata or IDs.
+ * 
+ * @param {Array<object>} blocks - Array of Notion blocks that may contain table blocks
+ * 
+ * @returns {Array<object>} Filtered array with duplicate table blocks removed
+ * 
+ * @example
+ * const blocks = [
+ *   { type: "paragraph", paragraph: { rich_text: [...] } },
+ *   { type: "table", table: { children: [{ table_row: { cells: [["A"], ["B"]] } }] } },
+ *   { type: "table", table: { children: [{ table_row: { cells: [["A"], ["B"]] } }] } }, // Duplicate
+ *   { type: "table", table: { children: [{ table_row: { cells: [["C"], ["D"]] } }] } }
+ * ];
+ * const unique = deduplicateTableBlocks(blocks);
+ * // Returns: [paragraph, first table, different table] (duplicate table removed)
+ * 
+ * @see {@link convertTableBlock} for creating table blocks from HTML
  */
 function deduplicateTableBlocks(blocks) {
   if (!Array.isArray(blocks)) return blocks;
@@ -202,7 +251,36 @@ function deduplicateTableBlocks(blocks) {
   });
 }
 
+/**
+ * @typedef {object} NotionTableBlock
+ * @property {string} object - Always "block"
+ * @property {string} type - Always "table"
+ * @property {object} table - Table configuration and content
+ * @property {number} table.table_width - Number of columns in the table
+ * @property {boolean} table.has_column_header - Whether first row is treated as header
+ * @property {boolean} table.has_row_header - Whether first column is treated as header
+ * @property {Array<object>} table.children - Array of table_row blocks
+ */
+
+/**
+ * @typedef {object} NotionTableRow
+ * @property {string} object - Always "block"
+ * @property {string} type - Always "table_row"
+ * @property {object} table_row - Row content
+ * @property {Array<Array<object>>} table_row.cells - Array of cell content (rich_text arrays)
+ */
+
+/**
+ * @typedef {object} TableConversionOptions
+ * @property {boolean} [preserveImages=false] - Whether to preserve images (default: convert to bullets)
+ * @property {boolean} [extractCaptions=true] - Whether to extract table captions as headings
+ * @property {boolean} [processLists=true] - Whether to convert nested lists to bullet points
+ */
+
+// Export table conversion utilities
 module.exports = {
+  /** @type {function(string, TableConversionOptions=): Promise<Array<object>|null>} */
   convertTableBlock,
+  /** @type {function(Array<object>): Array<object>} */
   deduplicateTableBlocks
 };

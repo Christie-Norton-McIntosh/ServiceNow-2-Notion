@@ -42,6 +42,7 @@ import {
 import {
   checkProxyHealth,
   createNotionPage,
+  pingProxy,
   queryDatabase,
   sendProcessedContentToProxy,
 } from "./api/proxy-api.js";

@@ -384,7 +384,7 @@ export async function uploadFile(type, file) {
 export async function checkProxyHealth() {
   debug("🏥 Checking proxy server health");
   try {
-    const result = await apiCall("GET", "/health");
+    const result = await apiCall("GET", "/api/health");
 
     // Support both legacy shape: { status: 'ok', ... }
     // and canonical proxy shape: { success: true, data: { status: 'ok', ... } }
@@ -435,7 +435,7 @@ export async function getProxyStatus() {
 export async function pingProxy() {
   debug("🏓 Pinging proxy server");
   try {
-    const result = await apiCall("GET", "/ping");
+    const result = await apiCall("GET", "/api/ping");
     // Accept legacy: { pong: true } or { status: 'ok' }
     // and canonical: { success: true, data: { pong: true } }
     let isReachable = false;

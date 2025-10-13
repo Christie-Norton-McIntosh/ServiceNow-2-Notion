@@ -1,7 +1,19 @@
+
+/**
+ * @file Express route for ServiceNow-2-Notion health check endpoint.
+ * @module routes/health
+ */
+
 const express = require('express');
 const router = express.Router();
 
-router.get('/health', (req, res) => {
+/**
+ * GET /api/health
+ * Returns health status, version, and Notion client state.
+ * @route GET /api/health
+ * @returns {Object} JSON health status
+ */
+router.get('/api/health', (req, res) => {
   return res.json({
     success: true,
     data: {
