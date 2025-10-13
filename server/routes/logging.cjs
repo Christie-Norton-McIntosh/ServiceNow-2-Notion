@@ -1,0 +1,35 @@
+const express = require('express');
+const router = express.Router();
+
+router.get('/api/logging', (req, res) => {
+  res.json({
+    success: true,
+    data: {
+      verbose: global.getVerbose ? global.getVerbose() : false,
+      extraDebug: global.getExtraDebug ? global.getExtraDebug() : false,
+    },
+    meta: {}
+  });
+});
+
+router.post('/api/logging', (req, res) => {
+  try {
+    const { verbose, extraDebug } = req.body || {};
+    const response = {};
+    if (typeof global.setVerbose === 'function' && typeof verbose !== 'undefined') {
+      response.verbose = global.setVerbose(!!verbose);
+    } else {
+      response.verbose = global.getVerbose ? global.getVerbose() : false;
+    }
+    if (typeof global.setExtraDebug === 'function' && typeof extraDebug !== 'undefined') {
+      response.extraDebug = global.setExtraDebug(!!extraDebug);
+    } else {
+      response.extraDebug = global.getExtraDebug ? global.getExtraDebug() : false;
+    }
+    res.json({ success: true, data: response, meta: {} });
+  } catch (e) {
+    res.status(500).json({ success: false, error: 'SERVER_ERROR', message: e.message || String(e), details: null });
+  }
+});
+
+module.exports = router;
