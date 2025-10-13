@@ -4,8 +4,8 @@
 // PROVIDER CONSTANTS
 // =============================================================================
 
-export const PROVIDER_VERSION = "8.1.0";
-export const PROVIDER_ID = "servicenow";
+// Use build-injected version if available, otherwise fallback
+export const PROVIDER_VERSION = (typeof window !== "undefined" && window.BUILD_VERSION) || "9.0.0";
 export const PROVIDER_NAME = "ServiceNow";
 
 // =============================================================================
