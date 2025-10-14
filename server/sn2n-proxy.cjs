@@ -82,8 +82,11 @@ let notionService, servicenowService;
 try {
   notionService = require('./services/notion.cjs');
   servicenowService = require('./services/servicenow.cjs');
+  console.log("✅ Service modules loaded successfully");
+  console.log("✅ servicenowService.extractContentFromHtml:", typeof servicenowService.extractContentFromHtml);
 } catch (e) {
   console.log("⚠️ Service modules not available, using monolith mode:", e.message);
+  console.error("⚠️ Full error:", e);
   // Services will be undefined, triggering fallback to inline functions
 }
 
@@ -752,62 +755,37 @@ try {
 let hasDetectedVideos = false;
 
 // Helper function to check if an iframe URL is from a known video platform
-function isVideoIframeUrl(url) {
-  if (!url) return false;
-  const videoPatterns = [
-    /youtube\.com\/embed\//i,
-    /youtube-nocookie\.com\/embed\//i,
-    /player\.vimeo\.com\//i,
-    /vimeo\.com\/video\//i,
-    /wistia\.(com|net)/i,
-    /fast\.wistia\.(com|net)/i,
-    /loom\.com\/embed\//i,
-    /vidyard\.com\/embed\//i,
-    /brightcove\.(com|net)/i,
-  ];
-  return videoPatterns.some((pattern) => pattern.test(url));
-}
+// Import URL utilities
+const { isVideoIframeUrl, isValidNotionUrl } = require("./utils/url.cjs");
+const { cleanHtmlText } = require("./utils/notion-format.cjs");
 
 // HTML to Notion blocks conversion function
 async function htmlToNotionBlocks(html) {
-  if (!html || typeof html !== "string")
+  log("🚀 htmlToNotionBlocks called! HTML length:", html ? html.length : 0);
+  
+  if (!html || typeof html !== "string") {
+    log("⚠️ Invalid HTML input, returning empty blocks");
     return { blocks: [], hasVideos: false };
+  }
+  
   // Delegate to ServiceNow service for extraction
-  return servicenowService.extractContentFromHtml(html);
+  if (servicenowService && servicenowService.extractContentFromHtml) {
+    log("🔄 Using servicenowService.extractContentFromHtml");
+    const result = await servicenowService.extractContentFromHtml(html);
+    log(`✅ servicenowService returned ${result.blocks.length} blocks`);
+    return result;
+  } else {
+    log("⚠️ servicenowService.extractContentFromHtml not available!");
+    log("⚠️ servicenowService:", typeof servicenowService);
+    log("⚠️ extractContentFromHtml:", servicenowService ? typeof servicenowService.extractContentFromHtml : 'N/A');
+    return { blocks: [], hasVideos: false };
+  }
 }
 
+// Removed duplicate cleanHtmlText, isVideoIframeUrl, isValidNotionUrl - now imported from utils modules
 
-
-// Helper function to clean HTML text
-function cleanHtmlText(html) {
-  if (!html) return "";
-
-  // Remove HTML tags
-  let text = html.replace(/<[^>]*>/g, " ");
-
-  // Decode HTML entities (both named and numeric)
-  text = text
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&#xa0;/gi, " ") // Non-breaking space (hex)
-    .replace(/&#160;/g, " ") // Non-breaking space (decimal)
-    .replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(dec)) // All decimal entities
-    .replace(/&#x([0-9a-f]+);/gi, (match, hex) =>
-      String.fromCharCode(parseInt(hex, 16))
-    ); // All hex entities
-
-  // Clean up whitespace
-  text = text.replace(/\s+/g, " ").trim();
-
-  return text;
-}
-
-// Helper function to validate URLs for Notion links
-function isValidNotionUrl(url) {
+// Helper function to validate URLs for Notion links (continued from import)
+function _isValidNotionUrl_LEGACY(url) {
   if (!url || typeof url !== "string") return false;
 
   // Trim whitespace
@@ -847,18 +825,7 @@ function isValidNotionUrl(url) {
   }
 }
 
-// Helper function to convert ServiceNow relative URLs to absolute URLs
-function convertServiceNowUrl(url) {
-  if (!url || typeof url !== "string") return url;
-
-  // Convert ServiceNow documentation relative URLs to absolute
-  if (url.startsWith("/")) {
-    // Convert any relative URL starting with / to absolute ServiceNow URL
-    return "https://www.servicenow.com" + url;
-  }
-
-  return url;
-}
+// All URL utilities (convertServiceNowUrl, isVideoIframeUrl, isValidNotionUrl) now imported from utils/url.cjs above
 
 // Helper function to create image blocks
 async function createImageBlock(src, alt = "") {
@@ -1702,6 +1669,7 @@ global.getExtraDebug = getExtraDebug;
 global.normalizeAnnotations = normalizeAnnotations;
 global.normalizeUrl = normalizeUrl;
 global.isValidImageUrl = isValidImageUrl;
+global.isValidNotionUrl = isValidNotionUrl;
 global.appendBlocksToBlockId = safeAppendBlocksToBlockId;
 global.downloadAndUploadImage = downloadAndUploadImage;
 

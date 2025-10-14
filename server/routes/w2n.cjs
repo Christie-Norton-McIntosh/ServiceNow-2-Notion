@@ -236,19 +236,23 @@ router.post('/W2N', async (req, res) => {
               .toLowerCase()
               .substring(0, 200);
 
-          let firstRow = "";
-          if (Array.isArray(blk.table.children) && blk.table.children[0]) {
-            const cells = blk.table.children[0].table_row?.cells || [];
-            firstRow = cells
-              .map((c) => {
-                if (Array.isArray(c)) {
-                  return c.map((rt) => normalizeCellText(rt?.text?.content || "")).join("|");
-                }
-                return normalizeCellText(c);
-              })
-              .join("|");
+          // Include first 3 rows to better distinguish tables with same headers
+          let rowSamples = [];
+          if (Array.isArray(blk.table.children)) {
+            for (let i = 0; i < Math.min(3, blk.table.children.length); i++) {
+              const cells = blk.table.children[i]?.table_row?.cells || [];
+              const rowText = cells
+                .map((c) => {
+                  if (Array.isArray(c)) {
+                    return c.map((rt) => normalizeCellText(rt?.text?.content || "")).join("|");
+                  }
+                  return normalizeCellText(c);
+                })
+                .join("|");
+              rowSamples.push(rowText);
+            }
           }
-          return `table:${w}x${rows}:${firstRow}`;
+          return `table:${w}x${rows}:${rowSamples.join("||")}`;
         }
         if (blk.type === "numbered_list_item" || blk.type === "bulleted_list_item") {
           const txt = plainTextFromRich(blk[blk.type]?.rich_text || []);
@@ -274,22 +278,30 @@ router.post('/W2N', async (req, res) => {
       const seen = new Set();
       const out = [];
       let removed = 0;
+      let filteredCallouts = 0;
+      let duplicates = 0;
+      
       for (const blk of blockArray) {
         try {
-          // Filter out info callouts (ℹ️ emoji or gray_background color)
+          // Filter out gray info callouts only (keep blue notes)
           if (
             blk &&
             blk.type === "callout" &&
             blk.callout &&
-            ((blk.callout.icon && blk.callout.icon.type === "emoji" && String(blk.callout.icon.emoji).includes("ℹ")) || blk.callout.color === "gray_background")
+            blk.callout.color === "gray_background" &&
+            blk.callout.icon?.type === "emoji" &&
+            String(blk.callout.icon.emoji).includes("ℹ")
           ) {
+            log(`🚫 Filtering gray callout: emoji="${blk.callout.icon?.emoji}", color="${blk.callout.color}"`);
             removed++;
+            filteredCallouts++;
             continue;
           }
 
           const key = computeBlockKey(blk);
           if (seen.has(key)) {
             removed++;
+            duplicates++;
             continue;
           }
           seen.add(key);
@@ -300,7 +312,7 @@ router.post('/W2N', async (req, res) => {
       }
 
       if (removed > 0) {
-        log(`🔧 dedupeAndFilterBlocks: removed ${removed} duplicate/filtered block(s)`);
+        log(`🔧 dedupeAndFilterBlocks: removed ${removed} total (${filteredCallouts} callouts, ${duplicates} duplicates)`);
       }
 
       return out;
@@ -309,10 +321,7 @@ router.post('/W2N', async (req, res) => {
     children = dedupeAndFilterBlocks(children);
 
     // Create the page (handling Notion's 100-block limit)
-    log("🔍 Creating Notion page with:");
-    log(`   Database ID: ${payload.databaseId}`);
-    log(`   Properties: ${JSON.stringify(properties, null, 2)}`);
-    log(`   Children blocks: ${children.length}`);
+    log(`� Creating Notion page with ${children.length} blocks`);
 
     try {
       const dumpDir = path.join(__dirname, "..", "logs");
