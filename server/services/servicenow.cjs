@@ -24,6 +24,11 @@
 
 const axios = require('axios');
 const FormData = require('form-data');
+const cheerio = require('cheerio');
+const { convertServiceNowUrl, isVideoIframeUrl } = require('../utils/url.cjs');
+const { cleanHtmlText } = require('../converters/rich-text.cjs');
+const { convertRichTextBlock } = require('../converters/rich-text.cjs');
+const { convertTableBlock } = require('../converters/table.cjs');
 
 /** @private Global tracker for video detection (reset per conversion) */
 let hasDetectedVideos = false;
@@ -54,139 +59,7 @@ function getGlobals() {
   };
 }
 
-/**
- * Determines if an iframe URL is from a known video platform.
- * 
- * This function checks if a given URL matches patterns from popular video
- * hosting platforms like YouTube, Vimeo, Wistia, Loom, etc.
- * 
- * @param {string} url - The iframe URL to check
- * 
- * @returns {boolean} True if the URL is from a recognized video platform
- * 
- * @example
- * isVideoIframeUrl('https://www.youtube.com/embed/dQw4w9WgXcQ'); // returns true
- * isVideoIframeUrl('https://player.vimeo.com/video/123456789'); // returns true
- * isVideoIframeUrl('https://example.com/iframe'); // returns false
- * 
- * @private
- */
-function isVideoIframeUrl(url) {
-  if (!url) return false;
-  const videoPatterns = [
-    /youtube\.com\/embed\//i,
-    /youtube-nocookie\.com\/embed\//i,
-    /player\.vimeo\.com\//i,
-    /vimeo\.com\/video\//i,
-    /wistia\.(com|net)/i,
-    /fast\.wistia\.(com|net)/i,
-    /loom\.com\/embed\//i,
-    /vidyard\.com\/embed\//i,
-    /brightcove\.(com|net)/i,
-  ];
-  return videoPatterns.some((pattern) => pattern.test(url));
-}
-
-/**
- * Removes HTML tags and decodes HTML entities from text content.
- * 
- * This function strips all HTML markup and converts HTML entities (both named
- * and numeric) back to their corresponding characters, then normalizes whitespace.
- * 
- * @param {string} html - HTML string to clean
- * 
- * @returns {string} Clean plain text with HTML entities decoded
- * 
- * @example
- * cleanHtmlText('<p>Hello &amp; <strong>world</strong>!</p>');
- * // Returns: "Hello & world!"
- * 
- * @example
- * cleanHtmlText('Price: &#36;100&nbsp;USD');
- * // Returns: "Price: $100 USD"
- * 
- * @private
- */
-function cleanHtmlText(html) {
-  if (!html) return "";
-
-  // Remove HTML tags
-  let text = html.replace(/<[^>]*>/g, " ");
-
-  // Decode HTML entities (both named and numeric)
-  text = text
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&#xa0;/gi, " ") // Non-breaking space (hex)
-    .replace(/&#160;/g, " ") // Non-breaking space (decimal)
-    .replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(dec)) // All decimal entities
-    .replace(/&#x([0-9a-f]+);/gi, (match, hex) =>
-      String.fromCharCode(parseInt(hex, 16))
-    ); // All hex entities
-
-  // Clean up whitespace
-  text = text.replace(/\s+/g, " ").trim();
-
-  return text;
-}
-
-// Helper function to validate URLs for Notion links
-function isValidNotionUrl(url) {
-  if (!url || typeof url !== "string") return false;
-
-  // Trim whitespace
-  url = url.trim();
-
-  // Reject empty or whitespace-only URLs
-  if (url.length === 0) return false;
-
-  // Reject fragment-only URLs
-  if (url.startsWith("#")) return false;
-
-  // Reject javascript: protocol
-  if (url.toLowerCase().startsWith("javascript:")) return false;
-
-  // Notion API does NOT accept relative URLs - they must be absolute
-  // Reject any URL that starts with / as it should have been converted by convertServiceNowUrl
-  if (url.startsWith("/")) {
-    return false;
-  }
-  try {
-    const parsedUrl = new URL(url);
-
-    // Only allow http and https protocols
-    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
-      return false;
-    }
-
-    // Basic validation - URL should have a hostname
-    if (!parsedUrl.hostname) {
-      return false;
-    }
-
-    return true;
-  } catch (e) {
-    // Invalid URL format
-    return false;
-  }
-}
-
-// Helper function to convert ServiceNow relative URLs to absolute URLs
-function convertServiceNowUrl(url) {
-  if (!url || typeof url !== "string") return url;
-
-  // Convert ServiceNow documentation relative URLs to absolute
-  if (url.startsWith("/")) {
-    // Convert any relative URL starting with / to absolute ServiceNow URL
-    return "https://www.servicenow.com" + url;
-  }
-
-  return url;
-}
+// isVideoIframeUrl, cleanHtmlText, and convertServiceNowUrl now imported from utils modules above
 
 /**
  * Extracts and converts HTML content to Notion block format.
@@ -225,14 +98,16 @@ function convertServiceNowUrl(url) {
  */
 async function extractContentFromHtml(html) {
   const { log, normalizeAnnotations, isValidImageUrl, downloadAndUploadImage, normalizeUrl } = getGlobals();
-  if (!html || typeof html !== "string")
+  
+  // cleanHtmlText already imported at top of file
+  if (!html || typeof html !== "string") {
     return { blocks: [], hasVideos: false };
+  }
 
   // Reset video detection flag for this conversion
   hasDetectedVideos = false;
 
   log(`🔄 Converting HTML to Notion blocks (${html.length} chars)`);
-  log(`📄 HTML sample: ${html.substring(0, 500)}...`);
 
   // Remove script and style tags
   html = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
@@ -258,7 +133,7 @@ async function extractContentFromHtml(html) {
   html = html.replace(/<div[^>]*class="(?![^\"]*code-toolbar)[^\"]*\btoolbar\b[^\"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
   html = html.replace(/<button[^>]*class="[^\"]*copy-to-clipboard-button[^\"]*"[^>]*>[\s\S]*?<\/button>/gi, "");
 
-  // Enhanced block parsing logic with custom formatting
+  // Block array for collecting converted Notion blocks
   const blocks = [];
 
   // Advanced rich text parser with full formatting support (migrated from sn2n-proxy.cjs)
@@ -458,6 +333,27 @@ async function extractContentFromHtml(html) {
     return richText;
   }
 
+  /**
+   * Splits a rich_text array into chunks of max 100 elements (Notion's limit).
+   * 
+   * @param {Array} richText - Array of rich_text elements
+   * @returns {Array<Array>} Array of rich_text chunks, each with ≤100 elements
+   */
+  function splitRichTextArray(richText) {
+    const MAX_RICH_TEXT_ELEMENTS = 100;
+    
+    if (!richText || richText.length <= MAX_RICH_TEXT_ELEMENTS) {
+      return [richText];
+    }
+    
+    const chunks = [];
+    for (let i = 0; i < richText.length; i += MAX_RICH_TEXT_ELEMENTS) {
+      chunks.push(richText.slice(i, i + MAX_RICH_TEXT_ELEMENTS));
+    }
+    
+    return chunks;
+  }
+
   // Helper function to create image blocks (needed by parseRichText)
   async function createImageBlock(src, alt = "") {
     if (!src || !isValidImageUrl(src)) return null;
@@ -495,164 +391,287 @@ async function extractContentFromHtml(html) {
     }
   }
 
-  // Parse callouts (notes, warnings, etc.) with proper color and icon detection
-  const calloutRegex = /<div[^>]*class=["']note[^"']*["'][^>]*>([\s\S]*?)<\/div>/gi;
-  let calloutMatch;
-  while ((calloutMatch = calloutRegex.exec(html)) !== null) {
-    const calloutHtml = calloutMatch[0];
-    const calloutContent = calloutMatch[1];
-    
-    // Determine callout type and color based on classes
-    let calloutColor = "gray";
-    let calloutIcon = "💡";
-    
-    if (calloutHtml.includes('class="note important') || calloutHtml.includes('note_important')) {
-      calloutColor = "red";
-      calloutIcon = "⚠️";
-    } else if (calloutHtml.includes('class="note warning') || calloutHtml.includes('note_warning')) {
-      calloutColor = "orange";
-      calloutIcon = "⚠️";
-    } else if (calloutHtml.includes('class="note tip') || calloutHtml.includes('note_tip')) {
-      calloutColor = "green";
-      calloutIcon = "💡";
-    } else if (calloutHtml.includes('class="note note') || calloutHtml.includes('note_note')) {
-      calloutColor = "blue";
-      calloutIcon = "ℹ️";
-    }
-
-    // Remove note title spans but preserve the text
-    let cleanedContent = calloutContent.replace(/<span[^>]*class=["'][^"']*note__title[^"']*["'][^>]*>([^<]*)<\/span>/gi, '$1: ');
-    
-    const calloutRichText = await parseRichText(cleanedContent);
-    blocks.push({
-      object: "block",
-      type: "callout",
-      callout: {
-        rich_text: calloutRichText,
-        icon: { type: "emoji", emoji: calloutIcon },
-        color: calloutColor
-      }
+  // Use cheerio to parse HTML and process elements in document order
+  let $;
+  try {
+    $ = cheerio.load(html, { 
+      decodeEntities: false,
+      _useHtmlParser2: true 
     });
-    html = html.replace(calloutMatch[0], "");
+  } catch (error) {
+    log(`❌ Cheerio load ERROR: ${error.message}`);
+    // Fall back to single paragraph
+    return {
+      blocks: [{
+        object: "block",
+        type: "paragraph",
+        paragraph: {
+          rich_text: convertRichTextBlock(cleanHtmlText(html)),
+        },
+      }],
+      hasVideos: false
+    };
   }
 
-  // ...existing table, code, image, heading, list, paragraph logic (use parseRichText for rich_text)...
-  // Tables
-  const tableRegex = /<table[\s\S]*?<\/table>/gi;
-  let tableMatch;
-  while ((tableMatch = tableRegex.exec(html)) !== null) {
-    const tableHtml = tableMatch[0];
-    if (typeof parseTableToNotionBlock === 'function') {
-      const tableBlocks = await parseTableToNotionBlock(tableHtml);
-      if (tableBlocks) blocks.push(...tableBlocks);
-    }
-    html = html.replace(tableHtml, "");
-  }
-  // Code blocks
-  const preRegex = /<pre[^>]*>([\s\S]*?)<\/pre>/gi;
-  let preMatch;
-  while ((preMatch = preRegex.exec(html)) !== null) {
-    const codeHtml = preMatch[1];
-    const codeText = cleanHtmlText(codeHtml);
-    blocks.push({
-      object: "block",
-      type: "code",
-      code: {
-        rich_text: [{ type: "text", text: { content: codeText } }],
-        language: "plain text"
+  // Process elements in document order by walking the DOM tree
+  async function processElement(element) {
+    const $elem = $(element);
+    const tagName = element.name;
+    const processedBlocks = [];
+    
+    console.log(`🔍 Processing element: <${tagName}>, class="${$elem.attr('class') || 'none'}"`);
+
+    // Handle different element types
+    if (tagName === 'div' && $elem.attr('class') && $elem.attr('class').includes('note')) {
+      console.log(`🔍 MATCHED CALLOUT! class="${$elem.attr('class')}"`);
+
+      // Callout/Note
+      const calloutHtml = $.html($elem);
+      let calloutColor = "gray";
+      let calloutIcon = "💡";
+      
+      const classAttr = $elem.attr('class') || '';
+      if (classAttr.includes('note important') || classAttr.includes('note_important')) {
+        calloutColor = "red_background";
+        calloutIcon = "⚠️";
+      } else if (classAttr.includes('note warning') || classAttr.includes('note_warning')) {
+        calloutColor = "orange_background";
+        calloutIcon = "⚠️";
+      } else if (classAttr.includes('note tip') || classAttr.includes('note_tip')) {
+        calloutColor = "green_background";
+        calloutIcon = "💡";
+      } else if (classAttr.includes('note note') || classAttr.includes('note_note')) {
+        calloutColor = "blue_background";
+        calloutIcon = "ℹ️";
       }
-    });
-    html = html.replace(preMatch[0], "");
-  }
-  // Images
-  const imgRegex = /<img[^>]*src=["']([^"']+)["'][^>]*>/gi;
-  let imgMatch;
-  while ((imgMatch = imgRegex.exec(html)) !== null) {
-    const src = imgMatch[1];
-    if (isValidImageUrl(src)) {
-      const imageBlock = await downloadAndUploadImage(src);
-      if (imageBlock) blocks.push(imageBlock);
-    }
-    html = html.replace(imgMatch[0], "");
-  }
-  // Headings
-  for (let level = 1; level <= 3; level++) {
-    const headingRegex = new RegExp(`<h${level}[^>]*>([\\s\\S]*?)<\\/h${level}>`, 'gi');
-    let headingMatch;
-    while ((headingMatch = headingRegex.exec(html)) !== null) {
-      const headingRichText = await parseRichText(headingMatch[1]);
-      blocks.push({
+
+      // Get inner HTML and process
+      let cleanedContent = $elem.html() || '';
+      // Remove note title span (it already has a colon like "Note:")
+      cleanedContent = cleanedContent.replace(/<span[^>]*class=["'][^"']*note__title[^"']*["'][^>]*>([^<]*)<\/span>/gi, '$1 ');
+      
+      const calloutRichText = await parseRichText(cleanedContent);
+      console.log(`🔍 Callout rich_text has ${calloutRichText.length} elements`);
+      
+      // Split if exceeds 100 elements (Notion limit)
+      const richTextChunks = splitRichTextArray(calloutRichText);
+      console.log(`🔍 Callout split into ${richTextChunks.length} chunks`);
+      for (const chunk of richTextChunks) {
+        console.log(`🔍 Creating callout block with ${chunk.length} rich_text elements`);
+        processedBlocks.push({
+          object: "block",
+          type: "callout",
+          callout: {
+            rich_text: chunk,
+            icon: { type: "emoji", emoji: calloutIcon },
+            color: calloutColor
+          }
+        });
+      }
+      $elem.remove(); // Mark as processed
+      
+    } else if (tagName === 'table') {
+      // Table
+      const tableHtml = $.html($elem);
+      console.log(`🔍 Converting table, HTML length: ${tableHtml.length}`);
+      try {
+        const tableBlocks = await convertTableBlock(tableHtml);
+        console.log(`🔍 Table conversion returned ${tableBlocks ? tableBlocks.length : 0} blocks`);
+        if (tableBlocks && Array.isArray(tableBlocks)) {
+          processedBlocks.push(...tableBlocks);
+        }
+      } catch (error) {
+        console.log(`⚠️ Table conversion error: ${error.message}`);
+      }
+      $elem.remove(); // Mark as processed
+      
+    } else if (tagName === 'pre') {
+      // Code block
+      const codeText = cleanHtmlText($elem.html() || '');
+      processedBlocks.push({
         object: "block",
-        type: `heading_${level}`,
-        [`heading_${level}`]: {
-          rich_text: headingRichText,
-        },
+        type: "code",
+        code: {
+          rich_text: [{ type: "text", text: { content: codeText } }],
+          language: "plain text"
+        }
       });
-      html = html.replace(headingMatch[0], "");
-    }
-  }
-  // Lists
-  const ulRegex = /<ul[^>]*>([\s\S]*?)<\/ul>/gi;
-  let ulMatch;
-  while ((ulMatch = ulRegex.exec(html)) !== null) {
-    const liRegex = /<li[^>]*>([\s\S]*?)<\/li>/gi;
-    let liMatch;
-    while ((liMatch = liRegex.exec(ulMatch[1])) !== null) {
-      const liRichText = await parseRichText(liMatch[1]);
-      blocks.push({
-        object: "block",
-        type: "bulleted_list_item",
-        bulleted_list_item: {
-          rich_text: liRichText,
-        },
+      $elem.remove(); // Mark as processed
+      
+    } else if (tagName === 'img') {
+      // Image (standalone)
+      const src = $elem.attr('src');
+      if (src && isValidImageUrl(src)) {
+        const imageBlock = await createImageBlock(src, $elem.attr('alt') || '');
+        if (imageBlock) processedBlocks.push(imageBlock);
+      }
+      $elem.remove(); // Mark as processed
+      
+    } else if (/^h[1-6]$/.test(tagName)) {
+      // Heading (h1-h6) - Notion only supports heading_1, heading_2, heading_3
+      // Map h1->1, h2->2, h3->3, h4->3, h5->3, h6->3
+      let level = parseInt(tagName.charAt(1));
+      if (level > 3) level = 3; // Notion max is heading_3
+      
+      const innerHtml = $elem.html() || '';
+      console.log(`🔍 Heading ${level} innerHtml: "${innerHtml.substring(0, 100)}"`);
+      const headingRichText = await parseRichText(innerHtml);
+      console.log(`🔍 Heading ${level} rich_text has ${headingRichText.length} elements, first: ${JSON.stringify(headingRichText[0])}`);
+      
+      // Split if exceeds 100 elements (Notion limit)
+      const richTextChunks = splitRichTextArray(headingRichText);
+      console.log(`🔍 Heading ${level} split into ${richTextChunks.length} chunks`);
+      for (const chunk of richTextChunks) {
+        console.log(`🔍 Creating heading_${level} block with ${chunk.length} rich_text elements`);
+        processedBlocks.push({
+          object: "block",
+          type: `heading_${level}`,
+          [`heading_${level}`]: {
+            rich_text: chunk,
+          },
+        });
+      }
+      $elem.remove(); // Mark as processed
+      
+    } else if (tagName === 'ul') {
+      // Unordered list
+      $elem.find('> li').each((i, li) => {
+        // Process synchronously, collect for later
+        $(li).data('_sn2n_list_type', 'bulleted_list_item');
       });
+      
+      for (let li of $elem.find('> li').toArray()) {
+        const liRichText = await parseRichText($(li).html() || '');
+        
+        // Split if exceeds 100 elements (Notion limit)
+        const richTextChunks = splitRichTextArray(liRichText);
+        for (const chunk of richTextChunks) {
+          processedBlocks.push({
+            object: "block",
+            type: "bulleted_list_item",
+            bulleted_list_item: {
+              rich_text: chunk,
+            },
+          });
+        }
+      }
+      $elem.remove(); // Mark as processed
+      
+    } else if (tagName === 'ol') {
+      // Ordered list
+      for (let li of $elem.find('> li').toArray()) {
+        const liRichText = await parseRichText($(li).html() || '');
+        
+        // Split if exceeds 100 elements (Notion limit)
+        const richTextChunks = splitRichTextArray(liRichText);
+        for (const chunk of richTextChunks) {
+          processedBlocks.push({
+            object: "block",
+            type: "numbered_list_item",
+            numbered_list_item: {
+              rich_text: chunk,
+            },
+          });
+        }
+      }
+      $elem.remove(); // Mark as processed
+      
+    } else if (tagName === 'p') {
+      // Paragraph
+      const innerHtml = $elem.html() || '';
+      const cleanedText = cleanHtmlText(innerHtml).trim();
+      console.log(`🔍 Paragraph innerHtml length: ${innerHtml.length}, cleaned: ${cleanedText.length}`);
+      if (cleanedText) {
+        const paragraphRichText = await parseRichText(innerHtml);
+        
+        console.log(`🔍 Paragraph rich_text has ${paragraphRichText.length} elements`);
+        
+        // Split if exceeds 100 elements (Notion limit)
+        const richTextChunks = splitRichTextArray(paragraphRichText);
+        console.log(`🔍 Split into ${richTextChunks.length} chunks`);
+        
+        for (const chunk of richTextChunks) {
+          console.log(`🔍 Creating paragraph block with ${chunk.length} rich_text elements`);
+          processedBlocks.push({
+            object: "block",
+            type: "paragraph",
+            paragraph: {
+              rich_text: chunk,
+            },
+          });
+        }
+      } else {
+        console.log(`🔍 Paragraph skipped (empty after cleaning)`);
+      }
+      $elem.remove(); // Mark as processed
+      
+    } else {
+      // Container element (div, section, main, article, etc.) - recursively process children
+      console.log(`🔍 Container element <${tagName}>, recursively processing ${$elem.children().length} children`);
+      const children = $elem.children().toArray();
+      for (const child of children) {
+        const childBlocks = await processElement(child);
+        processedBlocks.push(...childBlocks);
+      }
     }
-    html = html.replace(ulMatch[0], "");
+
+    return processedBlocks;
   }
-  const olRegex = /<ol[^>]*>([\s\S]*?)<\/ol>/gi;
-  let olMatch;
-  while ((olMatch = olRegex.exec(html)) !== null) {
-    const liRegex = /<li[^>]*>([\s\S]*?)<\/li>/gi;
-    let liMatch;
-    while ((liMatch = liRegex.exec(olMatch[1])) !== null) {
-      const liRichText = await parseRichText(liMatch[1]);
-      blocks.push({
-        object: "block",
-        type: "numbered_list_item",
-        numbered_list_item: {
-          rich_text: liRichText,
-        },
-      });
-    }
-    html = html.replace(olMatch[0], "");
+
+  // Process top-level elements in document order
+  // Find all content elements - try body first, then look for common content wrappers
+  let contentElements = [];
+  
+  if ($('body').length > 0) {
+    // Full HTML document with body tag
+    contentElements = $('body').children().toArray();
+    // console.log(`🔍 Processing from <body>, found ${contentElements.length} children`);
+  } else if ($('.dita, .refbody, article, main, [role="main"]').length > 0) {
+    // ServiceNow documentation content wrappers
+    contentElements = $('.dita, .refbody, article, main, [role="main"]').first().children().toArray();
+    // console.log(`🔍 Processing from content wrapper, found ${contentElements.length} children`);
+  } else {
+    // HTML fragment - get all top-level elements
+    contentElements = $.root().children().toArray().filter(el => el.type === 'tag');
+    // console.log(`🔍 Processing from root, found ${contentElements.length} top-level elements`);
   }
-  // Paragraphs
-  const paragraphRegex = /<p[^>]*>([\s\S]*?)<\/p>/gi;
-  let match;
-  while ((match = paragraphRegex.exec(html)) !== null) {
-    if (cleanHtmlText(match[1]).trim()) {
-      const paragraphRichText = await parseRichText(match[1]);
+  
+  console.log(`🔍 Found ${contentElements.length} elements to process`);
+  
+  for (const child of contentElements) {
+    const childBlocks = await processElement(child);
+    // console.log(`🔍 Element <${child.name}> produced ${childBlocks.length} blocks`);
+    blocks.push(...childBlocks);
+  }
+  
+  console.log(`🔍 Total blocks after processing: ${blocks.length}`);
+  
+  // Also process "Related Content" section if it exists (it's outside <main>)
+  const relatedContentDiv = $('.contentPlaceholder .contentWrapper > div').last();
+  if (relatedContentDiv.length > 0 && relatedContentDiv.find('h5').text().includes('Related')) {
+    console.log(`🔍 Found Related Content section, processing...`);
+    const relatedBlocks = await processElement(relatedContentDiv.get(0));
+    console.log(`🔍 Related Content produced ${relatedBlocks.length} blocks`);
+    blocks.push(...relatedBlocks);
+  }
+
+  // Fallback: any remaining text as a paragraph
+  const remainingHtml = $.html();
+  const content = cleanHtmlText(remainingHtml);
+  if (content.trim()) {
+    // Use convertRichTextBlock to ensure proper splitting at 2000 chars
+    const fallbackRichText = convertRichTextBlock(content.trim());
+    if (fallbackRichText.length > 0) {
       blocks.push({
         object: "block",
         type: "paragraph",
         paragraph: {
-          rich_text: paragraphRichText,
+          rich_text: fallbackRichText,
         },
       });
     }
-    html = html.replace(match[0], "");
   }
-  // Fallback: any remaining text as a paragraph
-  const content = cleanHtmlText(html);
-  if (content.trim()) {
-    blocks.push({
-      object: "block",
-      type: "paragraph",
-      paragraph: {
-        rich_text: [{ type: "text", text: { content: content.trim() } }],
-      },
-    });
-  }
+  
   return { blocks, hasVideos: hasDetectedVideos };
 }
 

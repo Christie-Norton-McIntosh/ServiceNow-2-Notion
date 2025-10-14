@@ -1,3 +1,4 @@
+const { convertServiceNowUrl } = require("../utils/url.cjs");
 /**
  * @fileoverview Rich Text Converter for Notion blocks
  * 
@@ -137,24 +138,58 @@ function convertRichTextBlock(input, options = {}) {
       const linkData = part.replace("__LINK__", "").replace("__", "");
       const [href, content] = linkData.split("|");
       if (content && content.trim()) {
-        const rt = {
-          type: "text",
-          text: { content: content.trim() },
-          annotations: normalizeAnnotations(currentAnnotations),
-        };
-        if (href) {
-          rt.text.link = { url: href };
+        const trimmedContent = content.trim();
+        // Split long link content into 2000-char chunks
+        if (trimmedContent.length > 2000) {
+          let remaining = trimmedContent;
+          while (remaining.length > 0) {
+            const chunk = remaining.substring(0, 2000);
+            const rt = {
+              type: "text",
+              text: { content: chunk },
+              annotations: normalizeAnnotations(currentAnnotations),
+            };
+            // Only add link to first chunk
+            if (href && remaining === trimmedContent) {
+              rt.text.link = { url: href };
+            }
+            richText.push(rt);
+            remaining = remaining.substring(2000);
+          }
+        } else {
+          const rt = {
+            type: "text",
+            text: { content: trimmedContent },
+            annotations: normalizeAnnotations(currentAnnotations),
+          };
+          if (href) {
+            rt.text.link = { url: href };
+          }
+          richText.push(rt);
         }
-        richText.push(rt);
       }
     } else if (part) {
       const cleanedText = typeof part === "string" ? part : "";
       if (cleanedText.trim()) {
-        richText.push({
-          type: "text",
-          text: { content: cleanedText },
-          annotations: normalizeAnnotations(currentAnnotations),
-        });
+        // Split long content into 2000-char chunks to comply with Notion API
+        if (cleanedText.length > 2000) {
+          let remaining = cleanedText;
+          while (remaining.length > 0) {
+            const chunk = remaining.substring(0, 2000);
+            richText.push({
+              type: "text",
+              text: { content: chunk },
+              annotations: normalizeAnnotations(currentAnnotations),
+            });
+            remaining = remaining.substring(2000);
+          }
+        } else {
+          richText.push({
+            type: "text",
+            text: { content: cleanedText },
+            annotations: normalizeAnnotations(currentAnnotations),
+          });
+        }
       }
     }
   }
@@ -173,6 +208,21 @@ function convertRichTextBlock(input, options = {}) {
  * @param {string} rt.type - The type of rich text ("text", "mention", "equation")
  * @param {object} [rt.text] - Text content and formatting for "text" type
  * @param {string} [rt.text.content] - The actual text content
+    // Helper to split long content into 2000-char chunks
+    function splitContentToRichText(content, annotations) {
+      const chunks = [];
+      let i = 0;
+      while (i < content.length) {
+        const chunk = content.substring(i, i + 2000);
+        chunks.push({
+          type: "text",
+          text: { content: chunk },
+          annotations: annotations ? { ...annotations } : {},
+        });
+        i += 2000;
+      }
+      return chunks;
+    }
  * @param {object} [rt.text.link] - Link information if text is a hyperlink
  * @param {object} [rt.annotations] - Formatting annotations (bold, italic, etc.)
  * @param {string} [rt.plain_text] - Plain text representation
@@ -276,6 +326,11 @@ function sanitizeRichTextArray(items) {
  * @property {boolean} [detectTechnicalTokens=true] - Whether to auto-detect technical identifiers
  */
 
+// cleanHtmlText moved to utils/notion-format.cjs for better organization
+
+// Import and re-export cleanHtmlText from notion-format for convenience
+const { cleanHtmlText } = require('../utils/notion-format.cjs');
+
 // Export all converter functions and utilities
 module.exports = {
   /** @type {function(string|object, ConversionOptions=): NotionRichText[]} */
@@ -287,5 +342,7 @@ module.exports = {
   /** @type {function(object): object} Re-exported from utils/notion-format.cjs */
   normalizeAnnotations,
   /** @type {string[]} Re-exported from utils/notion-format.cjs */
-  VALID_RICH_TEXT_COLORS
+  VALID_RICH_TEXT_COLORS,
+  /** @type {function(string): string} Re-exported from utils/notion-format.cjs */
+  cleanHtmlText
 };
