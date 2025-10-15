@@ -181,6 +181,7 @@ async function extractContentFromHtml(html) {
 
     // Handle spans with technical identifier classes (ph, keyword, parmname, codeph, etc.) as inline code
     text = text.replace(/<span[^>]*class=["'][^"']*(?:\bph\b|\bkeyword\b|\bparmname\b|\bcodeph\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
+      console.log(`🔍 Found span with technical class: ${match.substring(0, 100)}`);
       const cleanedContent = cleanHtmlText(content);
       if (!cleanedContent || !cleanedContent.trim()) return match;
 
@@ -216,6 +217,7 @@ async function extractContentFromHtml(html) {
 
     // Handle span with uicontrol class as bold + blue
     text = text.replace(/<span[^>]*class=["'][^"']*uicontrol[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
+      console.log(`🔍 Found span with uicontrol class: ${match.substring(0, 100)}`);
       return `__BOLD_BLUE_START__${content}__BOLD_BLUE_END__`;
     });
 
@@ -486,16 +488,92 @@ async function extractContentFromHtml(html) {
       $elem.remove(); // Mark as processed
       
     } else if (tagName === 'pre') {
-      // Code block
+      // Code block - detect language from class attribute
+      console.log(`✅ PRE TAG HANDLER ENTERED - Creating code block`);
       const codeText = cleanHtmlText($elem.html() || '');
+      console.log(`🔍 Code text length: ${codeText.length}, preview: ${codeText.substring(0, 50)}`);
+      
+      // Try to detect language from class attribute (e.g., class="language-javascript")
+      let language = "plain text";
+      const classAttr = $elem.attr('class') || '';
+      const dataLangAttr = $elem.attr('data-language') || '';
+      
+      // Check for language- prefix in class
+      const languageClass = classAttr.split(/\s+/)
+        .map(cls => cls.trim())
+        .find(cls => cls.toLowerCase().startsWith('language-'));
+      
+      if (languageClass) {
+        language = languageClass.substring('language-'.length).toLowerCase();
+        console.log(`🔍 Detected language from class: ${language}`);
+      } else if (dataLangAttr) {
+        language = dataLangAttr.toLowerCase();
+        console.log(`🔍 Detected language from data-language: ${language}`);
+      }
+      
+      // Normalize language (use global function if available)
+      if (typeof global.normalizeCodeLanguage === 'function') {
+        language = global.normalizeCodeLanguage(language);
+        console.log(`🔍 Normalized language: ${language}`);
+      }
+      
+      console.log(`✅ Creating code block with language: ${language}`);
       processedBlocks.push({
         object: "block",
         type: "code",
         code: {
           rich_text: [{ type: "text", text: { content: codeText } }],
-          language: "plain text"
+          language: language
         }
       });
+      console.log(`✅ Code block created and added to processedBlocks (count: ${processedBlocks.length})`);
+      $elem.remove(); // Mark as processed
+      
+    } else if (tagName === 'figure') {
+      // Figure element - extract image and caption together
+      console.log(`🔍 Processing <figure> element`);
+      const $img = $elem.find('img').first();
+      const $figcaption = $elem.find('figcaption').first();
+      
+      if ($img.length > 0) {
+        const src = $img.attr('src');
+        const alt = $img.attr('alt') || '';
+        
+        // Debug figcaption content
+        if ($figcaption.length > 0) {
+          const rawCaption = $figcaption.html() || '';
+          console.log(`🔍 Raw figcaption HTML: "${rawCaption}"`);
+          const cleanedCaption = cleanHtmlText(rawCaption);
+          console.log(`🔍 Cleaned figcaption text: "${cleanedCaption}"`);
+        }
+        
+        const captionText = $figcaption.length > 0 ? cleanHtmlText($figcaption.html() || '') : alt;
+        
+        console.log(`🔍 Figure: img src="${src?.substring(0, 50)}", caption="${captionText?.substring(0, 50)}"`);
+        
+        if (src && isValidImageUrl(src)) {
+          const imageBlock = await createImageBlock(src, captionText);
+          if (imageBlock) {
+            console.log(`✅ Created image block with caption from figcaption`);
+            console.log(`📋 Image block structure:`, JSON.stringify(imageBlock, null, 2));
+            processedBlocks.push(imageBlock);
+          }
+        }
+      } else {
+        // Figure without image - process children normally
+        console.log(`🔍 Figure has no image, processing children`);
+        const children = $elem.children().toArray();
+        for (const child of children) {
+          const childBlocks = await processElement(child);
+          processedBlocks.push(...childBlocks);
+        }
+      }
+      $elem.remove(); // Mark as processed
+      
+    } else if (tagName === 'figcaption') {
+      // Figcaption should be handled by parent <figure> element
+      // If we encounter it standalone, skip it (already processed)
+      console.log(`🔍 Standalone <figcaption> encountered - skipping (should be handled by parent <figure>)`);
       $elem.remove(); // Mark as processed
       
     } else if (tagName === 'img') {
@@ -535,17 +613,24 @@ async function extractContentFromHtml(html) {
       
     } else if (tagName === 'ul') {
       // Unordered list
+      const listItems = $elem.find('> li').toArray();
+      console.log(`🔍 Processing <ul> with ${listItems.length} list items`);
+      
       $elem.find('> li').each((i, li) => {
         // Process synchronously, collect for later
         $(li).data('_sn2n_list_type', 'bulleted_list_item');
       });
       
-      for (let li of $elem.find('> li').toArray()) {
-        const liRichText = await parseRichText($(li).html() || '');
+      for (let li of listItems) {
+        const liHtml = $(li).html() || '';
+        console.log(`🔍 List item HTML: "${liHtml.substring(0, 100)}"`);
+        const liRichText = await parseRichText(liHtml);
+        console.log(`🔍 List item rich_text: ${liRichText.length} elements`);
         
         // Split if exceeds 100 elements (Notion limit)
         const richTextChunks = splitRichTextArray(liRichText);
         for (const chunk of richTextChunks) {
+          console.log(`🔍 Creating bulleted_list_item with ${chunk.length} rich_text elements`);
           processedBlocks.push({
             object: "block",
             type: "bulleted_list_item",
@@ -555,16 +640,24 @@ async function extractContentFromHtml(html) {
           });
         }
       }
+      console.log(`✅ Created ${processedBlocks.length} list item blocks from <ul>`);
       $elem.remove(); // Mark as processed
       
     } else if (tagName === 'ol') {
       // Ordered list
-      for (let li of $elem.find('> li').toArray()) {
-        const liRichText = await parseRichText($(li).html() || '');
+      const listItems = $elem.find('> li').toArray();
+      console.log(`🔍 Processing <ol> with ${listItems.length} list items`);
+      
+      for (let li of listItems) {
+        const liHtml = $(li).html() || '';
+        console.log(`🔍 Ordered list item HTML: "${liHtml.substring(0, 100)}"`);
+        const liRichText = await parseRichText(liHtml);
+        console.log(`🔍 Ordered list item rich_text: ${liRichText.length} elements`);
         
         // Split if exceeds 100 elements (Notion limit)
         const richTextChunks = splitRichTextArray(liRichText);
         for (const chunk of richTextChunks) {
+          console.log(`🔍 Creating numbered_list_item with ${chunk.length} rich_text elements`);
           processedBlocks.push({
             object: "block",
             type: "numbered_list_item",
@@ -574,13 +667,14 @@ async function extractContentFromHtml(html) {
           });
         }
       }
+      console.log(`✅ Created ${processedBlocks.length} list item blocks from <ol>`);
       $elem.remove(); // Mark as processed
       
-    } else if (tagName === 'p') {
-      // Paragraph
+    } else if (tagName === 'p' || (tagName === 'div' && $elem.hasClass('p'))) {
+      // Paragraph (both <p> and <div class="p"> in ServiceNow docs)
       const innerHtml = $elem.html() || '';
       const cleanedText = cleanHtmlText(innerHtml).trim();
-      console.log(`🔍 Paragraph innerHtml length: ${innerHtml.length}, cleaned: ${cleanedText.length}`);
+      console.log(`🔍 Paragraph <${tagName}${$elem.hasClass('p') ? ' class="p"' : ''}> innerHtml length: ${innerHtml.length}, cleaned: ${cleanedText.length}`);
       if (cleanedText) {
         const paragraphRichText = await parseRichText(innerHtml);
         
@@ -603,6 +697,11 @@ async function extractContentFromHtml(html) {
       } else {
         console.log(`🔍 Paragraph skipped (empty after cleaning)`);
       }
+      $elem.remove(); // Mark as processed
+      
+    } else if (tagName === 'div' && $elem.hasClass('contentPlaceholder')) {
+      // Skip sidebar/placeholder content - this is UI chrome, not document content
+      console.log(`🔍 Skipping sidebar content (contentPlaceholder)`);
       $elem.remove(); // Mark as processed
       
     } else {
@@ -646,20 +745,35 @@ async function extractContentFromHtml(html) {
   
   console.log(`🔍 Total blocks after processing: ${blocks.length}`);
   
-  // Also process "Related Content" section if it exists (it's outside <main>)
-  const relatedContentDiv = $('.contentPlaceholder .contentWrapper > div').last();
-  if (relatedContentDiv.length > 0 && relatedContentDiv.find('h5').text().includes('Related')) {
-    console.log(`🔍 Found Related Content section, processing...`);
-    const relatedBlocks = await processElement(relatedContentDiv.get(0));
-    console.log(`🔍 Related Content produced ${relatedBlocks.length} blocks`);
-    blocks.push(...relatedBlocks);
-  }
-
-  // Fallback: any remaining text as a paragraph
+  // Check for any truly unprocessed content
+  // Note: $.html() will still show processed elements, so we check for actual text content
   const remainingHtml = $.html();
   const content = cleanHtmlText(remainingHtml);
-  if (content.trim()) {
-    // Use convertRichTextBlock to ensure proper splitting at 2000 chars
+  
+  console.log(`🔍 Fallback check - remaining HTML length: ${remainingHtml.length}`);
+  console.log(`🔍 Fallback check - cleaned content length: ${content.trim().length}`);
+  
+  if (content.trim().length > 100) {
+    // Significant content remaining - this might be real unprocessed content
+    console.log(`⚠️ Significant remaining content detected: "${content.trim().substring(0, 200)}..."`);
+    console.log(`⚠️ Remaining HTML structure (first 500 chars):`);
+    console.log(remainingHtml.substring(0, 500));
+    console.log(`⚠️ Creating fallback paragraph - investigate why this wasn't processed!`);
+    
+    // Try to save the remaining HTML for analysis
+    if (process.env.SN2N_VERBOSE === '1') {
+      const fs = require('fs');
+      const path = require('path');
+      const logDir = path.join(__dirname, '../logs');
+      const logFile = path.join(logDir, 'remaining-html.html');
+      try {
+        fs.writeFileSync(logFile, remainingHtml, 'utf8');
+        console.log(`📝 Saved remaining HTML to ${logFile}`);
+      } catch (err) {
+        console.log(`⚠️ Could not save remaining HTML: ${err.message}`);
+      }
+    }
+    
     const fallbackRichText = convertRichTextBlock(content.trim());
     if (fallbackRichText.length > 0) {
       blocks.push({
@@ -670,6 +784,8 @@ async function extractContentFromHtml(html) {
         },
       });
     }
+  } else {
+    console.log(`✅ Minimal/no remaining content - all elements properly processed`);
   }
   
   return { blocks, hasVideos: hasDetectedVideos };
