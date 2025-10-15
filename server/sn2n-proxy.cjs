@@ -1672,6 +1672,7 @@ global.isValidImageUrl = isValidImageUrl;
 global.isValidNotionUrl = isValidNotionUrl;
 global.appendBlocksToBlockId = safeAppendBlocksToBlockId;
 global.downloadAndUploadImage = downloadAndUploadImage;
+global.normalizeCodeLanguage = normalizeCodeLanguage;
 
 // Main API routes with fallback for legacy monolith usage (loaded after global context)
 try {
