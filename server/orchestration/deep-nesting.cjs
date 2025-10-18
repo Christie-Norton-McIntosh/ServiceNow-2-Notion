@@ -49,9 +49,10 @@ async function findParentListItemByMarker(rootBlockId, marker) {
         try {
           if (
             child.type === "numbered_list_item" ||
-            child.type === "bulleted_list_item"
+            child.type === "bulleted_list_item" ||
+            child.type === "callout"
           ) {
-            // First, check the list-item's own rich_text for the token
+            // First, check the block's own rich_text for the token
             try {
               const ownPayload = child[child.type] || {};
               const ownRich = Array.isArray(ownPayload.rich_text)

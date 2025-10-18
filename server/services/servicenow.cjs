@@ -28,7 +28,14 @@ const cheerio = require('cheerio');
 const { convertServiceNowUrl, isVideoIframeUrl } = require('../utils/url.cjs');
 const { cleanHtmlText } = require('../converters/rich-text.cjs');
 const { convertRichTextBlock } = require('../converters/rich-text.cjs');
+const { normalizeAnnotations: normalizeAnnotationsLocal } = require('../utils/notion-format.cjs');
+
+// FORCE CLEAR MODULE CACHE for table converter to pick up changes
+const tablePath = require.resolve('../converters/table.cjs');
+delete require.cache[tablePath];
 const { convertTableBlock } = require('../converters/table.cjs');
+
+const { generateMarker } = require('../orchestration/marker-management.cjs');
 
 /** @private Global tracker for video detection (reset per conversion) */
 let hasDetectedVideos = false;
@@ -51,11 +58,12 @@ let hasDetectedVideos = false;
 function getGlobals() {
   return {
     log: global.log || console.log,
-    normalizeAnnotations: global.normalizeAnnotations,
+    normalizeAnnotations: global.normalizeAnnotations || normalizeAnnotationsLocal,
     normalizeUrl: global.normalizeUrl,
     isValidImageUrl: global.isValidImageUrl,
     downloadAndUploadImage: global.downloadAndUploadImage,
     ensureFileUploadAvailable: global.ensureFileUploadAvailable,
+    getExtraDebug: global.getExtraDebug,
   };
 }
 
@@ -97,7 +105,7 @@ function getGlobals() {
  * @see {@link parseMetadataFromUrl} for URL metadata extraction
  */
 async function extractContentFromHtml(html) {
-  const { log, normalizeAnnotations, isValidImageUrl, downloadAndUploadImage, normalizeUrl } = getGlobals();
+  const { log, normalizeAnnotations, isValidImageUrl, downloadAndUploadImage, normalizeUrl, getExtraDebug } = getGlobals();
   
   // cleanHtmlText already imported at top of file
   if (!html || typeof html !== "string") {
@@ -137,14 +145,74 @@ async function extractContentFromHtml(html) {
   const blocks = [];
 
   // Advanced rich text parser with full formatting support (migrated from sn2n-proxy.cjs)
+  // Returns object with { richText: [], imageBlocks: [] }
   async function parseRichText(html) {
-    if (!html) return [{ type: "text", text: { content: "" } }];
+    if (!html) return { richText: [{ type: "text", text: { content: "" } }], imageBlocks: [], videoBlocks: [] };
 
     const richText = [];
-    const inlineImages = [];
+    const imageBlocks = [];
+    const videoBlocks = [];
     let text = html;
 
-    // Extract and process img tags, converting them to inline images
+    // Extract and process iframe tags (videos/embeds) - do this FIRST before images
+    const iframeRegex = /<iframe[^>]*>.*?<\/iframe>/gis;
+    let iframeMatch;
+    while ((iframeMatch = iframeRegex.exec(text)) !== null) {
+      const iframeTag = iframeMatch[0];
+      const srcMatch = iframeTag.match(/src=["']([^"']*)["']/i);
+      const titleMatch = iframeTag.match(/title=["']([^"']*)["']/i);
+
+      if (srcMatch && srcMatch[1]) {
+        const src = srcMatch[1];
+        const title = titleMatch && titleMatch[1] ? titleMatch[1] : "";
+        
+    if (getExtraDebug && getExtraDebug()) log(`🎬 Found iframe in parseRichText: ${src.substring(0, 100)}`);
+        
+        // Check if it's a video URL
+        if (isVideoIframeUrl(src)) {
+          hasDetectedVideos = true;
+          if (getExtraDebug && getExtraDebug()) log(`📹 Video iframe detected - will create video/embed block`);
+          
+          // Use video block for YouTube (supports embed/watch URLs)
+          // Use embed block for Vimeo and other video platforms
+          if (src.includes('youtube.com') || src.includes('youtu.be')) {
+            videoBlocks.push({
+              object: "block",
+              type: "video",
+              video: {
+                type: "external",
+                external: {
+                  url: src
+                }
+              }
+            });
+          } else {
+            // Vimeo and other embeds
+            videoBlocks.push({
+              object: "block",
+              type: "embed",
+              embed: {
+                url: src
+              }
+            });
+          }
+        } else {
+          // Non-video iframe - use embed block
+          if (getExtraDebug && getExtraDebug()) log(`🔗 Non-video iframe detected - will create embed block`);
+          videoBlocks.push({
+            object: "block",
+            type: "embed",
+            embed: {
+              url: src
+            }
+          });
+        }
+      }
+      // Remove the entire iframe tag from text
+      text = text.replace(iframeTag, "");
+    }
+
+    // Extract and process img tags, converting them to image blocks
     const imgRegex = /<img[^>]*>/gi;
     let imgMatch;
     while ((imgMatch = imgRegex.exec(text)) !== null) {
@@ -158,10 +226,16 @@ async function extractContentFromHtml(html) {
         src = convertServiceNowUrl(src);
         if (src && isValidImageUrl(src)) {
           const imageBlock = await createImageBlock(src, alt);
-          if (imageBlock) inlineImages.push(imageBlock);
+          if (imageBlock) imageBlocks.push(imageBlock);
         }
       }
-      text = text.replace(imgTag, "");
+      // Remove the img tag and surrounding parentheses if present
+      // Handles cases like "Click the Attachment (<img src='...'>) icon"
+      text = text.replace(new RegExp(`\\(\\s*${imgTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\)`, 'gi'), '');
+      // If no parentheses were removed, just remove the img tag
+      if (text.includes(imgTag)) {
+        text = text.replace(imgTag, "");
+      }
     }
 
     // Handle bold/strong tags by replacing with markers
@@ -181,7 +255,8 @@ async function extractContentFromHtml(html) {
 
     // Handle spans with technical identifier classes (ph, keyword, parmname, codeph, etc.) as inline code
     text = text.replace(/<span[^>]*class=["'][^"']*(?:\bph\b|\bkeyword\b|\bparmname\b|\bcodeph\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
-      console.log(`🔍 Found span with technical class: ${match.substring(0, 100)}`);
+  if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with technical class: ${match.substring(0, 100)}`);
+  if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with technical class: ${match.substring(0, 100)}`);
       const cleanedContent = cleanHtmlText(content);
       if (!cleanedContent || !cleanedContent.trim()) return match;
 
@@ -215,17 +290,35 @@ async function extractContentFromHtml(html) {
       return `(__CODE_START__${identifier}__CODE_END__)`;
     });
 
+    // Handle standalone multi-word identifiers connected by _ or . (no spaces) as inline code
+    // Examples: com.snc.incident.mim.ml_solution, sys_user_table, package.class.method
+    // Must have at least 2 segments and no brackets/parentheses
+    text = text.replace(/\b([a-zA-Z][a-zA-Z0-9]*(?:[_.][a-zA-Z][a-zA-Z0-9]*)+)(?![_.a-zA-Z0-9])/g, (match, identifier) => {
+      // Skip if already wrapped or if it's part of a URL
+      if (match.includes('__CODE_START__') || match.includes('http')) {
+        return match;
+      }
+      return `__CODE_START__${identifier}__CODE_END__`;
+    });
+
     // Handle span with uicontrol class as bold + blue
     text = text.replace(/<span[^>]*class=["'][^"']*uicontrol[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
-      console.log(`🔍 Found span with uicontrol class: ${match.substring(0, 100)}`);
+  if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with uicontrol class: ${match.substring(0, 100)}`);
+  if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with uicontrol class: ${match.substring(0, 100)}`);
       return `__BOLD_BLUE_START__${content}__BOLD_BLUE_END__`;
     });
 
     // Handle p/span with sectiontitle tasklabel class as bold
     text = text.replace(/<(p|span)[^>]*class=["'][^"']*sectiontitle[^"']*tasklabel[^"']*["'][^>]*>([\s\S]*?)<\/\1>/gi, (match, tag, content) => {
+  if (getExtraDebug && getExtraDebug()) log(`🔍 Found sectiontitle tasklabel: "${content.substring(0, 50)}"`);
+  if (getExtraDebug && getExtraDebug()) log(`🔍 Found sectiontitle tasklabel: "${content.substring(0, 50)}"`);
+  if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with uicontrol class: ${match.substring(0, 100)}`);
       return `__BOLD_START__${content}__BOLD_END__`;
     });
 
+    // Handle line breaks (<br> tags) as newlines
+    text = text.replace(/<br\s*\/?>/gi, '\n');
+    
     // Add soft return between </a> and any <p> tag
     text = text.replace(/(<\/a>)(\s*)(<p[^>]*>)/gi, (match, closingA, whitespace, openingP) => {
       return `${closingA}__SOFT_BREAK__${openingP}`;
@@ -300,11 +393,27 @@ async function extractContentFromHtml(html) {
       } else if (part) {
         const cleanedText = cleanHtmlText(part);
         if (cleanedText.trim()) {
-          richText.push({
-            type: "text",
-            text: { content: cleanedText },
-            annotations: normalizeAnnotations(currentAnnotations),
-          });
+          // Split on newlines to create separate rich text elements for line breaks
+          const lines = cleanedText.split('\n');
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            // Add the line if it has content or if it's not the last line (preserve empty lines between content)
+            if (line || i < lines.length - 1) {
+              richText.push({
+                type: "text",
+                text: { content: line },
+                annotations: normalizeAnnotations(currentAnnotations),
+              });
+              // Add a soft line break after each line except the last
+              if (i < lines.length - 1) {
+                richText.push({
+                  type: "text",
+                  text: { content: "\n" },
+                  annotations: normalizeAnnotations(currentAnnotations),
+                });
+              }
+            }
+          }
         }
       }
     }
@@ -332,25 +441,61 @@ async function extractContentFromHtml(html) {
       }
     }
 
-    return richText;
+    return { richText, imageBlocks, videoBlocks };
   }
 
   /**
-   * Splits a rich_text array into chunks of max 100 elements (Notion's limit).
+   * Splits a rich_text array into chunks compliant with Notion's limits:
+   * - Max 100 elements per array
+   * - Max 2000 characters per element's text.content
    * 
    * @param {Array} richText - Array of rich_text elements
-   * @returns {Array<Array>} Array of rich_text chunks, each with ≤100 elements
+   * @returns {Array<Array>} Array of rich_text chunks, each compliant with Notion limits
    */
   function splitRichTextArray(richText) {
     const MAX_RICH_TEXT_ELEMENTS = 100;
+    const MAX_CONTENT_LENGTH = 2000;
     
-    if (!richText || richText.length <= MAX_RICH_TEXT_ELEMENTS) {
+    if (!richText || richText.length === 0) {
       return [richText];
     }
     
+    // First, split any individual elements that exceed 2000 chars
+    const splitElements = [];
+    for (const rt of richText) {
+      if (rt && rt.type === 'text' && rt.text && rt.text.content) {
+        const content = rt.text.content;
+        if (content.length > MAX_CONTENT_LENGTH) {
+          // Split this element into multiple 2000-char chunks
+          console.log(`🔍 Splitting rich_text element: ${content.length} chars → ${Math.ceil(content.length / MAX_CONTENT_LENGTH)} chunks`);
+          let remaining = content;
+          while (remaining.length > 0) {
+            const chunk = remaining.substring(0, MAX_CONTENT_LENGTH);
+            splitElements.push({
+              ...rt,
+              text: {
+                ...rt.text,
+                content: chunk,
+              },
+            });
+            remaining = remaining.substring(MAX_CONTENT_LENGTH);
+          }
+        } else {
+          splitElements.push(rt);
+        }
+      } else {
+        splitElements.push(rt);
+      }
+    }
+    
+    // Then, split by element count (100 max)
+    if (splitElements.length <= MAX_RICH_TEXT_ELEMENTS) {
+      return [splitElements];
+    }
+    
     const chunks = [];
-    for (let i = 0; i < richText.length; i += MAX_RICH_TEXT_ELEMENTS) {
-      chunks.push(richText.slice(i, i + MAX_RICH_TEXT_ELEMENTS));
+    for (let i = 0; i < splitElements.length; i += MAX_RICH_TEXT_ELEMENTS) {
+      chunks.push(splitElements.slice(i, i + MAX_RICH_TEXT_ELEMENTS));
     }
     
     return chunks;
@@ -361,32 +506,16 @@ async function extractContentFromHtml(html) {
     if (!src || !isValidImageUrl(src)) return null;
 
     try {
-      log(`🖼️ Downloading and uploading image: ${src.substring(0, 80)}...`);
-      const uploadId = await downloadAndUploadImage(src, alt || "image");
-
-      if (uploadId) {
-        log(`✅ Image uploaded successfully with ID: ${uploadId}`);
-        return {
-          object: "block",
-          type: "image",
-          image: {
-            type: "file_upload",
-            file_upload: { id: uploadId },
-            caption: alt ? [{ type: "text", text: { content: alt } }] : [],
-          },
-        };
-      } else {
-        log(`⚠️ Image upload failed, using external URL as fallback`);
-        return {
-          object: "block",
-          type: "image",
-          image: {
-            type: "external",
-            external: { url: src },
-            caption: alt ? [{ type: "text", text: { content: alt } }] : [],
-          },
-        };
-      }
+      log(`🖼️ Using external image URL: ${src.substring(0, 80)}...`);
+      return {
+        object: "block",
+        type: "image",
+        image: {
+          type: "external",
+          external: { url: src },
+          caption: alt ? [{ type: "text", text: { content: alt } }] : [],
+        },
+      };
     } catch (error) {
       log(`❌ Error processing image ${src}: ${error.message}`);
       return null;
@@ -421,45 +550,177 @@ async function extractContentFromHtml(html) {
     const tagName = element.name;
     const processedBlocks = [];
     
-    console.log(`🔍 Processing element: <${tagName}>, class="${$elem.attr('class') || 'none'}"`);
+  const elemClass = $elem.attr('class') || 'none';
+  if (getExtraDebug && getExtraDebug()) log(`🔍 Processing element: <${tagName}>, class="${elemClass}"`);
+    
+    // Special debug for div elements with 'note' in class
+    if (tagName === 'div' && elemClass !== 'none' && elemClass.includes('note')) {
+      console.log(`🔍 ⚠️ DIV WITH NOTE CLASS FOUND! Full class="${elemClass}", HTML preview: ${$.html($elem).substring(0, 150)}`);
+    }
+
+    // Utility: derive callout icon/color from class list or label
+    function getCalloutPropsFromClasses(classes = "") {
+      const cls = String(classes || "");
+      let color = "blue_background"; // default to info-ish note
+      let icon = "ℹ️";
+      if (/\b(important|critical)\b/.test(cls)) {
+        color = "red_background";
+        icon = "⚠️";
+      } else if (/\bwarning\b/.test(cls)) {
+        color = "orange_background";
+        icon = "⚠️";
+      } else if (/\bcaution\b/.test(cls)) {
+        color = "yellow_background";
+        icon = "⚠️";
+      } else if (/\btip\b/.test(cls)) {
+        color = "green_background";
+        icon = "💡";
+      } else if (/\b(info|note)\b/.test(cls)) {
+        color = "blue_background";
+        icon = "ℹ️";
+      }
+      return { color, icon };
+    }
+
+    function getCalloutPropsFromLabel(text = "") {
+      const t = String(text || "").trim().toLowerCase();
+      if (t.startsWith("important:")) return { color: "red_background", icon: "⚠️" };
+      if (t.startsWith("warning:")) return { color: "orange_background", icon: "⚠️" };
+      if (t.startsWith("caution:")) return { color: "yellow_background", icon: "⚠️" };
+      if (t.startsWith("tip:")) return { color: "green_background", icon: "💡" };
+      if (t.startsWith("note:") || t.startsWith("info:")) return { color: "blue_background", icon: "ℹ️" };
+      return null;
+    }
 
     // Handle different element types
+    // 1) Explicit ServiceNow note/callout containers
     if (tagName === 'div' && $elem.attr('class') && $elem.attr('class').includes('note')) {
-      console.log(`🔍 MATCHED CALLOUT! class="${$elem.attr('class')}"`);
+      console.log(`🔍 ✅ MATCHED CALLOUT! class="${$elem.attr('class')}"`);
+      console.log(`🔍 Callout HTML preview (first 500 chars): ${($elem.html() || '').substring(0, 500)}`);
 
       // Callout/Note
-      const calloutHtml = $.html($elem);
-      let calloutColor = "gray";
-      let calloutIcon = "💡";
-      
       const classAttr = $elem.attr('class') || '';
-      if (classAttr.includes('note important') || classAttr.includes('note_important')) {
-        calloutColor = "red_background";
-        calloutIcon = "⚠️";
-      } else if (classAttr.includes('note warning') || classAttr.includes('note_warning')) {
-        calloutColor = "orange_background";
-        calloutIcon = "⚠️";
-      } else if (classAttr.includes('note tip') || classAttr.includes('note_tip')) {
-        calloutColor = "green_background";
-        calloutIcon = "💡";
-      } else if (classAttr.includes('note note') || classAttr.includes('note_note')) {
-        calloutColor = "blue_background";
-        calloutIcon = "ℹ️";
-      }
+      const { color: calloutColor, icon: calloutIcon } = getCalloutPropsFromClasses(classAttr);
 
-      // Get inner HTML and process
-      let cleanedContent = $elem.html() || '';
-      // Remove note title span (it already has a colon like "Note:")
-      cleanedContent = cleanedContent.replace(/<span[^>]*class=["'][^"']*note__title[^"']*["'][^>]*>([^<]*)<\/span>/gi, '$1 ');
+      // Check if callout contains nested block elements (ul, ol, figure, etc.)
+      const nestedBlocks = $elem.find('> ul, > ol, > figure, > div.p, > p');
+      console.log(`🔍 Callout nested blocks check: found ${nestedBlocks.length} elements`);
       
-      const calloutRichText = await parseRichText(cleanedContent);
-      console.log(`🔍 Callout rich_text has ${calloutRichText.length} elements`);
+      if (nestedBlocks.length > 0) {
+        console.log(`🔍 Callout contains ${nestedBlocks.length} nested block elements - processing with children`);
+        
+        // Clone and remove nested blocks to get just the text content
+        const $clone = $elem.clone();
+        $clone.find('> ul, > ol, > figure, > div.p, > p').remove();
+        let textOnlyHtml = $clone.html() || '';
+        
+        // Remove note title span (it already has a colon like "Note:")
+        textOnlyHtml = textOnlyHtml.replace(/<span[^>]*class=["'][^"']*note__title[^"']*["'][^>]*>([^<]*)<\/span>/gi, '$1 ');
+        
+        // Parse HTML directly to preserve formatting (links, bold, etc.)
+        const { richText: calloutRichText } = await parseRichText(textOnlyHtml);
+        
+        // Process nested blocks as children - these will be appended after page creation
+        const childBlocks = [];
+        for (const nestedBlock of nestedBlocks.toArray()) {
+          const nestedProcessed = await processElement(nestedBlock);
+          childBlocks.push(...nestedProcessed);
+        }
+        
+        console.log(`🔍 Creating callout with ${calloutRichText.length} rich_text elements and ${childBlocks.length} deferred children`);
+        
+        // Create callout WITHOUT children property (Notion API requirement)
+        // Children will be appended via orchestrator using a marker
+        const calloutBlock = {
+          object: "block",
+          type: "callout",
+          callout: {
+            rich_text: calloutRichText.length > 0 ? calloutRichText : [{ type: "text", text: { content: "" } }],
+            icon: { type: "emoji", emoji: calloutIcon },
+            color: calloutColor
+          }
+        };
+        
+        // Add marker for orchestrator to append children after creation
+        if (childBlocks.length > 0) {
+          const marker = generateMarker();
+          
+          // Tag each child block with the marker for orchestration
+          childBlocks.forEach(block => {
+            block._sn2n_marker = marker;
+          });
+          
+          // Add marker text to end of callout rich_text (will be found by orchestrator)
+          const markerToken = `(sn2n:${marker})`;
+          calloutBlock.callout.rich_text.push({
+            type: "text",
+            text: { content: ` ${markerToken}` },
+            annotations: {
+              bold: false,
+              italic: false,
+              strikethrough: false,
+              underline: false,
+              code: false,
+              color: "default"
+            }
+          });
+          
+          if (getExtraDebug && getExtraDebug()) log(`🔍 Added marker ${markerToken} for ${childBlocks.length} deferred blocks`);
+        }
+        
+        processedBlocks.push(calloutBlock);
+        
+        // Add child blocks to processedBlocks so they get collected by orchestrator
+        if (childBlocks.length > 0) {
+          processedBlocks.push(...childBlocks);
+        }
+      } else {
+        // No nested blocks - process as simple callout with just rich_text
+        let cleanedContent = $elem.html() || '';
+        // Remove note title span (it already has a colon like "Note:")
+        cleanedContent = cleanedContent.replace(/<span[^>]*class=["'][^"']*note__title[^"']*["'][^>]*>([^<]*)<\/span>/gi, '$1 ');
+        
+        const { richText: calloutRichText, imageBlocks: calloutImages } = await parseRichText(cleanedContent);
+        console.log(`🔍 Simple callout rich_text has ${calloutRichText.length} elements, content preview: "${calloutRichText.map(rt => rt.text.content).join('').substring(0, 100)}..."`);
+        
+        // Add any image blocks found in the callout
+        if (calloutImages && calloutImages.length > 0) {
+          processedBlocks.push(...calloutImages);
+        }
+        
+        // Split if exceeds 100 elements (Notion limit)
+        const richTextChunks = splitRichTextArray(calloutRichText);
+        console.log(`🔍 Simple callout split into ${richTextChunks.length} chunks`);
+        for (const chunk of richTextChunks) {
+          console.log(`🔍 Creating simple callout block with ${chunk.length} rich_text elements`);
+          processedBlocks.push({
+            object: "block",
+            type: "callout",
+            callout: {
+              rich_text: chunk,
+              icon: { type: "emoji", emoji: calloutIcon },
+              color: calloutColor
+            }
+          });
+        }
+      }
+      $elem.remove(); // Mark as processed
+    // 2) Aside elements commonly used as notes/admonitions
+    // Note: Exclude "itemgroup" divs - those are just ServiceNow content containers, not callouts
+    } else if (tagName === 'aside' || (tagName === 'div' && !/\bitemgroup\b/.test($elem.attr('class') || '') && /\b(info|note|warning|important|tip|caution)\b/.test($elem.attr('class') || ''))) {
+      const classAttr = $elem.attr('class') || '';
+  if (getExtraDebug && getExtraDebug()) log(`🔍 MATCHED CALLOUT CONTAINER (<${tagName}>) class="${classAttr}"`);
+      const { color: calloutColor, icon: calloutIcon } = getCalloutPropsFromClasses(classAttr);
+      const inner = $elem.html() || '';
+      const { richText: calloutRichText, imageBlocks: calloutImages } = await parseRichText(inner);
       
-      // Split if exceeds 100 elements (Notion limit)
+      // Add any image blocks found in the callout
+      if (calloutImages && calloutImages.length > 0) {
+        processedBlocks.push(...calloutImages);
+      }
+      
       const richTextChunks = splitRichTextArray(calloutRichText);
-      console.log(`🔍 Callout split into ${richTextChunks.length} chunks`);
       for (const chunk of richTextChunks) {
-        console.log(`🔍 Creating callout block with ${chunk.length} rich_text elements`);
         processedBlocks.push({
           object: "block",
           type: "callout",
@@ -470,27 +731,106 @@ async function extractContentFromHtml(html) {
           }
         });
       }
-      $elem.remove(); // Mark as processed
+      $elem.remove();
       
     } else if (tagName === 'table') {
-      // Table
+      // Table - extract images from table cells and add as separate blocks
       const tableHtml = $.html($elem);
-      console.log(`🔍 Converting table, HTML length: ${tableHtml.length}`);
+      
       try {
-        const tableBlocks = await convertTableBlock(tableHtml);
-        console.log(`🔍 Table conversion returned ${tableBlocks ? tableBlocks.length : 0} blocks`);
+        // Replace figures in table HTML with placeholder text BEFORE conversion
+        // This is necessary because Notion table cells cannot contain images
+        let modifiedTableHtml = tableHtml;
+        const $table = $('<div>').html(tableHtml);
+        $table.find('figure').each((idx, fig) => {
+          const $figure = $(fig);
+          const $caption = $figure.find('figcaption').first();
+          if ($caption.length > 0) {
+            const caption = cleanHtmlText($caption.html());
+            $figure.replaceWith(`<span class="image-placeholder">See "${caption}"</span>`);
+          } else {
+            $figure.replaceWith(`<span class="image-placeholder">See image below</span>`);
+          }
+        });
+        modifiedTableHtml = $table.html();
+        
+        // Convert table to Notion blocks
+        const tableBlocks = await convertTableBlock(modifiedTableHtml);
         if (tableBlocks && Array.isArray(tableBlocks)) {
           processedBlocks.push(...tableBlocks);
+          
+          // Extract images from original table HTML (before placeholder replacement)
+          // and add as separate blocks after the table
+          const figuresWithImages = $(tableHtml).find('figure');
+          
+          figuresWithImages.each((idx, fig) => {
+            const $figure = $(fig);
+            const $img = $figure.find('img').first();
+            const $caption = $figure.find('figcaption').first();
+            
+            if ($img.length > 0) {
+              let imgSrc = $img.attr('src');
+              const caption = $caption.length > 0 ? cleanHtmlText($caption.html()) : '';
+              
+              // Convert ServiceNow URL to proper format
+              imgSrc = convertServiceNowUrl(imgSrc);
+              
+              // Validate URL and create image block
+              const isValid = imgSrc && (imgSrc.startsWith('http://') || imgSrc.startsWith('https://'));
+              
+              if (isValid) {
+                const imageBlock = {
+                  object: "block",
+                  type: "image",
+                  image: {
+                    type: "external",
+                    external: { url: imgSrc }
+                  }
+                };
+                
+                if (caption) {
+                  imageBlock.image.caption = [{ 
+                    type: "text", 
+                    text: { content: caption } 
+                  }];
+                }
+                
+                processedBlocks.push(imageBlock);
+              }
+            }
+          });
+          
         }
       } catch (error) {
         console.log(`⚠️ Table conversion error: ${error.message}`);
+        console.log(`⚠️ Error stack: ${error.stack}`);
       }
       $elem.remove(); // Mark as processed
       
     } else if (tagName === 'pre') {
       // Code block - detect language from class attribute
       console.log(`✅ PRE TAG HANDLER ENTERED - Creating code block`);
-      const codeText = cleanHtmlText($elem.html() || '');
+      
+      // For code blocks, preserve newlines and whitespace
+      // Don't use cleanHtmlText() which collapses whitespace
+      let codeText = $elem.html() || '';
+      
+      // Remove HTML tags but preserve newlines
+      codeText = codeText.replace(/<[^>]*>/g, '');
+      
+      // Decode HTML entities
+      codeText = codeText
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&#xa0;/gi, ' ')
+        .replace(/&#160;/g, ' ')
+        .replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(dec))
+        .replace(/&#x([0-9a-f]+);/gi, (match, hex) => String.fromCharCode(parseInt(hex, 16)));
+      
       console.log(`🔍 Code text length: ${codeText.length}, preview: ${codeText.substring(0, 50)}`);
       
       // Try to detect language from class attribute (e.g., class="language-javascript")
@@ -529,9 +869,74 @@ async function extractContentFromHtml(html) {
       console.log(`✅ Code block created and added to processedBlocks (count: ${processedBlocks.length})`);
       $elem.remove(); // Mark as processed
       
+    } else if (tagName === 'iframe') {
+      // iframe element - typically video embeds
+      console.log(`🔍 Processing <iframe> element`);
+      const src = $elem.attr('src');
+      const title = $elem.attr('title') || '';
+      
+      if (src) {
+        console.log(`🔍 iframe src: ${src.substring(0, 100)}`);
+        
+        // Check if it's a video URL
+        if (isVideoIframeUrl(src)) {
+          hasDetectedVideos = true;
+          console.log(`📹 Detected video iframe - creating video/embed block`);
+          
+          // Use video block for YouTube (supports embed/watch URLs)
+          // Use embed block for Vimeo and other video platforms
+          if (src.includes('youtube.com') || src.includes('youtu.be')) {
+            processedBlocks.push({
+              object: "block",
+              type: "video",
+              video: {
+                type: "external",
+                external: {
+                  url: src
+                }
+              }
+            });
+          } else {
+            // Vimeo and other embeds
+            processedBlocks.push({
+              object: "block",
+              type: "embed",
+              embed: {
+                url: src
+              }
+            });
+          }
+        } else {
+          // Non-video iframe - create embed block
+          console.log(`🔗 Non-video iframe - creating embed block`);
+          processedBlocks.push({
+            object: "block",
+            type: "embed",
+            embed: {
+              url: src
+            }
+          });
+        }
+      }
+      $elem.remove(); // Mark as processed
+      
     } else if (tagName === 'figure') {
       // Figure element - extract image and caption together
-      console.log(`🔍 Processing <figure> element`);
+      // BUT: Skip if this figure is inside a table (tables handle their own figures)
+      console.log(`🔍 Figure handler called, tagName: ${tagName}`);
+      const closestTable = $elem.closest('table');
+      console.log(`🔍 Closest table count: ${closestTable.length}`);
+      const isInTable = closestTable.length > 0;
+      console.log(`🔍 isInTable: ${isInTable}`);
+      
+      if (isInTable) {
+        console.log(`🔍 Figure is inside a table - skipping (will be handled by table converter)`);
+        // Don't process or remove - let the table converter handle it
+        // IMPORTANT: Don't call $elem.remove() here!
+        return processedBlocks;
+      }
+      
+      console.log(`🔍 Processing <figure> element (not in table)`);
       const $img = $elem.find('img').first();
       const $figcaption = $elem.find('figcaption').first();
       
@@ -593,8 +998,13 @@ async function extractContentFromHtml(html) {
       
       const innerHtml = $elem.html() || '';
       console.log(`🔍 Heading ${level} innerHtml: "${innerHtml.substring(0, 100)}"`);
-      const headingRichText = await parseRichText(innerHtml);
+      const { richText: headingRichText, imageBlocks: headingImages } = await parseRichText(innerHtml);
       console.log(`🔍 Heading ${level} rich_text has ${headingRichText.length} elements, first: ${JSON.stringify(headingRichText[0])}`);
+      
+      // Add any image blocks found in the heading
+      if (headingImages && headingImages.length > 0) {
+        processedBlocks.push(...headingImages);
+      }
       
       // Split if exceeds 100 elements (Notion limit)
       const richTextChunks = splitRichTextArray(headingRichText);
@@ -611,36 +1021,338 @@ async function extractContentFromHtml(html) {
       }
       $elem.remove(); // Mark as processed
       
+    } else if (tagName === 'dt') {
+      // Definition term - extract as bold paragraph
+      console.log(`🔍 Processing <dt> (definition term)`);
+      const innerHtml = $elem.html() || '';
+      const cleanedText = cleanHtmlText(innerHtml).trim();
+      
+      if (cleanedText) {
+        // Wrap the entire dt content in bold
+        const boldHtml = `<strong>${innerHtml}</strong>`;
+        const { richText: dtRichText, imageBlocks: dtImages, videoBlocks: dtVideos } = await parseRichText(boldHtml);
+        
+        // Add any media blocks first
+        if (dtImages && dtImages.length > 0) {
+          processedBlocks.push(...dtImages);
+        }
+        if (dtVideos && dtVideos.length > 0) {
+          processedBlocks.push(...dtVideos);
+        }
+        
+        // Add the dt text as a paragraph
+        if (dtRichText.length > 0 && dtRichText.some(rt => rt.text.content.trim())) {
+          const richTextChunks = splitRichTextArray(dtRichText);
+          for (const chunk of richTextChunks) {
+            processedBlocks.push({
+              object: "block",
+              type: "paragraph",
+              paragraph: {
+                rich_text: chunk
+              }
+            });
+          }
+        }
+      }
+      $elem.remove(); // Mark as processed
+      
+    } else if (tagName === 'dd') {
+      // Definition description - process children (may contain paragraphs, lists, images, etc.)
+      console.log(`🔍 Processing <dd> (definition description)`);
+      const children = $elem.children().toArray();
+      
+      if (children.length > 0) {
+        // Process all child elements
+        for (const child of children) {
+          const childBlocks = await processElement(child);
+          processedBlocks.push(...childBlocks);
+        }
+      } else {
+        // No children - treat as paragraph
+        const innerHtml = $elem.html() || '';
+        const cleanedText = cleanHtmlText(innerHtml).trim();
+        
+        if (cleanedText) {
+          const { richText: ddRichText, imageBlocks: ddImages } = await parseRichText(innerHtml);
+          
+          if (ddImages && ddImages.length > 0) {
+            processedBlocks.push(...ddImages);
+          }
+          
+          if (ddRichText.length > 0 && ddRichText.some(rt => rt.text.content.trim())) {
+            const richTextChunks = splitRichTextArray(ddRichText);
+            for (const chunk of richTextChunks) {
+              processedBlocks.push({
+                object: "block",
+                type: "paragraph",
+                paragraph: {
+                  rich_text: chunk
+                }
+              });
+            }
+          }
+        }
+      }
+      $elem.remove(); // Mark as processed
+      
+    } else if (tagName === 'dl') {
+      // Definition list - process dt/dd pairs
+      console.log(`🔍 Processing <dl> (definition list)`);
+      const children = $elem.children().toArray();
+      
+      for (const child of children) {
+        const childBlocks = await processElement(child);
+        processedBlocks.push(...childBlocks);
+      }
+      $elem.remove(); // Mark as processed
+      
     } else if (tagName === 'ul') {
       // Unordered list
       const listItems = $elem.find('> li').toArray();
       console.log(`🔍 Processing <ul> with ${listItems.length} list items`);
       
-      $elem.find('> li').each((i, li) => {
-        // Process synchronously, collect for later
-        $(li).data('_sn2n_list_type', 'bulleted_list_item');
-      });
-      
       for (let li of listItems) {
-        const liHtml = $(li).html() || '';
-        console.log(`🔍 List item HTML: "${liHtml.substring(0, 100)}"`);
-        const liRichText = await parseRichText(liHtml);
-        console.log(`🔍 List item rich_text: ${liRichText.length} elements`);
+        const $li = $(li);
         
-        // Split if exceeds 100 elements (Notion limit)
-        const richTextChunks = splitRichTextArray(liRichText);
-        for (const chunk of richTextChunks) {
-          console.log(`🔍 Creating bulleted_list_item with ${chunk.length} rich_text elements`);
-          processedBlocks.push({
-            object: "block",
-            type: "bulleted_list_item",
-            bulleted_list_item: {
-              rich_text: chunk,
-            },
-          });
+        // Check if list item contains nested block elements (pre, ul, ol, div.note, p, div.itemgroup, etc.)
+        // Note: We search for div.p wrappers which may contain div.note elements
+        // We ALSO search for div.note directly in case it's a direct child of <li>
+        const nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.itemgroup, > div.stepxmp, > div.info, > div.note').toArray();
+        
+        if (nestedBlocks.length > 0) {
+          console.log(`🔍 List item contains ${nestedBlocks.length} nested block elements`);
+          
+          // Extract text content without nested blocks for the list item text
+          const $textOnly = $li.clone();
+          // Remove nested blocks (including div.p which may contain div.note, AND direct div.note children)
+          $textOnly.find('> pre, > ul, > ol, > figure, > table, > p, > div.p, > div.itemgroup, > div.stepxmp, > div.info, > div.note').remove();
+          const textOnlyHtml = $textOnly.html();
+          
+          // Process nested blocks first to add as children
+          const nestedChildren = [];
+          for (let i = 0; i < nestedBlocks.length; i++) {
+            const nestedBlock = nestedBlocks[i];
+            console.log(`🔍 Processing nested block in list item: <${nestedBlock.name}>`);
+            const childBlocks = await processElement(nestedBlock);
+            nestedChildren.push(...childBlocks);
+          }
+          
+          // Create the list item with text content AND nested blocks as children
+          if (textOnlyHtml && cleanHtmlText(textOnlyHtml).trim()) {
+            const { richText: liRichText, imageBlocks: liImages } = await parseRichText(textOnlyHtml);
+            
+            // Filter nested blocks: Notion list items can only have certain block types as children
+            // Supported: bulleted_list_item, numbered_list_item, to_do, toggle, image
+            // NOT supported: table, code, heading, callout, paragraph (must use marker system for 2nd action)
+            // IMPORTANT: Nested list items that have their own children would create 3-level nesting (not supported)
+            // SOLUTION: Flatten paragraph children into the list item's rich_text to maintain 2-level structure
+            const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'to_do', 'toggle', 'image'];
+            const validChildren = [];
+            const markedBlocks = []; // Blocks that need marker-based orchestration
+            
+            nestedChildren.forEach(block => {
+              // Standalone paragraph blocks should be marked for orchestration (2nd API call)
+              // This ensures they appear as separate blocks after the list item
+              if (block && block.type === 'paragraph') {
+                console.log(`⚠️ Standalone paragraph needs marker for deferred append to bulleted_list_item`);
+                markedBlocks.push(block);
+              } else if (block && block.type && supportedAsChildren.includes(block.type)) {
+                // Check if this is a list item with paragraph children (would create 3rd level - flatten instead)
+                const isListItemWithChildren = (block.type === 'numbered_list_item' || block.type === 'bulleted_list_item') &&
+                                               block[block.type]?.children && 
+                                               block[block.type].children.length > 0;
+                
+                if (isListItemWithChildren) {
+                  // Check if all children are paragraphs OR images - if so, flatten paragraphs and keep images
+                  const children = block[block.type].children;
+                  const allParagraphsOrImages = children.every(child => 
+                    child.type === 'paragraph' || child.type === 'image'
+                  );
+                  
+                  if (allParagraphsOrImages) {
+                    const paragraphChildren = children.filter(child => child.type === 'paragraph');
+                    const imageChildren = children.filter(child => child.type === 'image');
+                    
+                    if (paragraphChildren.length > 0) {
+                      console.log(`🔍 Flattening ${paragraphChildren.length} paragraph children into ${block.type} rich_text to avoid 3-level nesting`);
+                      // Merge paragraph rich_text into the list item's rich_text with line breaks
+                      paragraphChildren.forEach((child, idx) => {
+                        if (idx > 0) {
+                          // Add line break between paragraphs
+                          block[block.type].rich_text.push({
+                            type: "text",
+                            text: { content: "\n" },
+                            annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: "default" }
+                          });
+                        }
+                        block[block.type].rich_text.push(...child.paragraph.rich_text);
+                      });
+                    }
+                    
+                    // Keep images as children (they're allowed at 2nd level)
+                    if (imageChildren.length > 0) {
+                      block[block.type].children = imageChildren;
+                      console.log(`🔍 Keeping ${imageChildren.length} image(s) as children of ${block.type}`);
+                    } else {
+                      // No images, remove children array
+                      delete block[block.type].children;
+                    }
+                    
+                    validChildren.push(block);
+                  } else {
+                    console.log(`⚠️ Nested ${block.type} has ${children.length} non-paragraph/non-image children - marking for orchestration.`);
+                    markedBlocks.push(block);
+                  }
+                } else {
+                  validChildren.push(block);
+                }
+              } else if (block && block.type) {
+                console.log(`⚠️ Block type "${block.type}" needs marker for deferred append to list item`);
+                markedBlocks.push(block);
+              }
+            });
+            
+            // Add images as children of the list item, not as separate blocks
+            const allChildren = [...validChildren];
+            if (liImages && liImages.length > 0) {
+              allChildren.push(...liImages);
+            }
+            
+            if (liRichText.length > 0 && liRichText.some(rt => rt.text.content.trim())) {
+              const richTextChunks = splitRichTextArray(liRichText);
+              for (const chunk of richTextChunks) {
+                console.log(`🔍 Creating bulleted_list_item with ${chunk.length} rich_text elements and ${allChildren.length} children`);
+                
+                // If there are marked blocks, generate a marker and add token to rich text
+                let markerToken = null;
+                if (markedBlocks.length > 0) {
+                  const marker = generateMarker();
+                  markerToken = `(sn2n:${marker})`;
+                  // Tag each marked block with the marker for orchestration
+                  markedBlocks.forEach(block => {
+                    block._sn2n_marker = marker;
+                  });
+                  // Add marker token to end of rich text (will be found by orchestrator)
+                  chunk.push({
+                    type: "text",
+                    text: { content: ` ${markerToken}` },
+                    annotations: {
+                      bold: false,
+                      italic: false,
+                      strikethrough: false,
+                      underline: false,
+                      code: false,
+                      color: "default"
+                    }
+                  });
+                  console.log(`🔍 Added marker ${markerToken} for ${markedBlocks.length} deferred blocks`);
+                }
+                
+                const listItemBlock = {
+                  object: "block",
+                  type: "bulleted_list_item",
+                  bulleted_list_item: {
+                    rich_text: chunk,
+                  },
+                };
+                
+                // Add nested blocks (including images) as children if any
+                if (allChildren.length > 0) {
+                  listItemBlock.bulleted_list_item.children = allChildren;
+                  console.log(`🔍 Added ${allChildren.length} nested blocks as children of list item`);
+                }
+                
+                processedBlocks.push(listItemBlock);
+                
+                // Add marked blocks to processedBlocks so they get collected by orchestrator
+                if (markedBlocks.length > 0) {
+                  processedBlocks.push(...markedBlocks);
+                }
+              }
+            }
+          } else if (nestedChildren.length > 0) {
+            // No text content, but has nested blocks - create empty list item with children
+            // Filter nested blocks using same logic
+            const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'paragraph', 'to_do', 'toggle', 'image'];
+            const validChildren = [];
+            const markedBlocks = [];
+            
+            nestedChildren.forEach(block => {
+              if (block && block.type && supportedAsChildren.includes(block.type)) {
+                validChildren.push(block);
+              } else if (block && block.type) {
+                console.log(`⚠️ Block type "${block.type}" needs marker for deferred append to list item`);
+                markedBlocks.push(block);
+              }
+            });
+            
+            console.log(`🔍 Creating bulleted_list_item with no text but ${validChildren.length} valid children`);
+            
+            // Generate marker if needed
+            let markerToken = null;
+            const richText = [{ type: "text", text: { content: "" } }];
+            if (markedBlocks.length > 0) {
+              const marker = generateMarker();
+              markerToken = `(sn2n:${marker})`;
+              markedBlocks.forEach(block => {
+                block._sn2n_marker = marker;
+              });
+              richText[0].text.content = markerToken;
+              console.log(`🔍 Added marker ${markerToken} for ${markedBlocks.length} deferred blocks`);
+            }
+            
+            if (validChildren.length > 0 || markedBlocks.length > 0) {
+              processedBlocks.push({
+                object: "block",
+                type: "bulleted_list_item",
+                bulleted_list_item: {
+                  rich_text: richText,
+                  children: validChildren.length > 0 ? validChildren : undefined
+                },
+              });
+              
+              // Add marked blocks to processedBlocks for orchestrator
+              if (markedBlocks.length > 0) {
+                processedBlocks.push(...markedBlocks);
+              }
+            }
+          }
+        } else {
+          // Simple list item with no nested blocks
+          const liHtml = $li.html() || '';
+          console.log(`🔍 List item HTML: "${liHtml.substring(0, 100)}"`);
+          const { richText: liRichText, imageBlocks: liImages } = await parseRichText(liHtml);
+          console.log(`🔍 List item rich_text: ${liRichText.length} elements`);
+          
+          // Debug: Log the actual text content
+          if (liRichText.length > 0) {
+            const textPreview = liRichText.map(rt => rt.text?.content || '').join('').substring(0, 100);
+            console.log(`🔍 List item text content: "${textPreview}"`);
+          }
+          
+          const richTextChunks = splitRichTextArray(liRichText);
+          for (const chunk of richTextChunks) {
+            const listItemBlock = {
+              object: "block",
+              type: "bulleted_list_item",
+              bulleted_list_item: {
+                rich_text: chunk,
+              },
+            };
+            
+            // Add images as children of the list item if any
+            if (liImages && liImages.length > 0) {
+              listItemBlock.bulleted_list_item.children = liImages;
+              console.log(`🔍 Creating bulleted_list_item with ${chunk.length} rich_text elements and ${liImages.length} image children`);
+            } else {
+              console.log(`🔍 Creating bulleted_list_item with ${chunk.length} rich_text elements`);
+            }
+            
+            processedBlocks.push(listItemBlock);
+          }
         }
       }
-      console.log(`✅ Created ${processedBlocks.length} list item blocks from <ul>`);
+      console.log(`✅ Created list blocks from <ul>`);
       $elem.remove(); // Mark as processed
       
     } else if (tagName === 'ol') {
@@ -649,68 +1361,718 @@ async function extractContentFromHtml(html) {
       console.log(`🔍 Processing <ol> with ${listItems.length} list items`);
       
       for (let li of listItems) {
-        const liHtml = $(li).html() || '';
-        console.log(`🔍 Ordered list item HTML: "${liHtml.substring(0, 100)}"`);
-        const liRichText = await parseRichText(liHtml);
-        console.log(`🔍 Ordered list item rich_text: ${liRichText.length} elements`);
+        const $li = $(li);
         
-        // Split if exceeds 100 elements (Notion limit)
-        const richTextChunks = splitRichTextArray(liRichText);
-        for (const chunk of richTextChunks) {
-          console.log(`🔍 Creating numbered_list_item with ${chunk.length} rich_text elements`);
-          processedBlocks.push({
-            object: "block",
-            type: "numbered_list_item",
-            numbered_list_item: {
-              rich_text: chunk,
-            },
-          });
+        // Check if list item contains nested block elements (pre, ul, ol, div.note, p, div.itemgroup, etc.)
+        // Note: We search for div.p wrappers which may contain div.note elements
+        // We ALSO search for div.note directly in case it's a direct child of <li>
+        const nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.itemgroup, > div.stepxmp, > div.info, > div.note').toArray();
+        
+        if (nestedBlocks.length > 0) {
+          console.log(`🔍 Ordered list item contains ${nestedBlocks.length} nested block elements`);
+          
+          // Extract text content without nested blocks for the list item text
+          const $textOnly = $li.clone();
+          // Remove nested blocks (including div.p which may contain div.note, AND direct div.note children)
+          $textOnly.find('> pre, > ul, > ol, > figure, > table, > p, > div.p, > div.itemgroup, > div.stepxmp, > div.info, > div.note').remove();
+          const textOnlyHtml = $textOnly.html();
+          
+          // Process nested blocks first to add as children
+          const nestedChildren = [];
+          for (let i = 0; i < nestedBlocks.length; i++) {
+            const nestedBlock = nestedBlocks[i];
+            console.log(`🔍 Processing nested block in ordered list item: <${nestedBlock.name}>`);
+            const childBlocks = await processElement(nestedBlock);
+            nestedChildren.push(...childBlocks);
+          }
+          
+          // Create the list item with text content AND nested blocks as children
+          if (textOnlyHtml && cleanHtmlText(textOnlyHtml).trim()) {
+            const { richText: liRichText, imageBlocks: liImages } = await parseRichText(textOnlyHtml);
+            
+            // Filter nested blocks: Notion list items can only have certain block types as children
+            // Supported: bulleted_list_item, numbered_list_item, to_do, toggle, image
+            // NOT supported: table, code, heading, callout, paragraph (must use marker system for 2nd action)
+            // IMPORTANT: Nested list items that have their own children would create 3-level nesting (not supported)
+            // SOLUTION: Flatten paragraph children into the list item's rich_text to maintain 2-level structure
+            const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'to_do', 'toggle', 'image'];
+            const validChildren = [];
+            const markedBlocks = []; // Blocks that need marker-based orchestration
+            
+            nestedChildren.forEach(block => {
+              // Standalone paragraph blocks should be marked for orchestration (2nd API call)
+              // This ensures they appear as separate blocks after the list item
+              if (block && block.type === 'paragraph') {
+                console.log(`⚠️ Standalone paragraph needs marker for deferred append to numbered_list_item`);
+                markedBlocks.push(block);
+              } else if (block && block.type && supportedAsChildren.includes(block.type)) {
+                // Check if this is a list item with paragraph children (would create 3rd level - flatten instead)
+                const isListItemWithChildren = (block.type === 'numbered_list_item' || block.type === 'bulleted_list_item') &&
+                                               block[block.type]?.children && 
+                                               block[block.type].children.length > 0;
+                
+                if (isListItemWithChildren) {
+                  // Check if all children are paragraphs OR images - if so, flatten paragraphs and keep images
+                  const children = block[block.type].children;
+                  const allParagraphsOrImages = children.every(child => 
+                    child.type === 'paragraph' || child.type === 'image'
+                  );
+                  
+                  if (allParagraphsOrImages) {
+                    const paragraphChildren = children.filter(child => child.type === 'paragraph');
+                    const imageChildren = children.filter(child => child.type === 'image');
+                    
+                    if (paragraphChildren.length > 0) {
+                      console.log(`🔍 Flattening ${paragraphChildren.length} paragraph children into ${block.type} rich_text to avoid 3-level nesting`);
+                      // Merge paragraph rich_text into the list item's rich_text with line breaks
+                      paragraphChildren.forEach((child, idx) => {
+                        if (idx > 0) {
+                          // Add line break between paragraphs
+                          block[block.type].rich_text.push({
+                            type: "text",
+                            text: { content: "\n" },
+                            annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: "default" }
+                          });
+                        }
+                        block[block.type].rich_text.push(...child.paragraph.rich_text);
+                      });
+                    }
+                    
+                    // Keep images as children (they're allowed at 2nd level)
+                    if (imageChildren.length > 0) {
+                      block[block.type].children = imageChildren;
+                      console.log(`🔍 Keeping ${imageChildren.length} image(s) as children of ${block.type}`);
+                    } else {
+                      // No images, remove children array
+                      delete block[block.type].children;
+                    }
+                    
+                    validChildren.push(block);
+                  } else {
+                    console.log(`⚠️ Nested ${block.type} has ${children.length} non-paragraph/non-image children - marking for orchestration.`);
+                    markedBlocks.push(block);
+                  }
+                } else {
+                  validChildren.push(block);
+                }
+              } else if (block && block.type) {
+                console.log(`⚠️ Block type "${block.type}" needs marker for deferred append to list item`);
+                markedBlocks.push(block);
+              }
+            });
+            
+            // Add images as children of the list item, not as separate blocks
+            const allChildren = [...validChildren];
+            if (liImages && liImages.length > 0) {
+              allChildren.push(...liImages);
+            }
+            
+            if (liRichText.length > 0 && liRichText.some(rt => rt.text.content.trim())) {
+              const richTextChunks = splitRichTextArray(liRichText);
+              console.log(`🔍 List item text: "${liRichText.map(rt => rt.text.content).join('').substring(0, 80)}..."`);
+              console.log(`🔍 List item has ${allChildren.length} children: ${allChildren.map(c => c.type).join(', ')}`);
+              for (const chunk of richTextChunks) {
+                console.log(`🔍 Creating numbered_list_item with ${chunk.length} rich_text elements and ${allChildren.length} children`);
+                
+                // If there are marked blocks, generate a marker and add token to rich text
+                let markerToken = null;
+                if (markedBlocks.length > 0) {
+                  const marker = generateMarker();
+                  markerToken = `(sn2n:${marker})`;
+                  // Tag each marked block with the marker for orchestration
+                  markedBlocks.forEach(block => {
+                    block._sn2n_marker = marker;
+                  });
+                  // Add marker token to end of rich text (will be found by orchestrator)
+                  chunk.push({
+                    type: "text",
+                    text: { content: ` ${markerToken}` },
+                    annotations: {
+                      bold: false,
+                      italic: false,
+                      strikethrough: false,
+                      underline: false,
+                      code: false,
+                      color: "default"
+                    }
+                  });
+                  console.log(`🔍 Added marker ${markerToken} for ${markedBlocks.length} deferred blocks`);
+                }
+                
+                const listItemBlock = {
+                  object: "block",
+                  type: "numbered_list_item",
+                  numbered_list_item: {
+                    rich_text: chunk,
+                  },
+                };
+                
+                // Add nested blocks (including images) as children if any
+                if (allChildren.length > 0) {
+                  listItemBlock.numbered_list_item.children = allChildren;
+                  console.log(`🔍 Added ${allChildren.length} nested blocks as children of ordered list item`);
+                }
+                
+                processedBlocks.push(listItemBlock);
+                
+                // Add marked blocks to processedBlocks so they get collected by orchestrator
+                if (markedBlocks.length > 0) {
+                  processedBlocks.push(...markedBlocks);
+                }
+              }
+            }
+          } else if (nestedChildren.length > 0) {
+            // No text content, but has nested blocks - create empty list item with children
+            // Filter nested blocks using same logic
+            const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'paragraph', 'to_do', 'toggle', 'image'];
+            const validChildren = [];
+            const markedBlocks = [];
+            
+            nestedChildren.forEach(block => {
+              if (block && block.type && supportedAsChildren.includes(block.type)) {
+                validChildren.push(block);
+              } else if (block && block.type) {
+                console.log(`⚠️ Block type "${block.type}" needs marker for deferred append to list item`);
+                markedBlocks.push(block);
+              }
+            });
+            
+            console.log(`🔍 Creating numbered_list_item with no text but ${validChildren.length} valid children`);
+            
+            // Generate marker if needed
+            let markerToken = null;
+            const richText = [{ type: "text", text: { content: "" } }];
+            if (markedBlocks.length > 0) {
+              const marker = generateMarker();
+              markerToken = `(sn2n:${marker})`;
+              markedBlocks.forEach(block => {
+                block._sn2n_marker = marker;
+              });
+              richText[0].text.content = markerToken;
+              console.log(`🔍 Added marker ${markerToken} for ${markedBlocks.length} deferred blocks`);
+            }
+            
+            if (validChildren.length > 0 || markedBlocks.length > 0) {
+              processedBlocks.push({
+                object: "block",
+                type: "numbered_list_item",
+                numbered_list_item: {
+                  rich_text: richText,
+                  children: validChildren.length > 0 ? validChildren : undefined
+                },
+              });
+              
+              // Add marked blocks to processedBlocks for orchestrator
+              if (markedBlocks.length > 0) {
+                processedBlocks.push(...markedBlocks);
+              }
+            }
+          }
+        } else {
+          // Simple list item with no nested blocks
+          const liHtml = $li.html() || '';
+          console.log(`🔍 Ordered list item HTML: "${liHtml.substring(0, 100)}"`);
+          const { richText: liRichText, imageBlocks: liImages } = await parseRichText(liHtml);
+          console.log(`🔍 Ordered list item rich_text: ${liRichText.length} elements`);
+          
+          // Debug: Log the actual text content
+          if (liRichText.length > 0) {
+            const textPreview = liRichText.map(rt => rt.text?.content || '').join('').substring(0, 100);
+            console.log(`🔍 Ordered list item text content: "${textPreview}"`);
+          }
+          
+          const richTextChunks = splitRichTextArray(liRichText);
+          for (const chunk of richTextChunks) {
+            const listItemBlock = {
+              object: "block",
+              type: "numbered_list_item",
+              numbered_list_item: {
+                rich_text: chunk,
+              },
+            };
+            
+            // Add images as children of the list item if any
+            if (liImages && liImages.length > 0) {
+              listItemBlock.numbered_list_item.children = liImages;
+              console.log(`🔍 Creating numbered_list_item with ${chunk.length} rich_text elements and ${liImages.length} image children`);
+            } else {
+              console.log(`🔍 Creating numbered_list_item with ${chunk.length} rich_text elements`);
+            }
+            
+            processedBlocks.push(listItemBlock);
+          }
         }
       }
-      console.log(`✅ Created ${processedBlocks.length} list item blocks from <ol>`);
+      console.log(`✅ Created list blocks from <ol>`);
       $elem.remove(); // Mark as processed
       
+    // 3) Paragraphs, including heuristic detection of inline callout labels ("Note:", "Warning:", etc.)
     } else if (tagName === 'p' || (tagName === 'div' && $elem.hasClass('p'))) {
       // Paragraph (both <p> and <div class="p"> in ServiceNow docs)
-      const innerHtml = $elem.html() || '';
+      // BUT FIRST: Check if this contains a table at ANY level - if so, extract text then process as container
+      const hasTables = $elem.find('table').length > 0;
+      if (hasTables) {
+        console.log(`🔍 <${tagName}${$elem.hasClass('p') ? ' class="p"' : ''}> contains table(s) - processing as container instead of paragraph`);
+        
+        // Extract any direct text content before child elements
+        const directText = $elem.clone().children().remove().end().text().trim();
+        if (directText) {
+          console.log(`🔍 Found direct text before table: "${directText}"`);
+          const { richText: textRichText } = await parseRichText(directText);
+          if (textRichText.length > 0 && textRichText.some(rt => rt.text.content.trim())) {
+            const textChunks = splitRichTextArray(textRichText);
+            for (const chunk of textChunks) {
+              processedBlocks.push({
+                object: "block",
+                type: "paragraph",
+                paragraph: {
+                  rich_text: chunk
+                }
+              });
+            }
+          }
+        }
+        
+        // Now process child elements (table-wrap, etc.)
+        const children = $elem.children().toArray();
+        console.log(`🔍 Container element <${tagName}>, recursively processing ${children.length} children`);
+        for (const child of children) {
+          const childBlocks = await processElement(child);
+          processedBlocks.push(...childBlocks);
+        }
+        $elem.remove();
+        return processedBlocks;
+      }
+      
+      // Check if this paragraph contains nested block-level elements
+      // (ul, ol, dl, div.note, figure, iframe) - if so, handle mixed content
+      // NOTE: Search for DIRECT CHILDREN ONLY (>) to avoid finding elements already nested in lists
+      // This prevents duplicate processing of figures inside <ol>/<ul> elements
+      const directBlocks = $elem.find('> ul, > ol, > dl').toArray();
+      const inlineBlocks = $elem.find('> div.note, > figure, > iframe').toArray();
+      const nestedBlocks = [...directBlocks, ...inlineBlocks];
+      
+      if (nestedBlocks.length > 0) {
+        console.log(`🔍 Paragraph <${tagName}> contains ${nestedBlocks.length} nested block elements - processing mixed content`);
+        
+        // Clone the element and remove nested blocks from the clone to extract text-only content
+        const $clone = $elem.clone();
+        $clone.find('> ul, > ol, > dl').remove();
+        $clone.find('> div.note, > figure, > iframe').remove();
+        let textOnlyHtml = $clone.html() || '';
+        
+        // CRITICAL: Remove any remaining literal note div tags that may appear as text
+        // These can appear when ServiceNow HTML contains note divs as literal text in paragraph content
+        textOnlyHtml = textOnlyHtml.replace(/<div\s+class=["'][^"']*note[^"']*["'][^>]*>[\s\S]*?<\/div>/gi, ' ');
+        
+        const cleanedText = cleanHtmlText(textOnlyHtml).trim();
+        console.log(`🔍 Text after removing nested blocks (${cleanedText.length} chars): "${cleanedText.substring(0, 80)}..."`);
+        
+        // Process all nested blocks and separate them by type:
+        // - List elements (ul, ol, dl) should be nested as children of the paragraph
+        // - Other elements (figure, div.note, iframe) should be siblings
+        const listChildBlocks = [];
+        const siblingBlocks = [];
+        
+        for (let i = 0; i < nestedBlocks.length; i++) {
+          const nestedBlock = nestedBlocks[i];
+          const blockName = nestedBlock.name.toLowerCase();
+          console.log(`🔍 Processing nested block ${i + 1}/${nestedBlocks.length}: <${blockName}>`);
+          const childBlocks = await processElement(nestedBlock);
+          
+          // Only nest list elements as children; others become siblings
+          if (blockName === 'ul' || blockName === 'ol' || blockName === 'dl') {
+            console.log(`🔍   → List element, will nest as children`);
+            listChildBlocks.push(...childBlocks);
+          } else {
+            console.log(`🔍   → Non-list element (${blockName}), will add as sibling`);
+            siblingBlocks.push(...childBlocks);
+          }
+        }
+        
+        // If there's text content before/after nested blocks, create a paragraph
+        if (cleanedText) {
+          console.log(`🔍 Creating paragraph from text, with ${listChildBlocks.length} list children, ${siblingBlocks.length} siblings`);
+          // NOTE: Don't extract images from textOnlyHtml since nested block elements (like figures)
+          // will be processed separately. If there are any leftover img tags, they should NOT create
+          // separate image blocks - just include them as part of the paragraph text.
+          // We only call parseRichText to get the text content, not the images.
+          
+          // IMPORTANT: Pass HTML directly to parseRichText to preserve formatting (links, bold, etc)
+          // parseRichText handles entity decoding and tag processing internally
+          const { richText: textRichText } = await parseRichText(textOnlyHtml);
+          // Intentionally ignoring imageBlocks from mixed content to prevent duplicates
+          if (textRichText.length > 0 && textRichText.some(rt => rt.text.content.trim() || rt.text.link)) {
+            const richTextChunks = splitRichTextArray(textRichText);
+            for (const chunk of richTextChunks) {
+              const paragraphBlock = {
+                object: "block",
+                type: "paragraph",
+                paragraph: { rich_text: chunk }
+              };
+              
+              // Add list blocks as children if this is the first chunk
+              // (Notion API doesn't allow splitting a paragraph with children across multiple paragraph blocks)
+              if (richTextChunks.indexOf(chunk) === 0 && listChildBlocks.length > 0) {
+                paragraphBlock.paragraph.children = listChildBlocks;
+                console.log(`🔍 Added ${listChildBlocks.length} list blocks as children of paragraph`);
+              }
+              
+              processedBlocks.push(paragraphBlock);
+            }
+          }
+          
+          // Add non-list blocks as siblings after the paragraph
+          if (siblingBlocks.length > 0) {
+            console.log(`🔍 Adding ${siblingBlocks.length} non-list blocks as siblings`);
+            processedBlocks.push(...siblingBlocks);
+          }
+        } else {
+          console.log(`🔍 No text content outside nested blocks - adding all blocks as siblings`);
+          // No text content, add all nested blocks as siblings
+          processedBlocks.push(...listChildBlocks, ...siblingBlocks);
+        }
+        
+        $elem.remove();
+        return processedBlocks;
+      }
+      
+      let innerHtml = $elem.html() || '';
+      
+      // CRITICAL: Remove any literal note div tags that may appear as text in paragraph content
+      // These can appear when ServiceNow HTML contains note divs as literal text
+      innerHtml = innerHtml.replace(/<div\s+class=["'][^"']*note[^"']*["'][^>]*>[\s\S]*?<\/div>/gi, ' ');
+      
       const cleanedText = cleanHtmlText(innerHtml).trim();
-      console.log(`🔍 Paragraph <${tagName}${$elem.hasClass('p') ? ' class="p"' : ''}> innerHtml length: ${innerHtml.length}, cleaned: ${cleanedText.length}`);
-      if (cleanedText) {
-        const paragraphRichText = await parseRichText(innerHtml);
+      const classAttr = $elem.attr('class') || '';
+      console.log(`🔍 Paragraph <${tagName}${classAttr ? ` class="${classAttr}"` : ''}> innerHtml length: ${innerHtml.length}, cleaned: ${cleanedText.length}`);
+      
+      // Check if this paragraph should be bold (sectiontitle tasklabel class)
+      if (/\bsectiontitle\b/.test(classAttr) && /\btasklabel\b/.test(classAttr)) {
+        console.log(`🔍 Detected sectiontitle tasklabel - wrapping content in bold markers`);
+        innerHtml = `__BOLD_START__${innerHtml}__BOLD_END__`;
+      }
+      
+      // Check if paragraph contains images, figures, or other meaningful elements
+      const hasImages = $elem.find('img, figure').length > 0;
+      const hasSignificantContent = cleanedText.length > 0 || hasImages;
+      
+      if (hasSignificantContent) {
+        const { richText: paragraphRichText, imageBlocks: paragraphImages, videoBlocks: paragraphVideos } = await parseRichText(innerHtml);
         
         console.log(`🔍 Paragraph rich_text has ${paragraphRichText.length} elements`);
         
-        // Split if exceeds 100 elements (Notion limit)
-        const richTextChunks = splitRichTextArray(paragraphRichText);
-        console.log(`🔍 Split into ${richTextChunks.length} chunks`);
+        // Add any image blocks found in the paragraph FIRST
+        if (paragraphImages && paragraphImages.length > 0) {
+          processedBlocks.push(...paragraphImages);
+        }
         
-        for (const chunk of richTextChunks) {
-          console.log(`🔍 Creating paragraph block with ${chunk.length} rich_text elements`);
-          processedBlocks.push({
-            object: "block",
-            type: "paragraph",
-            paragraph: {
-              rich_text: chunk,
-            },
-          });
+        // Add any video/iframe blocks found in the paragraph
+        if (paragraphVideos && paragraphVideos.length > 0) {
+          processedBlocks.push(...paragraphVideos);
+        }
+
+        // Heuristic: convert paragraphs starting with a callout label to callout blocks
+        const firstText = cleanedText.substring(0, Math.min(20, cleanedText.length));
+        const labelProps = getCalloutPropsFromLabel(firstText);
+        if (labelProps) {
+          const richTextChunks = splitRichTextArray(paragraphRichText);
+          console.log(`🔍 Detected inline callout label -> creating ${richTextChunks.length} callout block(s)`);
+          for (const chunk of richTextChunks) {
+            processedBlocks.push({
+              object: "block",
+              type: "callout",
+              callout: {
+                rich_text: chunk,
+                icon: { type: "emoji", emoji: labelProps.icon },
+                color: labelProps.color,
+              },
+            });
+          }
+          $elem.remove();
+          return processedBlocks;
+        }
+        
+        // Only create paragraph blocks if there's actual text content or links
+        // Note: Link elements can have empty content but still be valid (they have link.url)
+        if (paragraphRichText.length > 0 && paragraphRichText.some(rt => rt.text.content.trim() || rt.text.link)) {
+          // Split if exceeds 100 elements (Notion limit)
+          const richTextChunks = splitRichTextArray(paragraphRichText);
+          console.log(`🔍 Split into ${richTextChunks.length} chunks`);
+          
+          for (const chunk of richTextChunks) {
+            console.log(`🔍 Creating paragraph block with ${chunk.length} rich_text elements`);
+            processedBlocks.push({
+              object: "block",
+              type: "paragraph",
+              paragraph: {
+                rich_text: chunk,
+              },
+            });
+          }
+        } else {
+          if (paragraphRichText.length > 0) {
+            console.log(`⚠️ Paragraph has ${paragraphRichText.length} rich_text elements but all are empty/whitespace:`);
+            paragraphRichText.slice(0, 3).forEach((rt, idx) => {
+              console.log(`   [${idx}] type=${rt.type}, content="${rt.text?.content || rt.href || ''}", href=${rt.href || 'none'}`);
+            });
+          } else {
+            console.log(`🔍 Paragraph has no text content, only images were added`);
+          }
         }
       } else {
-        console.log(`🔍 Paragraph skipped (empty after cleaning)`);
+        console.log(`🔍 Paragraph skipped (empty after cleaning and no images)`);
       }
       $elem.remove(); // Mark as processed
       
+    } else if (tagName === 'section' && $elem.hasClass('prereq')) {
+      // Special handling for "Before you begin" prerequisite sections
+      // Convert entire section to a callout with pushpin emoji
+      console.log(`🔍 Processing prereq section as callout`);
+      
+      const sectionHtml = $elem.html() || '';
+      const { richText: sectionRichText, imageBlocks: sectionImages } = await parseRichText(sectionHtml);
+      
+      // Debug: log the parsed rich text structure
+      console.log(`🔍 Prereq parsed into ${sectionRichText.length} rich text elements:`);
+      sectionRichText.forEach((rt, idx) => {
+        console.log(`   [${idx}] "${rt.text.content.substring(0, 80)}${rt.text.content.length > 80 ? '...' : ''}"`);
+      });
+      
+      // Add any images found in the section
+      if (sectionImages && sectionImages.length > 0) {
+        processedBlocks.push(...sectionImages);
+      }
+      
+      // Create callout block(s) from the section content
+      if (sectionRichText.length > 0 && sectionRichText.some(rt => rt.text.content.trim())) {
+        let modifiedRichText = [...sectionRichText];
+        
+        // Check if this is a simple 2-line prereq (just "Before you begin" + "Role required:")
+        // It's only simple if "Role required:" is at the START of the second element with no text before it
+        let isSimpleTwoLine = false;
+        let roleRequiredIndex = -1;
+        
+        for (let i = 0; i < Math.min(3, modifiedRichText.length); i++) {
+          const element = modifiedRichText[i];
+          if (element && element.text && element.text.content) {
+            const content = element.text.content;
+            const roleIndex = content.indexOf('Role required:');
+            
+            if (roleIndex >= 0) {
+              roleRequiredIndex = i;
+              // It's only simple if "Role required:" is at position 0 (start of element)
+              // AND it's in the second element (index 1)
+              // This means: "Before you begin\nRole required:" with nothing in between
+              isSimpleTwoLine = (roleIndex === 0 && i === 1);
+              console.log(`🔍 Found "Role required:" at element ${i}, position ${roleIndex} - isSimpleTwoLine=${isSimpleTwoLine}`);
+              break;
+            }
+          }
+        }
+        
+        console.log(`🔍 Prereq section analysis: isSimpleTwoLine=${isSimpleTwoLine}, roleRequiredIndex=${roleRequiredIndex}, totalElements=${modifiedRichText.length}`);
+        
+        // Add soft line break after "Before you begin" (first element)
+        if (modifiedRichText.length > 0) {
+          const firstElement = modifiedRichText[0];
+          if (firstElement && firstElement.text && firstElement.text.content) {
+            modifiedRichText[0] = {
+              ...firstElement,
+              text: {
+                ...firstElement.text,
+                content: firstElement.text.content + '\n'
+              }
+            };
+            console.log(`🔍 Added soft return after first element: "${modifiedRichText[0].text.content.substring(0, 50)}..."`);
+          }
+        }
+        
+        // Only add single line break before "Role required:" if it's NOT a simple two-line prereq
+        if (!isSimpleTwoLine && roleRequiredIndex >= 0) {
+          console.log(`🔍 Adding single line break before "Role required:" (complex prereq with paragraph)`);
+          for (let i = 0; i < modifiedRichText.length; i++) {
+            const element = modifiedRichText[i];
+            if (element && element.text && element.text.content) {
+              const content = element.text.content;
+              const roleIndex = content.indexOf('Role required:');
+              
+              if (roleIndex > 0) {
+                // "Role required:" is in the middle of this element, split it
+                // Trim any trailing whitespace before "Role required:"
+                const beforeRole = content.substring(0, roleIndex).trimEnd();
+                const roleAndAfter = content.substring(roleIndex);
+                
+                console.log(`🔍 Splitting at "Role required:" - before: "${beforeRole.substring(Math.max(0, beforeRole.length - 30))}", after: "${roleAndAfter.substring(0, 30)}"`);
+                
+                // Replace current element with the part before "Role required:" + newline
+                modifiedRichText[i] = {
+                  ...element,
+                  text: {
+                    ...element.text,
+                    content: beforeRole + '\n'
+                  }
+                };
+                
+                // Insert a new element with "Role required:" and the rest
+                modifiedRichText.splice(i + 1, 0, {
+                  ...element,
+                  text: {
+                    ...element.text,
+                    content: roleAndAfter
+                  }
+                });
+                
+                break;
+              } else if (roleIndex === 0) {
+                // "Role required:" starts this element, add newline to previous element
+                console.log(`🔍 "Role required:" at start of element ${i}, adding newline to previous element`);
+                if (i > 0 && modifiedRichText[i - 1]) {
+                  const prevElement = modifiedRichText[i - 1];
+                  // Trim trailing whitespace and add newline
+                  const trimmedContent = prevElement.text.content.trimEnd();
+                  modifiedRichText[i - 1] = {
+                    ...prevElement,
+                    text: {
+                      ...prevElement.text,
+                      content: trimmedContent + '\n'
+                    }
+                  };
+                }
+                break;
+              }
+            }
+          }
+        } else if (isSimpleTwoLine) {
+          console.log(`🔍 Simple two-line prereq detected - using only soft returns (no extra line break)`);
+        }
+        
+        const richTextChunks = splitRichTextArray(modifiedRichText);
+        console.log(`🔍 Creating ${richTextChunks.length} prereq callout block(s)`);
+        for (const chunk of richTextChunks) {
+          processedBlocks.push({
+            object: "block",
+            type: "callout",
+            callout: {
+              rich_text: chunk,
+              icon: { type: "emoji", emoji: "📍" },
+              color: "default"
+            }
+          });
+        }
+      }
+      
+      $elem.remove(); // Mark as processed
+      
     } else if (tagName === 'div' && $elem.hasClass('contentPlaceholder')) {
-      // Skip sidebar/placeholder content - this is UI chrome, not document content
-      console.log(`🔍 Skipping sidebar content (contentPlaceholder)`);
+      // contentPlaceholder divs can contain actual content like "Related Content" sections
+      // Check if it has meaningful content before skipping
+      const children = $elem.children().toArray();
+      const hasContent = children.some(child => {
+        const $child = $(child);
+        const text = cleanHtmlText($child.html() || '').trim();
+        return text.length > 20 || $child.find('h1, h2, h3, h4, h5, h6, ul, ol, p, a').length > 0;
+      });
+      
+      if (hasContent) {
+        console.log(`🔍 contentPlaceholder has meaningful content (${children.length} children) - processing`);
+        for (const child of children) {
+          const childBlocks = await processElement(child);
+          processedBlocks.push(...childBlocks);
+        }
+      } else {
+        console.log(`🔍 Skipping empty contentPlaceholder (UI chrome)`);
+      }
       $elem.remove(); // Mark as processed
       
     } else {
       // Container element (div, section, main, article, etc.) - recursively process children
-      console.log(`🔍 Container element <${tagName}>, recursively processing ${$elem.children().length} children`);
+      // First check if there's direct text content mixed with child elements
       const children = $elem.children().toArray();
-      for (const child of children) {
-        const childBlocks = await processElement(child);
-        processedBlocks.push(...childBlocks);
+      const fullHtml = $elem.html() || '';
+      
+      // Clone and remove all child elements to see if there's text content
+      const $textOnly = $elem.clone();
+      $textOnly.children().remove();
+      const directText = cleanHtmlText($textOnly.html() || '').trim();
+      
+      if (directText && children.length > 0) {
+        // Mixed content: has both text nodes and child elements
+        console.log(`🔍 Container <${tagName}> has mixed content (text + ${children.length} children)`);
+        console.log(`🔍 Direct text preview: "${directText.substring(0, 80)}..."`);
+        
+        // Check if children are block-level or inline elements
+        const blockLevelChildren = children.filter(child => {
+          const childTag = child.name;
+          return ['div', 'p', 'section', 'article', 'main', 'ul', 'ol', 'pre', 'figure', 'table', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(childTag);
+        });
+        
+        if (blockLevelChildren.length > 0) {
+          // Has block-level children - check if any contain tables (if so, skip text extraction)
+          const childrenHaveTables = blockLevelChildren.some(child => $(child).find('table').length > 0);
+          
+          if (!childrenHaveTables) {
+            // Extract text before first block child only if no tables present
+            const firstBlockChild = blockLevelChildren[0];
+            const firstBlockHtml = $.html(firstBlockChild);
+            const beforeFirstBlock = firstBlockHtml ? fullHtml.split(firstBlockHtml)[0] : fullHtml;
+            
+            if (beforeFirstBlock && cleanHtmlText(beforeFirstBlock).trim()) {
+              console.log(`🔍 Processing text before first block-level child element`);
+              const { richText: beforeText, imageBlocks: beforeImages } = await parseRichText(beforeFirstBlock);
+              if (beforeImages && beforeImages.length > 0) {
+                processedBlocks.push(...beforeImages);
+              }
+              if (beforeText.length > 0 && beforeText.some(rt => rt.text.content.trim())) {
+                const richTextChunks = splitRichTextArray(beforeText);
+                for (const chunk of richTextChunks) {
+                  processedBlocks.push({
+                    object: "block",
+                    type: "paragraph",
+                    paragraph: { rich_text: chunk }
+                  });
+                }
+              }
+            }
+          } else {
+            console.log(`🔍 Skipping text extraction - block-level children contain tables`);
+          }
+          
+          // Process only block-level children (inline elements are already in the paragraph)
+          for (const child of blockLevelChildren) {
+            const childBlocks = await processElement(child);
+            processedBlocks.push(...childBlocks);
+          }
+        } else {
+          // Only inline children - process as a single paragraph with all content
+          console.log(`🔍 Container has only inline children - creating single paragraph`);
+          const { richText: containerText, imageBlocks: containerImages } = await parseRichText(fullHtml);
+          if (containerImages && containerImages.length > 0) {
+            processedBlocks.push(...containerImages);
+          }
+          if (containerText.length > 0 && containerText.some(rt => rt.text.content.trim())) {
+            const richTextChunks = splitRichTextArray(containerText);
+            for (const chunk of richTextChunks) {
+              processedBlocks.push({
+                object: "block",
+                type: "paragraph",
+                paragraph: { rich_text: chunk }
+              });
+            }
+          }
+        }
+        
+        // Mark container as processed
+        $elem.remove();
+      } else {
+        // No mixed content or no children - process normally
+        console.log(`🔍 Container element <${tagName}>, recursively processing ${children.length} children`);
+        for (const child of children) {
+          const childBlocks = await processElement(child);
+          processedBlocks.push(...childBlocks);
+        }
+        // Mark container as processed
+        $elem.remove();
       }
     }
 
@@ -718,21 +2080,32 @@ async function extractContentFromHtml(html) {
   }
 
   // Process top-level elements in document order
-  // Find all content elements - try body first, then look for common content wrappers
+  // Find all content elements - try specific content wrappers first, then body
   let contentElements = [];
   
-  if ($('body').length > 0) {
+  if ($('.zDocsTopicPageBody').length > 0) {
+    // ServiceNow zDocsTopicPageBody - process all children (includes article AND contentPlaceholder with Related Content)
+    contentElements = $('.zDocsTopicPageBody').children().toArray();
+    console.log(`🔍 Processing from .zDocsTopicPageBody, found ${contentElements.length} children`);
+  } else if ($('body').length > 0) {
     // Full HTML document with body tag
     contentElements = $('body').children().toArray();
-    // console.log(`🔍 Processing from <body>, found ${contentElements.length} children`);
+    console.log(`🔍 Processing from <body>, found ${contentElements.length} children`);
   } else if ($('.dita, .refbody, article, main, [role="main"]').length > 0) {
-    // ServiceNow documentation content wrappers
-    contentElements = $('.dita, .refbody, article, main, [role="main"]').first().children().toArray();
-    // console.log(`🔍 Processing from content wrapper, found ${contentElements.length} children`);
+    // ServiceNow documentation content wrappers - process the full article including related content
+    const mainArticle = $('article.dita, .refbody').first();
+    if (mainArticle.length > 0) {
+      contentElements = mainArticle.children().toArray();
+      console.log(`🔍 Processing from article.dita, found ${contentElements.length} children`);
+    } else {
+      // Fallback to original logic
+      contentElements = $('.dita, .refbody, article, main, [role="main"]').first().children().toArray();
+      console.log(`🔍 Processing from content wrapper, found ${contentElements.length} children`);
+    }
   } else {
     // HTML fragment - get all top-level elements
     contentElements = $.root().children().toArray().filter(el => el.type === 'tag');
-    // console.log(`🔍 Processing from root, found ${contentElements.length} top-level elements`);
+    console.log(`🔍 Processing from root, found ${contentElements.length} top-level elements`);
   }
   
   console.log(`🔍 Found ${contentElements.length} elements to process`);
@@ -745,49 +2118,114 @@ async function extractContentFromHtml(html) {
   
   console.log(`🔍 Total blocks after processing: ${blocks.length}`);
   
-  // Check for any truly unprocessed content
-  // Note: $.html() will still show processed elements, so we check for actual text content
-  const remainingHtml = $.html();
-  const content = cleanHtmlText(remainingHtml);
+  // Check for any truly unprocessed content in the PROCESSED area only
+  // Get the remaining HTML from the specific content area we processed
+  let remainingHtml = '';
+  let content = '';
+  
+  if ($('body').length > 0) {
+    remainingHtml = $('body').html() || '';
+  } else if ($('.zDocsTopicPageBody').length > 0) {
+    remainingHtml = $('.zDocsTopicPageBody').html() || '';
+  } else if ($('.dita, .refbody, article, main, [role="main"]').length > 0) {
+    const mainArticle = $('article.dita, .refbody').first();
+    if (mainArticle.length > 0) {
+      remainingHtml = mainArticle.html() || '';
+    } else {
+      remainingHtml = $('.dita, .refbody, article, main, [role="main"]').first().html() || '';
+    }
+  } else {
+    remainingHtml = $.html();
+  }
+  
+  content = cleanHtmlText(remainingHtml);
   
   console.log(`🔍 Fallback check - remaining HTML length: ${remainingHtml.length}`);
   console.log(`🔍 Fallback check - cleaned content length: ${content.trim().length}`);
   
-  if (content.trim().length > 100) {
-    // Significant content remaining - this might be real unprocessed content
-    console.log(`⚠️ Significant remaining content detected: "${content.trim().substring(0, 200)}..."`);
+  // Check if all content elements were successfully removed (processed)
+  let unprocessedElements = 0;
+  if ($('body').length > 0) {
+    unprocessedElements = $('body').children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').length;
+  } else if ($('.zDocsTopicPageBody').length > 0) {
+    unprocessedElements = $('.zDocsTopicPageBody').children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').length;
+  } else if ($('.dita, .refbody, article, main, [role="main"]').length > 0) {
+    const mainArticle = $('article.dita, .refbody').first();
+    if (mainArticle.length > 0) {
+      unprocessedElements = mainArticle.children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').length;
+    } else {
+      unprocessedElements = $('.dita, .refbody, article, main, [role="main"]').first().children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').length;
+    }
+  }
+  
+  console.log(`🔍 Unprocessed elements remaining: ${unprocessedElements}`);
+  
+  if (unprocessedElements > 0) {
+    console.log(`⚠️ Warning: ${unprocessedElements} content elements were not processed!`);
+    console.log(`⚠️ This indicates a bug in the element processing logic.`);
     console.log(`⚠️ Remaining HTML structure (first 500 chars):`);
     console.log(remainingHtml.substring(0, 500));
-    console.log(`⚠️ Creating fallback paragraph - investigate why this wasn't processed!`);
+  }
+  
+  if (content.trim().length > 100 && unprocessedElements === 0) {
+    // Check if the remaining content is just sidebar/navigation content or inline elements
+    const hasSidebarContent = remainingHtml.includes('contentPlaceholder') || 
+                             remainingHtml.includes('zDocsSideBoxes') ||
+                             remainingHtml.includes('Applications and features');
     
-    // Try to save the remaining HTML for analysis
-    if (process.env.SN2N_VERBOSE === '1') {
-      const fs = require('fs');
-      const path = require('path');
-      const logDir = path.join(__dirname, '../logs');
-      const logFile = path.join(logDir, 'remaining-html.html');
-      try {
-        fs.writeFileSync(logFile, remainingHtml, 'utf8');
-        console.log(`📝 Saved remaining HTML to ${logFile}`);
-      } catch (err) {
-        console.log(`⚠️ Could not save remaining HTML: ${err.message}`);
+    if (hasSidebarContent) {
+      console.log(`🔍 Remaining content appears to be sidebar/navigation - skipping fallback`);
+    } else if (unprocessedElements === 0) {
+      console.log(`✅ All block elements processed - remaining content is inline/formatting elements only`);
+    } else {
+      // Significant content remaining - this might be real unprocessed content
+      console.log(`⚠️ Significant remaining content detected: "${content.trim().substring(0, 200)}..."`);
+      console.log(`⚠️ Creating fallback paragraph - investigate why this wasn't processed!`);
+      
+      // Try to save the remaining HTML for analysis
+      if (process.env.SN2N_VERBOSE === '1') {
+        const fs = require('fs');
+        const path = require('path');
+        const logDir = path.join(__dirname, '../logs');
+        const logFile = path.join(logDir, 'remaining-html.html');
+        try {
+          fs.writeFileSync(logFile, remainingHtml, 'utf8');
+          console.log(`📝 Saved remaining HTML to ${logFile}`);
+        } catch (err) {
+          console.log(`⚠️ Could not save remaining HTML: ${err.message}`);
+        }
       }
-    }
-    
-    const fallbackRichText = convertRichTextBlock(content.trim());
-    if (fallbackRichText.length > 0) {
-      blocks.push({
-        object: "block",
-        type: "paragraph",
-        paragraph: {
-          rich_text: fallbackRichText,
-        },
-      });
+      
+      // Strip any remaining HTML tags before converting to rich text
+      let cleanedContent = cleanHtmlText(content.trim());
+      
+      // Additional aggressive tag stripping as a safety measure
+      // This handles edge cases like unclosed tags or malformed HTML
+      cleanedContent = cleanedContent.replace(/<[^>]*>/g, " ");
+      
+      // Remove any residual HTML-like patterns that might have slipped through
+      cleanedContent = cleanedContent.replace(/&lt;[^&]*&gt;/g, " ");
+      
+      // Clean up multiple spaces
+      cleanedContent = cleanedContent.replace(/\s+/g, " ").trim();
+      
+      const fallbackRichText = convertRichTextBlock(cleanedContent);
+      if (fallbackRichText.length > 0) {
+        blocks.push({
+          object: "block",
+          type: "paragraph",
+          paragraph: {
+            rich_text: fallbackRichText,
+          },
+        });
+      }
     }
   } else {
     console.log(`✅ Minimal/no remaining content - all elements properly processed`);
   }
   
+  // No post-processing needed - proper nesting structure handles list numbering restart
+  console.log(`✅ Extraction complete: ${blocks.length} blocks`);
   return { blocks, hasVideos: hasDetectedVideos };
 }
 

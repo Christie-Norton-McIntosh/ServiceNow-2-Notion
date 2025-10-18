@@ -322,12 +322,23 @@ export function setupMainPanel(panel) {
       const parsedState = JSON.parse(savedAutoExtractState);
       debug(`🔄 Found saved autoExtractState from page reload:`, parsedState);
 
+      // Check if we've exceeded max reload attempts
+      const reloadAttempts = parsedState.reloadAttempts || 0;
+      if (reloadAttempts > 3) {
+        debug(`❌ Maximum reload attempts (3) exceeded - not resuming`);
+        alert(
+          `❌ AutoExtract stopped: Maximum reload attempts (3) exceeded.\n\nThe page failed to load properly after 3 reload attempts.\n\nTotal pages processed: ${parsedState.totalProcessed || 0}`
+        );
+        GM_setValue("w2n_autoExtractState", null);
+        return;
+      }
+
       // Clear the saved state
       GM_setValue("w2n_autoExtractState", null);
 
       // Resume auto-extraction after a short delay to let page fully load
       setTimeout(async () => {
-        debug(`▶️ Resuming auto-extraction after page reload...`);
+        debug(`▶️ Resuming auto-extraction after page reload (attempt ${reloadAttempts}/3)...`);
         await resumeAutoExtraction(parsedState);
       }, 2000);
     } catch (e) {
@@ -557,6 +568,7 @@ async function startAutoExtraction() {
     totalProcessed: 0,
     maxPages: maxPages,
     paused: false,
+    reloadAttempts: 0, // Track page reload attempts (max 3)
   };
 
   try {
@@ -610,6 +622,82 @@ function isPage503Error() {
 }
 
 /**
+ * Check if the current page is showing an "Access limited" error
+ * @returns {boolean} True if access limited message is detected
+ */
+function isPageAccessLimited() {
+  const pageTitle = document.title;
+  const limitedMessage = "Access to this content is limited to authorized users.";
+
+  if (pageTitle === limitedMessage || pageTitle.includes(limitedMessage)) {
+    debug(`🔒 Detected access limited page: "${pageTitle}"`);
+    return true;
+  }
+
+  // Also check for h1 with this message
+  const h1Elements = document.querySelectorAll("h1");
+  for (const h1 of h1Elements) {
+    if (h1.textContent && h1.textContent.includes(limitedMessage)) {
+      debug(`🔒 Detected access limited message in h1: "${h1.textContent}"`);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Show a countdown alert and wait
+ * @param {number} seconds - Number of seconds to wait
+ * @param {string} message - Message to show in alert
+ * @returns {Promise<void>}
+ */
+async function showCountdownAndWait(seconds, message) {
+  return new Promise((resolve) => {
+    let remaining = seconds;
+    const alertDiv = document.createElement('div');
+    alertDiv.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      border: 2px solid #333;
+      border-radius: 8px;
+      padding: 20px 30px;
+      z-index: 10001;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      min-width: 300px;
+      text-align: center;
+    `;
+    
+    const messageEl = document.createElement('div');
+    messageEl.style.cssText = 'margin-bottom: 15px; font-size: 14px; color: #333;';
+    messageEl.textContent = message;
+    
+    const countdownEl = document.createElement('div');
+    countdownEl.style.cssText = 'font-size: 24px; font-weight: bold; color: #0066cc;';
+    countdownEl.textContent = `${remaining}s`;
+    
+    alertDiv.appendChild(messageEl);
+    alertDiv.appendChild(countdownEl);
+    document.body.appendChild(alertDiv);
+    
+    const interval = setInterval(() => {
+      remaining--;
+      if (remaining > 0) {
+        countdownEl.textContent = `${remaining}s`;
+      } else {
+        clearInterval(interval);
+        document.body.removeChild(alertDiv);
+        resolve();
+      }
+    }, 1000);
+  });
+}
+
+/**
  * Reload the page and wait for it to load
  * @param {number} timeoutMs - Maximum time to wait for reload
  * @returns {Promise<boolean>} True if reload successful and no error page
@@ -625,7 +713,7 @@ async function reloadAndWait(timeoutMs = 15000) {
       debug("✅ Page reloaded");
       window.removeEventListener("load", onLoad);
 
-      // Wait a bit for content to stabilize
+      // Wait longer for content to stabilize and fully render
       setTimeout(() => {
         const is503 = isPage503Error();
         if (is503) {
@@ -635,7 +723,7 @@ async function reloadAndWait(timeoutMs = 15000) {
           debug("✅ Page loaded successfully without errors");
           resolve(true);
         }
-      }, 2000);
+      }, 5000);
     };
 
     // Set up timeout
@@ -692,7 +780,164 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
     }
 
     try {
-      // STEP 0: Check for 503 error and reload if necessary
+      // STEP 0: Check for access limited message and reload if necessary
+      let accessLimitedReloadAttempts = 0;
+      const maxAccessLimitedReloadAttempts = 3;
+
+      while (isPageAccessLimited() && accessLimitedReloadAttempts < maxAccessLimitedReloadAttempts) {
+        accessLimitedReloadAttempts++;
+        debug(
+          `🔒 Access limited detected, attempting reload ${accessLimitedReloadAttempts}/${maxAccessLimitedReloadAttempts}...`
+        );
+        showToast(
+          `⚠️ Page access limited, reloading (attempt ${accessLimitedReloadAttempts}/${maxAccessLimitedReloadAttempts})...`,
+          5000
+        );
+        if (button) {
+          button.textContent = `Reloading for access (${accessLimitedReloadAttempts}/${maxAccessLimitedReloadAttempts})...`;
+        }
+
+        const reloadSuccess = await reloadAndWait(15000);
+
+        if (!reloadSuccess && accessLimitedReloadAttempts < maxAccessLimitedReloadAttempts) {
+          debug(
+            `⏳ Access limited reload ${accessLimitedReloadAttempts} failed, waiting 5s before retry...`
+          );
+          await showCountdownAndWait(5, `⏳ Reload failed. Retrying in...`);
+        }
+      }
+
+      // If still access limited after reload attempts, skip this page and move to next
+      if (isPageAccessLimited()) {
+        debug(
+          `🔒 Access limited persists after ${maxAccessLimitedReloadAttempts} reload attempts, skipping page ${currentPageNum}...`
+        );
+        showToast(
+          `⊘ Skipped page ${currentPageNum}: Access limited (after ${maxAccessLimitedReloadAttempts} reloads)`,
+          4000
+        );
+        if (button) {
+          button.textContent = `Skipped page ${currentPageNum} (access limited)`;
+        }
+
+        // Check if we should continue to next page
+        if (currentPageNum < autoExtractState.maxPages) {
+          debug(`\n========================================`);
+          debug(
+            `⊘ Skipped page ${currentPageNum} due to persistent access limited`
+          );
+          debug(`🎯 Now navigating to page ${currentPageNum + 1}...`);
+          debug(`========================================\n`);
+
+          // STEP 0b: Find next page button
+          debug(`🔍 Finding next page button after skip...`);
+          overlayModule.setMessage(`Finding next page button...`);
+
+          const nextButton = await findAndClickNextButton(
+            nextPageSelector,
+            autoExtractState,
+            button
+          );
+
+          if (!nextButton) {
+            const errorMessage = `❌ AutoExtract STOPPED: Next page button could not be found after skipping page ${currentPageNum}.\n\nTotal pages processed: ${autoExtractState.totalProcessed}`;
+            alert(errorMessage);
+            stopAutoExtract(autoExtractState);
+            if (button) button.textContent = "Start AutoExtract";
+            return;
+          }
+
+          debug(`✅ Found next page button after skip, preparing to click...`);
+
+          // Check if stop was requested
+          if (!autoExtractState.running) {
+            debug(
+              `⏹ AutoExtract stopped by user after skipping page ${currentPageNum}`
+            );
+            showToast(
+              `⏹ AutoExtract stopped. Processed ${autoExtractState.totalProcessed} pages.`,
+              4000
+            );
+            stopAutoExtract(autoExtractState);
+            if (button) button.textContent = "Start AutoExtract";
+            return;
+          }
+
+          // Click button to navigate
+          debug(
+            `\n👆 Clicking next page button to navigate to page ${currentPageNum + 1}...`
+          );
+          overlayModule.setMessage(`Navigating to page ${currentPageNum + 1}...`);
+          if (button) {
+            button.textContent = `Navigating to page ${currentPageNum + 1}/${autoExtractState.maxPages}...`;
+          }
+
+          const currentUrl = window.location.href;
+          const currentTitle = document.title;
+          const currentPageId = getCurrentPageId();
+          const mainContent = document.querySelector(
+            'main, .main-content, [role="main"]'
+          );
+          const currentContentLength = mainContent
+            ? mainContent.innerHTML.length
+            : 0;
+
+          await clickNextPageButton(nextButton);
+          debug(`✅ Click executed, waiting for page to navigate...`);
+
+          // Wait for navigation
+          debug(
+            `⏳ Waiting for navigation to page ${currentPageNum + 1}...`
+          );
+          const navigationSuccess = await waitForNavigationAdvanced(
+            currentUrl,
+            currentTitle,
+            currentPageId,
+            currentContentLength,
+            15000
+          );
+
+          if (!navigationSuccess) {
+            const navErrorMessage = `❌ AutoExtract STOPPED: Navigation to page ${currentPageNum + 1} failed.\n\nTotal pages processed: ${autoExtractState.totalProcessed}`;
+            alert(navErrorMessage);
+            stopAutoExtract(autoExtractState);
+            if (button) button.textContent = `❌ Stopped: Navigation failed`;
+            return;
+          }
+
+          debug(`✅ Navigation detected! Page ${currentPageNum + 1} URL loaded.`);
+
+          // Wait for content to load
+          debug(
+            `⏳ Waiting for page ${currentPageNum + 1} content to load...`
+          );
+          overlayModule.setMessage(`Loading page ${currentPageNum + 1} content...`);
+          if (button) {
+            button.textContent = `Loading page ${currentPageNum + 1}/${
+              autoExtractState.maxPages
+            }...`;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+
+          // Stabilization wait
+          debug(`⏳ Stabilizing page ${currentPageNum + 1}...`);
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+
+          debug(
+            `✅ Page ${currentPageNum + 1} fully loaded and ready for capture!`
+          );
+          debug(`\n========================================`);
+          debug(`🔄 Looping back to capture page ${currentPageNum + 1}...`);
+          debug(`========================================\n`);
+        } else {
+          debug(`🎉 Reached max pages after skipping page ${currentPageNum}`);
+        }
+
+        // Continue to next iteration
+        continue;
+      }
+
+      // STEP 1: Check for 503 error and reload if necessary
       let reloadAttempts = 0;
       const maxReloadAttempts = 3;
 
@@ -715,7 +960,7 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
           debug(
             `⏳ Reload ${reloadAttempts} failed, waiting 5s before retry...`
           );
-          await new Promise((resolve) => setTimeout(resolve, 5000));
+          await showCountdownAndWait(5, `⏳ 503 error reload failed. Retrying in...`);
         }
       }
 
@@ -1157,13 +1402,26 @@ async function findAndClickNextButton(
 
       // Save autoExtractState to localStorage before reload
       if (autoExtractState) {
-        debug(`💾 Saving autoExtractState before reload:`, autoExtractState);
+        // Increment reload attempts
+        autoExtractState.reloadAttempts = (autoExtractState.reloadAttempts || 0) + 1;
+        
+        // Check if we've exceeded max reload attempts
+        if (autoExtractState.reloadAttempts > 3) {
+          debug(`❌ Maximum reload attempts (3) exceeded`);
+          alert(
+            `❌ AutoExtract stopped: Maximum reload attempts (3) exceeded.\n\nThe page failed to load properly after 3 reload attempts.\n\nTotal pages processed: ${autoExtractState.totalProcessed}`
+          );
+          stopAutoExtract(autoExtractState);
+          return null;
+        }
+
+        debug(`💾 Saving autoExtractState before reload (attempt ${autoExtractState.reloadAttempts}/3):`, autoExtractState);
         GM_setValue("w2n_autoExtractState", JSON.stringify(autoExtractState));
       }
 
       // Reload the page and wait for it to load
       debug(
-        `🔄 Reloading page to refresh DOM elements (attempt ${findAttempts})...`
+        `🔄 Reloading page to refresh DOM elements (reload attempt ${autoExtractState.reloadAttempts}/3)...`
       );
       window.location.reload();
 
@@ -2023,7 +2281,10 @@ function isCurrentPageElement(element) {
   if (!element) return false;
 
   const classList = element.classList || [];
-  const className = element.className || "";
+  // Handle both string className and SVGAnimatedString (for SVG elements)
+  const className = typeof element.className === 'string' 
+    ? element.className 
+    : (element.className?.baseVal || "");
 
   // Check for common "current page" class patterns
   const currentPagePatterns = [
@@ -2041,7 +2302,7 @@ function isCurrentPageElement(element) {
       Array.from(classList).some((c) =>
         c.toLowerCase().includes(pattern.toLowerCase())
       ) ||
-      className.toLowerCase().includes(pattern.toLowerCase())
+      (className && className.toLowerCase().includes(pattern.toLowerCase()))
     ) {
       return true;
     }

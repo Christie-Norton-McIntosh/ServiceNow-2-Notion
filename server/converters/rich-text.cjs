@@ -111,6 +111,24 @@ function convertRichTextBlock(input, options = {}) {
   // Handle raw technical identifiers in parentheses/brackets as inline code
   html = html.replace(/([\(\[])[ \t\n\r]*([^\s()[\]]*[_.][^\s()[\]]*)[ \t\n\r]*([\)\]])/g, (match, open, code, close) => `__CODE_START__${code.trim()}__CODE_END__`);
 
+  // Standalone multi-word identifiers connected by _ or . (no spaces) as inline code
+  // Examples: com.snc.incident.mim.ml_solution, sys_user_table, package.class.method
+  // Must have at least 2 segments and no brackets/parentheses
+  html = html.replace(/\b([a-zA-Z][a-zA-Z0-9]*(?:[_.][a-zA-Z][a-zA-Z0-9]*)+)(?![_.a-zA-Z0-9])/g, (match, identifier) => {
+    // Skip if already wrapped or if it's part of a URL
+    if (match.includes('__CODE_START__') || match.includes('http')) {
+      return match;
+    }
+    return `__CODE_START__${identifier}__CODE_END__`;
+  });
+
+  // Strip any remaining HTML tags that weren't converted to markers
+  // This handles span tags, divs, and other markup that doesn't need special formatting
+  html = html.replace(/<[^>]+>/g, ' ');
+  
+  // Clean up excessive whitespace from tag removal
+  html = html.replace(/\s+/g, ' ');
+
   // Now split by markers and build rich text
   const parts = html.split(/(__BOLD_START__|__BOLD_END__|__ITALIC_START__|__ITALIC_END__|__CODE_START__|__CODE_END__|__LINK__[^_]*__)/);
   let currentAnnotations = {
@@ -139,6 +157,14 @@ function convertRichTextBlock(input, options = {}) {
       const [href, content] = linkData.split("|");
       if (content && content.trim()) {
         const trimmedContent = content.trim();
+        // Validate URL - must be absolute http(s) URL, not empty or relative
+        const isValidUrl = href && href.trim() && /^https?:\/\/.+/i.test(href.trim());
+        
+        // Log invalid URLs for debugging
+        if (!isValidUrl && href) {
+          console.warn(`[SN2N] ⚠️ Skipping invalid/relative URL: "${href}" (link text: "${trimmedContent.substring(0, 50)}...")`);
+        }
+        
         // Split long link content into 2000-char chunks
         if (trimmedContent.length > 2000) {
           let remaining = trimmedContent;
@@ -149,9 +175,9 @@ function convertRichTextBlock(input, options = {}) {
               text: { content: chunk },
               annotations: normalizeAnnotations(currentAnnotations),
             };
-            // Only add link to first chunk
-            if (href && remaining === trimmedContent) {
-              rt.text.link = { url: href };
+            // Only add link to first chunk if URL is valid
+            if (isValidUrl && remaining === trimmedContent) {
+              rt.text.link = { url: href.trim() };
             }
             richText.push(rt);
             remaining = remaining.substring(2000);
@@ -162,8 +188,8 @@ function convertRichTextBlock(input, options = {}) {
             text: { content: trimmedContent },
             annotations: normalizeAnnotations(currentAnnotations),
           };
-          if (href) {
-            rt.text.link = { url: href };
+          if (isValidUrl) {
+            rt.text.link = { url: href.trim() };
           }
           richText.push(rt);
         }

@@ -1676,7 +1676,8 @@ global.normalizeCodeLanguage = normalizeCodeLanguage;
 
 // Main API routes with fallback for legacy monolith usage (loaded after global context)
 try {
-  app.use("/api", require('./routes/w2n.cjs'));
+  const w2nRouter = require('./routes/w2n.cjs');
+  app.use("/api", w2nRouter);
   app.use("/api", require('./routes/databases.cjs'));
   app.use("/api", require('./routes/upload.cjs'));
 } catch (e) {

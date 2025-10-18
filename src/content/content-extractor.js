@@ -108,7 +108,7 @@ export async function extractContentWithIframes(contentElement) {
 
         // Strategy 1: Look for specific book content containers FIRST
         const bookContentSelectors = [
-          ".zDocsTopicPageBody .zDocsTopicPageBodyContent article.dita .body.conbody", // ServiceNow docs precise content body
+          ".zDocsTopicPageBody", // ServiceNow docs - capture page body including article AND contentPlaceholder (Related Content)
           "[role='main'] section",
           "[role='main'] article",
           "main section",
@@ -206,12 +206,14 @@ export async function extractContentWithIframes(contentElement) {
 
               let result = tableMatch;
 
+              // DON'T replace img tags - let the server handle images in tables
+              // The server will extract images from <figure> elements and create separate image blocks
               // Replace img tags with bullet symbol
-              if (imgMatches) {
-                result = result.replace(/<img[^>]*>/gi, " • ");
-                replacedCount += imgCount;
-                debug(`✅ Replaced ${imgCount} img tags with bullets`);
-              }
+              // if (imgMatches) {
+              //   result = result.replace(/<img[^>]*>/gi, " • ");
+              //   replacedCount += imgCount;
+              //   debug(`✅ Replaced ${imgCount} img tags with bullets`);
+              // }
 
               // Replace svg elements with bullet symbol
               if (svgMatches) {
@@ -295,7 +297,7 @@ export async function extractContentWithIframes(contentElement) {
 
     // If no iframe content found, use the regular element content
     if (!combinedHtml) {
-      combinedHtml = contentElement.innerHTML || contentElement.outerHTML;
+      combinedHtml = contentElement.outerHTML || contentElement.innerHTML;
     }
 
     // Replace images/SVGs inside tables with bullet symbols
@@ -321,12 +323,14 @@ export async function extractContentWithIframes(contentElement) {
 
       let result = tableMatch;
 
+      // DON'T replace img tags - let the server handle images in tables
+      // The server will extract images from <figure> elements and create separate image blocks
       // Replace img tags with bullet symbol
-      if (imgMatches) {
-        result = result.replace(/<img[^>]*>/gi, " • ");
-        replacedCount += imgCount;
-        debug(`✅ Replaced ${imgCount} img tags with bullets`);
-      }
+      // if (imgMatches) {
+      //   result = result.replace(/<img[^>]*>/gi, " • ");
+      //   replacedCount += imgCount;
+      //   debug(`✅ Replaced ${imgCount} img tags with bullets`);
+      // }
 
       // Replace svg elements with bullet symbol
       if (svgMatches) {
@@ -432,14 +436,16 @@ export function extractContentFromIframes(containerElement) {
  * @returns {HTMLElement|null} The content element or null if not found
  */
 export function findContentElement() {
+  console.log("🚀 ServiceNow-2-Notion v9.1.0 - Finding content element with NEW .zDocsTopicPageBody selector");
   debug("🔍 Searching for content element...");
 
   // Priority order of content selectors (most specific first)
   const contentSelectors = [
     // ServiceNow docs specific - most specific first
+    // Changed to capture zDocsTopicPageBody (includes article.dita AND contentPlaceholder with Related Content)
+    ".zDocsTopicPageBody",
     "#zDocsContent .zDocsTopicPageBody",
-    ".zDocsTopicPageBody .zDocsTopicPageBodyContent article.dita .body.conbody",
-    "#zDocsContent .zDocsTopicPageBody .zDocsTopicPageBodyContent",
+    ".zDocsTopicPageBody .zDocsTopicPageBodyContent",
 
     // Generic main content areas
     "main[role='main']",
@@ -669,6 +675,13 @@ export function cleanHtmlContent(htmlContent) {
     // Clean up image references
     const images = doc.querySelectorAll("img");
     images.forEach((img) => {
+      // Don't remove images that are inside <figure> elements (tables need these)
+      const isInFigure = img.closest('figure');
+      if (isInFigure) {
+        console.log('🔍 Skipping image inside figure:', img.outerHTML.substring(0, 150));
+        return; // Keep images in figures
+      }
+      
       // Remove broken image references
       const src = img.getAttribute("src");
       if (

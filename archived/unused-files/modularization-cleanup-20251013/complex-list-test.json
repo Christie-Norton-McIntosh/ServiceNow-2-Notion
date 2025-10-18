@@ -1,0 +1,235 @@
+{
+  "ts": "2025-10-12T19:25:16.574Z",
+  "blocks": [
+    {
+      "object": "block",
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Test Complex List Item"
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "bulleted_list_item",
+      "bulleted_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": " "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            },
+            "plain_text": " "
+          }
+        ],
+        "children": [
+          {
+            "object": "block",
+            "type": "paragraph",
+            "paragraph": {
+              "rich_text": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "All fields on the form are read-only."
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "object": "block",
+            "type": "table",
+            "table": {
+              "table_width": 2,
+              "has_column_header": true,
+              "has_row_header": false,
+              "children": [
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Field"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Description"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "License"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Name and asset number of the software license."
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "table_row",
+                  "table_row": {
+                    "cells": [
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Downgrade Child"
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ],
+                      [
+                        {
+                          "type": "text",
+                          "text": {
+                            "content": "Lower version of the software license."
+                          },
+                          "annotations": {
+                            "bold": false,
+                            "italic": false,
+                            "strikethrough": false,
+                            "underline": false,
+                            "code": false,
+                            "color": "default"
+                          }
+                        }
+                      ]
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "object": "block",
+            "type": "callout",
+            "callout": {
+              "rich_text": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Note: Third-party discovery tools are not supported for this operation."
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  },
+                  "plain_text": "Note: Third-party discovery tools are not supported for this operation."
+                }
+              ],
+              "icon": {
+                "type": "emoji",
+                "emoji": "📝"
+              },
+              "color": "blue_background"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "markerMapKeys": [],
+  "markerMapSample": {}
+}

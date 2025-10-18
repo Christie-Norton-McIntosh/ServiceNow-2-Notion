@@ -76,6 +76,21 @@ A modular, ES6-based rewrite of the ServiceNow-2-Notion userscript that extracts
 
 This project transforms a large monolithic userscript (18,438 lines across 4 files) into a clean, modular ES6 codebase that can be bundled into a single Tampermonkey userscript using Rollup.
 
+## ✨ Key Features
+
+- **ServiceNow Content Extraction**: Automatically extracts documentation content from ServiceNow pages
+- **Property Mapping**: Maps ServiceNow metadata to Notion database properties
+- **Rich Content Support**: 
+  - Tables with proper formatting
+  - Code blocks with syntax highlighting
+  - Videos (YouTube, Vimeo) embedded as video blocks
+  - Images with captions
+  - Callout boxes with proper styling
+  - Definition terms and lists
+- **Table Image Extraction** (v9.1.0+): Automatically extracts images from table cells and places them as separate blocks with placeholder text in cells (see [docs/table-image-extraction.md](docs/table-image-extraction.md))
+- **Local Proxy Server**: Node.js server handles HTML-to-Notion conversion with full Cheerio DOM manipulation
+- **Modular Architecture**: Clean ES6 modules bundled with Rollup for easy maintenance
+
 ## 📝 Changelog
 
 See below for a complete history of changes and releases.
