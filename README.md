@@ -2,6 +2,8 @@
 
 ## ✅ Cleanup Completed - October 13, 2025
 
+__Current release: 9.2.1 (2025-10-18)__
+
 The ServiceNow-2-Notion project has been successfully cleaned up after the modularization refactoring.
 
 ## 📁 Current Clean Project Structure
@@ -166,6 +168,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [9.2.1] - 2025-10-18
+
+### Added
+- Repository housekeeping: bumped version to 9.2.1, created versioned backup archive, updated docs and test matrix.
+
+### Fixed
+- Prevented deduplication of list items so identical list entries are preserved across different lists.
+- Structural fix to nest HTML list elements under paragraph blocks so Notion restarts numbered lists without dividers.
+
 
 ## [9.0.0] - 2025-10-13
 
