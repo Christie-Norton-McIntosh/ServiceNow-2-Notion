@@ -132,6 +132,10 @@ async function convertTableBlock(tableHtml, options = {}) {
       console.log(`❌ No <figure> tag found in cell`);
     }
     
+    // Load HTML into Cheerio for better parsing
+    const cheerio = require('cheerio');
+    const $ = cheerio.load(html, { decodeEntities: true });
+    
     // Extract images - check both standalone img tags and figures with figcaption
     // Use non-global regex and match() instead of exec() to avoid regex state issues
     const figures = html.match(/<figure[^>]*>[\s\S]*?<\/figure>/gi) || [];
@@ -216,32 +220,56 @@ async function convertTableBlock(tableHtml, options = {}) {
       processedHtml = processedHtml.replace(/<img[^>]*>/gi, ' • ');
     }
     
+    // Extract paragraphs separately to preserve intentional breaks
+    // but normalize whitespace WITHIN each paragraph (removes HTML formatting newlines)
+    const paragraphs = [];
+    $('p, div.p').each((i, elem) => {
+      let text = $(elem).text();
+      // Normalize ALL whitespace (including formatting newlines) within paragraph
+      text = text.replace(/\s+/g, ' ').trim();
+      if (text) paragraphs.push(text);
+    });
+    
+    // If we found structured paragraphs, use them; otherwise fall back to all text
+    let textContent = paragraphs.length > 0 
+      ? paragraphs.join('\n')  // Preserve paragraph breaks with single newline
+      : $.text().replace(/\s+/g, ' ').trim();  // Collapse all whitespace for unstructured content
+    
     // Remove lists, replace <li> with bullets
     if (/<[uo]l[^>]*>/i.test(processedHtml)) {
       processedHtml = processedHtml.replace(/<\/?[uo]l[^>]*>/gi, "");
       processedHtml = processedHtml.replace(/<li[^>]*>/gi, "\n• ");
       processedHtml = processedHtml.replace(/<\/li>/gi, "");
-      processedHtml = processedHtml.replace(/\n\s*\n/g, "\n");
-      processedHtml = processedHtml.replace(/^\s+/, "");
-      processedHtml = processedHtml.replace(/\s+$/, "");
-      // Use rich text block conversion for list items too
+      
+      // For list content, also extract paragraphs and normalize whitespace
+      const $list = cheerio.load(processedHtml, { decodeEntities: true });
+      const listParagraphs = [];
+      $list('p, div.p').each((i, elem) => {
+        let text = $list(elem).text().replace(/\s+/g, ' ').trim();
+        if (text) listParagraphs.push(text);
+      });
+      
+      textContent = listParagraphs.length > 0
+        ? listParagraphs.join('\n')
+        : $list.text().replace(/\s+/g, ' ').trim();
+      
+      // Use rich text block conversion for list items
       const { convertRichTextBlock } = require("./rich-text.cjs");
-      return convertRichTextBlock(processedHtml);
+      return convertRichTextBlock(textContent);
     }
     
     // For cells with multiple bullet items (not from HTML lists), add soft returns between them
     // Match pattern: bullet followed by space and text, then another bullet
     // Example: "• Item 1 • Item 2" becomes "• Item 1\n• Item 2"
-    if (/•[^•]+•/.test(processedHtml)) {
+    if (/•[^•]+•/.test(textContent)) {
       // Add newline before each bullet that's not at the start
-      processedHtml = processedHtml.replace(/([^\n])(\s*•\s*)/g, '$1\n$2');
-      processedHtml = processedHtml.replace(/^\s+/, ""); // Clean leading whitespace
+      textContent = textContent.replace(/([^\n])(\s*•\s*)/g, '$1\n$2');
+      textContent = textContent.replace(/^\s+/, ""); // Clean leading whitespace
     }
     
     // Use rich text block conversion for all other cell content
-    // NOTE: Do NOT call cleanHtmlText() here - convertRichTextBlock needs raw HTML to preserve formatting
     const { convertRichTextBlock } = require("./rich-text.cjs");
-    return convertRichTextBlock(processedHtml);
+    return convertRichTextBlock(textContent);
   }
 
   // Extract table rows from thead
