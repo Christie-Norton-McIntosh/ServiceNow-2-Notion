@@ -133,11 +133,9 @@ function normalizeAnnotations(annotations) {
 function cleanHtmlText(html) {
   if (!html) return "";
 
-  // Remove HTML tags
-  let text = html.replace(/<[^>]*>/g, " ");
-
-  // Decode HTML entities (both named and numeric)
-  text = text
+  // Decode HTML entities (before removing tags)
+  // This ensures entity-encoded tags like &lt;div&gt; get decoded to <div> so they can be stripped
+  let text = html
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
@@ -150,6 +148,9 @@ function cleanHtmlText(html) {
     .replace(/&#x([0-9a-f]+);/gi, (match, hex) =>
       String.fromCharCode(parseInt(hex, 16))
     ); // All hex entities
+
+  // NOW remove HTML tags (including any that were entity-encoded)
+  text = text.replace(/<[^>]*>/g, " ");
 
   // Clean up whitespace
   text = text.replace(/\s+/g, " ").trim();

@@ -12,10 +12,11 @@ const path = require('path');
 // Import services
 const notionService = require('../services/notion.cjs');
 const servicenowService = require('../services/servicenow.cjs');
+const dedupeUtil = require('../utils/dedupe.cjs');
 
 /**
  * Returns runtime global context for Notion and ServiceNow operations.
- * @returns {Object} Global context
+ * @returns {Object} Global context object
  */
 function getGlobals() {
   return {
@@ -225,6 +226,17 @@ router.post('/W2N', async (req, res) => {
           const color = blk.callout.color || "";
           return `callout:${txt}|${emoji}|${color}`;
         }
+          if (blk.type === "image" && blk.image) {
+            // Deduplicate images by uploaded file id or external URL
+            try {
+              const fileId = blk.image.file_upload && blk.image.file_upload.id;
+              const externalUrl = blk.image.external && blk.image.external.url;
+              const key = fileId ? `image:file:${String(fileId)}` : `image:external:${String(externalUrl || '')}`;
+              return key;
+            } catch (e) {
+              return 'image:unknown';
+            }
+          }
         if (blk.type === "table" && blk.table) {
           const w = blk.table.table_width || 0;
           const rows = Array.isArray(blk.table.children) ? blk.table.children.length : 0;
@@ -298,6 +310,21 @@ router.post('/W2N', async (req, res) => {
             continue;
           }
 
+          // Special-case image dedupe by file_upload id or external URL
+          if (blk && blk.type === 'image' && blk.image) {
+            const fileId = blk.image.file_upload && blk.image.file_upload.id;
+            const externalUrl = blk.image.external && blk.image.external.url;
+            const imageKey = fileId ? `image:file:${String(fileId)}` : `image:external:${String(externalUrl || '')}`;
+            if (seen.has(imageKey)) {
+              removed++;
+              duplicates++;
+              continue;
+            }
+            seen.add(imageKey);
+            out.push(blk);
+            continue;
+          }
+
           const key = computeBlockKey(blk);
           if (seen.has(key)) {
             removed++;
@@ -318,7 +345,8 @@ router.post('/W2N', async (req, res) => {
       return out;
     }
 
-    children = dedupeAndFilterBlocks(children);
+    // Use central dedupe utility so unit tests can target it
+    children = dedupeUtil.dedupeAndFilterBlocks(children, { log });
 
     // Create the page (handling Notion's 100-block limit)
     log(`� Creating Notion page with ${children.length} blocks`);
@@ -408,13 +436,13 @@ router.post('/W2N', async (req, res) => {
       icon: {
         type: "external",
         external: {
-          url: "https://raw.githubusercontent.com/Christie-Norton-McIntosh/ServiceNow-2-Notion/main/ServiceNow-2-Notion/src/img/ServiceNow%20icon.png",
+          url: "https://raw.githubusercontent.com/Christie-Norton-McIntosh/ServiceNow-2-Notion/main/src/img/ServiceNow%20icon.png",
         },
       },
       cover: {
         type: "external",
         external: {
-          url: "https://raw.githubusercontent.com/Christie-Norton-McIntosh/ServiceNow-2-Notion/main/ServiceNow-2-Notion/src/img/ServiceNow%20cover.png",
+          url: "https://raw.githubusercontent.com/Christie-Norton-McIntosh/ServiceNow-2-Notion/main/src/img/ServiceNow%20cover.png",
         },
       },
       children: initialBlocks,

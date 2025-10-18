@@ -22,25 +22,29 @@ function generateMarker() {
  * @param {Object} map - Existing marker map to build upon
  * @returns {Object} Updated marker map
  */
-function collectAndStripMarkers(blocks, map = {}) {
+function collectAndStripMarkers(blocks, map = {}, depth = 0) {
   if (!Array.isArray(blocks)) return map;
-  for (const b of blocks) {
+  const indent = '  '.repeat(depth);
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
     if (b && typeof b === "object") {
       if (b._sn2n_marker) {
         const m = String(b._sn2n_marker);
+        console.log(`${indent}🔖 collectAndStripMarkers: Found marker "${m}" at depth ${depth}, index ${i}, type: ${b.type}`);
         if (!map[m]) map[m] = [];
         map[m].push(b);
         // mark this block as collected so we can remove it from the
         // top-level children before sending to Notion (avoids duplicates)
         b._sn2n_collected = true;
+        console.log(`${indent}🔖   Marked block as collected`);
         delete b._sn2n_marker;
       }
       const type = b.type;
       if (type && b[type] && Array.isArray(b[type].children)) {
-        collectAndStripMarkers(b[type].children, map);
+        collectAndStripMarkers(b[type].children, map, depth + 1);
       }
       if (Array.isArray(b.children)) {
-        collectAndStripMarkers(b.children, map);
+        collectAndStripMarkers(b.children, map, depth + 1);
       }
     }
   }
@@ -52,13 +56,16 @@ function collectAndStripMarkers(blocks, map = {}) {
  * @param {Array} blocks - Array of blocks to clean
  * @returns {number} Number of blocks removed
  */
-function removeCollectedBlocks(blocks) {
+function removeCollectedBlocks(blocks, depth = 0) {
   if (!Array.isArray(blocks)) return 0;
+  const indent = '  '.repeat(depth);
   let removed = 0;
+  console.log(`${indent}🗑️ removeCollectedBlocks: Checking ${blocks.length} blocks at depth ${depth}`);
   for (let i = blocks.length - 1; i >= 0; i--) {
     const b = blocks[i];
     if (!b || typeof b !== "object") continue;
     if (b._sn2n_collected) {
+      console.log(`${indent}🗑️   Removing block at index ${i}, type: ${b.type} [COLLECTED]`);
       blocks.splice(i, 1);
       removed++;
       continue;
@@ -66,12 +73,21 @@ function removeCollectedBlocks(blocks) {
     // Recurse into typed children areas if present
     const type = b.type;
     if (type && b[type] && Array.isArray(b[type].children)) {
-      removed += removeCollectedBlocks(b[type].children);
+      const childRemoved = removeCollectedBlocks(b[type].children, depth + 1);
+      if (childRemoved > 0) {
+        console.log(`${indent}🗑️   Removed ${childRemoved} blocks from ${type}.children of block at index ${i}`);
+      }
+      removed += childRemoved;
     }
     if (Array.isArray(b.children)) {
-      removed += removeCollectedBlocks(b.children);
+      const childRemoved = removeCollectedBlocks(b.children, depth + 1);
+      if (childRemoved > 0) {
+        console.log(`${indent}🗑️   Removed ${childRemoved} blocks from .children of block at index ${i}`);
+      }
+      removed += childRemoved;
     }
   }
+  console.log(`${indent}🗑️ removeCollectedBlocks: Total removed at depth ${depth}: ${removed}`);
   return removed;
 }
 
