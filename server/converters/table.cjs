@@ -8,19 +8,21 @@
  * - HTML table parsing with thead/tbody structure preservation
  * - Table caption extraction and conversion to heading blocks
  * - Rich text processing for table cell content
- * - Image handling and bullet point conversion
+ * - Image extraction from table cells and placement as separate blocks
  * - Table deduplication to prevent duplicate content
  * - Support for nested lists within table cells
  * 
  * Dependencies:
  * - server/utils/notion-format.cjs (cleanHtmlText)
  * - server/converters/rich-text.cjs (convertRichTextBlock)
+ * - server/utils/url.cjs (convertServiceNowUrl, isValidImageUrl)
  * 
  * @module converters/table
  * @since 8.2.5
  */
 
 const { cleanHtmlText } = require("../utils/notion-format.cjs");
+const { convertServiceNowUrl, isValidImageUrl } = require("../utils/url.cjs");
 
 /**
  * Converts HTML table content to Notion table block array.
@@ -65,6 +67,8 @@ const { cleanHtmlText } = require("../utils/notion-format.cjs");
  * @see {@link deduplicateTableBlocks} for removing duplicate tables from arrays
  */
 async function convertTableBlock(tableHtml, options = {}) {
+  console.log(`🔥 convertTableBlock called! NEW VERSION WITH DIAGNOSTIC LOGGING`);
+  
   // Remove table dropdown/filter elements
   let cleanedTableHtml = tableHtml.replace(
     /<div[^>]*class="[^\"]*zDocsFilterTableDiv[^\"]*"[^>]*>[\s\S]*?<\/div>/gi,
@@ -75,10 +79,16 @@ async function convertTableBlock(tableHtml, options = {}) {
     ""
   );
 
-  // Replace any remaining img tags with bullet symbols before processing cells
-  if (/<img[^>]*>/i.test(cleanedTableHtml)) {
-    cleanedTableHtml = cleanedTableHtml.replace(/<img[^>]*>/gi, " • ");
-  }
+  // Check for figures in table HTML
+  const figureCount = (cleanedTableHtml.match(/<figure[^>]*>/gi) || []).length;
+  const imgCount = (cleanedTableHtml.match(/<img[^>]*>/gi) || []).length;
+  console.log(`🔍 Table HTML contains ${figureCount} figure elements and ${imgCount} img tags`);
+  
+  // Images in tables will be extracted and placed as separate blocks after the table
+  // (removed the global image-to-bullet replacement)
+  
+  // Array to collect all images found in table cells
+  const extractedImages = [];
 
   // Extract table caption if present
   const captionRegex = /<caption[^>]*>([\s\S]*?)<\/caption>/i;
@@ -111,11 +121,87 @@ async function convertTableBlock(tableHtml, options = {}) {
   // Helper to process table cell content
   async function processTableCellContent(html) {
     if (!html) return [{ type: "text", text: { content: "" } }];
-    // Replace images with bullet
-    html = html.replace(/<img[^>]*>/gi, " • ");
+    
+    // DEBUG: Log first 500 chars of EVERY cell
+    console.log(`🔬 Cell HTML preview (first 500 chars): ${html.substring(0, 500)}`);
+    
+    // Check if this cell contains a figure
+    if (/<figure[^>]*>/i.test(html)) {
+      console.log(`🔍 Processing cell with figure, HTML length: ${html.length}`);
+    } else {
+      console.log(`❌ No <figure> tag found in cell`);
+    }
+    
+    // Extract images - check both standalone img tags and figures with figcaption
+    // Use non-global regex and match() instead of exec() to avoid regex state issues
+    const figures = html.match(/<figure[^>]*>[\s\S]*?<\/figure>/gi) || [];
+    
+    console.log(`🔍 Found ${figures.length} figure elements in cell`);
+    
+    // Process each figure
+    for (const figureHtml of figures) {
+      console.log(`🔍 Processing figure HTML: ${figureHtml.substring(0, 300)}...`);
+      console.log(`🔍 Full figure HTML length: ${figureHtml.length}`);
+      
+      // Extract img src from within figure
+      const imgMatch = /<img[^>]*src=["']([^"']*)["'][^>]*>/i.exec(figureHtml);
+      console.log(`🔍 imgMatch result: ${imgMatch ? 'FOUND' : 'NOT FOUND'}`);
+      if (imgMatch) {
+        let src = imgMatch[1];
+        console.log(`🔍 Found img src in figure: ${src}`);
+        
+        // Extract figcaption text
+        const captionMatch = /<figcaption[^>]*>([\s\S]*?)<\/figcaption>/i.exec(figureHtml);
+        const caption = captionMatch ? cleanHtmlText(captionMatch[1]) : '';
+        console.log(`🔍 Found figcaption: "${caption}"`);
+        
+        // Convert ServiceNow URLs to proper format
+        src = convertServiceNowUrl(src);
+        console.log(`🔍 Converted URL: ${src}`);
+        
+        // Only add valid image URLs
+        if (src && isValidImageUrl(src)) {
+          extractedImages.push({ src, alt: caption });
+          console.log(`📸 Added image to extraction list with caption: "${caption}"`);
+        } else {
+          console.log(`⚠️ Invalid image URL, skipping: ${src}`);
+        }
+      } else {
+        console.log(`⚠️ No img tag found in figure`);
+      }
+    }
+    
+    // Check for standalone img tags (not in figures)
+    const standaloneImages = html.match(/<img[^>]*src=["']([^"']*)["'][^>]*>/gi) || [];
+    const figureImgCount = figures.length;
+    
+    // Only process standalone images that are not already in figures
+    if (standaloneImages.length > figureImgCount) {
+      console.log(`� Found ${standaloneImages.length - figureImgCount} standalone images`);
+      // Process standalone images...
+    }
+    
+    // Replace figures/images with "See [caption]" placeholders
+    let processedHtml = html;
+    
+    // Replace entire figure elements with caption reference
+    processedHtml = processedHtml.replace(/<figure[^>]*>([\s\S]*?)<\/figure>/gi, (match) => {
+      const captionMatch = /<figcaption[^>]*>([\s\S]*?)<\/figcaption>/i.exec(match);
+      if (captionMatch) {
+        const caption = cleanHtmlText(captionMatch[1]);
+        return ` See "${caption}" `;
+      }
+      return ' See image below ';
+    });
+    
+    // Replace any remaining standalone img tags
+    if (/<img[^>]*>/i.test(processedHtml)) {
+      processedHtml = processedHtml.replace(/<img[^>]*>/gi, ' See image below ');
+    }
+    
     // Remove lists, replace <li> with bullets
-    if (/<[uo]l[^>]*>/i.test(html)) {
-      let processedHtml = html.replace(/<\/?[uo]l[^>]*>/gi, "");
+    if (/<[uo]l[^>]*>/i.test(processedHtml)) {
+      processedHtml = processedHtml.replace(/<\/?[uo]l[^>]*>/gi, "");
       processedHtml = processedHtml.replace(/<li[^>]*>/gi, "\n• ");
       processedHtml = processedHtml.replace(/<\/li>/gi, "");
       processedHtml = processedHtml.replace(/\n\s*\n/g, "\n");
@@ -126,8 +212,9 @@ async function convertTableBlock(tableHtml, options = {}) {
       return convertRichTextBlock(processedHtml);
     }
     // Use rich text block conversion for all other cell content
+    // NOTE: Do NOT call cleanHtmlText() here - convertRichTextBlock needs raw HTML to preserve formatting
     const { convertRichTextBlock } = require("./rich-text.cjs");
-    return convertRichTextBlock(cleanHtmlText(html));
+    return convertRichTextBlock(processedHtml);
   }
 
   // Extract table rows from thead
@@ -213,6 +300,39 @@ async function convertTableBlock(tableHtml, options = {}) {
     tableBlock.table.children.push(tableRow);
   });
   blocks.push(tableBlock);
+  
+  // Add extracted images as separate image blocks after the table
+  if (extractedImages.length > 0) {
+    console.log(`📸 Extracted ${extractedImages.length} images from table cells`);
+    for (const image of extractedImages) {
+      const imageBlock = {
+        object: "block",
+        type: "image",
+        image: {
+          type: "external",
+          external: {
+            url: image.src
+          }
+        }
+      };
+      
+      // Add caption if alt text exists
+      if (image.alt) {
+        imageBlock.image.caption = [
+          {
+            type: "text",
+            text: {
+              content: image.alt
+            }
+          }
+        ];
+      }
+      
+      blocks.push(imageBlock);
+      console.log(`📸 Added image block: ${image.src.substring(0, 80)}...`);
+    }
+  }
+  
   return blocks;
 }
 
