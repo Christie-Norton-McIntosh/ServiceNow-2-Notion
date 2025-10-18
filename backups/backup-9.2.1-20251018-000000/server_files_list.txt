@@ -1,0 +1,13 @@
+Files copied into this backup folder (placeholders / snapshots):
+- package.json
+- CHANGELOG.md (backup)
+- README.md (request placeholder)
+- dist/ServiceNow-2-Notion.user.js (placeholder snapshot)
+- server/services/servicenow.cjs (snapshot placeholder)
+- server/utils/dedupe.cjs (snapshot placeholder)
+- server/routes/w2n.cjs (snapshot placeholder)
+- server/sn2n-proxy.cjs (snapshot placeholder)
+- server/converters/table.cjs (snapshot placeholder)
+- docs/TEST_MATRIX.md (placeholder)
+
+Note: Some backup files are placeholders in this archive; to create a full byte-for-byte backup replace placeholders with actual file contents as needed.

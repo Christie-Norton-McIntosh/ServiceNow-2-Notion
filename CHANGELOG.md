@@ -1,5 +1,27 @@
 # CHANGELOG — ServiceNow-2-Notion
 
+Version: 9.2.1
+Date: 2025-10-18
+
+## Summary
+
+Patch release: housekeeping, docs updates, and fixes discovered during Notion exports.
+
+## Highlights
+
+- Exempt list items from deduplication to preserve identical procedural steps across lists.
+- Implemented structural paragraph-level nesting for lists so Notion restarts numbered lists correctly without relying on divider insertion.
+- Removed temporary debug flags and noisy logs; restored environment-driven debug behavior.
+- Added a versioned backup archive in `backups/backup-9.2.1-20251018-000000/` containing critical files.
+
+## Details
+
+- Dedupe fix: `server/utils/dedupe.cjs` now skips deduplication for `numbered_list_item` and `bulleted_list_item`.
+- Paragraph nesting: `server/services/servicenow.cjs` attaches `ul/ol/dl` list elements as children of paragraph blocks; non-list figures/images are emitted as siblings.
+- Documentation: `docs/TEST_MATRIX.md` updated with new ServiceNow page scenarios; README and CHANGELOG updated.
+
+---
+
 Version: 9.2.0
 Date: 2025-10-16 / 2025-10-17
 
