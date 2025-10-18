@@ -79,6 +79,12 @@ function convertRichTextBlock(input, options = {}) {
   html = html.replace(/<(i|em)([^>]*)>([\s\S]*?)<\/\1>/gi, (match, tag, attrs, content) => `__ITALIC_START__${content}__ITALIC_END__`);
   // Handle inline code tags
   html = html.replace(/<code([^>]*)>([\s\S]*?)<\/code>/gi, (match, attrs, content) => `__CODE_START__${content}__CODE_END__`);
+  
+  // Handle span with uicontrol class as bold + blue
+  html = html.replace(/<span[^>]*class=["'][^"']*\buicontrol\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
+    return `__BOLD_BLUE_START__${content}__BOLD_BLUE_END__`;
+  });
+  
   // Handle spans with technical identifier classes (ph, keyword, parmname, codeph, etc.) as inline code
   html = html.replace(/<span[^>]*class=["'][^"']*(?:\bph\b|\bkeyword\b|\bparmname\b|\bcodeph\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
     const cleanedContent = typeof content === "string" ? content.trim() : "";
@@ -126,11 +132,12 @@ function convertRichTextBlock(input, options = {}) {
   // This handles span tags, divs, and other markup that doesn't need special formatting
   html = html.replace(/<[^>]+>/g, ' ');
   
-  // Clean up excessive whitespace from tag removal
-  html = html.replace(/\s+/g, ' ');
+  // Clean up excessive whitespace from tag removal, BUT preserve newlines
+  html = html.replace(/[^\S\n]+/g, ' '); // Replace consecutive non-newline whitespace with single space
+  html = html.replace(/ *\n */g, '\n'); // Clean spaces around newlines
 
   // Now split by markers and build rich text
-  const parts = html.split(/(__BOLD_START__|__BOLD_END__|__ITALIC_START__|__ITALIC_END__|__CODE_START__|__CODE_END__|__LINK__[^_]*__)/);
+  const parts = html.split(/(__BOLD_START__|__BOLD_END__|__BOLD_BLUE_START__|__BOLD_BLUE_END__|__ITALIC_START__|__ITALIC_END__|__CODE_START__|__CODE_END__|__LINK__[^_]*__)/);
   let currentAnnotations = {
     bold: false,
     italic: false,
@@ -142,6 +149,12 @@ function convertRichTextBlock(input, options = {}) {
       currentAnnotations.bold = true;
     } else if (part === "__BOLD_END__") {
       currentAnnotations.bold = false;
+    } else if (part === "__BOLD_BLUE_START__") {
+      currentAnnotations.bold = true;
+      currentAnnotations.color = "blue";
+    } else if (part === "__BOLD_BLUE_END__") {
+      currentAnnotations.bold = false;
+      currentAnnotations.color = "default";
     } else if (part === "__ITALIC_START__") {
       currentAnnotations.italic = true;
     } else if (part === "__ITALIC_END__") {
