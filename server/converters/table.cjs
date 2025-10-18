@@ -220,20 +220,38 @@ async function convertTableBlock(tableHtml, options = {}) {
       processedHtml = processedHtml.replace(/<img[^>]*>/gi, ' • ');
     }
     
+    // Reload Cheerio with processed HTML (after figure/image replacement)
+    const $processed = cheerio.load(processedHtml, { decodeEntities: true });
+    
     // Extract paragraphs separately to preserve intentional breaks
     // but normalize whitespace WITHIN each paragraph (removes HTML formatting newlines)
     const paragraphs = [];
-    $('p, div.p').each((i, elem) => {
-      let text = $(elem).text();
+    $processed('p, div.p').each((i, elem) => {
+      let text = $processed(elem).text();
       // Normalize ALL whitespace (including formatting newlines) within paragraph
       text = text.replace(/\s+/g, ' ').trim();
       if (text) paragraphs.push(text);
     });
     
-    // If we found structured paragraphs, use them; otherwise fall back to all text
-    let textContent = paragraphs.length > 0 
-      ? paragraphs.join('\n')  // Preserve paragraph breaks with single newline
-      : $.text().replace(/\s+/g, ' ').trim();  // Collapse all whitespace for unstructured content
+    // Get all text content (including text NOT in paragraphs)
+    let allText = $processed.root().text().replace(/\s+/g, ' ').trim();
+    
+    // If we found structured paragraphs AND they contain most of the content, use them
+    // Otherwise use all text to avoid losing content outside <p> tags
+    let textContent;
+    if (paragraphs.length > 0) {
+      const paragraphText = paragraphs.join(' ');
+      // If paragraphs contain at least 50% of the total text, use structured approach
+      if (paragraphText.length >= allText.length * 0.5) {
+        textContent = paragraphs.join('\n');  // Preserve paragraph breaks
+      } else {
+        // Paragraphs don't contain most content - use all text
+        textContent = allText;
+      }
+    } else {
+      // No paragraphs found - use all text
+      textContent = allText;
+    }
     
     // Remove lists, replace <li> with bullets
     if (/<[uo]l[^>]*>/i.test(processedHtml)) {
