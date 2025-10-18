@@ -138,6 +138,9 @@ async function convertTableBlock(tableHtml, options = {}) {
     
     console.log(`🔍 Found ${figures.length} figure elements in cell`);
     
+    // Track which images will actually be included in Notion upload
+    const validImageUrls = new Set();
+    
     // Process each figure
     for (const figureHtml of figures) {
       console.log(`🔍 Processing figure HTML: ${figureHtml.substring(0, 300)}...`);
@@ -148,6 +151,7 @@ async function convertTableBlock(tableHtml, options = {}) {
       console.log(`🔍 imgMatch result: ${imgMatch ? 'FOUND' : 'NOT FOUND'}`);
       if (imgMatch) {
         let src = imgMatch[1];
+        const originalSrc = src; // Track original URL to match against HTML
         console.log(`🔍 Found img src in figure: ${src}`);
         
         // Extract figcaption text
@@ -162,6 +166,7 @@ async function convertTableBlock(tableHtml, options = {}) {
         // Only add valid image URLs
         if (src && isValidImageUrl(src)) {
           extractedImages.push({ src, alt: caption });
+          validImageUrls.add(originalSrc); // Track original URL for matching
           console.log(`📸 Added image to extraction list with caption: "${caption}"`);
         } else {
           console.log(`⚠️ Invalid image URL, skipping: ${src}`);
@@ -181,22 +186,34 @@ async function convertTableBlock(tableHtml, options = {}) {
       // Process standalone images...
     }
     
-    // Replace figures/images with "See [caption]" placeholders
+    // Replace figures/images with appropriate placeholders
+    // Use "See [caption]" or "See image below" only if the image is being included in Notion
+    // Otherwise use bullet placeholder
     let processedHtml = html;
     
-    // Replace entire figure elements with caption reference
+    // Replace entire figure elements with appropriate placeholder
     processedHtml = processedHtml.replace(/<figure[^>]*>([\s\S]*?)<\/figure>/gi, (match) => {
-      const captionMatch = /<figcaption[^>]*>([\s\S]*?)<\/figcaption>/i.exec(match);
-      if (captionMatch) {
-        const caption = cleanHtmlText(captionMatch[1]);
-        return ` See "${caption}" `;
+      // Check if this figure's image is valid and will be included
+      const imgMatch = /<img[^>]*src=["']([^"']*)["'][^>]*>/i.exec(match);
+      const isValidImage = imgMatch && validImageUrls.has(imgMatch[1]);
+      
+      if (isValidImage) {
+        // Image will be included - use descriptive placeholder
+        const captionMatch = /<figcaption[^>]*>([\s\S]*?)<\/figcaption>/i.exec(match);
+        if (captionMatch) {
+          const caption = cleanHtmlText(captionMatch[1]);
+          return ` See "${caption}" `;
+        }
+        return ' See image below ';
+      } else {
+        // Image won't be included - use bullet placeholder
+        return ' • ';
       }
-      return ' See image below ';
     });
     
-    // Replace any remaining standalone img tags
+    // Replace any remaining standalone img tags with bullet placeholder
     if (/<img[^>]*>/i.test(processedHtml)) {
-      processedHtml = processedHtml.replace(/<img[^>]*>/gi, ' See image below ');
+      processedHtml = processedHtml.replace(/<img[^>]*>/gi, ' • ');
     }
     
     // Remove lists, replace <li> with bullets
