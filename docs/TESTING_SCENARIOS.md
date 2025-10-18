@@ -48,9 +48,28 @@ https://docs.servicenow.com/bundle/yokohama-it-service-management/page/product/c
 - [ ] Table with rowspan/colspan containing images
 - [ ] Nested tables with images (edge case)
 
+### Additional Test Cases (v9.2.1)
+
+**Conditional Image Placeholders** ✅ Tested October 18, 2025
+- [ ] Valid images (uploaded to Notion) show "See image below" placeholder
+- [ ] Invalid images (not uploaded) show bullet placeholder "•"
+- [ ] Mixed tables with both valid and invalid images handled correctly
+
+**Bullet Formatting in Table Cells** ✅ Tested October 18, 2025
+- [ ] Multiple bullets in single cell appear on separate lines
+- [ ] Example: `• Item1\n• Item2\n• Item3` (not `• Item1 • Item2 • Item3`)
+- [ ] No extra leading whitespace before bullets
+
+**UIControl Formatting in Table Cells** ✅ Tested October 18, 2025
+- [ ] `<span class="ph uicontrol">` elements formatted as bold+blue
+- [ ] Matches ServiceNow UI element styling convention
+- [ ] Works within table cells and regular paragraphs
+
 ### Related Files
 - `src/content/content-extractor.js` (lines 192-225, 313-341, 677-692)
 - `server/services/servicenow.cjs` (lines 621-680)
+- `server/converters/table.cjs` (conditional placeholders, bullet formatting — v9.2.1)
+- `server/converters/rich-text.cjs` (uicontrol formatting, newline preservation — v9.2.1)
 - `docs/table-image-extraction.md` (full documentation)
 - `docs/testing-table-images.md` (detailed testing guide)
 

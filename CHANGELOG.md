@@ -20,6 +20,29 @@ Patch release: housekeeping, docs updates, and fixes discovered during Notion ex
 - Paragraph nesting: `server/services/servicenow.cjs` attaches `ul/ol/dl` list elements as children of paragraph blocks; non-list figures/images are emitted as siblings.
 - Documentation: `docs/TEST_MATRIX.md` updated with new ServiceNow page scenarios; README and CHANGELOG updated.
 
+## Bug Fixes (Table Formatting & Rich Text)
+
+### Conditional image placeholders in tables
+- **Problem**: All images in tables showed "See image below" placeholder, even when images weren't being uploaded to Notion.
+- **Fix**: Track valid image URLs during extraction; use descriptive placeholder (`See "caption"` or `See image below`) only for valid images being uploaded; use bullet placeholder (`•`) for invalid/skipped images.
+- **File**: `server/converters/table.cjs`
+- **Commit**: 5578623
+
+### Bullet formatting in table cells
+- **Problem**: Multiple bullet items in table cells appeared on same line (e.g., "• Item1 • Item2 • Item3") instead of separate lines.
+- **Fix**: Detect multiple bullets with regex pattern and insert newlines between each bullet item; clean leading whitespace after formatting.
+- **File**: `server/converters/table.cjs`
+- **Commit**: ae1a5a7
+
+### UIControl formatting and newline preservation
+- **Problem**: ServiceNow `<span class="ph uicontrol">` elements appeared as plain text instead of bold+blue formatting; newlines in table cells were being collapsed by whitespace normalization.
+- **Fix**: 
+  - Added uicontrol span detection with `__BOLD_BLUE_START__`/`__BOLD_BLUE_END__` markers
+  - Changed whitespace handling from `/\s+/g` to `/[^\S\n]+/g` to preserve newlines while collapsing other whitespace
+  - Added marker parsing for bold+blue formatting (matches ServiceNow UI element styling)
+- **File**: `server/converters/rich-text.cjs`
+- **Commit**: a3e819d
+
 ---
 
 Version: 9.2.0
