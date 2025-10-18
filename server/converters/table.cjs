@@ -228,6 +228,16 @@ async function convertTableBlock(tableHtml, options = {}) {
       const { convertRichTextBlock } = require("./rich-text.cjs");
       return convertRichTextBlock(processedHtml);
     }
+    
+    // For cells with multiple bullet items (not from HTML lists), add soft returns between them
+    // Match pattern: bullet followed by space and text, then another bullet
+    // Example: "• Item 1 • Item 2" becomes "• Item 1\n• Item 2"
+    if (/•[^•]+•/.test(processedHtml)) {
+      // Add newline before each bullet that's not at the start
+      processedHtml = processedHtml.replace(/([^\n])(\s*•\s*)/g, '$1\n$2');
+      processedHtml = processedHtml.replace(/^\s+/, ""); // Clean leading whitespace
+    }
+    
     // Use rich text block conversion for all other cell content
     // NOTE: Do NOT call cleanHtmlText() here - convertRichTextBlock needs raw HTML to preserve formatting
     const { convertRichTextBlock } = require("./rich-text.cjs");
