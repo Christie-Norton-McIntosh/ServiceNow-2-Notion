@@ -223,34 +223,41 @@ async function convertTableBlock(tableHtml, options = {}) {
     // Reload Cheerio with processed HTML (after figure/image replacement)
     const $processed = cheerio.load(processedHtml, { decodeEntities: true });
     
-    // Extract paragraphs separately to preserve intentional breaks
-    // but normalize whitespace WITHIN each paragraph (removes HTML formatting newlines)
-    const paragraphs = [];
-    $processed('p, div.p').each((i, elem) => {
-      let text = $processed(elem).text();
-      // Normalize ALL whitespace (including formatting newlines) within paragraph
-      text = text.replace(/\s+/g, ' ').trim();
-      if (text) paragraphs.push(text);
+    // Strategy: Extract text in document order, preserving paragraph boundaries
+    // This handles both text inside and outside <p> tags correctly
+    let textContent = '';
+    const textParts = [];
+    
+    // Walk through child nodes in order
+    $processed.root().contents().each((i, node) => {
+      if (node.type === 'text') {
+        // Text node outside any paragraph
+        const text = $processed(node).text().replace(/\s+/g, ' ').trim();
+        if (text) textParts.push(text);
+      } else if (node.type === 'tag' && (node.name === 'p' || (node.name === 'div' && $processed(node).hasClass('p')))) {
+        // Paragraph tag - extract its text and mark as paragraph boundary
+        const text = $processed(node).text().replace(/\s+/g, ' ').trim();
+        if (text) textParts.push(text);
+      } else {
+        // Other elements (divs, spans, etc.) - recurse into them
+        const text = $processed(node).text().replace(/\s+/g, ' ').trim();
+        if (text) {
+          // Check if this element contains paragraphs
+          const hasParas = $processed(node).find('p, div.p').length > 0;
+          if (!hasParas) {
+            textParts.push(text);
+          }
+        }
+      }
     });
     
-    // Get all text content (including text NOT in paragraphs)
-    let allText = $processed.root().text().replace(/\s+/g, ' ').trim();
-    
-    // If we found structured paragraphs AND they contain most of the content, use them
-    // Otherwise use all text to avoid losing content outside <p> tags
-    let textContent;
-    if (paragraphs.length > 0) {
-      const paragraphText = paragraphs.join(' ');
-      // If paragraphs contain at least 50% of the total text, use structured approach
-      if (paragraphText.length >= allText.length * 0.5) {
-        textContent = paragraphs.join('\n');  // Preserve paragraph breaks
-      } else {
-        // Paragraphs don't contain most content - use all text
-        textContent = allText;
-      }
+    // Join parts with newline to preserve paragraph structure
+    // But avoid double-newlines if parts are already separated
+    if (textParts.length > 0) {
+      textContent = textParts.join('\n');
     } else {
-      // No paragraphs found - use all text
-      textContent = allText;
+      // Fallback: get all text if the walking approach didn't work
+      textContent = $processed.root().text().replace(/\s+/g, ' ').trim();
     }
     
     // Remove lists, replace <li> with bullets
