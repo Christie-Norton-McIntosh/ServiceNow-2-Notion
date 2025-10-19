@@ -1183,6 +1183,18 @@ async function extractContentFromHtml(html) {
                 if (hasMarkerToken) {
                   // List item has its own markers - add as immediate child, markers will be orchestrated later
                   console.log(`🔍 Nested ${block.type} has marker tokens - adding as immediate child (2-level nesting)`);
+                  
+                  // If this list item has image children with markers, remove them from children
+                  // (they're already in processedBlocks and will be orchestrated separately)
+                  const children = block[blockType]?.children;
+                  if (Array.isArray(children)) {
+                    const nonMarkedChildren = children.filter(child => !child._sn2n_marker);
+                    if (nonMarkedChildren.length !== children.length) {
+                      console.log(`🔍   Removed ${children.length - nonMarkedChildren.length} marked child(ren) from nested bulleted_list_item`);
+                      block[blockType].children = nonMarkedChildren.length > 0 ? nonMarkedChildren : undefined;
+                    }
+                  }
+                  
                   immediateChildren.push(block);
                 } else {
                   // Simple list item without markers - add as immediate child
@@ -1499,6 +1511,18 @@ async function extractContentFromHtml(html) {
                 if (hasMarkerToken) {
                   // List item has its own markers - add as immediate child, markers will be orchestrated later
                   console.log(`🔍 Nested ${block.type} has marker tokens - adding as immediate child (2-level nesting)`);
+                  
+                  // If this list item has image children with markers, remove them from children
+                  // (they're already in processedBlocks and will be orchestrated separately)
+                  const children = block[blockType]?.children;
+                  if (Array.isArray(children)) {
+                    const nonMarkedChildren = children.filter(child => !child._sn2n_marker);
+                    if (nonMarkedChildren.length !== children.length) {
+                      console.log(`🔍   Removed ${children.length - nonMarkedChildren.length} marked child(ren) from nested numbered_list_item`);
+                      block[blockType].children = nonMarkedChildren.length > 0 ? nonMarkedChildren : undefined;
+                    }
+                  }
+                  
                   immediateChildren.push(block);
                 } else {
                   // Simple list item without markers - add as immediate child
