@@ -275,13 +275,13 @@ async function convertTableBlock(tableHtml, options = {}) {
     textContent = textContent.replace(/__NEWLINE__/g, '\n');
     
     // Remove lists, replace <li> with bullets
-    if (/<[uo]l[^>]*>/i.test(processedHtml)) {
-      processedHtml = processedHtml.replace(/<\/?[uo]l[^>]*>/gi, "");
-      processedHtml = processedHtml.replace(/<li[^>]*>/gi, "__NEWLINE__• ");
-      processedHtml = processedHtml.replace(/<\/li>/gi, "");
+    if (/<[uo]l[^>]*>/i.test(textContent)) {
+      textContent = textContent.replace(/<\/?[uo]l[^>]*>/gi, "");
+      textContent = textContent.replace(/<li[^>]*>/gi, "__NEWLINE__• ");
+      textContent = textContent.replace(/<\/li>/gi, "");
       
       // For list content, preserve HTML tags (for uicontrol, links, etc.) and normalize whitespace
-      const $list = cheerio.load(processedHtml, { decodeEntities: true });
+      const $list = cheerio.load(textContent, { decodeEntities: true });
       const listParagraphs = [];
       $list('p, div.p').each((i, elem) => {
         // Use .html() instead of .text() to preserve formatting tags like <span class="uicontrol">
