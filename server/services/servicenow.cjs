@@ -1374,6 +1374,15 @@ async function extractContentFromHtml(html) {
         if (nestedBlocks.length > 0) {
           console.log(`🔍 Ordered list item contains ${nestedBlocks.length} nested block elements`);
           
+          // Log what nested blocks we found
+          nestedBlocks.forEach((block, idx) => {
+            const $block = $(block);
+            const blockTag = block.name;
+            const blockClass = $block.attr('class') || '';
+            const blockPreview = $block.text().trim().substring(0, 80);
+            console.log(`🔍   [${idx}] <${blockTag}${blockClass ? ` class="${blockClass}"` : ''}> - "${blockPreview}..."`);
+          });
+          
           // Extract text content without nested blocks for the list item text
           const $textOnly = $li.clone();
           // Remove nested blocks (including div.p which may contain div.note, AND direct div.note children)
@@ -2098,6 +2107,105 @@ async function extractContentFromHtml(html) {
       
       $elem.remove(); // Mark as processed
       
+    } else if (tagName === 'div' && ($elem.hasClass('itemgroup') || $elem.hasClass('info') || $elem.hasClass('stepxmp'))) {
+      // ServiceNow content container divs - check if they have block-level children
+      const blockChildren = $elem.find('> div, > p, > ul, > ol, > table, > pre, > figure').toArray();
+      
+      if (blockChildren.length > 0) {
+        // Has block-level children - check for mixed content (text + blocks)
+        const fullHtml = $elem.html() || '';
+        const $textOnly = $elem.clone();
+        $textOnly.children().remove();
+        const directText = cleanHtmlText($textOnly.html() || '').trim();
+        
+        if (directText) {
+          // Has mixed content - extract text before first block child
+          console.log(`🔍 <div class="${$elem.attr('class')}"> has ${blockChildren.length} block children AND text - processing mixed content`);
+          
+          const children = $elem.children().toArray();
+          const firstBlockChild = children[0];
+          
+          // Iterate through child nodes and accumulate text BEFORE the first block child
+          const childNodes = Array.from($elem.get(0).childNodes);
+          let beforeBlockHtml = '';
+          
+          for (const node of childNodes) {
+            // Stop when we reach the first block-level child
+            if (node.nodeType === 1 && node === firstBlockChild) {
+              break;
+            }
+            
+            // Accumulate text nodes and inline elements before the first block child
+            const isTextNode = node.nodeType === 3;
+            const isElementNode = node.nodeType === 1;
+            
+            if (isTextNode) {
+              beforeBlockHtml += node.data || node.nodeValue || '';
+            } else if (isElementNode) {
+              // Add inline element HTML (links, spans, etc.)
+              beforeBlockHtml += $(node).prop('outerHTML');
+            }
+          }
+          
+          if (beforeBlockHtml && cleanHtmlText(beforeBlockHtml).trim()) {
+            const { richText: beforeText, imageBlocks: beforeImages } = await parseRichText(beforeBlockHtml);
+            if (beforeImages && beforeImages.length > 0) {
+              processedBlocks.push(...beforeImages);
+            }
+            if (beforeText.length > 0 && beforeText.some(rt => rt.text.content.trim())) {
+              const richTextChunks = splitRichTextArray(beforeText);
+              for (const chunk of richTextChunks) {
+                processedBlocks.push({
+                  object: "block",
+                  type: "paragraph",
+                  paragraph: { rich_text: chunk }
+                });
+              }
+            }
+          }
+          
+          // Process block children
+          for (const child of children) {
+            const childBlocks = await processElement(child);
+            processedBlocks.push(...childBlocks);
+          }
+        } else {
+          // No direct text - just process children
+          console.log(`🔍 <div class="${$elem.attr('class')}"> has ${blockChildren.length} block children - processing as container`);
+          const children = $elem.children().toArray();
+          for (const child of children) {
+            const childBlocks = await processElement(child);
+            processedBlocks.push(...childBlocks);
+          }
+        }
+      } else {
+        // No block children - extract text content as paragraph
+        const html = $elem.html() || '';
+        const cleanedText = cleanHtmlText(html).trim();
+        
+        if (cleanedText) {
+          console.log(`🔍 Processing <div class="${$elem.attr('class')}"> as paragraph wrapper`);
+          const { richText: divRichText, imageBlocks: divImages } = await parseRichText(html);
+          
+          if (divImages && divImages.length > 0) {
+            processedBlocks.push(...divImages);
+          }
+          
+          if (divRichText.length > 0 && divRichText.some(rt => rt.text.content.trim())) {
+            const richTextChunks = splitRichTextArray(divRichText);
+            for (const chunk of richTextChunks) {
+              processedBlocks.push({
+                object: "block",
+                type: "paragraph",
+                paragraph: { rich_text: chunk }
+              });
+            }
+          }
+        }
+      }
+      
+      $elem.remove();
+      
     } else if (tagName === 'div' && $elem.hasClass('table-wrap')) {
       // Special handling for div.table-wrap which may have text before/after the table
       console.log(`🔍 Processing <div class="table-wrap"> with potential mixed content`);
@@ -2113,34 +2221,27 @@ async function extractContentFromHtml(html) {
         
         if (isTextNode || (isElementNode && !isTableElement)) {
           // Accumulate text nodes and non-table elements (like spans, links, etc.)
-          // BUT: if it's a DIV element, it might contain a table, so recursively process it
+          // BUT: if it's a DIV element, recursively process it (could be callout, table container, etc.)
           if (isElementNode && nodeName === 'DIV') {
-            // Check if this div contains a table
-            const $div = $(node);
-            if ($div.find('table').length > 0) {
-              // This div contains a table - flush any text before it
-              if (currentTextHtml.trim()) {
-                const { richText: textRichText } = await parseRichText(currentTextHtml.trim());
-                if (textRichText.length > 0 && textRichText.some(rt => rt.text.content.trim())) {
-                  const textChunks = splitRichTextArray(textRichText);
-                  for (const chunk of textChunks) {
-                    processedBlocks.push({
-                      object: "block",
-                      type: "paragraph",
-                      paragraph: { rich_text: chunk }
-                    });
-                  }
+            // Flush any accumulated text before processing the div
+            if (currentTextHtml.trim()) {
+              const { richText: textRichText } = await parseRichText(currentTextHtml.trim());
+              if (textRichText.length > 0 && textRichText.some(rt => rt.text.content.trim())) {
+                const textChunks = splitRichTextArray(textRichText);
+                for (const chunk of textChunks) {
+                  processedBlocks.push({
+                    object: "block",
+                    type: "paragraph",
+                    paragraph: { rich_text: chunk }
+                  });
                 }
-                currentTextHtml = '';
               }
-              
-              // Recursively process the div (which will find and process the table)
-              const divBlocks = await processElement(node);
-              processedBlocks.push(...divBlocks);
-            } else {
-              // Div doesn't contain a table - treat as text/HTML
-              currentTextHtml += $(node).prop('outerHTML');
+              currentTextHtml = '';
             }
+            
+            // Recursively process ANY div (callouts, table containers, etc.)
+            const divBlocks = await processElement(node);
+            processedBlocks.push(...divBlocks);
           } else {
             // Not a div - accumulate as text/HTML
             currentTextHtml += isTextNode ? (node.data || node.nodeValue || '') : $(node).prop('outerHTML');
@@ -2208,34 +2309,48 @@ async function extractContentFromHtml(html) {
         });
         
         if (blockLevelChildren.length > 0) {
-          // Has block-level children - check if any contain tables (if so, skip text extraction)
-          const childrenHaveTables = blockLevelChildren.some(child => $(child).find('table').length > 0);
+          // Has block-level children - extract only direct text/inline nodes before first block element
+          const firstBlockChild = blockLevelChildren[0];
           
-          if (!childrenHaveTables) {
-            // Extract text before first block child only if no tables present
-            const firstBlockChild = blockLevelChildren[0];
-            const firstBlockHtml = $.html(firstBlockChild);
-            const beforeFirstBlock = firstBlockHtml ? fullHtml.split(firstBlockHtml)[0] : fullHtml;
+          // Iterate through child nodes and accumulate text BEFORE the first block child
+          const childNodes = Array.from($elem.get(0).childNodes);
+          let beforeBlockHtml = '';
+          
+          for (const node of childNodes) {
+            // Stop when we reach the first block-level child
+            // Note: firstBlockChild is a Cheerio element, compare by checking if it's the same DOM node
+            if (node.nodeType === 1 && node === firstBlockChild) {
+              break;
+            }
             
-            if (beforeFirstBlock && cleanHtmlText(beforeFirstBlock).trim()) {
-              console.log(`🔍 Processing text before first block-level child element`);
-              const { richText: beforeText, imageBlocks: beforeImages } = await parseRichText(beforeFirstBlock);
-              if (beforeImages && beforeImages.length > 0) {
-                processedBlocks.push(...beforeImages);
-              }
-              if (beforeText.length > 0 && beforeText.some(rt => rt.text.content.trim())) {
-                const richTextChunks = splitRichTextArray(beforeText);
-                for (const chunk of richTextChunks) {
-                  processedBlocks.push({
-                    object: "block",
-                    type: "paragraph",
-                    paragraph: { rich_text: chunk }
-                  });
-                }
+            // Accumulate text nodes and inline elements before the first block child
+            const isTextNode = node.nodeType === 3;
+            const isElementNode = node.nodeType === 1;
+            
+            if (isTextNode) {
+              beforeBlockHtml += node.data || node.nodeValue || '';
+            } else if (isElementNode) {
+              // Add inline element HTML (links, spans, etc.)
+              beforeBlockHtml += $(node).prop('outerHTML');
+            }
+          }
+          
+          if (beforeBlockHtml && cleanHtmlText(beforeBlockHtml).trim()) {
+            console.log(`🔍 Processing text before first block-level child element`);
+            const { richText: beforeText, imageBlocks: beforeImages } = await parseRichText(beforeBlockHtml);
+            if (beforeImages && beforeImages.length > 0) {
+              processedBlocks.push(...beforeImages);
+            }
+            if (beforeText.length > 0 && beforeText.some(rt => rt.text.content.trim())) {
+              const richTextChunks = splitRichTextArray(beforeText);
+              for (const chunk of richTextChunks) {
+                processedBlocks.push({
+                  object: "block",
+                  type: "paragraph",
+                  paragraph: { rich_text: chunk }
+                });
               }
             }
-          } else {
-            console.log(`🔍 Skipping text extraction - block-level children contain tables`);
           }
           
           // Process only block-level children (inline elements are already in the paragraph)
