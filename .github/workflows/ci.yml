@@ -6,37 +6,93 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout source (with credentials & full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
+
+      - name: Show basic environment (debug)
+        run: |
+          pwd
+          ls -la
+          node -v
+          npm -v
+
+      - name: Git info (debug)
+        run: |
+          git --version
+          echo "GITHUB_REF=${GITHUB_REF}"
+          echo "GITHUB_SHA=${GITHUB_SHA}"
+          echo "Current HEAD:"
+          git rev-parse --verify HEAD || true
+          echo "Branch (if available):"
+          git rev-parse --abbrev-ref HEAD || true
+          echo "Remotes:"
+          git remote -v || true
+          echo "Status:"
+          git status --porcelain --branch || true
+
+      - name: Configure git user (avoid some git errors)
+        run: |
+          git config user.name "github-actions[bot]" || true
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com" || true
+
       - name: Install deps
         run: npm ci
+
       - name: Run unit tests
         run: npm run test:unit
-      - name: Start proxy server (background)
+
+      - name: Start proxy server (background) and log output
         run: |
-          # Start the SN2N proxy in background
-          node server/sn2n-proxy.cjs &
+          mkdir -p .logs
+          nohup node server/sn2n-proxy.cjs > .logs/sn2n-proxy.log 2>&1 &
           PID=$!
           echo "Started server with PID $PID"
-          # Wait for port 3004 to be open (timeout 30s)
-          MAX_WAIT=30
+          sleep 1
+          ps aux | grep node || true
+          echo "---- beginning server log ----"
+          tail -n +1 .logs/sn2n-proxy.log | sed -n '1,200p' || true
+
+      - name: Wait for port 3004 (up to 60s) and show debug on timeout
+        run: |
+          MAX_WAIT=60
           COUNT=0
           until (</dev/tcp/127.0.0.1/3004) >/dev/null 2>&1; do
             sleep 1
             COUNT=$((COUNT + 1))
             if [ "$COUNT" -ge "$MAX_WAIT" ]; then
-              echo "Timeout waiting for port 3004";
-              kill $PID || true;
+              echo "Timeout waiting for port 3004 — dumping debug info"
+              echo "----- ps aux -----"
+              ps aux
+              echo "----- listening ports -----"
+              ss -ltnp || ss -ltn
+              echo "----- server log (last 200 lines) -----"
+              tail -n 200 .logs/sn2n-proxy.log || true
+              kill $PID || true
               exit 1;
             fi
           done
           echo "Port 3004 is open"
+
+      - name: Verify health endpoint (optional)
+        run: |
+          if command -v curl >/dev/null 2>&1; then
+            curl -sS http://127.0.0.1:3004/ || true
+          fi
+
       - name: Run smoke tests (dryRun)
         run: npm run test:smoke
