@@ -1745,15 +1745,16 @@ async function extractContentFromHtml(html) {
                 paragraph: { rich_text: chunk }
               };
               
-              // Add list blocks as children if this is the first chunk
-              // (Notion API doesn't allow splitting a paragraph with children across multiple paragraph blocks)
-              if (richTextChunks.indexOf(chunk) === 0 && listChildBlocks.length > 0) {
-                paragraphBlock.paragraph.children = listChildBlocks;
-                console.log(`🔍 Added ${listChildBlocks.length} list blocks as children of paragraph`);
-              }
-              
+              // IMPORTANT: Paragraphs CANNOT have children in Notion API
+              // List blocks must be added as siblings, not children
               processedBlocks.push(paragraphBlock);
             }
+          }
+          
+          // Add list blocks as siblings after the paragraph (NOT as children - paragraphs can't have children)
+          if (listChildBlocks.length > 0) {
+            console.log(`🔍 Adding ${listChildBlocks.length} list blocks as siblings after paragraph`);
+            processedBlocks.push(...listChildBlocks);
           }
           
           // Add non-list blocks as siblings after the paragraph
