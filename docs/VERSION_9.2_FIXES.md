@@ -1,6 +1,6 @@
 # Version 9.2.x — Comprehensive Fix Documentation
 
-**Version Range**: 9.2.0 - 9.2.2  
+**Version Range**: 9.2.0 - 9.2.3  
 **Release Period**: October 16-19, 2025  
 **Status**: Current Release  
 
@@ -8,7 +8,57 @@
 
 ## Overview
 
-Version 9.2 introduced significant improvements to AutoExtract, content conversion, and table handling. This document consolidates all fixes and enhancements from releases 9.2.0, 9.2.1, and 9.2.2.
+Version 9.2 introduced significant improvements to AutoExtract, content conversion, and table handling. This document consolidates all fixes and enhancements from releases 9.2.0, 9.2.1, 9.2.2, and 9.2.3.
+
+---
+
+## Version 9.2.3 (October 19, 2025)
+
+### Text and Links Preserved Around Tables
+
+**Problem**: Text and links appearing before or after tables in mixed content containers were being lost or appearing in the wrong location. The sentence "For more information on similarity solution, refer" would disappear, and the link "Create similarity solution" would appear without the preceding text.
+
+**Root Cause**: 
+- When iterating through `childNodes` (a live NodeList), removing elements from the DOM during iteration caused the next node to be skipped
+- After processing a table-wrap DIV and removing it from the DOM, the next text node was skipped entirely
+- This happened because NodeList is "live" and updates when DOM changes
+
+**Example Issue**:
+```
+Expected: "For more information on similarity solution, refer [Create similarity solution]."
+Actual: "[Create similarity solution]." (missing leading text)
+```
+
+**Solution**:
+- Use `Array.from()` to create a snapshot of `childNodes` before iteration
+- This prevents DOM modifications from affecting the iteration
+- All text nodes and inline elements are now properly accumulated before/after block elements
+
+**Technical Implementation**:
+```javascript
+// Before (broken)
+const childNodes = $elem.get(0).childNodes;
+for (const node of childNodes) {
+  // When we remove a node, the live NodeList shifts and next node is skipped
+}
+
+// After (fixed)
+const childNodes = Array.from($elem.get(0).childNodes);
+for (const node of childNodes) {
+  // Array snapshot is unaffected by DOM modifications
+}
+```
+
+**Files**: 
+- `server/services/servicenow.cjs` (lines ~1625, ~2105)
+
+**Commit**: eb1072c, bc6da69
+
+**Result**: 
+- ✅ Text before tables appears in correct position
+- ✅ Links after tables include preceding text
+- ✅ All mixed content properly ordered
+- ✅ No skipped nodes during iteration
 
 ---
 
@@ -292,6 +342,8 @@ https://docs.servicenow.com/bundle/yokohama-platform-administration/page/adminis
 
 ### Validation Checklist
 
+- ✅ Text and links around tables preserved in correct order (v9.2.3)
+- ✅ Soft returns between paragraphs in table cells (v9.2.2)
 - ✅ Table image placeholders conditional on validity
 - ✅ Bullet items in tables on separate lines
 - ✅ UIControl elements formatted as bold+blue
@@ -440,6 +492,8 @@ window.BUILD_VERSION // Should show "9.2.1"
 
 | Version | Date | Key Changes | Commits |
 |---------|------|-------------|---------|
+| 9.2.3 | Oct 19, 2025 | Text/links around tables preserved | eb1072c, bc6da69 |
+| 9.2.2 | Oct 19, 2025 | Soft returns in table cells | b4f2660 |
 | 9.2.1 | Oct 18, 2025 | Table formatting fixes | 3 commits |
 | 9.2.0 | Oct 16-17, 2025 | Access-limited, images, rich text | Multiple commits |
 
