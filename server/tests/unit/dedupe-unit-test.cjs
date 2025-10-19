@@ -63,7 +63,7 @@ function assert(cond, msg) {
   assert(tableCount === 1, `expected 1 table after dedupe, got ${tableCount}`);
   assert(calloutCount === 0 || calloutCount === 1, `expected callout filtered or present depending on color; got ${calloutCount}`);
   // list items with identical text — updated expectation to match current dedupe policy
-  assert(bulletCount === 2, `expected 2 bulleted_list_item after dedupe, got ${bulletCount}`);
+  assert(bulletCount === 2, `expected 2 bulleted_list_item (no dedupe for lists), got ${bulletCount}`);
 
   console.log('All dedupe util unit tests passed');
 })();
