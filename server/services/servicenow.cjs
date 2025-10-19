@@ -2607,7 +2607,13 @@ async function extractContentFromHtml(html) {
           const containerText = cleanHtmlText(fullHtml).trim();
           if (containerText) {
             console.log(`🔍 Container has no children but has text content: "${containerText.substring(0, 80)}..."`);
-            const { richText: textContent, imageBlocks: textImages } = await parseRichText(fullHtml);
+            
+            // For inline elements like <a>, use outerHTML to preserve the tag and attributes
+            // For block elements, use innerHTML
+            const isInlineElement = ['a', 'span', 'strong', 'em', 'b', 'i', 'code'].includes(tagName);
+            const htmlToProcess = isInlineElement ? $elem.prop('outerHTML') : fullHtml;
+            
+            const { richText: textContent, imageBlocks: textImages } = await parseRichText(htmlToProcess);
             if (textImages && textImages.length > 0) {
               processedBlocks.push(...textImages);
             }
