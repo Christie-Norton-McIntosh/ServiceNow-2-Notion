@@ -12,11 +12,24 @@ These instructions are for AI coding agents working in the ServiceNow-2-Notion r
 
 ## 📁 Key Components & Entry Points
 
+### Client-Side (Userscript)
+
 - `src/main.js`: App orchestration, UI wiring, and extraction coordination.
 - `src/ui/*.js`: Modal components (always use `injectXxx()`/`setupXxx()` pattern; never auto-inject on import).
 - `src/content/*.js`: ServiceNow content and metadata extraction logic.
 - `src/api/*.js`: Integrations (Notion API, proxy communication).
-- `server/sn2n-proxy.cjs`: Express server, HTML-to-Notion block conversion.
+
+### Server-Side (Proxy)
+
+- `server/sn2n-proxy.cjs`: Express server entry point, route configuration.
+- `server/services/servicenow.cjs`: **Main HTML processing**, mixed content handling, block element orchestration.
+- `server/converters/table.cjs`: Table cell content processing with placeholder markers, image extraction.
+- `server/converters/rich-text.cjs`: HTML tag → Notion rich_text conversion (UIControl, keyword, parmname, codeph).
+- `server/orchestration/`: Content orchestration, block assembly, deduplication.
+- `server/utils/notion-format.cjs`: Notion block utilities, HTML cleaning.
+
+### Build & Config
+
 - `rollup.config.js`: Build config and userscript metadata.
 
 ## 🔧 Critical Developer Workflows
@@ -46,6 +59,8 @@ npm start        # Restart proxy server
 
 ## 🎨 Project-Specific Patterns
 
+### Client-Side (Userscript) Patterns
+
 - **UI Modal Pattern:**
   - Never auto-inject on import
   - Always use `injectXxx()`/`setupXxx()` pair
@@ -62,6 +77,37 @@ npm start        # Restart proxy server
     ```
 - **Global App Access:**
   - Use: `const app = window.ServiceNowToNotion?.app?.();`
+
+### Server-Side (Proxy) Patterns
+
+- **Placeholder Marker Pattern** (protect newlines during normalization):
+  - Mark intentional boundaries with `__NEWLINE__` before normalization
+  - Normalize all whitespace to remove source HTML formatting
+  - Restore markers as actual newlines after normalization
+  - Example (`server/converters/table.cjs`):
+    ```js
+    // 1. Mark intentional newlines
+    .replace(/<\/p>\s*<p[^>]*>/gi, '</p>__NEWLINE__<p>')
+    // 2. Normalize whitespace (removes HTML indentation)
+    .replace(/\s*\n\s*/g, ' ')
+    // 3. Restore markers as newlines
+    .replace(/__NEWLINE__/g, '\n')
+    ```
+- **Array.from() for DOM Iteration** (prevent live NodeList issues):
+  - **ALWAYS** use `Array.from(childNodes)` when iterating nodes you might modify
+  - Live NodeLists update when DOM changes, causing skipped nodes
+  - Example (`server/services/servicenow.cjs`):
+    ```js
+    // ❌ WRONG: live NodeList
+    const childNodes = $elem.get(0).childNodes;
+    
+    // ✅ CORRECT: array snapshot
+    const childNodes = Array.from($elem.get(0).childNodes);
+    ```
+- **HTML Preservation Strategy:**
+  - Keep HTML tags intact in intermediate processing
+  - Pass to `rich-text.cjs` converter for formatting extraction
+  - Never extract plain text early (loses UIControl, keyword, etc.)
 - **HTML-to-Notion Block Conversion:**
   - Recursive parsing, mixed content, code block extraction, nested lists (2-level), tables, images, rich text formatting
 
