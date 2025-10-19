@@ -1228,21 +1228,19 @@ async function extractContentFromHtml(html) {
                   },
                 };
                 
-                // Combine all children (immediate children + marked blocks)
-                // Marked blocks go into children array so they're at depth > 0
-                // This prevents them from being collected/removed at top level
-                const finalChildren = [...allChildren];
-                if (markedBlocks.length > 0) {
-                  finalChildren.push(...markedBlocks);
-                }
-                
-                // Add nested blocks (including images and marked blocks) as children if any
-                if (finalChildren.length > 0) {
-                  listItemBlock.bulleted_list_item.children = finalChildren;
-                  console.log(`🔍 Added ${finalChildren.length} nested blocks as children of list item (${allChildren.length} immediate + ${markedBlocks.length} marked)`);
+                // Add nested blocks (including images) as children if any
+                if (allChildren.length > 0) {
+                  listItemBlock.bulleted_list_item.children = allChildren;
+                  console.log(`🔍 Added ${allChildren.length} nested blocks as children of list item`);
                 }
                 
                 processedBlocks.push(listItemBlock);
+                
+                // Add marked blocks to processedBlocks so they get collected by orchestrator
+                // These will be removed from initial payload and appended via API after page creation
+                if (markedBlocks.length > 0) {
+                  processedBlocks.push(...markedBlocks);
+                }
               }
             }
           } else if (nestedChildren.length > 0) {
@@ -1263,10 +1261,9 @@ async function extractContentFromHtml(html) {
             
             console.log(`🔍 Creating bulleted_list_item with no text but ${validChildren.length} valid children`);
             
-            // Generate marker if needed and combine all children
+            // Generate marker if needed
             let markerToken = null;
             const richText = [{ type: "text", text: { content: "" } }];
-            const finalChildren = [...validChildren];
             if (markedBlocks.length > 0) {
               const marker = generateMarker();
               markerToken = `(sn2n:${marker})`;
@@ -1275,19 +1272,22 @@ async function extractContentFromHtml(html) {
               });
               richText[0].text.content = markerToken;
               console.log(`🔍 Added marker ${markerToken} for ${markedBlocks.length} deferred blocks`);
-              // Add marked blocks to children array (depth > 0) instead of top-level
-              finalChildren.push(...markedBlocks);
             }
             
-            if (finalChildren.length > 0) {
+            if (validChildren.length > 0 || markedBlocks.length > 0) {
               processedBlocks.push({
                 object: "block",
                 type: "bulleted_list_item",
                 bulleted_list_item: {
                   rich_text: richText,
-                  children: finalChildren
+                  children: validChildren.length > 0 ? validChildren : undefined
                 },
               });
+              
+              // Add marked blocks to processedBlocks for orchestrator
+              if (markedBlocks.length > 0) {
+                processedBlocks.push(...markedBlocks);
+              }
             }
           }
         } else {
@@ -1461,21 +1461,19 @@ async function extractContentFromHtml(html) {
                   },
                 };
                 
-                // Combine all children (immediate children + marked blocks)
-                // Marked blocks go into children array so they're at depth > 0
-                // This prevents them from being collected/removed at top level
-                const finalChildren = [...allChildren];
-                if (markedBlocks.length > 0) {
-                  finalChildren.push(...markedBlocks);
-                }
-                
-                // Add nested blocks (including images and marked blocks) as children if any
-                if (finalChildren.length > 0) {
-                  listItemBlock.numbered_list_item.children = finalChildren;
-                  console.log(`🔍 Added ${finalChildren.length} nested blocks as children of ordered list item (${allChildren.length} immediate + ${markedBlocks.length} marked)`);
+                // Add nested blocks (including images) as children if any
+                if (allChildren.length > 0) {
+                  listItemBlock.numbered_list_item.children = allChildren;
+                  console.log(`🔍 Added ${allChildren.length} nested blocks as children of ordered list item`);
                 }
                 
                 processedBlocks.push(listItemBlock);
+                
+                // Add marked blocks to processedBlocks so they get collected by orchestrator
+                // These will be removed from initial payload and appended via API after page creation
+                if (markedBlocks.length > 0) {
+                  processedBlocks.push(...markedBlocks);
+                }
               }
             }
           } else if (nestedChildren.length > 0) {
@@ -1496,10 +1494,9 @@ async function extractContentFromHtml(html) {
             
             console.log(`🔍 Creating numbered_list_item with no text but ${validChildren.length} valid children`);
             
-            // Generate marker if needed and combine all children
+            // Generate marker if needed
             let markerToken = null;
             const richText = [{ type: "text", text: { content: "" } }];
-            const finalChildren = [...validChildren];
             if (markedBlocks.length > 0) {
               const marker = generateMarker();
               markerToken = `(sn2n:${marker})`;
@@ -1508,19 +1505,22 @@ async function extractContentFromHtml(html) {
               });
               richText[0].text.content = markerToken;
               console.log(`🔍 Added marker ${markerToken} for ${markedBlocks.length} deferred blocks`);
-              // Add marked blocks to children array (depth > 0) instead of top-level
-              finalChildren.push(...markedBlocks);
             }
             
-            if (finalChildren.length > 0) {
+            if (validChildren.length > 0 || markedBlocks.length > 0) {
               processedBlocks.push({
                 object: "block",
                 type: "numbered_list_item",
                 numbered_list_item: {
                   rich_text: richText,
-                  children: finalChildren
+                  children: validChildren.length > 0 ? validChildren : undefined
                 },
               });
+              
+              // Add marked blocks to processedBlocks for orchestrator
+              if (markedBlocks.length > 0) {
+                processedBlocks.push(...markedBlocks);
+              }
             }
           }
         } else {
