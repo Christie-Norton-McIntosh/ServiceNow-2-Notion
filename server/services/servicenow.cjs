@@ -1391,15 +1391,34 @@ async function extractContentFromHtml(html) {
               },
             };
             
-            // Add images as children of the list item if any
+            // Mark images for deferred orchestration to avoid 4-level nesting
+            // (numbered_list_item > bulleted_list_item > numbered_list_item > image)
             if (liImages && liImages.length > 0) {
-              listItemBlock.bulleted_list_item.children = liImages;
-              console.log(`🔍 Creating bulleted_list_item with ${chunk.length} rich_text elements and ${liImages.length} image children`);
+              const marker = generateMarker();
+              const markerToken = `(sn2n:${marker})`;
+              liImages.forEach(img => {
+                img._sn2n_marker = marker;
+              });
+              listItemBlock.bulleted_list_item.rich_text.push({
+                type: "text",
+                text: { content: ` ${markerToken}` },
+                annotations: {
+                  bold: false,
+                  italic: false,
+                  strikethrough: false,
+                  underline: false,
+                  code: false,
+                  color: "default"
+                }
+              });
+              console.log(`🔍 Creating bulleted_list_item with ${chunk.length} rich_text elements`);
+              console.log(`🔍 Added marker ${markerToken} for ${liImages.length} deferred image(s)`);
+              processedBlocks.push(listItemBlock);
+              processedBlocks.push(...liImages);
             } else {
               console.log(`🔍 Creating bulleted_list_item with ${chunk.length} rich_text elements`);
+              processedBlocks.push(listItemBlock);
             }
-            
-            processedBlocks.push(listItemBlock);
           }
         }
       }
@@ -1694,15 +1713,34 @@ async function extractContentFromHtml(html) {
               },
             };
             
-            // Add images as children of the list item if any
+            // Mark images for deferred orchestration to avoid 4-level nesting
+            // (numbered_list_item > bulleted_list_item > numbered_list_item > image)
             if (liImages && liImages.length > 0) {
-              listItemBlock.numbered_list_item.children = liImages;
-              console.log(`🔍 Creating numbered_list_item with ${chunk.length} rich_text elements and ${liImages.length} image children`);
+              const marker = generateMarker();
+              const markerToken = `(sn2n:${marker})`;
+              liImages.forEach(img => {
+                img._sn2n_marker = marker;
+              });
+              listItemBlock.numbered_list_item.rich_text.push({
+                type: "text",
+                text: { content: ` ${markerToken}` },
+                annotations: {
+                  bold: false,
+                  italic: false,
+                  strikethrough: false,
+                  underline: false,
+                  code: false,
+                  color: "default"
+                }
+              });
+              console.log(`🔍 Creating numbered_list_item with ${chunk.length} rich_text elements`);
+              console.log(`🔍 Added marker ${markerToken} for ${liImages.length} deferred image(s)`);
+              processedBlocks.push(listItemBlock);
+              processedBlocks.push(...liImages);
             } else {
               console.log(`🔍 Creating numbered_list_item with ${chunk.length} rich_text elements`);
+              processedBlocks.push(listItemBlock);
             }
-            
-            processedBlocks.push(listItemBlock);
           }
         }
       }
