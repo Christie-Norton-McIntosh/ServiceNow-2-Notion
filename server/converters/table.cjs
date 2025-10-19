@@ -228,6 +228,10 @@ async function convertTableBlock(tableHtml, options = {}) {
     processedHtml = processedHtml.replace(/__CODE_PLACEHOLDER__/g, '');
     processedHtml = processedHtml.replace(/___\w+_PLACEHOLDER_*\w*___/gi, '');
     
+    // Separate consecutive inline code elements with newlines
+    // This handles cases like: <code>role1</code> <code>role2</code> <code>role3</code>
+    processedHtml = processedHtml.replace(/(<\/code>)(\s*)(<code>)/gi, '$1__NEWLINE__$3');
+    
     // Reload Cheerio with processed HTML (after figure/image replacement)
     // Strategy: For cells with multiple <p> tags, we need to:
     // 1. Preserve the HTML tags inside paragraphs (for uicontrol formatting)

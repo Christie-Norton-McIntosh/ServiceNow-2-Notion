@@ -216,25 +216,55 @@ function convertRichTextBlock(input, options = {}) {
       }
     } else if (part) {
       const cleanedText = typeof part === "string" ? part : "";
-      if (cleanedText.trim()) {
-        // Split long content into 2000-char chunks to comply with Notion API
-        if (cleanedText.length > 2000) {
-          let remaining = cleanedText;
-          while (remaining.length > 0) {
-            const chunk = remaining.substring(0, 2000);
+      
+      // Special handling for newline-only content - preserve it for table cells
+      if (cleanedText === '\n' || cleanedText === '\r\n') {
+        richText.push({
+          type: "text",
+          text: { content: '\n' },
+          annotations: normalizeAnnotations(currentAnnotations),
+        });
+      } else if (cleanedText.trim()) {
+        // Split by newlines first - each line becomes a separate rich_text element
+        // This is necessary for table cells where newlines should create visual line breaks
+        const lines = cleanedText.split('\n');
+        
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          
+          // Skip empty lines except the last one (which might be intentional trailing space)
+          if (!line.trim() && i < lines.length - 1) {
+            continue;
+          }
+          
+          // Split long content into 2000-char chunks to comply with Notion API
+          if (line.length > 2000) {
+            let remaining = line;
+            while (remaining.length > 0) {
+              const chunk = remaining.substring(0, 2000);
+              richText.push({
+                type: "text",
+                text: { content: chunk },
+                annotations: normalizeAnnotations(currentAnnotations),
+              });
+              remaining = remaining.substring(2000);
+            }
+          } else if (line.trim()) {
             richText.push({
               type: "text",
-              text: { content: chunk },
+              text: { content: line },
               annotations: normalizeAnnotations(currentAnnotations),
             });
-            remaining = remaining.substring(2000);
           }
-        } else {
-          richText.push({
-            type: "text",
-            text: { content: cleanedText },
-            annotations: normalizeAnnotations(currentAnnotations),
-          });
+          
+          // Add newline as separate element between lines (but not after the last line)
+          if (i < lines.length - 1) {
+            richText.push({
+              type: "text",
+              text: { content: '\n' },
+              annotations: normalizeAnnotations(currentAnnotations),
+            });
+          }
         }
       }
     }
