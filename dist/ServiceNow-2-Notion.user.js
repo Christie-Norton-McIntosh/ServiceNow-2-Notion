@@ -248,6 +248,7 @@
     }
 
     .${PREFIX}bar {
+      display: block;
       width: 100%;
       height: 8px;
       background: #e5e7eb;
@@ -257,6 +258,7 @@
     }
 
     .${PREFIX}bar-fill {
+      display: block;
       height: 100%;
       background: linear-gradient(90deg, #3b82f6, #10b981);
       transition: width 0.3s ease;
