@@ -1620,11 +1620,53 @@ async function extractContentFromHtml(html) {
       if (hasTables) {
         console.log(`🔍 <${tagName}${$elem.hasClass('p') ? ' class="p"' : ''}> contains table(s) - processing as container instead of paragraph`);
         
-        // Extract any direct text content before child elements
-        const directText = $elem.clone().children().remove().end().text().trim();
-        if (directText) {
-          console.log(`🔍 Found direct text before table: "${directText}"`);
-          const { richText: textRichText } = await parseRichText(directText);
+        // Process child nodes in order, separating text/HTML content from block elements
+        // IMPORTANT: Convert to array BEFORE iterating to prevent DOM modification issues
+        const childNodes = Array.from($elem.get(0).childNodes);
+        let currentTextHtml = '';
+        
+        for (const node of childNodes) {
+          const isTextNode = node.nodeType === 3;
+          const isElementNode = node.nodeType === 1;
+          const nodeName = (node.name || node.nodeName || node.tagName || '').toUpperCase();
+          const isBlockElement = isElementNode && ['DIV', 'TABLE'].includes(nodeName);
+          
+          // If it's a text node or inline element (not a block container like div.table-wrap)
+          if (isTextNode || (isElementNode && !isBlockElement)) {
+            // Accumulate HTML (preserves links and formatting)
+            const textToAdd = isTextNode ? (node.nodeValue || node.data || '') : $(node).prop('outerHTML');
+            currentTextHtml += textToAdd;
+          } else if (isBlockElement) {
+            // Found a block element (table-wrap, div, etc.)
+            // First, flush any accumulated text/HTML as a paragraph
+            if (currentTextHtml.trim()) {
+              console.log(`🔍 Found text/HTML before block element: "${currentTextHtml.trim().substring(0, 80)}..."`);
+              const { richText: textRichText } = await parseRichText(currentTextHtml.trim());
+              if (textRichText.length > 0 && textRichText.some(rt => rt.text.content.trim())) {
+                const textChunks = splitRichTextArray(textRichText);
+                for (const chunk of textChunks) {
+                  processedBlocks.push({
+                    object: "block",
+                    type: "paragraph",
+                    paragraph: {
+                      rich_text: chunk
+                    }
+                  });
+                }
+              }
+              currentTextHtml = '';
+            }
+            
+            // Process the block element (table, etc.)
+            const childBlocks = await processElement(node);
+            processedBlocks.push(...childBlocks);
+          }
+        }
+        
+        // Flush any remaining text/HTML after the last block element
+        if (currentTextHtml.trim()) {
+          console.log(`🔍 Found text/HTML after block elements: "${currentTextHtml.trim().substring(0, 80)}..."`);
+          const { richText: textRichText } = await parseRichText(currentTextHtml.trim());
           if (textRichText.length > 0 && textRichText.some(rt => rt.text.content.trim())) {
             const textChunks = splitRichTextArray(textRichText);
             for (const chunk of textChunks) {
@@ -1639,13 +1681,6 @@ async function extractContentFromHtml(html) {
           }
         }
         
-        // Now process child elements (table-wrap, etc.)
-        const children = $elem.children().toArray();
-        console.log(`🔍 Container element <${tagName}>, recursively processing ${children.length} children`);
-        for (const child of children) {
-          const childBlocks = await processElement(child);
-          processedBlocks.push(...childBlocks);
-        }
         $elem.remove();
         return processedBlocks;
       }
@@ -2062,6 +2097,62 @@ async function extractContentFromHtml(html) {
       }
       
       $elem.remove(); // Mark as processed
+      
+    } else if (tagName === 'div' && $elem.hasClass('table-wrap')) {
+      // Special handling for div.table-wrap which may have text before/after the table
+      console.log(`🔍 Processing <div class="table-wrap"> with potential mixed content`);
+      
+      const childNodes = Array.from($elem.get(0).childNodes);
+      let currentTextHtml = '';
+      
+      for (const node of childNodes) {
+        const isTextNode = node.nodeType === 3;
+        const isElementNode = node.nodeType === 1;
+        const nodeName = (node.name || node.nodeName || node.tagName || '').toUpperCase();
+        const isTableElement = nodeName === 'TABLE';
+        
+        if (isTextNode || (isElementNode && !isTableElement)) {
+          // Accumulate text nodes and non-table elements (like spans, links, etc.)
+          currentTextHtml += isTextNode ? (node.data || node.nodeValue || '') : $(node).prop('outerHTML');
+        } else if (isTableElement) {
+          // Found table - flush any text before it
+          if (currentTextHtml.trim()) {
+            const { richText: textRichText } = await parseRichText(currentTextHtml.trim());
+            if (textRichText.length > 0 && textRichText.some(rt => rt.text.content.trim())) {
+              const textChunks = splitRichTextArray(textRichText);
+              for (const chunk of textChunks) {
+                processedBlocks.push({
+                  object: "block",
+                  type: "paragraph",
+                  paragraph: { rich_text: chunk }
+                });
+              }
+            }
+            currentTextHtml = '';
+          }
+          
+          // Process the table
+          const tableBlocks = await processElement(node);
+          processedBlocks.push(...tableBlocks);
+        }
+      }
+      
+      // Flush any remaining text after the table
+      if (currentTextHtml.trim()) {
+        const { richText: textRichText } = await parseRichText(currentTextHtml.trim());
+        if (textRichText.length > 0 && textRichText.some(rt => rt.text.content.trim())) {
+          const textChunks = splitRichTextArray(textRichText);
+          for (const chunk of textChunks) {
+            processedBlocks.push({
+              object: "block",
+              type: "paragraph",
+              paragraph: { rich_text: chunk }
+              });
+          }
+        }
+      }
+      
+      $elem.remove();
       
     } else {
       // Container element (div, section, main, article, etc.) - recursively process children
