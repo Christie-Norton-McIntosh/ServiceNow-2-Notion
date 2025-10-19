@@ -1284,21 +1284,11 @@ async function extractContentFromHtml(html) {
               console.log(`🔍 Promoting first paragraph text to bulleted list item, ${remainingChildren.length} remaining children`);
               const promotedText = firstChild.paragraph.rich_text;
               
-              // Filter remaining children
-              const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'paragraph', 'to_do', 'toggle', 'image'];
-              const validChildren = [];
-              const markedBlocks = [];
+              // When promoting paragraphs, mark ALL remaining children for deferred orchestration
+              // to avoid creating 4+ levels of nesting
+              const markedBlocks = remainingChildren.filter(block => block && block.type);
               
-              remainingChildren.forEach(block => {
-                if (block && block.type && supportedAsChildren.includes(block.type)) {
-                  validChildren.push(block);
-                } else if (block && block.type) {
-                  console.log(`⚠️ Block type "${block.type}" needs marker for deferred append to list item`);
-                  markedBlocks.push(block);
-                }
-              });
-              
-              // Add marker if needed
+              // Add marker if there are remaining children
               let richText = [...promotedText];
               if (markedBlocks.length > 0) {
                 const marker = generateMarker();
@@ -1318,7 +1308,7 @@ async function extractContentFromHtml(html) {
                     color: "default"
                   }
                 });
-                console.log(`🔍 Added marker ${markerToken} for ${markedBlocks.length} deferred blocks`);
+                console.log(`🔍 Added marker ${markerToken} for ${markedBlocks.length} deferred blocks (promoted paragraph children)`);
               }
               
               processedBlocks.push({
@@ -1326,7 +1316,7 @@ async function extractContentFromHtml(html) {
                 type: "bulleted_list_item",
                 bulleted_list_item: {
                   rich_text: richText,
-                  children: validChildren.length > 0 ? validChildren : undefined
+                  children: undefined  // No direct children - all deferred
                 },
               });
               
@@ -1597,21 +1587,11 @@ async function extractContentFromHtml(html) {
               console.log(`🔍 Promoting first paragraph text to numbered list item, ${remainingChildren.length} remaining children`);
               const promotedText = firstChild.paragraph.rich_text;
               
-              // Filter remaining children
-              const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'paragraph', 'to_do', 'toggle', 'image'];
-              const validChildren = [];
-              const markedBlocks = [];
+              // When promoting paragraphs, mark ALL remaining children for deferred orchestration
+              // to avoid creating 4+ levels of nesting (numbered > bulleted > numbered > paragraph)
+              const markedBlocks = remainingChildren.filter(block => block && block.type);
               
-              remainingChildren.forEach(block => {
-                if (block && block.type && supportedAsChildren.includes(block.type)) {
-                  validChildren.push(block);
-                } else if (block && block.type) {
-                  console.log(`⚠️ Block type "${block.type}" needs marker for deferred append to list item`);
-                  markedBlocks.push(block);
-                }
-              });
-              
-              // Add marker if needed
+              // Add marker if there are remaining children
               let richText = [...promotedText];
               if (markedBlocks.length > 0) {
                 const marker = generateMarker();
@@ -1631,7 +1611,7 @@ async function extractContentFromHtml(html) {
                     color: "default"
                   }
                 });
-                console.log(`🔍 Added marker ${markerToken} for ${markedBlocks.length} deferred blocks`);
+                console.log(`🔍 Added marker ${markerToken} for ${markedBlocks.length} deferred blocks (promoted paragraph children)`);
               }
               
               processedBlocks.push({
@@ -1639,7 +1619,7 @@ async function extractContentFromHtml(html) {
                 type: "numbered_list_item",
                 numbered_list_item: {
                   rich_text: richText,
-                  children: validChildren.length > 0 ? validChildren : undefined
+                  children: undefined  // No direct children - all deferred
                 },
               });
               
