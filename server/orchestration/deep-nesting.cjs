@@ -90,7 +90,13 @@ async function findParentListItemByMarker(rootBlockId, marker) {
                       .map((rt) => rt?.text?.content || "")
                       .join(" ");
                     if (plain.includes(token)) {
-                      // return both the parent list-item id and the matching child id
+                      // If the child with the marker is itself a list item, return the child's ID as parentId
+                      // (we want to append TO the child list item, not to its parent)
+                      if (sc.type === "numbered_list_item" || sc.type === "bulleted_list_item") {
+                        return { parentId: sc.id, paragraphId: null };
+                      }
+                      
+                      // Otherwise (e.g., paragraph child), return parent list-item id and matching child id
                       return { parentId: child.id, paragraphId: sc.id };
                     }
                   } catch (e) {
@@ -128,7 +134,6 @@ async function orchestrateDeepNesting(pageId, markerMap) {
     if (blocksToAppend.length === 0) continue;
     
     try {
-      log(`🔄 Orchestrator: locating parent for marker sn2n:${marker}`);
       const parentInfo = await findParentListItemByMarker(pageId, marker);
       const parentId = parentInfo ? parentInfo.parentId : null;
       const paragraphId = parentInfo ? parentInfo.paragraphId : null;
@@ -145,7 +150,7 @@ async function orchestrateDeepNesting(pageId, markerMap) {
       }
 
       log(
-        `🔄 Orchestrator: appending ${blocksToAppend.length} block(s) to parent ${parentId} for marker sn2n:${marker}`
+        `✅ Orchestrator: Found parent ${parentId} for marker sn2n:${marker}. Will append ${blocksToAppend.length} block(s).`
       );
       
       // Before appending, perform an append-time dedupe check for table blocks
