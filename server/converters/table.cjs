@@ -193,13 +193,18 @@ async function convertTableBlock(tableHtml, options = {}) {
     if (/<div[^>]*class=["'][^"']*note note_note[^"']*["'][^>]*>/i.test(processedHtml)) {
       processedHtml = processedHtml.replace(
         /<div[^>]*class=["'][^"']*note note_note[^"']*["'][^>]*>([\s\S]*?)<\/div>/gi,
-        (match, content) => {
+        (match, content, offset, fullString) => {
           // Preserve HTML tags in note content instead of stripping to plain text
           const $note = cheerio.load(content, { decodeEntities: true });
           const noteHtml = $note('body').html().replace(/\s+/g, ' ').trim();
-          // Only add newline before if note is at the start or after a closing tag
-          // This prevents mid-sentence line breaks when note follows inline text
-          return ` ${noteHtml} `;
+          
+          // Check if there's text before this note (not just tags)
+          const beforeNote = fullString.substring(0, offset);
+          const textBeforeNote = beforeNote.replace(/<[^>]+>/g, '').trim();
+          
+          // Add newline before if there's text before the note
+          const prefix = textBeforeNote ? '__NEWLINE__' : '';
+          return `${prefix}${noteHtml}__NEWLINE__`;
         }
       );
     }
