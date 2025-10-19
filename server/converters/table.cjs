@@ -194,10 +194,12 @@ async function convertTableBlock(tableHtml, options = {}) {
       processedHtml = processedHtml.replace(
         /<div[^>]*class=["'][^"']*note note_note[^"']*["'][^>]*>([\s\S]*?)<\/div>/gi,
         (match, content) => {
-          // Extract just the text content from the note
+          // Preserve HTML tags in note content instead of stripping to plain text
           const $note = cheerio.load(content, { decodeEntities: true });
-          const noteText = $note.text().replace(/\s+/g, ' ').trim();
-          return `__NEWLINE__${noteText}__NEWLINE__`;
+          const noteHtml = $note('body').html().replace(/\s+/g, ' ').trim();
+          // Only add newline before if note is at the start or after a closing tag
+          // This prevents mid-sentence line breaks when note follows inline text
+          return ` ${noteHtml} `;
         }
       );
     }
@@ -269,17 +271,22 @@ async function convertTableBlock(tableHtml, options = {}) {
       processedHtml = processedHtml.replace(/<li[^>]*>/gi, "__NEWLINE__• ");
       processedHtml = processedHtml.replace(/<\/li>/gi, "");
       
-      // For list content, also extract paragraphs and normalize whitespace
+      // For list content, preserve HTML tags (for uicontrol, links, etc.) and normalize whitespace
       const $list = cheerio.load(processedHtml, { decodeEntities: true });
       const listParagraphs = [];
       $list('p, div.p').each((i, elem) => {
-        let text = $list(elem).text().replace(/\s+/g, ' ').trim();
-        if (text) listParagraphs.push(text);
+        // Use .html() instead of .text() to preserve formatting tags like <span class="uicontrol">
+        let html = $list(elem).html();
+        if (html && html.trim()) {
+          // Normalize whitespace but keep HTML tags
+          html = html.replace(/\s+/g, ' ').trim();
+          listParagraphs.push(html);
+        }
       });
       
       textContent = listParagraphs.length > 0
         ? listParagraphs.join('__NEWLINE__')
-        : $list.text().replace(/\s+/g, ' ').trim();
+        : $list('body').html().replace(/\s+/g, ' ').trim();
       
       // Normalize whitespace
       textContent = textContent
