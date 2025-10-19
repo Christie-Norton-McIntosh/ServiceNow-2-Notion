@@ -1150,76 +1150,45 @@ async function extractContentFromHtml(html) {
             // NOTE: liImages (from text content) can still be immediate children as they don't have ordering issues
             const markedBlocks = []; // All nested blocks use marker-based orchestration to preserve order
             
+            // Separate immediate children (list items, images) from deferred blocks (paragraphs, tables, etc.)
+            const immediateChildren = [];
+            
             nestedChildren.forEach(block => {
-              // ALL nestedChildren blocks are marked for orchestration to preserve source document order
               if (block && block.type === 'paragraph') {
                 console.log(`⚠️ Standalone paragraph needs marker for deferred append to bulleted_list_item`);
                 markedBlocks.push(block);
-              } else if (block && block.type && ['bulleted_list_item', 'numbered_list_item', 'to_do', 'toggle', 'image'].includes(block.type)) {
-                // Check if this is a list item with paragraph children (would create 3rd level - flatten instead)
-                const isListItemWithChildren = (block.type === 'numbered_list_item' || block.type === 'bulleted_list_item') &&
-                                               block[block.type]?.children && 
-                                               block[block.type].children.length > 0;
+              } else if (block && block.type && ['bulleted_list_item', 'numbered_list_item', 'to_do', 'toggle'].includes(block.type)) {
+                // List items can be immediate children (2-level nesting supported by Notion)
+                // Check if this list item has children that need markers (marker tokens in rich_text)
+                const blockType = block.type;
+                const richText = block[blockType]?.rich_text || [];
+                const hasMarkerToken = richText.some(rt => rt.text?.content?.includes('(sn2n:'));
                 
-                if (isListItemWithChildren) {
-                  // Check if all children are paragraphs OR images - if so, flatten paragraphs and keep images
-                  const children = block[block.type].children;
-                  const allParagraphsOrImages = children.every(child => 
-                    child.type === 'paragraph' || child.type === 'image'
-                  );
-                  
-                  if (allParagraphsOrImages) {
-                    const paragraphChildren = children.filter(child => child.type === 'paragraph');
-                    const imageChildren = children.filter(child => child.type === 'image');
-                    
-                    if (paragraphChildren.length > 0) {
-                      console.log(`🔍 Flattening ${paragraphChildren.length} paragraph children into ${block.type} rich_text to avoid 3-level nesting`);
-                      // Merge paragraph rich_text into the list item's rich_text with line breaks
-                      paragraphChildren.forEach((child, idx) => {
-                        if (idx > 0) {
-                          // Add line break between paragraphs
-                          block[block.type].rich_text.push({
-                            type: "text",
-                            text: { content: "\n" },
-                            annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: "default" }
-                          });
-                        }
-                        block[block.type].rich_text.push(...child.paragraph.rich_text);
-                      });
-                    }
-                    
-                    // Keep images as children (they're allowed at 2nd level)
-                    if (imageChildren.length > 0) {
-                      block[block.type].children = imageChildren;
-                      console.log(`🔍 Keeping ${imageChildren.length} image(s) as children of ${block.type}`);
-                    } else {
-                      // No images, remove children array
-                      delete block[block.type].children;
-                    }
-                    
-                    // Mark for orchestration to preserve source order with other nested blocks
-                    console.log(`⚠️ Nested ${block.type} marked for orchestration to preserve source order`);
-                    markedBlocks.push(block);
-                  } else {
-                    console.log(`⚠️ Nested ${block.type} has ${children.length} non-paragraph/non-image children - marking for orchestration.`);
-                    markedBlocks.push(block);
-                  }
+                if (hasMarkerToken) {
+                  // List item has its own markers - add as immediate child, markers will be orchestrated later
+                  console.log(`🔍 Nested ${block.type} has marker tokens - adding as immediate child (2-level nesting)`);
+                  immediateChildren.push(block);
                 } else {
-                  // Simple list item or image - mark for orchestration to preserve source order
-                  console.log(`⚠️ Nested ${block.type} marked for orchestration to preserve source order`);
-                  markedBlocks.push(block);
+                  // Simple list item without markers - add as immediate child
+                  console.log(`🔍 Nested ${block.type} without markers - adding as immediate child`);
+                  immediateChildren.push(block);
                 }
+              } else if (block && block.type === 'image') {
+                // Images can be immediate children
+                immediateChildren.push(block);
               } else if (block && block.type) {
+                // Tables, headings, callouts, etc. need markers
                 console.log(`⚠️ Block type "${block.type}" needs marker for deferred append to list item`);
                 markedBlocks.push(block);
               }
             });
             
-            // Only liImages (from text content) are immediate children - nestedChildren use orchestration for source order
+            // Combine images from text content with immediate children from nested blocks
             const allChildren = [];
             if (liImages && liImages.length > 0) {
               allChildren.push(...liImages);
             }
+            allChildren.push(...immediateChildren);
             
             if (liRichText.length > 0 && liRichText.some(rt => rt.text.content.trim())) {
               const richTextChunks = splitRichTextArray(liRichText);
@@ -1411,76 +1380,45 @@ async function extractContentFromHtml(html) {
             // NOTE: liImages (from text content) can still be immediate children as they don't have ordering issues
             const markedBlocks = []; // All nested blocks use marker-based orchestration to preserve order
             
+            // Separate immediate children (list items, images) from deferred blocks (paragraphs, tables, etc.)
+            const immediateChildren = [];
+            
             nestedChildren.forEach(block => {
-              // ALL nestedChildren blocks are marked for orchestration to preserve source document order
               if (block && block.type === 'paragraph') {
                 console.log(`⚠️ Standalone paragraph needs marker for deferred append to numbered_list_item`);
                 markedBlocks.push(block);
-              } else if (block && block.type && ['bulleted_list_item', 'numbered_list_item', 'to_do', 'toggle', 'image'].includes(block.type)) {
-                // Check if this is a list item with paragraph children (would create 3rd level - flatten instead)
-                const isListItemWithChildren = (block.type === 'numbered_list_item' || block.type === 'bulleted_list_item') &&
-                                               block[block.type]?.children && 
-                                               block[block.type].children.length > 0;
+              } else if (block && block.type && ['bulleted_list_item', 'numbered_list_item', 'to_do', 'toggle'].includes(block.type)) {
+                // List items can be immediate children (2-level nesting supported by Notion)
+                // Check if this list item has children that need markers (marker tokens in rich_text)
+                const blockType = block.type;
+                const richText = block[blockType]?.rich_text || [];
+                const hasMarkerToken = richText.some(rt => rt.text?.content?.includes('(sn2n:'));
                 
-                if (isListItemWithChildren) {
-                  // Check if all children are paragraphs OR images - if so, flatten paragraphs and keep images
-                  const children = block[block.type].children;
-                  const allParagraphsOrImages = children.every(child => 
-                    child.type === 'paragraph' || child.type === 'image'
-                  );
-                  
-                  if (allParagraphsOrImages) {
-                    const paragraphChildren = children.filter(child => child.type === 'paragraph');
-                    const imageChildren = children.filter(child => child.type === 'image');
-                    
-                    if (paragraphChildren.length > 0) {
-                      console.log(`🔍 Flattening ${paragraphChildren.length} paragraph children into ${block.type} rich_text to avoid 3-level nesting`);
-                      // Merge paragraph rich_text into the list item's rich_text with line breaks
-                      paragraphChildren.forEach((child, idx) => {
-                        if (idx > 0) {
-                          // Add line break between paragraphs
-                          block[block.type].rich_text.push({
-                            type: "text",
-                            text: { content: "\n" },
-                            annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: "default" }
-                          });
-                        }
-                        block[block.type].rich_text.push(...child.paragraph.rich_text);
-                      });
-                    }
-                    
-                    // Keep images as children (they're allowed at 2nd level)
-                    if (imageChildren.length > 0) {
-                      block[block.type].children = imageChildren;
-                      console.log(`🔍 Keeping ${imageChildren.length} image(s) as children of ${block.type}`);
-                    } else {
-                      // No images, remove children array
-                      delete block[block.type].children;
-                    }
-                    
-                    // Mark for orchestration to preserve source order with other nested blocks
-                    console.log(`⚠️ Nested ${block.type} marked for orchestration to preserve source order`);
-                    markedBlocks.push(block);
-                  } else {
-                    console.log(`⚠️ Nested ${block.type} has ${children.length} non-paragraph/non-image children - marking for orchestration.`);
-                    markedBlocks.push(block);
-                  }
+                if (hasMarkerToken) {
+                  // List item has its own markers - add as immediate child, markers will be orchestrated later
+                  console.log(`🔍 Nested ${block.type} has marker tokens - adding as immediate child (2-level nesting)`);
+                  immediateChildren.push(block);
                 } else {
-                  // Simple list item or image - mark for orchestration to preserve source order
-                  console.log(`⚠️ Nested ${block.type} marked for orchestration to preserve source order`);
-                  markedBlocks.push(block);
+                  // Simple list item without markers - add as immediate child
+                  console.log(`🔍 Nested ${block.type} without markers - adding as immediate child`);
+                  immediateChildren.push(block);
                 }
+              } else if (block && block.type === 'image') {
+                // Images can be immediate children
+                immediateChildren.push(block);
               } else if (block && block.type) {
+                // Tables, headings, callouts, etc. need markers
                 console.log(`⚠️ Block type "${block.type}" needs marker for deferred append to list item`);
                 markedBlocks.push(block);
               }
             });
             
-            // Only liImages (from text content) are immediate children - nestedChildren use orchestration for source order
+            // Combine images from text content with immediate children from nested blocks
             const allChildren = [];
             if (liImages && liImages.length > 0) {
               allChildren.push(...liImages);
             }
+            allChildren.push(...immediateChildren);
             
             if (liRichText.length > 0 && liRichText.some(rt => rt.text.content.trim())) {
               const richTextChunks = splitRichTextArray(liRichText);
