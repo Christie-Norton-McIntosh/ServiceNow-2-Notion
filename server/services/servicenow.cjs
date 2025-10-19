@@ -1266,37 +1266,53 @@ async function extractContentFromHtml(html) {
               }
             }
           } else if (nestedChildren.length > 0) {
-            // No text content, but has nested blocks - create empty list item with children
-            // Filter nested blocks using same logic
-            const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'paragraph', 'to_do', 'toggle', 'image'];
-            const validChildren = [];
-            const markedBlocks = [];
+            // No text content, but has nested blocks
+            // Check if first child is a paragraph - if so, promote its text to the list item
+            const firstChild = nestedChildren[0];
+            const remainingChildren = nestedChildren.slice(1);
             
-            nestedChildren.forEach(block => {
-              if (block && block.type && supportedAsChildren.includes(block.type)) {
-                validChildren.push(block);
-              } else if (block && block.type) {
-                console.log(`⚠️ Block type "${block.type}" needs marker for deferred append to list item`);
-                markedBlocks.push(block);
-              }
-            });
-            
-            console.log(`🔍 Creating bulleted_list_item with no text but ${validChildren.length} valid children`);
-            
-            // Generate marker if needed
-            let markerToken = null;
-            const richText = [{ type: "text", text: { content: "" } }];
-            if (markedBlocks.length > 0) {
-              const marker = generateMarker();
-              markerToken = `(sn2n:${marker})`;
-              markedBlocks.forEach(block => {
-                block._sn2n_marker = marker;
+            if (firstChild && firstChild.type === 'paragraph' && firstChild.paragraph && firstChild.paragraph.rich_text) {
+              // Promote first paragraph's text to list item text
+              console.log(`🔍 Promoting first paragraph text to bulleted list item, ${remainingChildren.length} remaining children`);
+              const promotedText = firstChild.paragraph.rich_text;
+              
+              // Filter remaining children
+              const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'paragraph', 'to_do', 'toggle', 'image'];
+              const validChildren = [];
+              const markedBlocks = [];
+              
+              remainingChildren.forEach(block => {
+                if (block && block.type && supportedAsChildren.includes(block.type)) {
+                  validChildren.push(block);
+                } else if (block && block.type) {
+                  console.log(`⚠️ Block type "${block.type}" needs marker for deferred append to list item`);
+                  markedBlocks.push(block);
+                }
               });
-              richText[0].text.content = markerToken;
-              console.log(`🔍 Added marker ${markerToken} for ${markedBlocks.length} deferred blocks`);
-            }
-            
-            if (validChildren.length > 0 || markedBlocks.length > 0) {
+              
+              // Add marker if needed
+              let richText = [...promotedText];
+              if (markedBlocks.length > 0) {
+                const marker = generateMarker();
+                const markerToken = `(sn2n:${marker})`;
+                markedBlocks.forEach(block => {
+                  block._sn2n_marker = marker;
+                });
+                richText.push({
+                  type: "text",
+                  text: { content: ` ${markerToken}` },
+                  annotations: {
+                    bold: false,
+                    italic: false,
+                    strikethrough: false,
+                    underline: false,
+                    code: false,
+                    color: "default"
+                  }
+                });
+                console.log(`🔍 Added marker ${markerToken} for ${markedBlocks.length} deferred blocks`);
+              }
+              
               processedBlocks.push({
                 object: "block",
                 type: "bulleted_list_item",
@@ -1306,9 +1322,51 @@ async function extractContentFromHtml(html) {
                 },
               });
               
-              // Add marked blocks to processedBlocks for orchestrator
               if (markedBlocks.length > 0) {
                 processedBlocks.push(...markedBlocks);
+              }
+            } else {
+              // No paragraph to promote, create empty list item with children
+              const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'paragraph', 'to_do', 'toggle', 'image'];
+              const validChildren = [];
+              const markedBlocks = [];
+              
+              nestedChildren.forEach(block => {
+                if (block && block.type && supportedAsChildren.includes(block.type)) {
+                  validChildren.push(block);
+                } else if (block && block.type) {
+                  console.log(`⚠️ Block type "${block.type}" needs marker for deferred append to list item`);
+                  markedBlocks.push(block);
+                }
+              });
+              
+              console.log(`🔍 Creating bulleted_list_item with no text but ${validChildren.length} valid children`);
+              
+              let markerToken = null;
+              const richText = [{ type: "text", text: { content: "" } }];
+              if (markedBlocks.length > 0) {
+                const marker = generateMarker();
+                markerToken = `(sn2n:${marker})`;
+                markedBlocks.forEach(block => {
+                  block._sn2n_marker = marker;
+                });
+                richText[0].text.content = markerToken;
+                console.log(`🔍 Added marker ${markerToken} for ${markedBlocks.length} deferred blocks`);
+              }
+              
+              if (validChildren.length > 0 || markedBlocks.length > 0) {
+                processedBlocks.push({
+                  object: "block",
+                  type: "bulleted_list_item",
+                  bulleted_list_item: {
+                    rich_text: richText,
+                    children: validChildren.length > 0 ? validChildren : undefined
+                  },
+                });
+                
+                if (markedBlocks.length > 0) {
+                  processedBlocks.push(...markedBlocks);
+                }
               }
             }
           }
@@ -1521,37 +1579,53 @@ async function extractContentFromHtml(html) {
               }
             }
           } else if (nestedChildren.length > 0) {
-            // No text content, but has nested blocks - create empty list item with children
-            // Filter nested blocks using same logic
-            const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'paragraph', 'to_do', 'toggle', 'image'];
-            const validChildren = [];
-            const markedBlocks = [];
+            // No text content, but has nested blocks
+            // Check if first child is a paragraph - if so, promote its text to the list item
+            const firstChild = nestedChildren[0];
+            const remainingChildren = nestedChildren.slice(1);
             
-            nestedChildren.forEach(block => {
-              if (block && block.type && supportedAsChildren.includes(block.type)) {
-                validChildren.push(block);
-              } else if (block && block.type) {
-                console.log(`⚠️ Block type "${block.type}" needs marker for deferred append to list item`);
-                markedBlocks.push(block);
-              }
-            });
-            
-            console.log(`🔍 Creating numbered_list_item with no text but ${validChildren.length} valid children`);
-            
-            // Generate marker if needed
-            let markerToken = null;
-            const richText = [{ type: "text", text: { content: "" } }];
-            if (markedBlocks.length > 0) {
-              const marker = generateMarker();
-              markerToken = `(sn2n:${marker})`;
-              markedBlocks.forEach(block => {
-                block._sn2n_marker = marker;
+            if (firstChild && firstChild.type === 'paragraph' && firstChild.paragraph && firstChild.paragraph.rich_text) {
+              // Promote first paragraph's text to list item text
+              console.log(`🔍 Promoting first paragraph text to numbered list item, ${remainingChildren.length} remaining children`);
+              const promotedText = firstChild.paragraph.rich_text;
+              
+              // Filter remaining children
+              const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'paragraph', 'to_do', 'toggle', 'image'];
+              const validChildren = [];
+              const markedBlocks = [];
+              
+              remainingChildren.forEach(block => {
+                if (block && block.type && supportedAsChildren.includes(block.type)) {
+                  validChildren.push(block);
+                } else if (block && block.type) {
+                  console.log(`⚠️ Block type "${block.type}" needs marker for deferred append to list item`);
+                  markedBlocks.push(block);
+                }
               });
-              richText[0].text.content = markerToken;
-              console.log(`🔍 Added marker ${markerToken} for ${markedBlocks.length} deferred blocks`);
-            }
-            
-            if (validChildren.length > 0 || markedBlocks.length > 0) {
+              
+              // Add marker if needed
+              let richText = [...promotedText];
+              if (markedBlocks.length > 0) {
+                const marker = generateMarker();
+                const markerToken = `(sn2n:${marker})`;
+                markedBlocks.forEach(block => {
+                  block._sn2n_marker = marker;
+                });
+                richText.push({
+                  type: "text",
+                  text: { content: ` ${markerToken}` },
+                  annotations: {
+                    bold: false,
+                    italic: false,
+                    strikethrough: false,
+                    underline: false,
+                    code: false,
+                    color: "default"
+                  }
+                });
+                console.log(`🔍 Added marker ${markerToken} for ${markedBlocks.length} deferred blocks`);
+              }
+              
               processedBlocks.push({
                 object: "block",
                 type: "numbered_list_item",
@@ -1561,9 +1635,51 @@ async function extractContentFromHtml(html) {
                 },
               });
               
-              // Add marked blocks to processedBlocks for orchestrator
               if (markedBlocks.length > 0) {
                 processedBlocks.push(...markedBlocks);
+              }
+            } else {
+              // No paragraph to promote, create empty list item with children
+              const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'paragraph', 'to_do', 'toggle', 'image'];
+              const validChildren = [];
+              const markedBlocks = [];
+              
+              nestedChildren.forEach(block => {
+                if (block && block.type && supportedAsChildren.includes(block.type)) {
+                  validChildren.push(block);
+                } else if (block && block.type) {
+                  console.log(`⚠️ Block type "${block.type}" needs marker for deferred append to list item`);
+                  markedBlocks.push(block);
+                }
+              });
+              
+              console.log(`🔍 Creating numbered_list_item with no text but ${validChildren.length} valid children`);
+              
+              let markerToken = null;
+              const richText = [{ type: "text", text: { content: "" } }];
+              if (markedBlocks.length > 0) {
+                const marker = generateMarker();
+                markerToken = `(sn2n:${marker})`;
+                markedBlocks.forEach(block => {
+                  block._sn2n_marker = marker;
+                });
+                richText[0].text.content = markerToken;
+                console.log(`🔍 Added marker ${markerToken} for ${markedBlocks.length} deferred blocks`);
+              }
+              
+              if (validChildren.length > 0 || markedBlocks.length > 0) {
+                processedBlocks.push({
+                  object: "block",
+                  type: "numbered_list_item",
+                  numbered_list_item: {
+                    rich_text: richText,
+                    children: validChildren.length > 0 ? validChildren : undefined
+                  },
+                });
+                
+                if (markedBlocks.length > 0) {
+                  processedBlocks.push(...markedBlocks);
+                }
               }
             }
           }
