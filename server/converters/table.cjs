@@ -308,7 +308,7 @@ async function convertTableBlock(tableHtml, options = {}) {
       
       // Use rich text block conversion for list items
       const { convertRichTextBlock } = require("./rich-text.cjs");
-      return convertRichTextBlock(textContent);
+      return convertRichTextBlock(textContent, { skipSoftBreaks: true });
     }
     
     // For cells with multiple bullet items (not from HTML lists), add soft returns between them
@@ -323,7 +323,7 @@ async function convertTableBlock(tableHtml, options = {}) {
     
     // Use rich text block conversion for all other cell content
     const { convertRichTextBlock } = require("./rich-text.cjs");
-    return convertRichTextBlock(textContent);
+    return convertRichTextBlock(textContent, { skipSoftBreaks: true });
   }
 
   // Extract table rows from thead

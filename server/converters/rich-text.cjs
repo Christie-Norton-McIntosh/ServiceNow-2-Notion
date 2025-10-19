@@ -77,7 +77,10 @@ function convertRichTextBlock(input, options = {}) {
   });
 
   // Force insert __SOFT_BREAK__ after every closing link placeholder followed by any non-whitespace character
-  html = html.replace(/(__LINK_\d+__)(\s*[^\s<])/gi, (match, linkMarker, after) => `${linkMarker}__SOFT_BREAK__${after}`);
+  // Skip this for table cells where links should flow naturally in sentences
+  if (options.skipSoftBreaks !== true) {
+    html = html.replace(/(__LINK_\d+__)(\s*[^\s<])/gi, (match, linkMarker, after) => `${linkMarker}__SOFT_BREAK__${after}`);
+  }
 
   // Handle bold/strong tags
   html = html.replace(/<(b|strong)([^>]*)>([\s\S]*?)<\/\1>/gi, (match, tag, attrs, content) => `__BOLD_START__${content}__BOLD_END__`);
