@@ -7,9 +7,10 @@ package-lock.json
 pnpm-lock.yaml
 
 # Build output
-/dist
-/dist/
+/dist/*
 /build
+# But allow the built userscript to be committed (for GitHub auto-updates)
+!/dist/ServiceNow-2-Notion.user.js
 
 # OS files
 .DS_Store
