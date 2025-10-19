@@ -2395,6 +2395,73 @@ async function extractContentFromHtml(html) {
       
       $elem.remove();
       
+    } else if (tagName === 'li') {
+      // Orphan list item (not processed within ol/ul) - convert to numbered list item
+      console.log(`⚠️ Processing orphan <li> element outside of parent list`);
+      
+      // Check for nested blocks
+      const nestedBlocks = $elem.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.itemgroup, > div.stepxmp, > div.info, > div.note').toArray();
+      
+      if (nestedBlocks.length > 0) {
+        // Has nested blocks - extract text without them
+        const $textOnly = $elem.clone();
+        $textOnly.find('> pre, > ul, > ol, > figure, > table, > p, > div.p, > div.itemgroup, > div.stepxmp, > div.info, > div.note').remove();
+        const textOnlyHtml = $textOnly.html();
+        const { richText: liRichText } = await parseRichText(textOnlyHtml);
+        
+        // Process nested blocks
+        const nestedChildren = [];
+        for (const nestedBlock of nestedBlocks) {
+          const childBlocks = await processElement(nestedBlock);
+          nestedChildren.push(...childBlocks);
+        }
+        
+        // Create numbered list item with text and children
+        const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'paragraph', 'to_do', 'toggle', 'image'];
+        const validChildren = nestedChildren.filter(b => b && b.type && supportedAsChildren.includes(b.type));
+        
+        if (liRichText.length > 0 && liRichText.some(rt => rt.text.content.trim())) {
+          processedBlocks.push({
+            object: "block",
+            type: "numbered_list_item",
+            numbered_list_item: {
+              rich_text: liRichText,
+              children: validChildren.length > 0 ? validChildren : undefined
+            }
+          });
+        } else if (validChildren.length > 0) {
+          // No text but has children - promote first paragraph
+          const firstChild = validChildren[0];
+          if (firstChild && firstChild.type === 'paragraph' && firstChild.paragraph && firstChild.paragraph.rich_text) {
+            const promotedText = firstChild.paragraph.rich_text;
+            const remainingChildren = validChildren.slice(1);
+            processedBlocks.push({
+              object: "block",
+              type: "numbered_list_item",
+              numbered_list_item: {
+                rich_text: promotedText,
+                children: remainingChildren.length > 0 ? remainingChildren : undefined
+              }
+            });
+          }
+        }
+      } else {
+        // Simple list item
+        const liHtml = $elem.html() || '';
+        const { richText: liRichText } = await parseRichText(liHtml);
+        if (liRichText.length > 0 && liRichText.some(rt => rt.text.content.trim())) {
+          processedBlocks.push({
+            object: "block",
+            type: "numbered_list_item",
+            numbered_list_item: {
+              rich_text: liRichText
+            }
+          });
+        }
+      }
+      
+      $elem.remove();
+      
     } else {
       // Container element (div, section, main, article, etc.) - recursively process children
       // First check if there's direct text content mixed with child elements
