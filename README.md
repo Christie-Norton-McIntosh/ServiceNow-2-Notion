@@ -2,7 +2,7 @@
 
 ## ✅ Cleanup Completed - October 13, 2025
 
-__Current release: 9.2.1 (2025-10-18)__
+__Current release: 9.2.3 (2025-10-19)__
 
 The ServiceNow-2-Notion project has been successfully cleaned up after the modularization refactoring.
 
