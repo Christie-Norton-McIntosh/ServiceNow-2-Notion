@@ -1283,14 +1283,21 @@ async function extractContentFromHtml(html) {
             }
           } else if (nestedChildren.length > 0) {
             // No text content, but has nested blocks
-            // Check if first child is a paragraph - if so, promote its text to the list item
-            const firstChild = nestedChildren[0];
-            const remainingChildren = nestedChildren.slice(1);
+            // Check if first PARAGRAPH is present - if so, promote its text to the list item
+            // (Skip images that may appear before paragraphs from paragraph processing)
+            const firstParagraphIndex = nestedChildren.findIndex(child => 
+              child && child.type === 'paragraph' && child.paragraph && child.paragraph.rich_text
+            );
             
-            if (firstChild && firstChild.type === 'paragraph' && firstChild.paragraph && firstChild.paragraph.rich_text) {
+            if (firstParagraphIndex !== -1) {
+              const firstParagraph = nestedChildren[firstParagraphIndex];
+              const beforeParagraph = nestedChildren.slice(0, firstParagraphIndex);
+              const afterParagraph = nestedChildren.slice(firstParagraphIndex + 1);
+              const remainingChildren = [...beforeParagraph, ...afterParagraph];
+              
               // Promote first paragraph's text to list item text
               console.log(`🔍 Promoting first paragraph text to bulleted list item, ${remainingChildren.length} remaining children`);
-              const promotedText = firstChild.paragraph.rich_text;
+              const promotedText = firstParagraph.paragraph.rich_text;
               
               // When promoting paragraphs, mark ALL remaining children for deferred orchestration
               // to avoid creating 4+ levels of nesting
@@ -1619,17 +1626,24 @@ async function extractContentFromHtml(html) {
             }
           } else if (nestedChildren.length > 0) {
             // No text content, but has nested blocks
-            // Check if first child is a paragraph - if so, promote its text to the list item
-            const firstChild = nestedChildren[0];
-            const remainingChildren = nestedChildren.slice(1);
+            // Check if first PARAGRAPH is present - if so, promote its text to the list item
+            // (Skip images that may appear before paragraphs from paragraph processing)
+            const firstParagraphIndex = nestedChildren.findIndex(child => 
+              child && child.type === 'paragraph' && child.paragraph && child.paragraph.rich_text
+            );
             
-            if (firstChild && firstChild.type === 'paragraph' && firstChild.paragraph && firstChild.paragraph.rich_text) {
+            if (firstParagraphIndex !== -1) {
+              const firstParagraph = nestedChildren[firstParagraphIndex];
+              const beforeParagraph = nestedChildren.slice(0, firstParagraphIndex);
+              const afterParagraph = nestedChildren.slice(firstParagraphIndex + 1);
+              const remainingChildren = [...beforeParagraph, ...afterParagraph];
+              
               // Promote first paragraph's text to list item text
               console.log(`🔍 Promoting first paragraph text to numbered list item, ${remainingChildren.length} remaining children`);
-              const promotedText = firstChild.paragraph.rich_text;
+              const promotedText = firstParagraph.paragraph.rich_text;
               
               // When promoting paragraphs, mark ALL remaining children for deferred orchestration
-              // to avoid creating 4+ levels of nesting (numbered > bulleted > numbered > paragraph)
+              // to avoid creating 4+ levels of nesting (numbered > bulleted > numbered > paragraph/image)
               const markedBlocks = remainingChildren.filter(block => block && block.type);
               
               // Add marker if there are remaining children
