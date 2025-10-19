@@ -196,7 +196,7 @@ async function convertTableBlock(tableHtml, options = {}) {
     
     let textContent = '';
     
-    // Check if cell has multiple paragraph tags
+    // Check if cell has paragraph tags
     const paragraphMatches = processedHtml.match(/<p[^>]*>[\s\S]*?<\/p>/gi);
     
     if (paragraphMatches && paragraphMatches.length > 1) {
@@ -205,9 +205,19 @@ async function convertTableBlock(tableHtml, options = {}) {
       textContent = processedHtml
         .replace(/<\/p>\s*<p[^>]*>/gi, '</p>__NEWLINE__<p>')  // Mark newlines with placeholder
         .replace(/<\/?p[^>]*>/gi, '');  // Remove <p> tags but keep content
+    } else if (paragraphMatches && paragraphMatches.length === 1) {
+      // Single paragraph - check if there's text before it (mixed content)
+      const textBeforeP = /^([^<]+)<p/i.exec(processedHtml);
+      if (textBeforeP) {
+        // Mixed content: text followed by <p>
+        textContent = processedHtml.replace(/<p[^>]*>/gi, '__NEWLINE__').replace(/<\/p>/gi, '');
+      } else {
+        // Just a single <p> wrapper
+        textContent = processedHtml.replace(/<\/?p[^>]*>/gi, '');
+      }
     } else {
-      // Single or no paragraph tag - use HTML as-is
-      textContent = processedHtml.replace(/<\/?p[^>]*>/gi, '');  // Remove <p> wrapper
+      // No paragraph tags
+      textContent = processedHtml;
     }
     
     // Normalize whitespace in the HTML (collapse formatting whitespace but preserve tags)
