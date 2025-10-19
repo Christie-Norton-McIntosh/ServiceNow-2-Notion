@@ -67,8 +67,6 @@ const { convertServiceNowUrl, isValidImageUrl } = require("../utils/url.cjs");
  * @see {@link deduplicateTableBlocks} for removing duplicate tables from arrays
  */
 async function convertTableBlock(tableHtml, options = {}) {
-  console.log(`🔥 convertTableBlock called! NEW VERSION WITH DIAGNOSTIC LOGGING`);
-  
   // Remove table dropdown/filter elements
   let cleanedTableHtml = tableHtml.replace(
     /<div[^>]*class="[^\"]*zDocsFilterTableDiv[^\"]*"[^>]*>[\s\S]*?<\/div>/gi,
@@ -79,11 +77,6 @@ async function convertTableBlock(tableHtml, options = {}) {
     ""
   );
 
-  // Check for figures in table HTML
-  const figureCount = (cleanedTableHtml.match(/<figure[^>]*>/gi) || []).length;
-  const imgCount = (cleanedTableHtml.match(/<img[^>]*>/gi) || []).length;
-  console.log(`🔍 Table HTML contains ${figureCount} figure elements and ${imgCount} img tags`);
-  
   // Images in tables will be extracted and placed as separate blocks after the table
   // (removed the global image-to-bullet replacement)
   
@@ -122,16 +115,6 @@ async function convertTableBlock(tableHtml, options = {}) {
   async function processTableCellContent(html) {
     if (!html) return [{ type: "text", text: { content: "" } }];
     
-    // DEBUG: Log first 500 chars of EVERY cell
-    console.log(`🔬 Cell HTML preview (first 500 chars): ${html.substring(0, 500)}`);
-    
-    // Check if this cell contains a figure
-    if (/<figure[^>]*>/i.test(html)) {
-      console.log(`🔍 Processing cell with figure, HTML length: ${html.length}`);
-    } else {
-      console.log(`❌ No <figure> tag found in cell`);
-    }
-    
     // Load HTML into Cheerio for better parsing
     const cheerio = require('cheerio');
     const $ = cheerio.load(html, { decodeEntities: true });
@@ -140,43 +123,29 @@ async function convertTableBlock(tableHtml, options = {}) {
     // Use non-global regex and match() instead of exec() to avoid regex state issues
     const figures = html.match(/<figure[^>]*>[\s\S]*?<\/figure>/gi) || [];
     
-    console.log(`🔍 Found ${figures.length} figure elements in cell`);
-    
     // Track which images will actually be included in Notion upload
     const validImageUrls = new Set();
     
     // Process each figure
     for (const figureHtml of figures) {
-      console.log(`🔍 Processing figure HTML: ${figureHtml.substring(0, 300)}...`);
-      console.log(`🔍 Full figure HTML length: ${figureHtml.length}`);
-      
       // Extract img src from within figure
       const imgMatch = /<img[^>]*src=["']([^"']*)["'][^>]*>/i.exec(figureHtml);
-      console.log(`🔍 imgMatch result: ${imgMatch ? 'FOUND' : 'NOT FOUND'}`);
       if (imgMatch) {
         let src = imgMatch[1];
         const originalSrc = src; // Track original URL to match against HTML
-        console.log(`🔍 Found img src in figure: ${src}`);
         
         // Extract figcaption text
         const captionMatch = /<figcaption[^>]*>([\s\S]*?)<\/figcaption>/i.exec(figureHtml);
         const caption = captionMatch ? cleanHtmlText(captionMatch[1]) : '';
-        console.log(`🔍 Found figcaption: "${caption}"`);
         
         // Convert ServiceNow URLs to proper format
         src = convertServiceNowUrl(src);
-        console.log(`🔍 Converted URL: ${src}`);
         
         // Only add valid image URLs
         if (src && isValidImageUrl(src)) {
           extractedImages.push({ src, alt: caption });
           validImageUrls.add(originalSrc); // Track original URL for matching
-          console.log(`📸 Added image to extraction list with caption: "${caption}"`);
-        } else {
-          console.log(`⚠️ Invalid image URL, skipping: ${src}`);
         }
-      } else {
-        console.log(`⚠️ No img tag found in figure`);
       }
     }
     
@@ -186,7 +155,6 @@ async function convertTableBlock(tableHtml, options = {}) {
     
     // Only process standalone images that are not already in figures
     if (standaloneImages.length > figureImgCount) {
-      console.log(`� Found ${standaloneImages.length - figureImgCount} standalone images`);
       // Process standalone images...
     }
     
@@ -221,44 +189,33 @@ async function convertTableBlock(tableHtml, options = {}) {
     }
     
     // Reload Cheerio with processed HTML (after figure/image replacement)
-    const $processed = cheerio.load(processedHtml, { decodeEntities: true });
+    // Strategy: For cells with multiple <p> tags, we need to:
+    // 1. Preserve the HTML tags inside paragraphs (for uicontrol formatting)
+    // 2. Add newlines between paragraphs (for soft returns)
+    // 3. Pass the HTML to rich-text converter which handles formatting
     
-    // Strategy: Extract text in document order, preserving paragraph boundaries
-    // This handles both text inside and outside <p> tags correctly
     let textContent = '';
-    const textParts = [];
     
-    // Walk through child nodes in order
-    $processed.root().contents().each((i, node) => {
-      if (node.type === 'text') {
-        // Text node outside any paragraph
-        const text = $processed(node).text().replace(/\s+/g, ' ').trim();
-        if (text) textParts.push(text);
-      } else if (node.type === 'tag' && (node.name === 'p' || (node.name === 'div' && $processed(node).hasClass('p')))) {
-        // Paragraph tag - extract its text and mark as paragraph boundary
-        const text = $processed(node).text().replace(/\s+/g, ' ').trim();
-        if (text) textParts.push(text);
-      } else {
-        // Other elements (divs, spans, etc.) - recurse into them
-        const text = $processed(node).text().replace(/\s+/g, ' ').trim();
-        if (text) {
-          // Check if this element contains paragraphs
-          const hasParas = $processed(node).find('p, div.p').length > 0;
-          if (!hasParas) {
-            textParts.push(text);
-          }
-        }
-      }
-    });
+    // Check if cell has multiple paragraph tags
+    const paragraphMatches = processedHtml.match(/<p[^>]*>[\s\S]*?<\/p>/gi);
     
-    // Join parts with newline to preserve paragraph structure
-    // But avoid double-newlines if parts are already separated
-    if (textParts.length > 0) {
-      textContent = textParts.join('\n');
+    if (paragraphMatches && paragraphMatches.length > 1) {
+      // Multiple paragraphs - split on </p> and add newlines between them
+      // This preserves the HTML inside each <p> tag
+      textContent = processedHtml
+        .replace(/<\/p>\s*<p[^>]*>/gi, '</p>\n<p>')  // Add newline between <p> tags
+        .replace(/<\/?p[^>]*>/gi, '');  // Remove <p> tags but keep content
     } else {
-      // Fallback: get all text if the walking approach didn't work
-      textContent = $processed.root().text().replace(/\s+/g, ' ').trim();
+      // Single or no paragraph tag - use HTML as-is
+      textContent = processedHtml.replace(/<\/?p[^>]*>/gi, '');  // Remove <p> wrapper
     }
+    
+    // Normalize whitespace in the HTML (collapse multiple spaces/newlines but preserve tags)
+    // This removes formatting whitespace from source HTML without stripping tags
+    textContent = textContent
+      .replace(/\s*\n\s*/g, ' ')  // Replace newlines (with surrounding whitespace) with single space
+      .replace(/\s{2,}/g, ' ')    // Collapse multiple spaces to single space
+      .trim();
     
     // Remove lists, replace <li> with bullets
     if (/<[uo]l[^>]*>/i.test(processedHtml)) {

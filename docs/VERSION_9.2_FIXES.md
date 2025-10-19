@@ -1,14 +1,70 @@
 # Version 9.2.x — Comprehensive Fix Documentation
 
-**Version Range**: 9.2.0 - 9.2.1  
-**Release Period**: October 16-18, 2025  
+**Version Range**: 9.2.0 - 9.2.2  
+**Release Period**: October 16-19, 2025  
 **Status**: Current Release  
 
 ---
 
 ## Overview
 
-Version 9.2 introduced significant improvements to AutoExtract, content conversion, and table handling. This document consolidates all fixes and enhancements from releases 9.2.0 and 9.2.1.
+Version 9.2 introduced significant improvements to AutoExtract, content conversion, and table handling. This document consolidates all fixes and enhancements from releases 9.2.0, 9.2.1, and 9.2.2.
+
+---
+
+## Version 9.2.2 (October 19, 2025)
+
+### Soft Returns Between Paragraphs in Table Cells
+
+**Problem**: Table cells with multiple `<p>` tags had content collapsed onto a single line without newlines. Additionally, UIControl formatting was lost and unwanted line breaks appeared from source HTML indentation.
+
+**Example Issue**: `"Text1[Text2]"` instead of `"Text1\n[Text2]"`, with "Reason/Comments" appearing as plain text instead of bold+blue.
+
+**Root Cause**: 
+- Initial regex approach extracted plain text, stripping nested HTML tags like `<span class="ph uicontrol">`
+- No paragraph boundary detection to add newlines between multiple `<p>` tags
+- Source HTML indentation/newlines were preserved, creating unwanted line breaks
+
+**Solution**:
+- Detect cells with multiple `<p>` tags and add intentional newlines between them
+- Preserve HTML tags inside paragraphs (for uicontrol and other formatting)
+- Normalize source HTML whitespace (remove indentation) without affecting intentional newlines
+- Pass HTML to rich-text converter which handles `<span class="ph uicontrol">` → bold+blue
+
+**Technical Implementation**:
+```javascript
+// Detect multiple paragraphs and add newlines between them
+const paragraphMatches = processedHtml.match(/<p[^>]*>[\s\S]*?<\/p>/gi);
+
+if (paragraphMatches && paragraphMatches.length > 1) {
+  textContent = processedHtml
+    .replace(/<\/p>\s*<p[^>]*>/gi, '</p>\n<p>')  // Add newline between paragraphs
+    .replace(/<\/?p[^>]*>/gi, '');  // Remove <p> tags but keep nested HTML
+} else {
+  textContent = processedHtml.replace(/<\/?p[^>]*>/gi, '');
+}
+
+// Normalize whitespace (remove source HTML formatting)
+textContent = textContent
+  .replace(/\s*\n\s*/g, ' ')  // Remove indentation newlines
+  .replace(/\s{2,}/g, ' ')    // Collapse multiple spaces
+  .trim();
+```
+
+**Why This Works**: 
+- Preserves HTML tags for rich-text converter to process
+- Adds intentional newlines BEFORE normalizing whitespace
+- Removes formatting whitespace AFTER adding intentional newlines
+- Rich-text converter sees `<span class="ph uicontrol">` and applies bold+blue
+
+**Files**: `server/converters/table.cjs` (processTableCellContent)  
+**Commit**: TBD
+
+**Result**: 
+- ✅ Soft returns between paragraphs in table cells
+- ✅ UIControl formatting preserved (bold + blue)
+- ✅ Clean text flow without unwanted line breaks
+- ✅ All content properly formatted in Notion
 
 ---
 

@@ -159,6 +159,7 @@ router.post('/W2N', async (req, res) => {
     // Prefer HTML content with conversion to Notion blocks
     if (payload.contentHtml) {
       log("🔄 Converting HTML content to Notion blocks");
+      
       const result = await htmlToNotionBlocks(payload.contentHtml);
       children = result.blocks;
       hasVideos = result.hasVideos;
