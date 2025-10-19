@@ -188,6 +188,38 @@ async function convertTableBlock(tableHtml, options = {}) {
       processedHtml = processedHtml.replace(/<img[^>]*>/gi, ' • ');
     }
     
+    // Handle note callouts in table cells - add newlines before and after
+    // Pattern: <div class="note note note_note">...</div>
+    if (/<div[^>]*class=["'][^"']*note note_note[^"']*["'][^>]*>/i.test(processedHtml)) {
+      processedHtml = processedHtml.replace(
+        /<div[^>]*class=["'][^"']*note note_note[^"']*["'][^>]*>([\s\S]*?)<\/div>/gi,
+        (match, content) => {
+          // Extract just the text content from the note
+          const $note = cheerio.load(content, { decodeEntities: true });
+          const noteText = $note.text().replace(/\s+/g, ' ').trim();
+          return `__NEWLINE__${noteText}__NEWLINE__`;
+        }
+      );
+    }
+    
+    // Handle code blocks in table cells - replace <pre> with inline code markers
+    // Code blocks can't be nested in table cells, so we convert them to inline code
+    if (/<pre[^>]*>/i.test(processedHtml)) {
+      processedHtml = processedHtml.replace(
+        /<pre[^>]*>([\s\S]*?)<\/pre>/gi,
+        (match, content) => {
+          // Extract code content and wrap in inline code markers
+          const $code = cheerio.load(content, { decodeEntities: true });
+          const codeText = $code.text().replace(/\s+/g, ' ').trim();
+          return `<code>${codeText}</code>`;
+        }
+      );
+    }
+    
+    // Strip any remaining placeholders (from preprocessing)
+    processedHtml = processedHtml.replace(/___PRE_PLACEHOLDER_\d+___/g, '');
+    processedHtml = processedHtml.replace(/__CODE_PLACEHOLDER__/g, '');
+    
     // Reload Cheerio with processed HTML (after figure/image replacement)
     // Strategy: For cells with multiple <p> tags, we need to:
     // 1. Preserve the HTML tags inside paragraphs (for uicontrol formatting)
