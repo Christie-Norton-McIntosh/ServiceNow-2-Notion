@@ -1253,9 +1253,15 @@ async function extractContentFromHtml(html) {
               
               // Add blocks from nested children that already have markers (from nested list processing)
               // These preserve their original markers and parent associations
-              const blocksWithExistingMarkers = nestedChildren.filter(b => b && b._sn2n_marker);
+              // BUT only if they're not already being added as immediate children or marked blocks
+              const blocksWithExistingMarkers = nestedChildren.filter(b => {
+                if (!b || !b._sn2n_marker) return false;
+                // Check if already in immediateChildren or markedBlocks
+                const alreadyAdded = immediateChildren.includes(b) || markedBlocks.includes(b);
+                return !alreadyAdded;
+              });
               if (blocksWithExistingMarkers.length > 0) {
-                console.log(`🔍 Adding ${blocksWithExistingMarkers.length} blocks with existing markers from nested processing`);
+                console.log(`🔍 Adding ${blocksWithExistingMarkers.length} blocks with existing markers from nested processing (bulleted)`);
                 processedBlocks.push(...blocksWithExistingMarkers);
               }
             }
@@ -1502,9 +1508,15 @@ async function extractContentFromHtml(html) {
               
               // Add blocks from nested children that already have markers (from nested list processing)
               // These preserve their original markers and parent associations
-              const blocksWithExistingMarkers = nestedChildren.filter(b => b && b._sn2n_marker);
+              // BUT only if they're not already being added as immediate children or marked blocks
+              const blocksWithExistingMarkers = nestedChildren.filter(b => {
+                if (!b || !b._sn2n_marker) return false;
+                // Check if already in immediateChildren or markedBlocks
+                const alreadyAdded = immediateChildren.includes(b) || markedBlocks.includes(b);
+                return !alreadyAdded;
+              });
               if (blocksWithExistingMarkers.length > 0) {
-                console.log(`🔍 Adding ${blocksWithExistingMarkers.length} blocks with existing markers from nested processing`);
+                console.log(`🔍 Adding ${blocksWithExistingMarkers.length} blocks with existing markers from nested processing (ordered)`);
                 processedBlocks.push(...blocksWithExistingMarkers);
               }
             }
