@@ -2113,7 +2113,38 @@ async function extractContentFromHtml(html) {
         
         if (isTextNode || (isElementNode && !isTableElement)) {
           // Accumulate text nodes and non-table elements (like spans, links, etc.)
-          currentTextHtml += isTextNode ? (node.data || node.nodeValue || '') : $(node).prop('outerHTML');
+          // BUT: if it's a DIV element, it might contain a table, so recursively process it
+          if (isElementNode && nodeName === 'DIV') {
+            // Check if this div contains a table
+            const $div = $(node);
+            if ($div.find('table').length > 0) {
+              // This div contains a table - flush any text before it
+              if (currentTextHtml.trim()) {
+                const { richText: textRichText } = await parseRichText(currentTextHtml.trim());
+                if (textRichText.length > 0 && textRichText.some(rt => rt.text.content.trim())) {
+                  const textChunks = splitRichTextArray(textRichText);
+                  for (const chunk of textChunks) {
+                    processedBlocks.push({
+                      object: "block",
+                      type: "paragraph",
+                      paragraph: { rich_text: chunk }
+                    });
+                  }
+                }
+                currentTextHtml = '';
+              }
+              
+              // Recursively process the div (which will find and process the table)
+              const divBlocks = await processElement(node);
+              processedBlocks.push(...divBlocks);
+            } else {
+              // Div doesn't contain a table - treat as text/HTML
+              currentTextHtml += $(node).prop('outerHTML');
+            }
+          } else {
+            // Not a div - accumulate as text/HTML
+            currentTextHtml += isTextNode ? (node.data || node.nodeValue || '') : $(node).prop('outerHTML');
+          }
         } else if (isTableElement) {
           // Found table - flush any text before it
           if (currentTextHtml.trim()) {
