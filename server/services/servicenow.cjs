@@ -1144,19 +1144,18 @@ async function extractContentFromHtml(html) {
             // Filter nested blocks: Notion list items can only have certain block types as children
             // Supported: bulleted_list_item, numbered_list_item, to_do, toggle, image
             // NOT supported: table, code, heading, callout, paragraph (must use marker system for 2nd action)
-            // IMPORTANT: Nested list items that have their own children would create 3-level nesting (not supported)
-            // SOLUTION: Flatten paragraph children into the list item's rich_text to maintain 2-level structure
-            const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'to_do', 'toggle', 'image'];
-            const validChildren = [];
-            const markedBlocks = []; // Blocks that need marker-based orchestration
+            // IMPORTANT: To preserve source document order, ALL nested blocks from nestedChildren should use 
+            // marker-based orchestration rather than mixing immediate children with deferred blocks.
+            // SOLUTION: Mark ALL nestedChildren blocks for orchestration to preserve source order
+            // NOTE: liImages (from text content) can still be immediate children as they don't have ordering issues
+            const markedBlocks = []; // All nested blocks use marker-based orchestration to preserve order
             
             nestedChildren.forEach(block => {
-              // Standalone paragraph blocks should be marked for orchestration (2nd API call)
-              // This ensures they appear as separate blocks after the list item
+              // ALL nestedChildren blocks are marked for orchestration to preserve source document order
               if (block && block.type === 'paragraph') {
                 console.log(`⚠️ Standalone paragraph needs marker for deferred append to bulleted_list_item`);
                 markedBlocks.push(block);
-              } else if (block && block.type && supportedAsChildren.includes(block.type)) {
+              } else if (block && block.type && ['bulleted_list_item', 'numbered_list_item', 'to_do', 'toggle', 'image'].includes(block.type)) {
                 // Check if this is a list item with paragraph children (would create 3rd level - flatten instead)
                 const isListItemWithChildren = (block.type === 'numbered_list_item' || block.type === 'bulleted_list_item') &&
                                                block[block.type]?.children && 
@@ -1198,13 +1197,17 @@ async function extractContentFromHtml(html) {
                       delete block[block.type].children;
                     }
                     
-                    validChildren.push(block);
+                    // Mark for orchestration to preserve source order with other nested blocks
+                    console.log(`⚠️ Nested ${block.type} marked for orchestration to preserve source order`);
+                    markedBlocks.push(block);
                   } else {
                     console.log(`⚠️ Nested ${block.type} has ${children.length} non-paragraph/non-image children - marking for orchestration.`);
                     markedBlocks.push(block);
                   }
                 } else {
-                  validChildren.push(block);
+                  // Simple list item or image - mark for orchestration to preserve source order
+                  console.log(`⚠️ Nested ${block.type} marked for orchestration to preserve source order`);
+                  markedBlocks.push(block);
                 }
               } else if (block && block.type) {
                 console.log(`⚠️ Block type "${block.type}" needs marker for deferred append to list item`);
@@ -1212,8 +1215,8 @@ async function extractContentFromHtml(html) {
               }
             });
             
-            // Add images as children of the list item, not as separate blocks
-            const allChildren = [...validChildren];
+            // Only liImages (from text content) are immediate children - nestedChildren use orchestration for source order
+            const allChildren = [];
             if (liImages && liImages.length > 0) {
               allChildren.push(...liImages);
             }
@@ -1393,19 +1396,18 @@ async function extractContentFromHtml(html) {
             // Filter nested blocks: Notion list items can only have certain block types as children
             // Supported: bulleted_list_item, numbered_list_item, to_do, toggle, image
             // NOT supported: table, code, heading, callout, paragraph (must use marker system for 2nd action)
-            // IMPORTANT: Nested list items that have their own children would create 3-level nesting (not supported)
-            // SOLUTION: Flatten paragraph children into the list item's rich_text to maintain 2-level structure
-            const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'to_do', 'toggle', 'image'];
-            const validChildren = [];
-            const markedBlocks = []; // Blocks that need marker-based orchestration
+            // IMPORTANT: To preserve source document order, ALL nested blocks from nestedChildren should use 
+            // marker-based orchestration rather than mixing immediate children with deferred blocks.
+            // SOLUTION: Mark ALL nestedChildren blocks for orchestration to preserve source order
+            // NOTE: liImages (from text content) can still be immediate children as they don't have ordering issues
+            const markedBlocks = []; // All nested blocks use marker-based orchestration to preserve order
             
             nestedChildren.forEach(block => {
-              // Standalone paragraph blocks should be marked for orchestration (2nd API call)
-              // This ensures they appear as separate blocks after the list item
+              // ALL nestedChildren blocks are marked for orchestration to preserve source document order
               if (block && block.type === 'paragraph') {
                 console.log(`⚠️ Standalone paragraph needs marker for deferred append to numbered_list_item`);
                 markedBlocks.push(block);
-              } else if (block && block.type && supportedAsChildren.includes(block.type)) {
+              } else if (block && block.type && ['bulleted_list_item', 'numbered_list_item', 'to_do', 'toggle', 'image'].includes(block.type)) {
                 // Check if this is a list item with paragraph children (would create 3rd level - flatten instead)
                 const isListItemWithChildren = (block.type === 'numbered_list_item' || block.type === 'bulleted_list_item') &&
                                                block[block.type]?.children && 
@@ -1447,13 +1449,17 @@ async function extractContentFromHtml(html) {
                       delete block[block.type].children;
                     }
                     
-                    validChildren.push(block);
+                    // Mark for orchestration to preserve source order with other nested blocks
+                    console.log(`⚠️ Nested ${block.type} marked for orchestration to preserve source order`);
+                    markedBlocks.push(block);
                   } else {
                     console.log(`⚠️ Nested ${block.type} has ${children.length} non-paragraph/non-image children - marking for orchestration.`);
                     markedBlocks.push(block);
                   }
                 } else {
-                  validChildren.push(block);
+                  // Simple list item or image - mark for orchestration to preserve source order
+                  console.log(`⚠️ Nested ${block.type} marked for orchestration to preserve source order`);
+                  markedBlocks.push(block);
                 }
               } else if (block && block.type) {
                 console.log(`⚠️ Block type "${block.type}" needs marker for deferred append to list item`);
@@ -1461,8 +1467,8 @@ async function extractContentFromHtml(html) {
               }
             });
             
-            // Add images as children of the list item, not as separate blocks
-            const allChildren = [...validChildren];
+            // Only liImages (from text content) are immediate children - nestedChildren use orchestration for source order
+            const allChildren = [];
             if (liImages && liImages.length > 0) {
               allChildren.push(...liImages);
             }
@@ -1983,6 +1989,78 @@ async function extractContentFromHtml(html) {
       } else {
         console.log(`🔍 Skipping empty contentPlaceholder (UI chrome)`);
       }
+      $elem.remove(); // Mark as processed
+      
+    } else if (tagName === 'nav') {
+      // Navigation elements - extract links and descriptions but flatten structure
+      // ServiceNow docs use <nav><ul><li><a>link</a><p>description</p></li></ul></nav>
+      // We want: both link and description as separate root-level paragraphs (not as list items)
+      console.log(`🔍 Processing <nav> element - will flatten nested paragraphs`);
+      
+      // Find all list items in the nav
+      const listItems = $elem.find('li').toArray();
+      
+      for (const li of listItems) {
+        const $li = $(li);
+        
+        // Extract link as a root-level paragraph
+        const linkText = $li.find('a').first().text().trim();
+        let linkHref = $li.find('a').first().attr('href');
+        
+        if (linkText) {
+          // Create paragraph with link
+          const linkRichText = [{
+            type: "text",
+            text: { content: linkText },
+            annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: "default" }
+          }];
+          
+          // Add link annotation if href exists and is valid
+          if (linkHref) {
+            // Convert relative URLs to absolute URLs for ServiceNow docs
+            if (linkHref.startsWith('/')) {
+              linkHref = `https://www.servicenow.com${linkHref}`;
+            }
+            
+            // Validate URL before adding link annotation
+            try {
+              new URL(linkHref);
+              linkRichText[0].text.link = { url: linkHref };
+            } catch (e) {
+              console.log(`⚠️ Invalid URL in nav link, skipping link annotation: ${linkHref}`);
+            }
+          }
+          
+          processedBlocks.push({
+            object: "block",
+            type: "paragraph",
+            paragraph: {
+              rich_text: linkRichText
+            }
+          });
+        }
+        
+        // Find any paragraphs in the list item and add them as root-level paragraphs
+        const paragraphs = $li.find('p').toArray();
+        for (const p of paragraphs) {
+          const $p = $(p);
+          const pHtml = $p.html() || '';
+          if (pHtml) {
+            const { richText: pRichText } = await parseRichText(pHtml);
+            if (pRichText.length > 0 && pRichText.some(rt => rt.text.content.trim())) {
+              const richTextChunks = splitRichTextArray(pRichText);
+              for (const chunk of richTextChunks) {
+                processedBlocks.push({
+                  object: "block",
+                  type: "paragraph",
+                  paragraph: { rich_text: chunk }
+                });
+              }
+            }
+          }
+        }
+      }
+      
       $elem.remove(); // Mark as processed
       
     } else {

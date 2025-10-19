@@ -1,7 +1,7 @@
-# Fix: Table Formatting Issues (v9.2.1)
+# Fix: Table Formatting Issues (v9.2.1 → v9.2.2)
 
-**Date**: October 18, 2025  
-**Version**: 9.2.1  
+**Date**: October 18-19, 2025  
+**Versions**: 9.2.1 → 9.2.2  
 **Priority**: HIGH  
 **Status**: ✅ Fixed
 
@@ -9,7 +9,7 @@
 
 ## Overview
 
-Three related formatting issues were discovered during live usage of ServiceNow-2-Notion with table-heavy pages. All issues affected how table content was displayed in Notion and have been resolved in version 9.2.1.
+Multiple related formatting issues were discovered during live usage of ServiceNow-2-Notion with table-heavy pages. All issues affected how table content was displayed in Notion and have been resolved across versions 9.2.1 and 9.2.2.
 
 ---
 
@@ -246,6 +246,113 @@ Modified `convertRichTextBlock()` in `server/converters/rich-text.cjs`:
 
 ---
 
+## Issue 4: Soft Returns Between Paragraphs in Table Cells (v9.2.2)
+
+### Problem
+
+Table cells containing multiple `<p>` tags had their content collapsed onto a single line, even after implementing the bullet fix. Additionally, UIControl formatting (`<span class="ph uicontrol">`) was being lost, and unwanted line breaks appeared from source HTML indentation.
+
+**Input HTML:**
+```html
+<td>
+  <p>The date and time to activate the plugin.</p>
+  <div class="note">
+    <span class="note__title">Note:</span> Enter request in the 
+    <span class="ph uicontrol">Reason/Comments</span> field.
+  </div>
+</td>
+```
+
+**Expected Output:**
+```
+The date and time to activate the plugin.
+Note: Enter request in the Reason/Comments field.
+```
+(With "Reason/Comments" formatted as bold+blue)
+
+**Actual Output (v9.2.1):**
+```
+The date and time to activate the plugin.Note: Enter request in the Reason/Comments
+field.
+```
+(Content mashed together, unwanted line break after "Reason/Comments", formatting lost)
+
+### Root Cause
+
+Multiple compounding issues in `processTableCellContent()`:
+
+1. **Text Extraction vs HTML Preservation**: Initial regex approach extracted plain text from `<p>` tags, stripping all nested formatting tags like `<span class="ph uicontrol">`.
+
+2. **Paragraph Boundary Detection**: The code needed to identify multiple paragraphs to add newlines between them, but couldn't do so while preserving HTML.
+
+3. **Source HTML Whitespace**: The source HTML contained indentation and newlines (from prettified markup), which were being preserved and converted to unwanted line breaks in Notion.
+
+### Solution Evolution
+
+**Attempt 1 - Cheerio DOM Walking**: Failed because Cheerio's fragment parsing couldn't capture text outside tags in mixed content.
+
+**Attempt 2 - Regex Text Extraction**: Captured paragraph boundaries but stripped all HTML tags, losing uicontrol formatting.
+
+**Final Solution - HTML Preservation with Smart Normalization**: 
+1. Detect multiple `<p>` tags
+2. Add intentional newlines between them
+3. Remove `<p>` wrappers but keep nested HTML tags
+4. Normalize source whitespace without affecting intentional newlines
+5. Pass HTML to rich-text converter
+
+### Implementation
+
+Modified `processTableCellContent()` in `server/converters/table.cjs`:
+
+```javascript
+// Check if cell has multiple paragraph tags
+const paragraphMatches = processedHtml.match(/<p[^>]*>[\s\S]*?<\/p>/gi);
+
+if (paragraphMatches && paragraphMatches.length > 1) {
+  // Multiple paragraphs - split on </p> and add newlines between them
+  // This preserves the HTML inside each <p> tag
+  textContent = processedHtml
+    .replace(/<\/p>\s*<p[^>]*>/gi, '</p>\n<p>')  // Add newline between <p> tags
+    .replace(/<\/?p[^>]*>/gi, '');  // Remove <p> tags but keep content
+} else {
+  // Single or no paragraph tag - use HTML as-is
+  textContent = processedHtml.replace(/<\/?p[^>]*>/gi, '');  // Remove <p> wrapper
+}
+
+// Normalize whitespace in the HTML (collapse formatting whitespace but preserve tags)
+// This removes indentation from source HTML without stripping tags
+textContent = textContent
+  .replace(/\s*\n\s*/g, ' ')  // Replace newlines (with surrounding whitespace) with single space
+  .replace(/\s{2,}/g, ' ')    // Collapse multiple spaces to single space
+  .trim();
+```
+
+### Key Insights
+
+1. **HTML vs Text**: Must preserve HTML structure (tags) while managing text flow (newlines/spaces)
+
+2. **Intentional vs Formatting Newlines**: 
+   - Intentional: Between `</p>` and `<p>` tags (added before normalization)
+   - Formatting: Source HTML indentation (removed during normalization)
+
+3. **Order Matters**: Add intentional newlines FIRST, then normalize whitespace
+
+4. **Rich-Text Converter Integration**: By preserving HTML tags, the existing rich-text converter automatically handles:
+   - `<span class="ph uicontrol">` → bold + blue
+   - `<span class="ph keyword">` → bold
+   - Code blocks, inline formatting, etc.
+
+### Files Changed
+
+- `server/converters/table.cjs` (processTableCellContent function)
+
+### Commit
+
+- **SHA**: TBD (v9.2.2)
+- **Message**: `fix(table): preserve HTML tags and add soft returns between paragraphs in cells`
+
+---
+
 ## Technical Details
 
 ### Marker System
@@ -406,8 +513,9 @@ https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/produ
 
 | Date | Version | Changes |
 |------|---------|---------|
-| 2025-10-18 | 9.2.1 | All three issues fixed and tested |
+| 2025-10-18 | 9.2.1 | Fixed conditional image placeholders, bullet formatting, uicontrol styling |
+| 2025-10-19 | 9.2.2 | Fixed soft returns between paragraphs in table cells using regex extraction |
 
 ---
 
-*Last Updated: October 18, 2025*
+*Last Updated: October 19, 2025*
