@@ -1154,6 +1154,14 @@ async function extractContentFromHtml(html) {
             const immediateChildren = [];
             
             nestedChildren.forEach(block => {
+              // Check if block already has a marker from nested processing
+              // If so, it should go directly to processedBlocks, not get a new marker
+              if (block && block._sn2n_marker) {
+                console.log(`🔍 Block type "${block.type}" already has marker ${block._sn2n_marker} - preserving for orchestration`);
+                // This block will be added to processedBlocks separately to maintain its marker
+                return; // Skip further processing for this block
+              }
+              
               if (block && block.type === 'paragraph') {
                 console.log(`⚠️ Standalone paragraph needs marker for deferred append to bulleted_list_item`);
                 markedBlocks.push(block);
@@ -1241,6 +1249,14 @@ async function extractContentFromHtml(html) {
                 if (markedBlocks.length > 0) {
                   processedBlocks.push(...markedBlocks);
                 }
+              }
+              
+              // Add blocks from nested children that already have markers (from nested list processing)
+              // These preserve their original markers and parent associations
+              const blocksWithExistingMarkers = nestedChildren.filter(b => b && b._sn2n_marker);
+              if (blocksWithExistingMarkers.length > 0) {
+                console.log(`🔍 Adding ${blocksWithExistingMarkers.length} blocks with existing markers from nested processing`);
+                processedBlocks.push(...blocksWithExistingMarkers);
               }
             }
           } else if (nestedChildren.length > 0) {
@@ -1385,6 +1401,14 @@ async function extractContentFromHtml(html) {
             const immediateChildren = [];
             
             nestedChildren.forEach(block => {
+              // Check if block already has a marker from nested processing
+              // If so, it should go directly to processedBlocks, not get a new marker
+              if (block && block._sn2n_marker) {
+                console.log(`🔍 Block type "${block.type}" already has marker ${block._sn2n_marker} - preserving for orchestration`);
+                // This block will be added to processedBlocks separately to maintain its marker
+                return; // Skip further processing for this block
+              }
+              
               if (block && block.type === 'paragraph') {
                 console.log(`⚠️ Standalone paragraph needs marker for deferred append to numbered_list_item`);
                 markedBlocks.push(block);
@@ -1474,6 +1498,14 @@ async function extractContentFromHtml(html) {
                 if (markedBlocks.length > 0) {
                   processedBlocks.push(...markedBlocks);
                 }
+              }
+              
+              // Add blocks from nested children that already have markers (from nested list processing)
+              // These preserve their original markers and parent associations
+              const blocksWithExistingMarkers = nestedChildren.filter(b => b && b._sn2n_marker);
+              if (blocksWithExistingMarkers.length > 0) {
+                console.log(`🔍 Adding ${blocksWithExistingMarkers.length} blocks with existing markers from nested processing`);
+                processedBlocks.push(...blocksWithExistingMarkers);
               }
             }
           } else if (nestedChildren.length > 0) {
