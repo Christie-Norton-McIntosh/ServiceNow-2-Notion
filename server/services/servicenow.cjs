@@ -2601,10 +2601,35 @@ async function extractContentFromHtml(html) {
       } else {
         // No mixed content or no children - process normally
         console.log(`🔍 Container element <${tagName}>, recursively processing ${children.length} children`);
-        for (const child of children) {
-          const childBlocks = await processElement(child);
-          processedBlocks.push(...childBlocks);
+        
+        if (children.length === 0) {
+          // No children - check if there's text content to preserve
+          const containerText = cleanHtmlText(fullHtml).trim();
+          if (containerText) {
+            console.log(`🔍 Container has no children but has text content: "${containerText.substring(0, 80)}..."`);
+            const { richText: textContent, imageBlocks: textImages } = await parseRichText(fullHtml);
+            if (textImages && textImages.length > 0) {
+              processedBlocks.push(...textImages);
+            }
+            if (textContent.length > 0 && textContent.some(rt => rt.text.content.trim())) {
+              const richTextChunks = splitRichTextArray(textContent);
+              for (const chunk of richTextChunks) {
+                processedBlocks.push({
+                  object: "block",
+                  type: "paragraph",
+                  paragraph: { rich_text: chunk }
+                });
+              }
+            }
+          }
+        } else {
+          // Has children - process them
+          for (const child of children) {
+            const childBlocks = await processElement(child);
+            processedBlocks.push(...childBlocks);
+          }
         }
+        
         // Mark container as processed
         $elem.remove();
       }
