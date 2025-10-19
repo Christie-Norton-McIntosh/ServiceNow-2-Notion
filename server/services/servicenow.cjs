@@ -1199,12 +1199,8 @@ async function extractContentFromHtml(html) {
               }
             });
             
-            // Combine images from text content with immediate children from nested blocks
-            const allChildren = [];
-            if (liImages && liImages.length > 0) {
-              allChildren.push(...liImages);
-            }
-            allChildren.push(...immediateChildren);
+            // Use only immediateChildren - images are now handled separately with markers
+            const allChildren = [...immediateChildren];
             
             if (liRichText.length > 0 && liRichText.some(rt => rt.text.content.trim())) {
               const richTextChunks = splitRichTextArray(liRichText);
@@ -1519,12 +1515,8 @@ async function extractContentFromHtml(html) {
               }
             });
             
-            // Combine images from text content with immediate children from nested blocks
-            const allChildren = [];
-            if (liImages && liImages.length > 0) {
-              allChildren.push(...liImages);
-            }
-            allChildren.push(...immediateChildren);
+            // Use only immediateChildren - images are now handled separately with markers
+            const allChildren = [...immediateChildren];
             
             if (liRichText.length > 0 && liRichText.some(rt => rt.text.content.trim())) {
               const richTextChunks = splitRichTextArray(liRichText);
