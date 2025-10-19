@@ -203,24 +203,27 @@ async function convertTableBlock(tableHtml, options = {}) {
       // Multiple paragraphs - split on </p> and add newlines between them
       // This preserves the HTML inside each <p> tag
       textContent = processedHtml
-        .replace(/<\/p>\s*<p[^>]*>/gi, '</p>\n<p>')  // Add newline between <p> tags
+        .replace(/<\/p>\s*<p[^>]*>/gi, '</p>__NEWLINE__<p>')  // Mark newlines with placeholder
         .replace(/<\/?p[^>]*>/gi, '');  // Remove <p> tags but keep content
     } else {
       // Single or no paragraph tag - use HTML as-is
       textContent = processedHtml.replace(/<\/?p[^>]*>/gi, '');  // Remove <p> wrapper
     }
     
-    // Normalize whitespace in the HTML (collapse multiple spaces/newlines but preserve tags)
-    // This removes formatting whitespace from source HTML without stripping tags
+    // Normalize whitespace in the HTML (collapse formatting whitespace but preserve tags)
+    // This removes indentation from source HTML without stripping tags
     textContent = textContent
       .replace(/\s*\n\s*/g, ' ')  // Replace newlines (with surrounding whitespace) with single space
       .replace(/\s{2,}/g, ' ')    // Collapse multiple spaces to single space
       .trim();
     
+    // Restore intentional newlines from paragraph boundaries
+    textContent = textContent.replace(/__NEWLINE__/g, '\n');
+    
     // Remove lists, replace <li> with bullets
     if (/<[uo]l[^>]*>/i.test(processedHtml)) {
       processedHtml = processedHtml.replace(/<\/?[uo]l[^>]*>/gi, "");
-      processedHtml = processedHtml.replace(/<li[^>]*>/gi, "\n• ");
+      processedHtml = processedHtml.replace(/<li[^>]*>/gi, "__NEWLINE__• ");
       processedHtml = processedHtml.replace(/<\/li>/gi, "");
       
       // For list content, also extract paragraphs and normalize whitespace
@@ -232,8 +235,17 @@ async function convertTableBlock(tableHtml, options = {}) {
       });
       
       textContent = listParagraphs.length > 0
-        ? listParagraphs.join('\n')
+        ? listParagraphs.join('__NEWLINE__')
         : $list.text().replace(/\s+/g, ' ').trim();
+      
+      // Normalize whitespace
+      textContent = textContent
+        .replace(/\s*\n\s*/g, ' ')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+      
+      // Restore newlines
+      textContent = textContent.replace(/__NEWLINE__/g, '\n');
       
       // Use rich text block conversion for list items
       const { convertRichTextBlock } = require("./rich-text.cjs");
@@ -245,8 +257,9 @@ async function convertTableBlock(tableHtml, options = {}) {
     // Example: "• Item 1 • Item 2" becomes "• Item 1\n• Item 2"
     if (/•[^•]+•/.test(textContent)) {
       // Add newline before each bullet that's not at the start
-      textContent = textContent.replace(/([^\n])(\s*•\s*)/g, '$1\n$2');
+      textContent = textContent.replace(/([^\n])(\s*•\s*)/g, '$1__NEWLINE__$2');
       textContent = textContent.replace(/^\s+/, ""); // Clean leading whitespace
+      textContent = textContent.replace(/__NEWLINE__/g, '\n'); // Restore newlines
     }
     
     // Use rich text block conversion for all other cell content
