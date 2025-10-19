@@ -31,20 +31,15 @@ function collectAndStripMarkers(blocks, map = {}, depth = 0) {
       if (b._sn2n_marker) {
         const m = String(b._sn2n_marker);
         console.log(`${indent}🔖 collectAndStripMarkers: Found marker "${m}" at depth ${depth}, index ${i}, type: ${b.type}`);
-        // Only collect and remove blocks at depth 0 (top-level)
-        // Blocks at depth > 0 are inside nested list items and should stay there
-        // Their markers will be orchestrated in a separate pass
-        if (depth === 0) {
-          if (!map[m]) map[m] = [];
-          map[m].push(b);
-          // mark this block as collected so we can remove it from the
-          // top-level children before sending to Notion (avoids duplicates)
-          b._sn2n_collected = true;
-          console.log(`${indent}🔖   Marked block as collected (will be removed from initial payload)`);
-          delete b._sn2n_marker;
-        } else {
-          console.log(`${indent}🔖   Skipping collection (depth > 0, stays in nested structure for later orchestration)`);
-        }
+        // Collect markers at all depths for orchestration
+        // Blocks will be appended to their marker location via API after page creation
+        if (!map[m]) map[m] = [];
+        map[m].push(b);
+        // mark this block as collected so we can remove it from the
+        // initial children before sending to Notion (avoids duplicates and 3+ level nesting)
+        b._sn2n_collected = true;
+        console.log(`${indent}🔖   Marked block as collected (will be removed from initial payload)`);
+        delete b._sn2n_marker;
       }
       const type = b.type;
       if (type && b[type] && Array.isArray(b[type].children)) {
