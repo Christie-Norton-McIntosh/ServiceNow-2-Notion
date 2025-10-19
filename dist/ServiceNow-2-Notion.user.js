@@ -224,6 +224,130 @@
   const ID_ROOT = "w2n-saving-progress";
   const PREFIX = "w2n-progress-";
 
+  // Inject CSS styles once
+  let stylesInjected = false;
+  function injectStyles() {
+    if (stylesInjected) return;
+    stylesInjected = true;
+
+    const style = document.createElement("style");
+    style.textContent = `
+    .${PREFIX}spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid #e5e7eb;
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: ${PREFIX}spin 1s linear infinite;
+      margin: 20px auto;
+    }
+
+    @keyframes ${PREFIX}spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .${PREFIX}bar {
+      width: 100%;
+      height: 8px;
+      background: #e5e7eb;
+      border-radius: 4px;
+      overflow: hidden;
+      margin: 20px 0;
+    }
+
+    .${PREFIX}bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #3b82f6, #10b981);
+      transition: width 0.3s ease;
+      border-radius: 4px;
+    }
+
+    .${PREFIX}steps {
+      list-style: none;
+      padding: 0;
+      margin: 15px 0;
+      max-height: 150px;
+      overflow-y: auto;
+      font-size: 13px;
+      color: #6b7280;
+    }
+
+    .${PREFIX}steps li {
+      padding: 4px 0;
+    }
+
+    .${PREFIX}actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+    }
+
+    .${PREFIX}view,
+    .${PREFIX}retry,
+    .${PREFIX}close,
+    .${PREFIX}config {
+      padding: 8px 16px;
+      border-radius: 4px;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      text-decoration: none;
+    }
+
+    .${PREFIX}view {
+      background: #10b981;
+      color: white;
+    }
+
+    .${PREFIX}retry {
+      background: #f59e0b;
+      color: white;
+    }
+
+    .${PREFIX}close {
+      background: #6b7280;
+      color: white;
+    }
+
+    .${PREFIX}success-check {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: #10b981;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 36px;
+      font-weight: bold;
+      margin: 20px auto;
+      animation: ${PREFIX}scale-in 0.3s ease;
+    }
+
+    @keyframes ${PREFIX}scale-in {
+      from { transform: scale(0); }
+      to { transform: scale(1); }
+    }
+
+    .${PREFIX}title {
+      margin: 0 0 10px 0;
+      font-size: 20px;
+      font-weight: 600;
+      color: #1f2937;
+    }
+
+    .${PREFIX}message {
+      margin: 10px 0;
+      font-size: 14px;
+      color: #4b5563;
+      min-height: 20px;
+    }
+  `;
+    document.head.appendChild(style);
+  }
+
   // Helper function to create DOM elements
   function createEl$1(tag, attrs = {}, content = "") {
     const el = document.createElement(tag);
@@ -252,6 +376,9 @@
   }
 
   function createOverlay() {
+    // Ensure styles are injected
+    injectStyles();
+    
     const overlay = createEl$1("div", {
       id: ID_ROOT,
       style:
