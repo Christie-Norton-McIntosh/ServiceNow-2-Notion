@@ -1338,6 +1338,12 @@ async function extractContentFromHtml(html) {
               const markedBlocks = [];
               
               nestedChildren.forEach(block => {
+                // Skip blocks that already have markers - they'll be orchestrated separately
+                if (block && block._sn2n_marker) {
+                  console.log(`🔍 Block type "${block.type}" already has marker ${block._sn2n_marker} - will be added separately`);
+                  return;
+                }
+                
                 if (block && block.type && supportedAsChildren.includes(block.type)) {
                   validChildren.push(block);
                 } else if (block && block.type) {
@@ -1668,6 +1674,12 @@ async function extractContentFromHtml(html) {
               const markedBlocks = [];
               
               nestedChildren.forEach(block => {
+                // Skip blocks that already have markers - they'll be orchestrated separately
+                if (block && block._sn2n_marker) {
+                  console.log(`🔍 Block type "${block.type}" already has marker ${block._sn2n_marker} - will be added separately`);
+                  return;
+                }
+                
                 if (block && block.type && supportedAsChildren.includes(block.type)) {
                   validChildren.push(block);
                 } else if (block && block.type) {
