@@ -93,7 +93,30 @@ This project transforms a large monolithic userscript (18,438 lines across 4 fil
 - **Local Proxy Server**: Node.js server handles HTML-to-Notion conversion with full Cheerio DOM manipulation
 - **Modular Architecture**: Clean ES6 modules bundled with Rollup for easy maintenance
 
-## 📝 Changelog
+## � Installation
+
+### Install from GitHub (Recommended - Auto-updates)
+
+The easiest way to install and receive automatic updates:
+
+1. **Install Tampermonkey** extension in your browser if you haven't already
+2. **Click this link to install**: [ServiceNow-2-Notion.user.js](https://raw.githubusercontent.com/Christie-Norton-McIntosh/ServiceNow-2-Notion/main/dist/ServiceNow-2-Notion.user.js)
+3. Tampermonkey will prompt you to install the script - click **Install**
+4. **Automatic Updates**: Tampermonkey will automatically check for and install updates from GitHub based on your Tampermonkey settings
+
+### Manual Installation (Development)
+
+If you're developing or testing local changes:
+
+1. Clone this repository
+2. Run `npm install` and `npm run build` to generate the userscript
+3. In Tampermonkey, click the **+** button to create a new script
+4. Copy the contents of `dist/ServiceNow-2-Notion.user.js` and paste it into the editor
+5. Save the script
+
+**Note**: With manual installation, you'll need to manually re-upload the userscript after each rebuild when you make changes.
+
+## �📝 Changelog
 
 See below for a complete history of changes and releases.
 

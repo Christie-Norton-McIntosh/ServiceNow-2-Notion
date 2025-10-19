@@ -57,6 +57,8 @@ npm run build    # Rebuild userscript
 npm start        # Restart proxy server
 ```
 
+Note: If your edits change any client-side code (files under `src/` or the generated userscript), you must re-run `npm run build` and re-upload the generated `dist/ServiceNow-2-Notion.user.js` to Tampermonkey (or reinstall the userscript) so the browser userscript reflects your changes.
+
 ## 🎨 Project-Specific Patterns
 
 ### Client-Side (Userscript) Patterns
@@ -166,6 +168,7 @@ npm start        # Restart proxy server
 3. Wire modal injectors in `src/main.js` only
 4. Run `npm run build` and verify dist file
 5. Manual smoke test in Tampermonkey
+6. If client-side code changed, re-upload userscript
 6. Bump version with `npm version` for behavioral changes
 7. Strip private keys before Notion API calls
 8. Test HTML conversion edge cases
