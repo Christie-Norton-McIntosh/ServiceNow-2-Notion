@@ -2342,6 +2342,49 @@ async function extractContentFromHtml(html) {
             const childBlocks = await processElement(child);
             processedBlocks.push(...childBlocks);
           }
+          
+          // Process any remaining text AFTER the last block-level child
+          const lastBlockChild = blockLevelChildren[blockLevelChildren.length - 1];
+          let afterBlockHtml = '';
+          let foundLastBlock = false;
+          
+          for (const node of childNodes) {
+            // Start accumulating after we pass the last block-level child
+            if (node.nodeType === 1 && node === lastBlockChild) {
+              foundLastBlock = true;
+              continue;
+            }
+            
+            if (foundLastBlock) {
+              const isTextNode = node.nodeType === 3;
+              const isElementNode = node.nodeType === 1;
+              
+              if (isTextNode) {
+                afterBlockHtml += node.data || node.nodeValue || '';
+              } else if (isElementNode) {
+                // Add inline element HTML (links, spans, etc.)
+                afterBlockHtml += $(node).prop('outerHTML');
+              }
+            }
+          }
+          
+          if (afterBlockHtml && cleanHtmlText(afterBlockHtml).trim()) {
+            console.log(`🔍 Processing text after last block-level child element`);
+            const { richText: afterText, imageBlocks: afterImages } = await parseRichText(afterBlockHtml);
+            if (afterImages && afterImages.length > 0) {
+              processedBlocks.push(...afterImages);
+            }
+            if (afterText.length > 0 && afterText.some(rt => rt.text.content.trim())) {
+              const richTextChunks = splitRichTextArray(afterText);
+              for (const chunk of richTextChunks) {
+                processedBlocks.push({
+                  object: "block",
+                  type: "paragraph",
+                  paragraph: { rich_text: chunk }
+                });
+              }
+            }
+          }
         } else {
           // Only inline children - process as a single paragraph with all content
           console.log(`🔍 Container has only inline children - creating single paragraph`);
