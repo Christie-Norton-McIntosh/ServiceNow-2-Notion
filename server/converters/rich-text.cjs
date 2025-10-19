@@ -63,16 +63,21 @@ function convertRichTextBlock(input, options = {}) {
   let html = typeof input === "string" ? input : "";
   if (!html) return [];
 
-  // Force insert __SOFT_BREAK__ after every closing </a> tag followed by any non-whitespace character
-  html = html.replace(/(<a [^>]+>.*?<\/a>)(\s*[^\s<])/gi, (match, aTag, after) => `${aTag}__SOFT_BREAK__${after}`);
-
-  // Handle anchor/link tags
+  // Extract and store links first with indexed placeholders
+  const links = [];
   html = html.replace(/<a([^>]*)>([\s\S]*?)<\/a>/gi, (match, attrs, content) => {
     const hrefMatch = attrs.match(/href=["']([^"']*)["']/i);
-    const href = hrefMatch ? hrefMatch[1] : "";
-    // Use ~~~ as separator instead of | to avoid conflict with technical identifier detection
-    return `__LINK__${href}~~~${content}__`;
+    let href = hrefMatch ? hrefMatch[1] : "";
+    // Convert relative ServiceNow URLs to absolute
+    href = convertServiceNowUrl(href);
+    const linkIndex = links.length;
+    links.push({ href, content });
+    // Use indexed placeholder that won't be caught by technical identifier regex
+    return `__LINK_${linkIndex}__`;
   });
+
+  // Force insert __SOFT_BREAK__ after every closing link placeholder followed by any non-whitespace character
+  html = html.replace(/(__LINK_\d+__)(\s*[^\s<])/gi, (match, linkMarker, after) => `${linkMarker}__SOFT_BREAK__${after}`);
 
   // Handle bold/strong tags
   html = html.replace(/<(b|strong)([^>]*)>([\s\S]*?)<\/\1>/gi, (match, tag, attrs, content) => `__BOLD_START__${content}__BOLD_END__`);
@@ -122,8 +127,8 @@ function convertRichTextBlock(input, options = {}) {
   // Examples: com.snc.incident.mim.ml_solution, sys_user_table, package.class.method
   // Must have at least 2 segments and no brackets/parentheses
   html = html.replace(/\b([a-zA-Z][a-zA-Z0-9]*(?:[_.][a-zA-Z][a-zA-Z0-9]*)+)(?![_.a-zA-Z0-9])/g, (match, identifier) => {
-    // Skip if already wrapped or if it's part of a URL
-    if (match.includes('__CODE_START__') || match.includes('http')) {
+    // Skip if already wrapped, part of a URL, or part of a link placeholder
+    if (match.includes('__CODE_START__') || match.includes('http') || match.includes('__LINK_')) {
       return match;
     }
     return `__CODE_START__${identifier}__CODE_END__`;
@@ -138,7 +143,7 @@ function convertRichTextBlock(input, options = {}) {
   html = html.replace(/ *\n */g, '\n'); // Clean spaces around newlines
 
   // Now split by markers and build rich text
-  const parts = html.split(/(__BOLD_START__|__BOLD_END__|__BOLD_BLUE_START__|__BOLD_BLUE_END__|__ITALIC_START__|__ITALIC_END__|__CODE_START__|__CODE_END__|__LINK__[^_]*__)/);
+  const parts = html.split(/(__BOLD_START__|__BOLD_END__|__BOLD_BLUE_START__|__BOLD_BLUE_END__|__ITALIC_START__|__ITALIC_END__|__CODE_START__|__CODE_END__|__LINK_\d+__|__SOFT_BREAK__)/);
   let currentAnnotations = {
     bold: false,
     italic: false,
@@ -166,10 +171,11 @@ function convertRichTextBlock(input, options = {}) {
     } else if (part === "__CODE_END__") {
       currentAnnotations.code = false;
       currentAnnotations.color = "default";
-    } else if (part.startsWith("__LINK__")) {
-      const linkData = part.replace("__LINK__", "").replace("__", "");
-      const [href, content] = linkData.split("~~~");
-      if (content && content.trim()) {
+    } else if (part.match(/^__LINK_(\d+)__$/)) {
+      const linkIndex = parseInt(part.match(/^__LINK_(\d+)__$/)[1]);
+      const linkInfo = links[linkIndex];
+      if (linkInfo && linkInfo.content && linkInfo.content.trim()) {
+        const { href, content } = linkInfo;
         const trimmedContent = content.trim();
         // Validate URL - must be absolute http(s) URL, not empty or relative
         const isValidUrl = href && href.trim() && /^https?:\/\/.+/i.test(href.trim());
