@@ -219,6 +219,7 @@ async function convertTableBlock(tableHtml, options = {}) {
     // Strip any remaining placeholders (from preprocessing)
     processedHtml = processedHtml.replace(/___PRE_PLACEHOLDER_\d+___/g, '');
     processedHtml = processedHtml.replace(/__CODE_PLACEHOLDER__/g, '');
+    processedHtml = processedHtml.replace(/___\w+_PLACEHOLDER_*\w*___/gi, '');
     
     // Reload Cheerio with processed HTML (after figure/image replacement)
     // Strategy: For cells with multiple <p> tags, we need to:
