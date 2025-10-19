@@ -1133,7 +1133,7 @@ async function extractContentFromHtml(html) {
           // Extract text content without nested blocks for the list item text
           const $textOnly = $li.clone();
           // Remove nested blocks (including div.p which may contain div.note, AND direct div.note children)
-          $textOnly.find('> pre, > ul, > ol, > figure, > table, > p, > div.p, > div.itemgroup, > div.stepxmp, > div.info, > div.note').remove();
+          $textOnly.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.itemgroup, > div.stepxmp, > div.info, > div.note').remove();
           const textOnlyHtml = $textOnly.html();
           
           // Process nested blocks first to add as children
@@ -1444,7 +1444,7 @@ async function extractContentFromHtml(html) {
           // Extract text content without nested blocks for the list item text
           const $textOnly = $li.clone();
           // Remove nested blocks (including div.p which may contain div.note, AND direct div.note children)
-          $textOnly.find('> pre, > ul, > ol, > figure, > table, > p, > div.p, > div.itemgroup, > div.stepxmp, > div.info, > div.note').remove();
+          $textOnly.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.itemgroup, > div.stepxmp, > div.info, > div.note').remove();
           const textOnlyHtml = $textOnly.html();
           
           // Process nested blocks first to add as children
@@ -2405,7 +2405,7 @@ async function extractContentFromHtml(html) {
       if (nestedBlocks.length > 0) {
         // Has nested blocks - extract text without them
         const $textOnly = $elem.clone();
-        $textOnly.find('> pre, > ul, > ol, > figure, > table, > p, > div.p, > div.itemgroup, > div.stepxmp, > div.info, > div.note').remove();
+        $textOnly.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.itemgroup, > div.stepxmp, > div.info, > div.note').remove();
         const textOnlyHtml = $textOnly.html();
         const { richText: liRichText } = await parseRichText(textOnlyHtml);
         
