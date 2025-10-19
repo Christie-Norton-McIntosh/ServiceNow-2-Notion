@@ -110,6 +110,23 @@ npm start        # Restart proxy server
   - Never extract plain text early (loses UIControl, keyword, etc.)
 - **HTML-to-Notion Block Conversion:**
   - Recursive parsing, mixed content, code block extraction, nested lists (2-level), tables, images, rich text formatting
+- **Deep Nesting via Additional API Requests** (NOT flattening):
+  - Notion API limits nesting to 2 levels in initial page creation
+  - **Strategy**: Use marker-based orchestration with follow-up PATCH requests
+  - **Process**:
+    1. Parse HTML and identify blocks requiring deep nesting (3+ levels)
+    2. Add temporary `sn2n:marker` tokens to parent block rich_text
+    3. Store deeply-nested children in `markerMap` keyed by marker
+    4. Strip children from initial payload (avoids API rejection)
+    5. Create page with 2-level blocks + markers
+    6. **After page creation**: `orchestrateDeepNesting()` searches page for markers
+    7. For each marker: locate parent block via API, PATCH append children
+    8. Clean up markers from rich_text after successful append
+  - **Key Files**: 
+    - `server/orchestration/deep-nesting.cjs` - Marker search, PATCH orchestration
+    - `server/orchestration/marker-management.cjs` - Marker insertion/removal
+    - `server/routes/w2n.cjs` - Calls orchestrator after page creation
+  - **Important**: We preserve nesting depth through additional API calls, NOT by flattening list levels
 
 ## 🔍 Integration Points & Dependencies
 
