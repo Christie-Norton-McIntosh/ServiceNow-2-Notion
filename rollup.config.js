@@ -30,6 +30,8 @@ export default {
 // @run-at       document-idle
 // @connect      localhost
 // @connect      127.0.0.1
+// @updateURL    https://raw.githubusercontent.com/Christie-Norton-McIntosh/ServiceNow-2-Notion/main/dist/ServiceNow-2-Notion.user.js
+// @downloadURL  https://raw.githubusercontent.com/Christie-Norton-McIntosh/ServiceNow-2-Notion/main/dist/ServiceNow-2-Notion.user.js
 // ==/UserScript==
 
 /* jshint esversion: 8 */
