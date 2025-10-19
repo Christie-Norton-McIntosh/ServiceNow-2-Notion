@@ -233,6 +233,7 @@
     const style = document.createElement("style");
     style.textContent = `
     .${PREFIX}spinner {
+      display: block;
       width: 40px;
       height: 40px;
       border: 4px solid #e5e7eb;
