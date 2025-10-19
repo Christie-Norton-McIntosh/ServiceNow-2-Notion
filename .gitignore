@@ -48,6 +48,7 @@ coverage/
 # Misc
 *.bak
 *.orig
+archived/
 
 # Allow tracking of dist if explicitly needed by unignoring
 # !/dist/README.md
