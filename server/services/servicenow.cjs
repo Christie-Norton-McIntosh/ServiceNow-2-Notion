@@ -747,16 +747,15 @@ async function extractContentFromHtml(html) {
           const $caption = $figure.find('figcaption').first();
           if ($caption.length > 0) {
             const caption = cleanHtmlText($caption.html());
-            $figure.replaceWith(`<span>See "${caption}"</span>`);
+            $figure.replaceWith(`<span class="image-placeholder">See "${caption}"</span>`);
           } else {
-            $figure.replaceWith(`<span>See image below</span>`);
+            $figure.replaceWith(`<span class="image-placeholder">See image below</span>`);
           }
         });
         modifiedTableHtml = $table.html();
         
         // Convert table to Notion blocks
         const tableBlocks = await convertTableBlock(modifiedTableHtml);
-        
         if (tableBlocks && Array.isArray(tableBlocks)) {
           processedBlocks.push(...tableBlocks);
           

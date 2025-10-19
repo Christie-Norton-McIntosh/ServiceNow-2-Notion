@@ -70,7 +70,8 @@ function convertRichTextBlock(input, options = {}) {
   html = html.replace(/<a([^>]*)>([\s\S]*?)<\/a>/gi, (match, attrs, content) => {
     const hrefMatch = attrs.match(/href=["']([^"']*)["']/i);
     const href = hrefMatch ? hrefMatch[1] : "";
-    return `__LINK__${href}|${content}__`;
+    // Use ~~~ as separator instead of | to avoid conflict with technical identifier detection
+    return `__LINK__${href}~~~${content}__`;
   });
 
   // Handle bold/strong tags
@@ -167,7 +168,7 @@ function convertRichTextBlock(input, options = {}) {
       currentAnnotations.color = "default";
     } else if (part.startsWith("__LINK__")) {
       const linkData = part.replace("__LINK__", "").replace("__", "");
-      const [href, content] = linkData.split("|");
+      const [href, content] = linkData.split("~~~");
       if (content && content.trim()) {
         const trimmedContent = content.trim();
         // Validate URL - must be absolute http(s) URL, not empty or relative
