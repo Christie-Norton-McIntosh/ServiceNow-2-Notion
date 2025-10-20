@@ -2895,6 +2895,7 @@
 
     // Check for saved autoExtractState from page reload and resume if found
     const savedAutoExtractState = GM_getValue("w2n_autoExtractState");
+    debug(`🔍 Checking for saved autoExtractState: ${savedAutoExtractState ? 'FOUND' : 'NOT FOUND'}`);
     if (savedAutoExtractState) {
       try {
         const parsedState = JSON.parse(savedAutoExtractState);
@@ -3954,13 +3955,21 @@
           }
 
           debug(`💾 Saving autoExtractState before reload (attempt ${autoExtractState.reloadAttempts}/3):`, autoExtractState);
-          GM_setValue("w2n_autoExtractState", JSON.stringify(autoExtractState));
+          const stateJson = JSON.stringify(autoExtractState);
+          GM_setValue("w2n_autoExtractState", stateJson);
+          
+          // Verify save succeeded
+          const verification = GM_getValue("w2n_autoExtractState");
+          debug(`✅ State save verified: ${verification === stateJson ? 'SUCCESS' : 'FAILED'}`);
         }
 
         // Reload the page and wait for it to load
         debug(
           `🔄 Reloading page to refresh DOM elements (reload attempt ${autoExtractState.reloadAttempts}/3)...`
         );
+        
+        // Add small delay to ensure GM_setValue completes before reload
+        await new Promise(resolve => setTimeout(resolve, 100));
         window.location.reload();
 
         // Wait for page reload (this code won't execute after reload)
