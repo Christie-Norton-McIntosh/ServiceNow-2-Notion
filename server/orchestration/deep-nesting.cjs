@@ -311,10 +311,22 @@ async function orchestrateDeepNesting(pageId, markerMap) {
         }
       }
     } catch (err) {
+      const errorMsg = err && err.message;
       log(
         `❌ Orchestrator error for marker sn2n:${marker}:`,
-        err && err.message
+        errorMsg
       );
+      
+      // Check if this is an archived block error
+      if (errorMsg && (errorMsg.includes("archived") || errorMsg.includes("archive"))) {
+        log("⚠️ ARCHIVED BLOCK DETECTED - The page was archived during processing.");
+        log("⚠️ Please unarchive the page in Notion and run the tool again.");
+        log("⚠️ Skipping further orchestration attempts for this marker.");
+        // Don't try fallback append - it will also fail
+        continue;
+      }
+      
+      // For other errors, try fallback append to page root
       try {
         await appendBlocksToBlockId(pageId, blocksToAppend);
       } catch (e) {
