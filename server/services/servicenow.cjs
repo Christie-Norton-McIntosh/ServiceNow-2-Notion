@@ -514,16 +514,34 @@ async function extractContentFromHtml(html) {
     if (!src || !isValidImageUrl(src)) return null;
 
     try {
-      log(`🖼️ Using external image URL: ${src.substring(0, 80)}...`);
-      return {
-        object: "block",
-        type: "image",
-        image: {
-          type: "external",
-          external: { url: src },
-          caption: alt ? [{ type: "text", text: { content: alt } }] : [],
-        },
-      };
+      // Download and upload image to Notion instead of using external URL
+      log(`� Downloading and uploading image: ${src.substring(0, 80)}...`);
+      const uploadId = await downloadAndUploadImage(src, alt || 'image');
+      
+      if (uploadId) {
+        log(`✅ Image uploaded successfully with ID: ${uploadId}`);
+        return {
+          object: "block",
+          type: "image",
+          image: {
+            type: "file",
+            file: { id: uploadId },
+            caption: alt ? [{ type: "text", text: { content: alt } }] : [],
+          },
+        };
+      } else {
+        // Fallback to external URL if upload fails
+        log(`⚠️ Image upload failed, falling back to external URL: ${src.substring(0, 80)}...`);
+        return {
+          object: "block",
+          type: "image",
+          image: {
+            type: "external",
+            external: { url: src },
+            caption: alt ? [{ type: "text", text: { content: alt } }] : [],
+          },
+        };
+      }
     } catch (error) {
       log(`❌ Error processing image ${src}: ${error.message}`);
       return null;
@@ -771,7 +789,7 @@ async function extractContentFromHtml(html) {
           // and add as separate blocks after the table
           const figuresWithImages = $(tableHtml).find('figure');
           
-          figuresWithImages.each((idx, fig) => {
+          for (const fig of figuresWithImages.toArray()) {
             const $figure = $(fig);
             const $img = $figure.find('img').first();
             const $caption = $figure.find('figcaption').first();
@@ -783,14 +801,20 @@ async function extractContentFromHtml(html) {
               // Convert ServiceNow URL to proper format
               imgSrc = convertServiceNowUrl(imgSrc);
               
-              // Validate URL and create image block
+              // Validate URL and create image block with download/upload
               const isValid = imgSrc && (imgSrc.startsWith('http://') || imgSrc.startsWith('https://'));
               
               if (isValid) {
+                log(`📥 Downloading and uploading table image: ${imgSrc.substring(0, 80)}...`);
+                const uploadId = await downloadAndUploadImage(imgSrc, caption || 'image');
+                
                 const imageBlock = {
                   object: "block",
                   type: "image",
-                  image: {
+                  image: uploadId ? {
+                    type: "file",
+                    file: { id: uploadId }
+                  } : {
                     type: "external",
                     external: { url: imgSrc }
                   }
@@ -803,10 +827,11 @@ async function extractContentFromHtml(html) {
                   }];
                 }
                 
+                log(uploadId ? `✅ Table image uploaded with ID: ${uploadId}` : `⚠️ Table image using external URL fallback`);
                 processedBlocks.push(imageBlock);
               }
             }
-          });
+          }
           
         }
       } catch (error) {
