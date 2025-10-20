@@ -1293,6 +1293,7 @@ async function continueAutoExtractionLoop(autoExtractState) {
     try {
       // Extract current page content
       debug(`📝 Step 1: Extracting content from page ${currentPageNum}...`);
+      overlayModule.setMessage(`Extracting content from page ${currentPageNum}...`);
       const content = extractContent();
 
       if (!content || !content.html) {
@@ -1303,9 +1304,13 @@ async function continueAutoExtractionLoop(autoExtractState) {
 
       // Send to Notion
       debug(`📤 Step 2: Sending page ${currentPageNum} to Notion...`);
-      overlayModule.setMessage(`Saving page ${currentPageNum} to Notion...`);
+      overlayModule.setMessage(`Processing page ${currentPageNum}...`);
       
       // Process the content using the app's processWithProxy method
+      // This will internally show more detailed messages like:
+      // - "Checking proxy connection..."
+      // - "Converting content to Notion blocks..."
+      // - "Page created successfully!"
       await app.processWithProxy(content);
       
       // If we get here without throwing, it succeeded
@@ -1313,6 +1318,7 @@ async function continueAutoExtractionLoop(autoExtractState) {
 
       autoExtractState.totalProcessed++;
       debug(`✅ Page ${currentPageNum} successfully sent to Notion`);
+      overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
 
       // Check if this is the last page
       if (autoExtractState.currentPage >= autoExtractState.maxPages) {
