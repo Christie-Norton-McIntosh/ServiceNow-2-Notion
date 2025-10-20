@@ -524,8 +524,8 @@ async function extractContentFromHtml(html) {
           object: "block",
           type: "image",
           image: {
-            type: "file",
-            file: { id: uploadId },
+            type: "file_upload",
+            file_upload: { id: uploadId },
             caption: alt ? [{ type: "text", text: { content: alt } }] : [],
           },
         };
@@ -812,8 +812,8 @@ async function extractContentFromHtml(html) {
                   object: "block",
                   type: "image",
                   image: uploadId ? {
-                    type: "file",
-                    file: { id: uploadId }
+                    type: "file_upload",
+                    file_upload: { id: uploadId }
                   } : {
                     type: "external",
                     external: { url: imgSrc }
