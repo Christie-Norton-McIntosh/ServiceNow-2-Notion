@@ -131,9 +131,20 @@ function convertRichTextBlock(input, options = {}) {
   // Each segment must start with a letter, can contain letters, numbers, and hyphens
   // Examples: com.snc.incident.mim.ml_solution, sys_user_table, package.class.method, com.glide.service-portal
   // Must have at least 2 segments separated by . or _ and no brackets/parentheses
-  html = html.replace(/\b([a-zA-Z][-a-zA-Z0-9]*(?:[_.][a-zA-Z][-a-zA-Z0-9]*)+)\b/g, (match, identifier) => {
-    // Skip if already wrapped, part of a URL, or part of a link placeholder
-    if (match.includes('__CODE_START__') || match.includes('http') || match.includes('__LINK_')) {
+  // Use a function to check context to avoid matching inside already-wrapped code
+  html = html.replace(/\b([a-zA-Z][-a-zA-Z0-9]*(?:[_.][a-zA-Z][-a-zA-Z0-9]*)+)\b/g, (match, identifier, offset, string) => {
+    // Check if we're inside a __CODE_START__...__CODE_END__ block
+    const beforeMatch = string.substring(0, offset);
+    const lastCodeStart = beforeMatch.lastIndexOf('__CODE_START__');
+    const lastCodeEnd = beforeMatch.lastIndexOf('__CODE_END__');
+    
+    // If there's a CODE_START after the last CODE_END, we're inside a code block
+    if (lastCodeStart > lastCodeEnd) {
+      return match; // Don't wrap, already in code block
+    }
+    
+    // Skip if part of a URL or link placeholder
+    if (match.includes('http') || match.includes('__LINK_')) {
       return match;
     }
     return `__CODE_START__${identifier}__CODE_END__`;
