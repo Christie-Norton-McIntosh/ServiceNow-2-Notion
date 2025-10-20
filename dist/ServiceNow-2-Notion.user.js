@@ -3316,9 +3316,7 @@
 
   async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
     debug("🔄 Starting AutoExtract loop");
-    debug(
-      `📊 Initial state: currentPage=${autoExtractState.currentPage}, maxPages=${autoExtractState.maxPages}`
-    );
+    debug(`📊 Initial state: currentPage=${autoExtractState.currentPage}`);
 
     // Get button reference for progress updates
     const button = document.getElementById("w2n-start-autoextract");
@@ -3380,16 +3378,15 @@
             button.textContent = `Skipped page ${currentPageNum} (access limited)`;
           }
 
-          // Check if we should continue to next page
-          if (currentPageNum < autoExtractState.maxPages) {
-            debug(`\n========================================`);
-            debug(
-              `⊘ Skipped page ${currentPageNum} due to persistent access limited`
-            );
-            debug(`🎯 Now navigating to page ${currentPageNum + 1}...`);
-            debug(`========================================\n`);
+          // Navigate to next page after skip
+          debug(`\n========================================`);
+          debug(
+            `⊘ Skipped page ${currentPageNum} due to persistent access limited`
+          );
+          debug(`🎯 Now navigating to page ${currentPageNum + 1}...`);
+          debug(`========================================\n`);
 
-            // STEP 0b: Find next page button
+          // STEP 0b: Find next page button
             debug(`🔍 Finding next page button after skip...`);
             overlayModule.setMessage(`Finding next page button...`);
 
@@ -3429,7 +3426,7 @@
             );
             overlayModule.setMessage(`Navigating to page ${currentPageNum + 1}...`);
             if (button) {
-              button.textContent = `Navigating to page ${currentPageNum + 1}/${autoExtractState.maxPages}...`;
+              button.textContent = `Navigating to page ${currentPageNum + 1}...`;
             }
 
             const currentUrl = window.location.href;
@@ -3473,9 +3470,7 @@
             );
             overlayModule.setMessage(`Loading page ${currentPageNum + 1} content...`);
             if (button) {
-              button.textContent = `Loading page ${currentPageNum + 1}/${
-              autoExtractState.maxPages
-            }...`;
+              button.textContent = `Loading page ${currentPageNum + 1}...`;
             }
             await new Promise((resolve) => setTimeout(resolve, 3000));
 
@@ -3489,9 +3484,6 @@
             debug(`\n========================================`);
             debug(`🔄 Looping back to capture page ${currentPageNum + 1}...`);
             debug(`========================================\n`);
-          } else {
-            debug(`🎉 Reached max pages after skipping page ${currentPageNum}`);
-          }
 
           // Continue to next iteration
           continue;
@@ -3614,16 +3606,13 @@
           return;
         }
 
-        // Check if we should continue to next page
-        if (currentPageNum < autoExtractState.maxPages) {
-          debug(`\n========================================`);
-          debug(
-            `📄 Completed page ${currentPageNum} of ${autoExtractState.maxPages}`
-          );
-          debug(`🎯 Now navigating to page ${currentPageNum + 1}...`);
-          debug(`========================================\n`);
+        // Navigate to next page
+        debug(`\n========================================`);
+        debug(`📄 Completed page ${currentPageNum}`);
+        debug(`🎯 Now navigating to page ${currentPageNum + 1}...`);
+        debug(`========================================\n`);
 
-          // STEP 3: Find next page button
+        // STEP 3: Find next page button
           debug(`🔍 Step 3: Finding next page button...`);
           overlayModule.setMessage(`Finding next page button...`);
 
@@ -3668,9 +3657,7 @@
           );
           overlayModule.setMessage(`Navigating to page ${currentPageNum + 1}...`);
           if (button) {
-            button.textContent = `Clicking next button for page ${
-            currentPageNum + 1
-          }/${autoExtractState.maxPages}...`;
+            button.textContent = `Clicking next button for page ${currentPageNum + 1}...`;
           }
 
           const currentUrl = window.location.href;
@@ -3721,9 +3708,7 @@
             `Loading page ${currentPageNum + 1} content...`
           );
           if (button) {
-            button.textContent = `Loading page ${currentPageNum + 1}/${
-            autoExtractState.maxPages
-          }...`;
+            button.textContent = `Loading page ${currentPageNum + 1}...`;
           }
           await new Promise((resolve) => setTimeout(resolve, 3000));
 
@@ -3737,12 +3722,6 @@
           debug(`\n========================================`);
           debug(`🔄 Looping back to capture page ${currentPageNum + 1}...`);
           debug(`========================================\n`);
-        } else {
-          debug(`\n========================================`);
-          debug(`🎉 Reached max pages (${autoExtractState.maxPages})`);
-          debug(`📊 Total pages processed: ${autoExtractState.totalProcessed}`);
-          debug(`========================================\n`);
-        }
       } catch (error) {
         debug(`❌ Error in AutoExtract loop:`, error);
         const errorMessage = `❌ AutoExtract ERROR: ${error.message}\n\nTotal pages processed: ${autoExtractState.totalProcessed}`;
@@ -3779,9 +3758,7 @@
     if (stopBtn) stopBtn.style.display = "block";
 
     showToast(
-      `🔄 Resumed auto-extraction after page reload (page ${
-      autoExtractState.currentPage + 1
-    }/${autoExtractState.maxPages})`,
+      `🔄 Resumed auto-extraction after page reload (page ${autoExtractState.currentPage + 1})`,
       5000
     );
 
@@ -3802,7 +3779,7 @@
   async function continueAutoExtractionLoop(autoExtractState) {
     debug("🔄 Continuing AutoExtract loop from saved state");
     debug(
-      `📊 Resumed state: currentPage=${autoExtractState.currentPage}, maxPages=${autoExtractState.maxPages}, totalProcessed=${autoExtractState.totalProcessed}`
+      `📊 Resumed state: currentPage=${autoExtractState.currentPage}, totalProcessed=${autoExtractState.totalProcessed}`
     );
 
     // Get references
@@ -3823,31 +3800,15 @@
     while (autoExtractState.running && !autoExtractState.paused) {
       debug(`\n🔄 Loop iteration: currentPage=${autoExtractState.currentPage}`);
 
-      // Check if we've reached max pages
-      if (autoExtractState.currentPage >= autoExtractState.maxPages) {
-        showToast(
-          `AutoExtract complete: Reached max pages (${autoExtractState.maxPages})`,
-          4000
-        );
-        stopAutoExtract(autoExtractState);
-        if (button) button.textContent = "Start AutoExtract";
-        return;
-      }
-
       autoExtractState.currentPage++;
       const currentPageNum = autoExtractState.currentPage;
       debug(`📄 Processing page number: ${currentPageNum}`);
 
-      overlayModule.setMessage(
-        `Extracting page ${currentPageNum} of ${autoExtractState.maxPages}...`
-      );
-      overlayModule.setProgress(
-        ((currentPageNum - 1) / autoExtractState.maxPages) * 100
-      );
+      overlayModule.setMessage(`Extracting page ${currentPageNum}...`);
 
       // Update button with progress
       if (button) {
-        button.textContent = `Processing ${currentPageNum}/${autoExtractState.maxPages}...`;
+        button.textContent = `Processing page ${currentPageNum}...`;
       }
 
       try {
