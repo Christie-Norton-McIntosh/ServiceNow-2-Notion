@@ -1442,6 +1442,18 @@ async function findAndClickNextButton(
     return null;
   }
 
+  // Click the next page button to navigate
+  debug(`✅ Found next page button, clicking to navigate...`);
+  try {
+    nextButton.click();
+    debug(`✅ Next page button clicked successfully`);
+  } catch (error) {
+    debug(`❌ Error clicking next page button:`, error);
+    alert(`❌ Error clicking next page button: ${error.message}\n\nAutoExtract has been stopped.`);
+    stopAutoExtract(autoExtractState);
+    return null;
+  }
+
   return nextButton;
 }
 
