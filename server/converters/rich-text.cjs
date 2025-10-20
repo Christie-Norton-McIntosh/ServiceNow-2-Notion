@@ -124,13 +124,14 @@ function convertRichTextBlock(input, options = {}) {
     return codes.trim();
   });
   // Handle raw technical identifiers in parentheses/brackets as inline code
-  html = html.replace(/([\(\[])[ \t\n\r]*([^\s()[\]]*[_.][^\s()[\]]*)[ \t\n\r]*([\)\]])/g, (match, open, code, close) => `__CODE_START__${code.trim()}__CODE_END__`);
+  // Must contain at least one dot or underscore to be considered a technical identifier
+  html = html.replace(/([\(\[])[ \t\n\r]*([a-zA-Z][-a-zA-Z0-9]*(?:[_.][-a-zA-Z0-9]+)+)[ \t\n\r]*([\)\]])/g, (match, open, code, close) => `__CODE_START__${code.trim()}__CODE_END__`);
 
   // Standalone multi-word identifiers connected by _ or . (no spaces) as inline code
-  // Segments can contain letters, numbers, and hyphens
+  // Each segment must start with a letter, can contain letters, numbers, and hyphens
   // Examples: com.snc.incident.mim.ml_solution, sys_user_table, package.class.method, com.glide.service-portal
   // Must have at least 2 segments separated by . or _ and no brackets/parentheses
-  html = html.replace(/\b([a-zA-Z][-a-zA-Z0-9]*(?:[_.][-a-zA-Z0-9]+)+)\b/g, (match, identifier) => {
+  html = html.replace(/\b([a-zA-Z][-a-zA-Z0-9]*(?:[_.][a-zA-Z][-a-zA-Z0-9]*)+)\b/g, (match, identifier) => {
     // Skip if already wrapped, part of a URL, or part of a link placeholder
     if (match.includes('__CODE_START__') || match.includes('http') || match.includes('__LINK_')) {
       return match;
