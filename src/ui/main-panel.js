@@ -1444,6 +1444,10 @@ async function findAndClickNextButton(
 
   // Click the next page button to navigate
   debug(`✅ Found next page button, clicking to navigate...`);
+  debug(`📍 Button element:`, nextButton.tagName, nextButton.className, nextButton.id);
+  debug(`📍 Button href:`, nextButton.href);
+  debug(`📍 Button onclick:`, nextButton.onclick);
+  
   try {
     // Temporarily hide overlay to allow click to reach the button
     const overlayElement = document.getElementById('w2n-saving-progress');
@@ -1453,9 +1457,26 @@ async function findAndClickNextButton(
       overlayElement.style.display = 'none';
     }
     
-    // Click the button
+    // Try multiple click methods to ensure it works
+    debug(`🖱️ Attempting click via .click() method...`);
     nextButton.click();
-    debug(`✅ Next page button clicked successfully`);
+    
+    // Also try dispatching a proper click event
+    debug(`🖱️ Attempting click via MouseEvent...`);
+    const clickEvent = new MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+      view: window
+    });
+    nextButton.dispatchEvent(clickEvent);
+    
+    // If it's a link, also try navigating directly
+    if (nextButton.href) {
+      debug(`🔗 It's a link, attempting direct navigation to: ${nextButton.href}`);
+      window.location.href = nextButton.href;
+    }
+    
+    debug(`✅ Next page button clicked successfully (multiple methods attempted)`);
     
     // Restore overlay visibility after a brief delay
     if (overlayWasVisible) {
