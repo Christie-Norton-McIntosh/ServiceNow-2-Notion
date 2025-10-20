@@ -469,13 +469,14 @@ export async function sendProcessedContentToProxy(processedData) {
   const { overlayModule } = await import("../ui/overlay-progress.js");
   
   try {
-    overlayModule.setMessage("Converting content to Notion blocks...");
+    overlayModule.setMessage("Converting HTML to Notion blocks...");
     const result = await apiCall("POST", "/api/W2N", processedData);
 
     debug("Raw proxy response:", JSON.stringify(result, null, 2));
 
     if (result && result.success) {
-      overlayModule.setMessage("Page created successfully!");
+      // Show completion message
+      overlayModule.setMessage("✓ Page created and nested content organized!");
       
       let pageUrl = result.data ? result.data.pageUrl : result.pageUrl;
       const page = result.data ? result.data.page : result.page;

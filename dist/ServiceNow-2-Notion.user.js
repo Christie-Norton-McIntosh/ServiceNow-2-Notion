@@ -1298,13 +1298,14 @@
     const { overlayModule } = await Promise.resolve().then(function () { return overlayProgress; });
     
     try {
-      overlayModule.setMessage("Converting content to Notion blocks...");
+      overlayModule.setMessage("Converting HTML to Notion blocks...");
       const result = await apiCall("POST", "/api/W2N", processedData);
 
       debug("Raw proxy response:", JSON.stringify(result, null, 2));
 
       if (result && result.success) {
-        overlayModule.setMessage("Page created successfully!");
+        // Show completion message
+        overlayModule.setMessage("✓ Page created and nested content organized!");
         
         let pageUrl = result.data ? result.data.pageUrl : result.pageUrl;
         const page = result.data ? result.data.page : result.page;
@@ -3875,6 +3876,7 @@
       try {
         // Extract current page content
         debug(`📝 Step 1: Extracting content from page ${currentPageNum}...`);
+        overlayModule.setMessage(`Extracting content from page ${currentPageNum}...`);
         const content = extractContent();
 
         if (!content || !content.html) {
@@ -3885,9 +3887,13 @@
 
         // Send to Notion
         debug(`📤 Step 2: Sending page ${currentPageNum} to Notion...`);
-        overlayModule.setMessage(`Saving page ${currentPageNum} to Notion...`);
+        overlayModule.setMessage(`Processing page ${currentPageNum}...`);
         
         // Process the content using the app's processWithProxy method
+        // This will internally show more detailed messages like:
+        // - "Checking proxy connection..."
+        // - "Converting content to Notion blocks..."
+        // - "Page created successfully!"
         await app.processWithProxy(content);
         
         // If we get here without throwing, it succeeded
@@ -3895,6 +3901,7 @@
 
         autoExtractState.totalProcessed++;
         debug(`✅ Page ${currentPageNum} successfully sent to Notion`);
+        overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
 
         // Check if this is the last page
         if (autoExtractState.currentPage >= autoExtractState.maxPages) {
