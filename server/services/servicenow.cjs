@@ -2290,8 +2290,6 @@ async function extractContentFromHtml(html) {
         if (directText) {
           // Has mixed content - extract text before first block child
           console.log(`🔍 <div class="${$elem.attr('class')}"> has ${blockChildren.length} block children AND text - processing mixed content`);
-          console.log(`🔍 Full div HTML (first 500 chars): ${fullHtml.substring(0, 500)}`);
-          console.log(`🔍 Direct text content: "${directText.substring(0, 200)}..."`);
           
           // Use blockChildren (not all children) to determine first/last block
           const firstBlockChild = blockChildren[0];
@@ -2319,8 +2317,6 @@ async function extractContentFromHtml(html) {
           }
           
           if (beforeBlockHtml && cleanHtmlText(beforeBlockHtml).trim()) {
-            console.log(`🔍 beforeBlockHtml (first 200 chars): "${beforeBlockHtml.substring(0, 200)}..."`);
-            console.log(`🔍 beforeBlockHtml cleaned: "${cleanHtmlText(beforeBlockHtml).trim().substring(0, 200)}..."`);
             const { richText: beforeText, imageBlocks: beforeImages } = await parseRichText(beforeBlockHtml);
             if (beforeImages && beforeImages.length > 0) {
               processedBlocks.push(...beforeImages);
@@ -2368,9 +2364,6 @@ async function extractContentFromHtml(html) {
           }
           
           if (afterBlockHtml && cleanHtmlText(afterBlockHtml).trim()) {
-            console.log(`🔍 Processing text/elements after last block child in mixed content div`);
-            console.log(`🔍 afterBlockHtml (first 200 chars): "${afterBlockHtml.substring(0, 200)}..."`);
-            console.log(`🔍 afterBlockHtml cleaned: "${cleanHtmlText(afterBlockHtml).trim().substring(0, 200)}..."`);
             const { richText: afterText, imageBlocks: afterImages } = await parseRichText(afterBlockHtml);
             if (afterImages && afterImages.length > 0) {
               processedBlocks.push(...afterImages);
