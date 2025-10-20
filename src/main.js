@@ -658,29 +658,36 @@ class ServiceNowToNotionApp {
       const result = await sendProcessedContentToProxy(pageData);
 
       if (result.success) {
-        // Show success state and auto-close the overlay after a short delay
-        try {
-          overlayModule.done({
-            success: true,
-            pageUrl: result.pageUrl || null,
-            autoCloseMs: 3000,
-          });
-        } catch (e) {
-          // If overlay.done isn't available for some reason, close the overlay to avoid leaving it open
+        // Check if we're in autoextract mode (global state exists)
+        const isAutoExtracting = window.ServiceNowToNotion?.autoExtractState?.running;
+        
+        if (!isAutoExtracting) {
+          // Single page save: show success state and auto-close the overlay after a short delay
           try {
-            overlayModule.close && overlayModule.close();
-          } catch (err) {}
-        }
+            overlayModule.done({
+              success: true,
+              pageUrl: result.pageUrl || null,
+              autoCloseMs: 3000,
+            });
+          } catch (e) {
+            // If overlay.done isn't available for some reason, close the overlay to avoid leaving it open
+            try {
+              overlayModule.close && overlayModule.close();
+            } catch (err) {}
+          }
 
-        showSuccessPanel(result);
+          showSuccessPanel(result);
 
-        if (result.pageUrl) {
-          setTimeout(() => {
-            if (confirm("Would you like to open the created Notion page?")) {
-              window.open(result.pageUrl, "_blank");
-            }
-          }, 1000);
+          if (result.pageUrl) {
+            setTimeout(() => {
+              if (confirm("Would you like to open the created Notion page?")) {
+                window.open(result.pageUrl, "_blank");
+              }
+            }, 1000);
+          }
         }
+        // For autoextract: don't close the overlay, just continue
+        // The overlay will remain visible and show progress for the next page
       } else {
         throw new Error(result.error || "Proxy processing failed");
       }

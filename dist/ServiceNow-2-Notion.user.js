@@ -3337,9 +3337,15 @@
 
       // Check if we've reached max pages
       if (autoExtractState.currentPage >= autoExtractState.maxPages) {
+        debug(`🎉 Reached max pages! Total processed: ${autoExtractState.totalProcessed}`);
+        overlayModule.done({
+          success: true,
+          pageUrl: null,
+          autoCloseMs: 5000,
+        });
         showToast(
-          `AutoExtract complete: Reached max pages (${autoExtractState.maxPages})`,
-          4000
+          `✅ AutoExtract complete: Processed ${autoExtractState.totalProcessed} page(s)`,
+          5000
         );
         stopAutoExtract(autoExtractState);
         if (button) button.textContent = "Start AutoExtract";
@@ -3922,8 +3928,13 @@
 
         if (!nextButton) {
           debug(`❌ Could not find next page button after reload attempt`);
+          overlayModule.done({
+            success: false,
+            pageUrl: null,
+            autoCloseMs: 0,
+          });
           showToast(
-            `❌ Could not find next page button. AutoExtract stopped.`,
+            `❌ Could not find next page button. AutoExtract stopped after ${autoExtractState.totalProcessed} page(s).`,
             5000
           );
           stopAutoExtract(autoExtractState);
@@ -3957,9 +3968,26 @@
         stopAutoExtract(autoExtractState);
         if (button)
           button.textContent = `❌ Error: ${error.message.substring(0, 20)}...`;
+        overlayModule.error({
+          message: `AutoExtract failed: ${error.message}`,
+        });
         return;
       }
     }
+    
+    // Loop completed successfully - show completion overlay
+    debug(`🎉 AutoExtract completed! Total pages processed: ${autoExtractState.totalProcessed}`);
+    overlayModule.done({
+      success: true,
+      pageUrl: null,
+      autoCloseMs: 5000,
+    });
+    showToast(
+      `✅ AutoExtract complete! Processed ${autoExtractState.totalProcessed} page(s)`,
+      5000
+    );
+    stopAutoExtract(autoExtractState);
+    if (button) button.textContent = "Start AutoExtract";
   }
 
   /**
@@ -7058,29 +7086,36 @@
         const result = await sendProcessedContentToProxy(pageData);
 
         if (result.success) {
-          // Show success state and auto-close the overlay after a short delay
-          try {
-            overlayModule.done({
-              success: true,
-              pageUrl: result.pageUrl || null,
-              autoCloseMs: 3000,
-            });
-          } catch (e) {
-            // If overlay.done isn't available for some reason, close the overlay to avoid leaving it open
+          // Check if we're in autoextract mode (global state exists)
+          const isAutoExtracting = window.ServiceNowToNotion?.autoExtractState?.running;
+          
+          if (!isAutoExtracting) {
+            // Single page save: show success state and auto-close the overlay after a short delay
             try {
-              overlayModule.close && overlayModule.close();
-            } catch (err) {}
-          }
+              overlayModule.done({
+                success: true,
+                pageUrl: result.pageUrl || null,
+                autoCloseMs: 3000,
+              });
+            } catch (e) {
+              // If overlay.done isn't available for some reason, close the overlay to avoid leaving it open
+              try {
+                overlayModule.close && overlayModule.close();
+              } catch (err) {}
+            }
 
-          showSuccessPanel(result);
+            showSuccessPanel(result);
 
-          if (result.pageUrl) {
-            setTimeout(() => {
-              if (confirm("Would you like to open the created Notion page?")) {
-                window.open(result.pageUrl, "_blank");
-              }
-            }, 1000);
+            if (result.pageUrl) {
+              setTimeout(() => {
+                if (confirm("Would you like to open the created Notion page?")) {
+                  window.open(result.pageUrl, "_blank");
+                }
+              }, 1000);
+            }
           }
+          // For autoextract: don't close the overlay, just continue
+          // The overlay will remain visible and show progress for the next page
         } else {
           throw new Error(result.error || "Proxy processing failed");
         }
