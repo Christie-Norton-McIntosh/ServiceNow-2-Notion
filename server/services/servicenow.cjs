@@ -2338,6 +2338,48 @@ async function extractContentFromHtml(html) {
             const childBlocks = await processElement(child);
             processedBlocks.push(...childBlocks);
           }
+          
+          // Check for text/elements AFTER all block children
+          const lastBlockChild = children[children.length - 1];
+          let afterBlockHtml = '';
+          let foundLastBlock = false;
+          
+          for (const node of childNodes) {
+            // Start collecting after we pass the last block child
+            if (node.nodeType === 1 && node === lastBlockChild) {
+              foundLastBlock = true;
+              continue;
+            }
+            
+            if (foundLastBlock) {
+              const isTextNode = node.nodeType === 3;
+              const isElementNode = node.nodeType === 1;
+              
+              if (isTextNode) {
+                afterBlockHtml += node.data || node.nodeValue || '';
+              } else if (isElementNode) {
+                afterBlockHtml += $(node).prop('outerHTML');
+              }
+            }
+          }
+          
+          if (afterBlockHtml && cleanHtmlText(afterBlockHtml).trim()) {
+            console.log(`🔍 Processing text/elements after last block child in mixed content div`);
+            const { richText: afterText, imageBlocks: afterImages } = await parseRichText(afterBlockHtml);
+            if (afterImages && afterImages.length > 0) {
+              processedBlocks.push(...afterImages);
+            }
+            if (afterText.length > 0 && afterText.some(rt => rt.text.content.trim())) {
+              const richTextChunks = splitRichTextArray(afterText);
+              for (const chunk of richTextChunks) {
+                processedBlocks.push({
+                  object: "block",
+                  type: "paragraph",
+                  paragraph: { rich_text: chunk }
+                });
+              }
+            }
+          }
         } else {
           // No direct text - just process children
           console.log(`🔍 <div class="${$elem.attr('class')}"> has ${blockChildren.length} block children - processing as container`);
