@@ -754,9 +754,15 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
 
     // Check if we've reached max pages
     if (autoExtractState.currentPage >= autoExtractState.maxPages) {
+      debug(`🎉 Reached max pages! Total processed: ${autoExtractState.totalProcessed}`);
+      overlayModule.done({
+        success: true,
+        pageUrl: null,
+        autoCloseMs: 5000,
+      });
       showToast(
-        `AutoExtract complete: Reached max pages (${autoExtractState.maxPages})`,
-        4000
+        `✅ AutoExtract complete: Processed ${autoExtractState.totalProcessed} page(s)`,
+        5000
       );
       stopAutoExtract(autoExtractState);
       if (button) button.textContent = "Start AutoExtract";
@@ -1339,8 +1345,13 @@ async function continueAutoExtractionLoop(autoExtractState) {
 
       if (!nextButton) {
         debug(`❌ Could not find next page button after reload attempt`);
+        overlayModule.done({
+          success: false,
+          pageUrl: null,
+          autoCloseMs: 0,
+        });
         showToast(
-          `❌ Could not find next page button. AutoExtract stopped.`,
+          `❌ Could not find next page button. AutoExtract stopped after ${autoExtractState.totalProcessed} page(s).`,
           5000
         );
         stopAutoExtract(autoExtractState);
@@ -1374,9 +1385,26 @@ async function continueAutoExtractionLoop(autoExtractState) {
       stopAutoExtract(autoExtractState);
       if (button)
         button.textContent = `❌ Error: ${error.message.substring(0, 20)}...`;
+      overlayModule.error({
+        message: `AutoExtract failed: ${error.message}`,
+      });
       return;
     }
   }
+  
+  // Loop completed successfully - show completion overlay
+  debug(`🎉 AutoExtract completed! Total pages processed: ${autoExtractState.totalProcessed}`);
+  overlayModule.done({
+    success: true,
+    pageUrl: null,
+    autoCloseMs: 5000,
+  });
+  showToast(
+    `✅ AutoExtract complete! Processed ${autoExtractState.totalProcessed} page(s)`,
+    5000
+  );
+  stopAutoExtract(autoExtractState);
+  if (button) button.textContent = "Start AutoExtract";
 }
 
 /**
