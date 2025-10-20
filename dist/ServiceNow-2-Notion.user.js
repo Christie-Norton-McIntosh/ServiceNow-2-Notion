@@ -708,6 +708,12 @@
     },
   };
 
+  var overlayProgress = /*#__PURE__*/Object.freeze({
+    __proto__: null,
+    overlayModule: overlayModule,
+    setPropertyMappingModalInjector: setPropertyMappingModalInjector
+  });
+
   // Advanced Settings Modal - Configuration settings UI
 
 
@@ -1287,12 +1293,19 @@
    */
   async function sendProcessedContentToProxy(processedData) {
     debug("📤 Sending processed content to proxy for Notion upload");
+    
+    // Import overlay module for status updates
+    const { overlayModule } = await Promise.resolve().then(function () { return overlayProgress; });
+    
     try {
+      overlayModule.setMessage("Converting content to Notion blocks...");
       const result = await apiCall("POST", "/api/W2N", processedData);
 
       debug("Raw proxy response:", JSON.stringify(result, null, 2));
 
       if (result && result.success) {
+        overlayModule.setMessage("Page created successfully!");
+        
         let pageUrl = result.data ? result.data.pageUrl : result.pageUrl;
         const page = result.data ? result.data.page : result.page;
         debug("Extracted pageUrl:", pageUrl);
@@ -6729,13 +6742,14 @@
 
       try {
         // Show progress overlay
-        overlayModule.start("Extracting content...");
+        overlayModule.start("Starting extraction...");
 
         // Extract data from current page
+        overlayModule.setMessage("Extracting page metadata...");
         const extractedData = await this.extractCurrentPageData();
         this.currentExtractedData = extractedData;
 
-        overlayModule.setMessage("Processing content...");
+        overlayModule.setMessage("Preparing content for Notion...");
 
         // Universal Workflow is deprecated — always use proxy processing
         await this.processWithProxy(extractedData);
@@ -6766,13 +6780,18 @@
 
       try {
         // Extract metadata
+        overlayModule.setMessage("Reading page title and properties...");
         const metadata = extractServiceNowMetadata();
 
         // Find and extract content
+        overlayModule.setMessage("Locating content elements...");
         const contentElement = findContentElement();
+        
+        overlayModule.setMessage("Extracting content from page...");
         const content = await extractContentWithIframes(contentElement);
 
         // Analyze and process content (with null safety)
+        overlayModule.setMessage("Analyzing content structure...");
         const analyzed = content.html ? analyzeContent(content.html) : {};
 
         const extractedData = {
@@ -6899,11 +6918,14 @@
         }
 
         // Get database and mappings
-        overlayModule.setMessage("Preparing database mappings...");
+        overlayModule.setMessage("Fetching database schema...");
         const database = await getDatabase(config.databaseId);
+        
+        overlayModule.setMessage("Loading property mappings...");
         const mappings = await getPropertyMappings(config.databaseId);
 
         // Apply mappings to extracted data
+        overlayModule.setMessage("Mapping properties to Notion format...");
         const properties = applyPropertyMappings(
           extractedData,
           database,
@@ -6913,6 +6935,7 @@
         // Prepare page data for proxy
         // Extract HTML content from the nested content structure
         // extractedData.content has: { combinedHtml, combinedImages, ...analyzed }
+        overlayModule.setMessage("Formatting page content...");
         const htmlContent =
           extractedData.content?.combinedHtml || extractedData.contentHtml || "";
 
