@@ -430,24 +430,42 @@ router.post('/W2N', async (req, res) => {
       }
     });
 
-    // Create the page with initial blocks
-    const response = await notion.pages.create({
-      parent: { database_id: payload.databaseId },
-      properties: properties,
-      icon: {
-        type: "external",
-        external: {
-          url: "https://raw.githubusercontent.com/Christie-Norton-McIntosh/ServiceNow-2-Notion/main/src/img/ServiceNow%20icon.png",
-        },
-      },
-      cover: {
-        type: "external",
-        external: {
-          url: "https://raw.githubusercontent.com/Christie-Norton-McIntosh/ServiceNow-2-Notion/main/src/img/ServiceNow%20cover.png",
-        },
-      },
-      children: initialBlocks,
-    });
+    // Create the page with initial blocks (with retry for network errors)
+    let response;
+    let retryCount = 0;
+    const maxRetries = 2;
+    
+    while (retryCount <= maxRetries) {
+      try {
+        response = await notion.pages.create({
+          parent: { database_id: payload.databaseId },
+          properties: properties,
+          icon: {
+            type: "external",
+            external: {
+              url: "https://raw.githubusercontent.com/Christie-Norton-McIntosh/ServiceNow-2-Notion/main/src/img/ServiceNow%20icon.png",
+            },
+          },
+          cover: {
+            type: "external",
+            external: {
+              url: "https://raw.githubusercontent.com/Christie-Norton-McIntosh/ServiceNow-2-Notion/main/src/img/ServiceNow%20cover.png",
+            },
+          },
+          children: initialBlocks,
+        });
+        break; // Success, exit retry loop
+      } catch (error) {
+        if (retryCount < maxRetries && (error.code === 'ECONNRESET' || error.message?.includes('socket hang up') || error.message?.includes('ETIMEDOUT'))) {
+          retryCount++;
+          log(`⚠️ Network error creating page (attempt ${retryCount}/${maxRetries + 1}): ${error.message}`);
+          log(`   Retrying in ${retryCount * 2} seconds...`);
+          await new Promise(resolve => setTimeout(resolve, retryCount * 2000));
+        } else {
+          throw error; // Non-retryable error or max retries exceeded
+        }
+      }
+    }
 
     log("✅ Page created successfully:", response.id);
 
