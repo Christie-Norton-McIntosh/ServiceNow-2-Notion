@@ -4028,8 +4028,27 @@
     // Click the next page button to navigate
     debug(`✅ Found next page button, clicking to navigate...`);
     try {
+      // Temporarily hide overlay to allow click to reach the button
+      const overlayElement = document.getElementById('w2n-saving-progress');
+      const overlayWasVisible = overlayElement && overlayElement.style.display !== 'none';
+      if (overlayWasVisible) {
+        debug(`📦 Temporarily hiding overlay to allow button click`);
+        overlayElement.style.display = 'none';
+      }
+      
+      // Click the button
       nextButton.click();
       debug(`✅ Next page button clicked successfully`);
+      
+      // Restore overlay visibility after a brief delay
+      if (overlayWasVisible) {
+        setTimeout(() => {
+          if (overlayElement) {
+            debug(`📦 Restoring overlay visibility`);
+            overlayElement.style.display = '';
+          }
+        }, 100);
+      }
     } catch (error) {
       debug(`❌ Error clicking next page button:`, error);
       alert(`❌ Error clicking next page button: ${error.message}\n\nAutoExtract has been stopped.`);
