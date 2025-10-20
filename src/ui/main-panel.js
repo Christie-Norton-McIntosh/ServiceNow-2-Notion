@@ -1418,26 +1418,11 @@ async function findAndClickNextButton(
       overlayElement.style.display = 'none';
     }
     
-    // Try multiple click methods to ensure it works
-    debug(`🖱️ Attempting click via .click() method...`);
+    // Click the button - .click() works reliably in Tampermonkey
+    debug(`🖱️ Clicking next page button...`);
     nextButton.click();
     
-    // Also try dispatching a proper click event
-    debug(`🖱️ Attempting click via MouseEvent...`);
-    const clickEvent = new MouseEvent('click', {
-      bubbles: true,
-      cancelable: true,
-      view: window
-    });
-    nextButton.dispatchEvent(clickEvent);
-    
-    // If it's a link, also try navigating directly
-    if (nextButton.href) {
-      debug(`🔗 It's a link, attempting direct navigation to: ${nextButton.href}`);
-      window.location.href = nextButton.href;
-    }
-    
-    debug(`✅ Next page button clicked successfully (multiple methods attempted)`);
+    debug(`✅ Next page button clicked successfully`);
     
     // Restore overlay visibility after a brief delay
     if (overlayWasVisible) {
