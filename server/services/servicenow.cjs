@@ -2794,9 +2794,9 @@ async function extractContentFromHtml(html) {
   
   if (content.trim().length > 100 && unprocessedElements === 0) {
     // Check if the remaining content is just sidebar/navigation content or inline elements
+    // Only skip if we find actual sidebar structural elements (not just text that happens to mention "application")
     const hasSidebarContent = remainingHtml.includes('contentPlaceholder') || 
-                             remainingHtml.includes('zDocsSideBoxes') ||
-                             remainingHtml.includes('Applications and features');
+                             remainingHtml.includes('zDocsSideBoxes');
     
     if (hasSidebarContent) {
       console.log(`🔍 Remaining content appears to be sidebar/navigation - skipping fallback`);
