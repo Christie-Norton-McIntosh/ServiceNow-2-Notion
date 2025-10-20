@@ -3545,9 +3545,7 @@
               if (button) {
                 button.textContent = `Retry ${
                 captureAttempts - 1
-              }/2: Extracting ${currentPageNum}/${
-                autoExtractState.maxPages
-              }...`;
+              }/2: Extracting page ${currentPageNum}...`;
               }
               await new Promise((resolve) => setTimeout(resolve, 2000));
             }
