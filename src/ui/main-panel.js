@@ -88,12 +88,6 @@ export function injectMainPanel() {
           <span style="font-size:16px; margin-right:8px;">🤖</span>
           <h4 style="margin:0; font-size:14px; font-weight:500;">AutoExtract Multi-Page</h4>
         </div>
-        <div style="margin-bottom:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-          <div style="display:flex; align-items:center; gap:8px;">
-            <label style="display:block; margin-bottom:0; font-size:12px;">Max Pages:</label>
-            <input type="number" id="w2n-max-pages" value="500" min="1" max="500" style="width:60px; padding:4px; border:1px solid #d1d5db; border-radius:4px;">
-          </div>
-        </div>
 
         <div id="w2n-autoextract-controls">
           <div style="display:flex; gap:8px;">
@@ -528,8 +522,6 @@ async function startAutoExtraction() {
     return;
   }
 
-  const maxPages =
-    parseInt(document.getElementById("w2n-max-pages")?.value) || 500;
   const nextPageSelector =
     typeof GM_getValue === "function"
       ? GM_getValue("w2n_next_page_selector", "div.zDocsNextTopicButton a")
@@ -558,7 +550,7 @@ async function startAutoExtraction() {
   }
 
   debug(
-    `Starting auto-extraction with max ${maxPages} pages using selector: ${nextPageSelector}`
+    `Starting auto-extraction using selector: ${nextPageSelector}`
   );
 
   // Initialize auto-extract state
@@ -566,7 +558,6 @@ async function startAutoExtraction() {
     running: true,
     currentPage: 0,
     totalProcessed: 0,
-    maxPages: maxPages,
     paused: false,
     reloadAttempts: 0, // Track page reload attempts (max 3)
   };
@@ -752,37 +743,17 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
   while (autoExtractState.running && !autoExtractState.paused) {
     debug(`\n🔄 Loop iteration: currentPage=${autoExtractState.currentPage}`);
 
-    // Check if we've reached max pages
-    if (autoExtractState.currentPage >= autoExtractState.maxPages) {
-      debug(`🎉 Reached max pages! Total processed: ${autoExtractState.totalProcessed}`);
-      overlayModule.done({
-        success: true,
-        pageUrl: null,
-        autoCloseMs: 5000,
-      });
-      showToast(
-        `✅ AutoExtract complete: Processed ${autoExtractState.totalProcessed} page(s)`,
-        5000
-      );
-      stopAutoExtract(autoExtractState);
-      if (button) button.textContent = "Start AutoExtract";
-      return;
-    }
-
     autoExtractState.currentPage++;
     const currentPageNum = autoExtractState.currentPage;
     debug(`📄 Processing page number: ${currentPageNum}`);
 
     overlayModule.setMessage(
-      `Extracting page ${currentPageNum} of ${autoExtractState.maxPages}...`
-    );
-    overlayModule.setProgress(
-      ((currentPageNum - 1) / autoExtractState.maxPages) * 100
+      `Extracting page ${currentPageNum}...`
     );
 
     // Update button with progress
     if (button) {
-      button.textContent = `Processing ${currentPageNum}/${autoExtractState.maxPages}...`;
+      button.textContent = `Processing page ${currentPageNum}...`;
     }
 
     try {
@@ -1326,15 +1297,6 @@ async function continueAutoExtractionLoop(autoExtractState) {
       debug(`✅ Page ${currentPageNum} successfully sent to Notion`);
       overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
 
-      // Check if this is the last page
-      if (autoExtractState.currentPage >= autoExtractState.maxPages) {
-        debug(`\n========================================`);
-        debug(`🎉 Reached max pages (${autoExtractState.maxPages})`);
-        debug(`📊 Total pages processed: ${autoExtractState.totalProcessed}`);
-        debug(`========================================\n`);
-        break;
-      }
-
       // Navigate to next page
       debug(`🔍 Step 3: Looking for next page button...`);
       const nextButton = await findAndClickNextButton(
@@ -1362,9 +1324,7 @@ async function continueAutoExtractionLoop(autoExtractState) {
       // Wait for page navigation
       debug(`⏳ Step 4: Waiting for page navigation...`);
       if (button) {
-        button.textContent = `Loading page ${currentPageNum + 1}/${
-          autoExtractState.maxPages
-        }...`;
+        button.textContent = `Loading page ${currentPageNum + 1}...`;
       }
       await new Promise((resolve) => setTimeout(resolve, 3000));
 
@@ -2018,11 +1978,8 @@ function diagnoseAutoExtraction() {
     typeof GM_getValue === "function"
       ? GM_getValue("w2n_next_page_selector", "div.zDocsNextTopicButton a")
       : "div.zDocsNextTopicButton a";
-  const maxPages =
-    parseInt(document.getElementById("w2n-max-pages")?.value) || 500;
 
   let diagnosis = "AutoExtract Diagnosis:\n\n";
-  diagnosis += `Max pages: ${maxPages}\n`;
   diagnosis += `Next page selector: ${nextPageSelector || "Not set"}\n\n`;
 
   if (!nextPageSelector) {
