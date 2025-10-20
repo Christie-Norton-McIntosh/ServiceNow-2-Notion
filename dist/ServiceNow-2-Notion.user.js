@@ -3885,11 +3885,13 @@
 
         // Send to Notion
         debug(`📤 Step 2: Sending page ${currentPageNum} to Notion...`);
-        const result = await sendToNotion(content, app);
-
-        if (!result.success) {
-          throw new Error(`Failed to send to Notion: ${result.error}`);
-        }
+        overlayModule.setMessage(`Saving page ${currentPageNum} to Notion...`);
+        
+        // Process the content using the app's processWithProxy method
+        await app.processWithProxy(content);
+        
+        // If we get here without throwing, it succeeded
+        const result = { success: true };
 
         autoExtractState.totalProcessed++;
         debug(`✅ Page ${currentPageNum} successfully sent to Notion`);
