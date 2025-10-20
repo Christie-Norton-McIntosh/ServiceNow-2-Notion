@@ -351,13 +351,14 @@ class ServiceNowToNotionApp {
 
     try {
       // Show progress overlay
-      overlayModule.start("Extracting content...");
+      overlayModule.start("Starting extraction...");
 
       // Extract data from current page
+      overlayModule.setMessage("Extracting page metadata...");
       const extractedData = await this.extractCurrentPageData();
       this.currentExtractedData = extractedData;
 
-      overlayModule.setMessage("Processing content...");
+      overlayModule.setMessage("Preparing content for Notion...");
 
       // Universal Workflow is deprecated — always use proxy processing
       await this.processWithProxy(extractedData);
@@ -388,13 +389,18 @@ class ServiceNowToNotionApp {
 
     try {
       // Extract metadata
+      overlayModule.setMessage("Reading page title and properties...");
       const metadata = extractServiceNowMetadata();
 
       // Find and extract content
+      overlayModule.setMessage("Locating content elements...");
       const contentElement = findContentElement();
+      
+      overlayModule.setMessage("Extracting content from page...");
       const content = await extractContentWithIframes(contentElement);
 
       // Analyze and process content (with null safety)
+      overlayModule.setMessage("Analyzing content structure...");
       const analyzed = content.html ? analyzeContent(content.html) : {};
 
       const extractedData = {
@@ -521,11 +527,14 @@ class ServiceNowToNotionApp {
       }
 
       // Get database and mappings
-      overlayModule.setMessage("Preparing database mappings...");
+      overlayModule.setMessage("Fetching database schema...");
       const database = await getDatabase(config.databaseId);
+      
+      overlayModule.setMessage("Loading property mappings...");
       const mappings = await getPropertyMappings(config.databaseId);
 
       // Apply mappings to extracted data
+      overlayModule.setMessage("Mapping properties to Notion format...");
       const properties = applyPropertyMappings(
         extractedData,
         database,
@@ -535,6 +544,7 @@ class ServiceNowToNotionApp {
       // Prepare page data for proxy
       // Extract HTML content from the nested content structure
       // extractedData.content has: { combinedHtml, combinedImages, ...analyzed }
+      overlayModule.setMessage("Formatting page content...");
       const htmlContent =
         extractedData.content?.combinedHtml || extractedData.contentHtml || "";
 
