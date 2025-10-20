@@ -464,12 +464,19 @@ export async function pingProxy() {
  */
 export async function sendProcessedContentToProxy(processedData) {
   debug("📤 Sending processed content to proxy for Notion upload");
+  
+  // Import overlay module for status updates
+  const { overlayModule } = await import("../ui/overlay-progress.js");
+  
   try {
+    overlayModule.setMessage("Converting content to Notion blocks...");
     const result = await apiCall("POST", "/api/W2N", processedData);
 
     debug("Raw proxy response:", JSON.stringify(result, null, 2));
 
     if (result && result.success) {
+      overlayModule.setMessage("Page created successfully!");
+      
       let pageUrl = result.data ? result.data.pageUrl : result.pageUrl;
       const page = result.data ? result.data.page : result.page;
       debug("Extracted pageUrl:", pageUrl);
