@@ -2293,8 +2293,8 @@ async function extractContentFromHtml(html) {
           console.log(`🔍 Full div HTML (first 500 chars): ${fullHtml.substring(0, 500)}`);
           console.log(`🔍 Direct text content: "${directText.substring(0, 200)}..."`);
           
-          const children = $elem.children().toArray();
-          const firstBlockChild = children[0];
+          // Use blockChildren (not all children) to determine first/last block
+          const firstBlockChild = blockChildren[0];
           
           // Iterate through child nodes and accumulate text BEFORE the first block child
           const childNodes = Array.from($elem.get(0).childNodes);
@@ -2337,14 +2337,14 @@ async function extractContentFromHtml(html) {
             }
           }
           
-          // Process block children
-          for (const child of children) {
+          // Process block children (not all children - inline elements like <a> stay in mixed content)
+          for (const child of blockChildren) {
             const childBlocks = await processElement(child);
             processedBlocks.push(...childBlocks);
           }
           
           // Check for text/elements AFTER all block children
-          const lastBlockChild = children[children.length - 1];
+          const lastBlockChild = blockChildren[blockChildren.length - 1];
           let afterBlockHtml = '';
           let foundLastBlock = false;
           
@@ -2387,10 +2387,9 @@ async function extractContentFromHtml(html) {
             }
           }
         } else {
-          // No direct text - just process children
+          // No direct text - just process block children
           console.log(`🔍 <div class="${$elem.attr('class')}"> has ${blockChildren.length} block children - processing as container`);
-          const children = $elem.children().toArray();
-          for (const child of children) {
+          for (const child of blockChildren) {
             const childBlocks = await processElement(child);
             processedBlocks.push(...childBlocks);
           }
