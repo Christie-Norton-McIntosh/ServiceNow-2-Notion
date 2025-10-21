@@ -2592,17 +2592,6 @@
   // Main floating panel (ported from original createUI())
 
 
-  // Simple hash function for content comparison
-  function simpleHash(str) {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convert to 32bit integer
-    }
-    return hash;
-  }
-
   function injectMainPanel() {
     if (document.getElementById("w2n-notion-panel")) return;
 
@@ -3156,8 +3145,6 @@
       totalProcessed: 0,
       paused: false,
       reloadAttempts: 0, // Track page reload attempts (max 3)
-      lastContentHash: null, // Track last page content hash to detect duplicates
-      duplicateCount: 0, // Count consecutive duplicates
     };
 
     // Set up beforeunload handler to save state if page is reloaded manually
@@ -3573,38 +3560,6 @@
             }
 
             const extractedData = await app.extractCurrentPageData();
-
-            // STEP 1.5: Check for duplicate content
-            const contentHash = simpleHash(extractedData.html || extractedData.content || "");
-            
-            if (contentHash === autoExtractState.lastContentHash) {
-              autoExtractState.duplicateCount++;
-              debug(
-                `⚠️ DUPLICATE CONTENT DETECTED (${autoExtractState.duplicateCount} consecutive)!`
-              );
-              debug(`Hash: ${contentHash}, Last Hash: ${autoExtractState.lastContentHash}`);
-              
-              if (autoExtractState.duplicateCount >= 3) {
-                const errorMessage = `❌ AutoExtract STOPPED: Same page content detected ${autoExtractState.duplicateCount} times in a row.\n\nThis usually means:\n- ServiceNow navigation isn't working\n- You've reached the end of the section\n- There's a navigation loop\n\nTotal pages processed: ${autoExtractState.totalProcessed}\nLast successful page: ${currentPageNum - autoExtractState.duplicateCount}`;
-                alert(errorMessage);
-                stopAutoExtract(autoExtractState);
-                if (button) button.textContent = `❌ Stopped: Duplicate content`;
-                return;
-              }
-              
-              // Skip this duplicate but continue (might be temporary navigation issue)
-              debug(`⊘ Skipping duplicate content, will retry navigation...`);
-              showToast(
-                `⚠️ Duplicate content #${autoExtractState.duplicateCount}, retrying...`,
-                3000
-              );
-              break; // Break from capture attempts loop to go to next page
-            } else {
-              // Content is different, reset duplicate counter
-              autoExtractState.duplicateCount = 0;
-              autoExtractState.lastContentHash = contentHash;
-              debug(`✅ Content is unique (hash: ${contentHash})`);
-            }
 
             // STEP 2: Create Notion page and wait for success
             debug(
