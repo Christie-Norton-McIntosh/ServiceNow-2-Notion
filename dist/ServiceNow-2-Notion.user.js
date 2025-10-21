@@ -3317,14 +3317,11 @@
 
   async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
     debug("🔄 Starting AutoExtract loop");
-    debug(`📊 Initial state: currentPage=${autoExtractState.currentPage}`);
 
     // Get button reference for progress updates
     const button = document.getElementById("w2n-start-autoextract");
 
     while (autoExtractState.running && !autoExtractState.paused) {
-      debug(`\n🔄 Loop iteration: currentPage=${autoExtractState.currentPage}`);
-
       autoExtractState.currentPage++;
       const currentPageNum = autoExtractState.currentPage;
       debug(`📄 Processing page number: ${currentPageNum}`);
@@ -3405,8 +3402,6 @@
               return;
             }
 
-            debug(`✅ Found next page button after skip, preparing to click...`);
-
             // Check if stop was requested
             if (!autoExtractState.running) {
               debug(
@@ -3422,9 +3417,7 @@
             }
 
             // Click button to navigate
-            debug(
-              `\n👆 Clicking next page button to navigate to page ${currentPageNum + 1}...`
-            );
+            debug(`🎯 Now navigating to page ${currentPageNum + 1}...`);
             overlayModule.setMessage(`Navigating to page ${currentPageNum + 1}...`);
             if (button) {
               button.textContent = `Navigating to page ${currentPageNum + 1}...`;
@@ -3630,8 +3623,6 @@
             return;
           }
 
-          debug(`✅ Found next page button, preparing to click...`);
-
           // Check if stop was requested before clicking
           if (!autoExtractState.running) {
             debug(
@@ -3649,11 +3640,7 @@
           }
 
           // STEP 4: Click button and navigate to next page
-          debug(
-            `\n👆 Step 4: Clicking next page button to navigate to page ${
-            currentPageNum + 1
-          }...`
-          );
+          debug(`🎯 Now navigating to page ${currentPageNum + 1}...`);
           overlayModule.setMessage(`Navigating to page ${currentPageNum + 1}...`);
           if (button) {
             button.textContent = `Clicking next button for page ${currentPageNum + 1}...`;
@@ -3820,10 +3807,8 @@
           throw new Error("No content extracted from page");
         }
 
-        debug(`📊 Content extracted: ${content.html.length} characters`);
-
         // Send to Notion
-        debug(`📤 Step 2: Sending page ${currentPageNum} to Notion...`);
+        debug(`📤 Sending page ${currentPageNum} to Notion...`);
         overlayModule.setMessage(`Processing page ${currentPageNum}...`);
         
         // Process the content using the app's processWithProxy method
@@ -3837,11 +3822,10 @@
         const result = { success: true };
 
         autoExtractState.totalProcessed++;
-        debug(`✅ Page ${currentPageNum} successfully sent to Notion`);
+        debug(`✅ Page ${currentPageNum} saved to Notion`);
         overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
 
         // Navigate to next page
-        debug(`🔍 Step 3: Looking for next page button...`);
         const nextButton = await findAndClickNextButton(
           nextPageSelector,
           autoExtractState,
@@ -3926,9 +3910,6 @@
     // Try to find the button with reloads after each failed attempt
     while (!nextButton && findAttempts < maxFindAttempts) {
       findAttempts++;
-      debug(
-        `🔍 Looking for next page button (attempt ${findAttempts}/${maxFindAttempts})...`
-      );
 
       if (button) {
         button.textContent = `Looking for next button (${findAttempts}/${maxFindAttempts})...`;
@@ -3937,7 +3918,7 @@
       nextButton = findNextPageElement(nextPageSelector);
 
       if (!nextButton && findAttempts < maxFindAttempts) {
-        debug(`⚠️ Next page button not found, reloading page and retrying...`);
+        debug(`⚠️ Next page button not found, reloading and retrying...`);
 
         // Save autoExtractState to localStorage before reload
         if (autoExtractState) {
@@ -3994,11 +3975,6 @@
     }
 
     // Return the found button (clicking will be done by clickNextPageButton)
-    debug(`✅ Found next page button, returning element for click...`);
-    debug(`📍 Button element:`, nextButton.tagName, nextButton.className, nextButton.id);
-    debug(`📍 Button href:`, nextButton.href);
-    debug(`📍 Button onclick:`, nextButton.onclick);
-
     return nextButton;
   }
 
@@ -4197,42 +4173,11 @@
         }
       }
 
-      const elementInfo = {
-        tag: clickableElement.tagName,
-        id: clickableElement.id || "(no id)",
-        classes: clickableElement.className || "(no classes)",
-        text:
-          clickableElement.textContent?.trim().substring(0, 50) || "(no text)",
-        href: clickableElement.getAttribute("href") || "(no href)",
-        disabled: clickableElement.disabled || false,
-        ariaDisabled: clickableElement.getAttribute("aria-disabled") || "false",
-      };
-
-      debug(`👆 Clicking element:`, elementInfo);
-
-      // Check if element is disabled
-      if (
-        clickableElement.disabled ||
-        clickableElement.getAttribute("aria-disabled") === "true"
-      ) {
-        debug("⚠️ WARNING: Element appears to be disabled!");
-      }
-
-      // Get current URL/page state for fallback detection
-      const currentUrl = window.location.href;
-      const currentPageId = getCurrentPageId();
-      debug(`📍 Current state before click:`, {
-        url: currentUrl.substring(0, 80),
-        pageId: currentPageId.substring(0, 80),
-      });
-
       // Focus the element
       clickableElement.focus();
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Primary click attempt
-      debug("👆 Executing primary click sequence...");
-
       // Dispatch mouse events for better compatibility
       clickableElement.dispatchEvent(
         new MouseEvent("mousedown", { bubbles: true, cancelable: true })
@@ -4244,20 +4189,16 @@
       // Primary click
       clickableElement.click();
 
-      debug("✅ Primary click executed (mousedown, mouseup, click)");
-
       // Set up fallback click attempts if primary doesn't work
       // These will only fire if navigation hasn't occurred
+      const currentUrl = window.location.href;
+      const currentPageId = getCurrentPageId();
+      
       setTimeout(() => {
         const newUrl = window.location.href;
         const newPageId = getCurrentPageId();
         const urlChanged = newUrl !== currentUrl;
         const pageIdChanged = newPageId !== currentPageId;
-
-        debug(`🔍 Checking if fallback needed after 1 second:`, {
-          urlChanged,
-          pageIdChanged,
-        });
 
         if (!urlChanged && !pageIdChanged) {
           debug(
@@ -4269,9 +4210,8 @@
             clickableElement.dispatchEvent(
               new Event("click", { bubbles: true, cancelable: true })
             );
-            debug("✅ Fallback 1: Event dispatch executed");
           } catch (e) {
-            debug("❌ Fallback 1: Event dispatch failed:", e);
+            debug("❌ Fallback 1 failed:", e);
           }
 
           // Fallback 2: Keyboard activation (Enter key)
@@ -4284,16 +4224,11 @@
                 cancelable: true,
               })
             );
-            debug("✅ Fallback 2: Keyboard activation executed");
           } catch (e) {
-            debug("❌ Fallback 2: Keyboard activation failed:", e);
+            debug("❌ Fallback 2 failed:", e);
           }
-        } else {
-          debug(`✅ Navigation detected after primary click, skipping fallbacks`);
         }
       }, 1000);
-
-      debug("Click initiated, fallbacks scheduled");
     } catch (error) {
       debug("Error clicking next page button:", error);
       // Provide more detailed error information
@@ -6688,6 +6623,20 @@
           debug(`✅ Found button container: ${selector}`);
           return container;
         }
+      }
+
+      // Debug: Show what containers ARE available
+      debug("🔍 No matching container found. Available page structure:");
+      debug("  - Header elements:", document.querySelectorAll("header").length);
+      debug("  - Nav elements:", document.querySelectorAll("nav").length);
+      debug("  - Toolbar elements:", document.querySelectorAll('[class*="toolbar"]').length);
+      debug("  - Action elements:", document.querySelectorAll('[class*="action"]').length);
+      debug("  - Polaris elements:", document.querySelectorAll('[class*="polaris"]').length);
+      
+      // Log first few class names of major containers to help identify structure
+      const mainContainers = document.querySelectorAll("body > *");
+      if (mainContainers.length > 0) {
+        debug("  - Top-level containers:", Array.from(mainContainers).slice(0, 5).map(el => el.className || el.tagName).join(", "));
       }
 
       // If no container found, do not create a fallback UI on page load.
