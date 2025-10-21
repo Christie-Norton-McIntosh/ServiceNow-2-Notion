@@ -331,6 +331,20 @@ class ServiceNowToNotionApp {
       }
     }
 
+    // Debug: Show what containers ARE available
+    debug("🔍 No matching container found. Available page structure:");
+    debug("  - Header elements:", document.querySelectorAll("header").length);
+    debug("  - Nav elements:", document.querySelectorAll("nav").length);
+    debug("  - Toolbar elements:", document.querySelectorAll('[class*="toolbar"]').length);
+    debug("  - Action elements:", document.querySelectorAll('[class*="action"]').length);
+    debug("  - Polaris elements:", document.querySelectorAll('[class*="polaris"]').length);
+    
+    // Log first few class names of major containers to help identify structure
+    const mainContainers = document.querySelectorAll("body > *");
+    if (mainContainers.length > 0) {
+      debug("  - Top-level containers:", Array.from(mainContainers).slice(0, 5).map(el => el.className || el.tagName).join(", "));
+    }
+
     // If no container found, do not create a fallback UI on page load.
     // Returning null prevents auto-adding buttons that clutter the page.
     return null;
