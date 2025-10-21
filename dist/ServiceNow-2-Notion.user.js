@@ -3785,7 +3785,10 @@
 
     // Get references
     const app = window.ServiceNowToNotion?.app?.();
-    const nextPageSelector = getNextPageSelector();
+    const nextPageSelector =
+      typeof GM_getValue === "function"
+        ? GM_getValue("w2n_next_page_selector", "div.zDocsNextTopicButton a")
+        : "div.zDocsNextTopicButton a";
     const button = document.getElementById("w2n-start-autoextract");
 
     // Add extra delay after page reload to ensure page is fully loaded and stabilized
