@@ -6612,9 +6612,15 @@
         ".page-header .actions",
         ".main-header",
 
+        // Component navigation wrappers (docs pages)
+        ".cmp-nav__wrapper",
+        "nav.cmp-nav",
+        
         // Generic fallbacks
         "header .actions",
         ".navbar .actions",
+        "nav",
+        "header",
       ];
 
       for (const selector of selectors) {
