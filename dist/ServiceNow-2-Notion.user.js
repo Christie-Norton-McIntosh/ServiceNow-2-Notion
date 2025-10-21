@@ -6570,6 +6570,13 @@
      * Create the settings button
      */
     createSettingsButton() {
+      // If the floating panel exists, it already includes an Advanced Settings
+      // gear; skip creating a duplicate settings button in the page header.
+      if (document.getElementById("w2n-notion-panel")) {
+        debug("ℹ️ Floating panel detected, skipping settings button creation");
+        return;
+      }
+
       const container = this.findButtonContainer();
       if (!container) return;
 
