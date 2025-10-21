@@ -153,6 +153,13 @@ function cleanHtmlText(html) {
   // This regex removes ALL tags including those with attributes
   text = text.replace(/<[^>]*>/g, " ");
   
+  // Safety: Remove incomplete HTML tags that might have been truncated during chunking
+  // Pattern 1: < followed by tag content but no closing > (at end of string)
+  text = text.replace(/<[^>]*$/g, " ");
+  
+  // Pattern 2: Closing > without opening < (at start of string) 
+  text = text.replace(/^[^<]*>/g, " ");
+  
   // Safety: Remove any leftover < or > that might indicate malformed HTML
   text = text.replace(/</g, " ").replace(/>/g, " ");
 

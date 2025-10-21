@@ -162,12 +162,17 @@ async function extractContentFromHtml(html) {
     const videoBlocks = [];
     let text = html;
 
-    // CRITICAL FIX: Strip container div/section tags that should NEVER appear in rich text
-    // These are structural elements that should have been removed during element processing
-    // This is a safety net to prevent HTML syntax from leaking into Notion
-    text = text.replace(/<\/?div[^>]*class=["'][^"']*note[^"']*["'][^>]*>/gi, ' ');
+    // CRITICAL FIX: Strip ALL div tags (not just note divs) - they're structural containers
+    // that should have been processed at element level, not appearing in rich text
+    text = text.replace(/<\/?div[^>]*>/gi, ' ');  // Remove ALL div tags (opening and closing)
     text = text.replace(/<\/?section[^>]*>/gi, ' ');
     text = text.replace(/<\/?article[^>]*>/gi, ' ');
+    
+    // Safety: Remove any incomplete HTML tags that might have been truncated during chunking
+    // Pattern: < followed by tag name followed by anything (but not closing >)
+    // This catches cases where content was chunked mid-tag like "...text <div class=\"note"
+    text = text.replace(/<\/?[a-z][a-z0-9]*[^>]*$/gi, ' ');  // Incomplete tag at end
+    text = text.replace(/^[^<]*>/gi, ' ');  // Incomplete tag at beginning (leftover from previous chunk)
     
     // Clean up extra whitespace from tag removal
     text = text.replace(/\s+/g, ' ').trim();
