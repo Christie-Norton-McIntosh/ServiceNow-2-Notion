@@ -150,7 +150,11 @@ function cleanHtmlText(html) {
     ); // All hex entities
 
   // NOW remove HTML tags (including any that were entity-encoded)
+  // This regex removes ALL tags including those with attributes
   text = text.replace(/<[^>]*>/g, " ");
+  
+  // Safety: Remove any leftover < or > that might indicate malformed HTML
+  text = text.replace(/</g, " ").replace(/>/g, " ");
 
   // Clean up whitespace
   text = text.replace(/\s+/g, " ").trim();
