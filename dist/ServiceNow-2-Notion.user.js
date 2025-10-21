@@ -3147,6 +3147,19 @@
       reloadAttempts: 0, // Track page reload attempts (max 3)
     };
 
+    // Set up beforeunload handler to save state if page is reloaded manually
+    const beforeUnloadHandler = (event) => {
+      if (autoExtractState.running) {
+        debug(`⚠️ Page unloading during AutoExtract - saving state...`);
+        const stateToSave = {
+          ...autoExtractState,
+          reloadAttempts: (autoExtractState.reloadAttempts || 0) + 1
+        };
+        GM_setValue("w2n_autoExtractState", JSON.stringify(stateToSave));
+      }
+    };
+    window.addEventListener('beforeunload', beforeUnloadHandler);
+
     try {
       // Clear any existing overlays before starting
       overlayModule.done({ success: true, autoCloseMs: 0 });
@@ -3160,14 +3173,16 @@
 
       await runAutoExtractLoop(autoExtractState, app, nextPageSelector);
 
-      // Clean up global state
+      // Clean up
+      window.removeEventListener('beforeunload', beforeUnloadHandler);
       delete window.ServiceNowToNotion.autoExtractState;
     } catch (error) {
       debug("❌ Auto-extraction failed:", error);
       overlayModule.error({
         message: `Auto-extraction failed: ${error.message}`,
       });
-      // Clean up global state
+      // Clean up
+      window.removeEventListener('beforeunload', beforeUnloadHandler);
       delete window.ServiceNowToNotion.autoExtractState;
     }
   }
