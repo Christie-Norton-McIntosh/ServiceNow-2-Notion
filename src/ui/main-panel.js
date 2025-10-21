@@ -1233,12 +1233,12 @@ async function continueAutoExtractionLoop(autoExtractState) {
     }
 
     try {
-      // Extract current page content
+      // Extract current page data using the app instance
       debug(`📝 Step 1: Extracting content from page ${currentPageNum}...`);
       overlayModule.setMessage(`Extracting content from page ${currentPageNum}...`);
-      const content = extractContent();
+      const extractedData = await app.extractCurrentPageData();
 
-      if (!content || !content.html) {
+      if (!extractedData) {
         throw new Error("No content extracted from page");
       }
 
@@ -1251,7 +1251,7 @@ async function continueAutoExtractionLoop(autoExtractState) {
       // - "Checking proxy connection..."
       // - "Converting content to Notion blocks..."
       // - "Page created successfully!"
-      await app.processWithProxy(content);
+      await app.processWithProxy(extractedData);
       
       // If we get here without throwing, it succeeded
       const result = { success: true };
