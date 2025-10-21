@@ -277,7 +277,10 @@ async function convertTableBlock(tableHtml, options = {}) {
     // Remove lists, replace <li> with bullets
     if (/<[uo]l[^>]*>/i.test(textContent)) {
       textContent = textContent.replace(/<\/?[uo]l[^>]*>/gi, "");
-      textContent = textContent.replace(/<li[^>]*>/gi, "__NEWLINE__• ");
+      // CRITICAL: Add newline marker BEFORE bullet to ensure each item is on its own line
+      // First <li> shouldn't have newline before it (at start of cell)
+      textContent = textContent.replace(/^\s*<li[^>]*>/gi, "• ");  // First item, no newline
+      textContent = textContent.replace(/<li[^>]*>/gi, "__NEWLINE__• ");  // Subsequent items
       textContent = textContent.replace(/<\/li>/gi, "");
       
       // For list content, preserve HTML tags (for uicontrol, links, etc.) and normalize whitespace
@@ -297,13 +300,14 @@ async function convertTableBlock(tableHtml, options = {}) {
         ? listParagraphs.join('__NEWLINE__')
         : $list('body').html().replace(/\s+/g, ' ').trim();
       
-      // Normalize whitespace
+      // CRITICAL: Normalize whitespace BEFORE restoring newlines
+      // This preserves intentional __NEWLINE__ markers while removing formatting whitespace
       textContent = textContent
-        .replace(/\s*\n\s*/g, ' ')
-        .replace(/\s{2,}/g, ' ')
+        .replace(/\s*\n\s*/g, ' ')  // Remove actual newlines from HTML formatting
+        .replace(/\s{2,}/g, ' ')     // Collapse multiple spaces
         .trim();
       
-      // Restore newlines
+      // Now restore intentional newlines from markers
       textContent = textContent.replace(/__NEWLINE__/g, '\n');
       
       // Use rich text block conversion for list items
