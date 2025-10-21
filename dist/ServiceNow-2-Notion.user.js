@@ -6510,6 +6510,14 @@
      * Create the main "Save to Notion" button
      */
     createMainActionButton() {
+      // Avoid creating duplicate "Save to Notion" UI: if the floating panel
+      // is present, we already provide a "Save Current Page" button there.
+      // Skip creating the main action button to prevent duplicates.
+      if (document.getElementById("w2n-notion-panel")) {
+        debug("ℹ️ Floating panel detected, skipping main action button creation");
+        return;
+      }
+
       const container = this.findButtonContainer();
       if (!container) {
         debug("⚠️ Could not find suitable container for main button");
