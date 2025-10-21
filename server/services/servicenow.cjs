@@ -162,6 +162,16 @@ async function extractContentFromHtml(html) {
     const videoBlocks = [];
     let text = html;
 
+    // CRITICAL FIX: Strip container div/section tags that should NEVER appear in rich text
+    // These are structural elements that should have been removed during element processing
+    // This is a safety net to prevent HTML syntax from leaking into Notion
+    text = text.replace(/<\/?div[^>]*class=["'][^"']*note[^"']*["'][^>]*>/gi, ' ');
+    text = text.replace(/<\/?section[^>]*>/gi, ' ');
+    text = text.replace(/<\/?article[^>]*>/gi, ' ');
+    
+    // Clean up extra whitespace from tag removal
+    text = text.replace(/\s+/g, ' ').trim();
+
     // Extract and process iframe tags (videos/embeds) - do this FIRST before images
     const iframeRegex = /<iframe[^>]*>.*?<\/iframe>/gis;
     let iframeMatch;
