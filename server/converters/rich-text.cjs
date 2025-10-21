@@ -94,10 +94,14 @@ function convertRichTextBlock(input, options = {}) {
     return `__BOLD_BLUE_START__${content}__BOLD_BLUE_END__`;
   });
   
-  // Handle spans with technical identifier classes (ph, keyword, parmname, codeph, etc.) as inline code
+  // Handle spans with technical identifier classes (ph, keyword, parmname, codeph, etc.)
+  // These tags wrap technical terms, product names, or code identifiers
+  // CRITICAL FIX: Always return the content (not the HTML tags) even if not detected as technical
   html = html.replace(/<span[^>]*class=["'][^"']*(?:\bph\b|\bkeyword\b|\bparmname\b|\bcodeph\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
     const cleanedContent = typeof content === "string" ? content.trim() : "";
-    if (!cleanedContent) return match;
+    if (!cleanedContent) return " "; // Return space instead of empty match
+    
+    // Check if content looks like a technical identifier (has dots or underscores)
     const strictTechnicalTokenRegex = /[A-Za-z0-9][A-Za-z0-9._-]*[._][A-Za-z0-9._-]+/g;
     let replaced = cleanedContent.replace(strictTechnicalTokenRegex, (token) => {
       const bareToken = token.trim();
@@ -106,7 +110,9 @@ function convertRichTextBlock(input, options = {}) {
       if (bareAlphaNumeric && /^[A-Z0-9]+$/.test(bareAlphaNumeric)) return token;
       return `__CODE_START__${bareToken}__CODE_END__`;
     });
-    return replaced !== cleanedContent ? replaced : match;
+    
+    // ALWAYS return content without the span tags, regardless of whether it was formatted
+    return replaced;
   });
   // Remove surrounding parentheses/brackets around inline code markers
   html = html.replace(/([\(\[])(\s*(?:__CODE_START__[\s\S]*?__CODE_END__\s*)+)([\)\]])/g, (match, open, codes, close) => {
