@@ -115,6 +115,11 @@ async function convertTableBlock(tableHtml, options = {}) {
   async function processTableCellContent(html) {
     if (!html) return [{ type: "text", text: { content: "" } }];
     
+    // Debug: Log if cell contains span tags
+    if (html.includes('<span') && html.includes('ph')) {
+      console.log(`📊 Table cell contains <span class="ph"> tag: "${html.substring(0, 100)}..."`);
+    }
+    
     // Load HTML into Cheerio for better parsing
     const cheerio = require('cheerio');
     const $ = cheerio.load(html, { decodeEntities: true });
@@ -310,9 +315,40 @@ async function convertTableBlock(tableHtml, options = {}) {
       // Now restore intentional newlines from markers
       textContent = textContent.replace(/__NEWLINE__/g, '\n');
       
+      // DEBUG: Log list content before conversion (always log for bullets)
+      if (textContent.includes('•')) {
+        console.log(`🔍 [table.cjs LIST PATH] About to convert list text with bullets:`);
+        console.log(`   Text (first 300 chars): "${textContent.substring(0, 300)}"`);
+        console.log(`   Newline count: ${(textContent.match(/\n/g) || []).length}`);
+        console.log(`   Bullet count: ${(textContent.match(/•/g) || []).length}`);
+      }
+      
       // Use rich text block conversion for list items
       const { convertRichTextBlock } = require("./rich-text.cjs");
-      return convertRichTextBlock(textContent, { skipSoftBreaks: true });
+      const result = convertRichTextBlock(textContent, { skipSoftBreaks: true });
+      
+      // DEBUG: Log result structure for bullets
+      if (textContent.includes('•')) {
+        console.log(`🔍 [table.cjs LIST PATH] After conversion:`);
+        console.log(`   Rich text elements: ${result.length}`);
+        const hasNewlines = result.some(rt => rt.text.content === '\n');
+        console.log(`   Contains newline elements: ${hasNewlines}`);
+        console.log(`   First 5 elements: ${JSON.stringify(result.slice(0, 5).map(r => r.text.content))}`);
+      }
+      
+      // DEBUG: Log result after conversion
+      if (textContent.includes('<span')) {
+        const resultText = result.map(r => r.text.content).join('');
+        console.log(`🔍 [table.cjs LIST PATH] After conversion:`);
+        console.log(`   Result: "${resultText.substring(0, 200)}..."`);
+        if (resultText.includes('<') || resultText.includes('>')) {
+          console.log(`   ❌ WARNING: HTML tags still in result!`);
+        } else {
+          console.log(`   ✅ All HTML tags successfully stripped`);
+        }
+      }
+      
+      return result;
     }
     
     // For cells with multiple bullet items (not from HTML lists), add soft returns between them
@@ -327,7 +363,26 @@ async function convertTableBlock(tableHtml, options = {}) {
     
     // Use rich text block conversion for all other cell content
     const { convertRichTextBlock } = require("./rich-text.cjs");
-    return convertRichTextBlock(textContent, { skipSoftBreaks: true });
+    
+    // DEBUG: Log text content before conversion
+    if (textContent.includes('<span')) {
+      console.log(`🔍 [table.cjs] About to convert text with span tags: "${textContent.substring(0, 150)}..."`);
+    }
+    
+    const result = convertRichTextBlock(textContent, { skipSoftBreaks: true });
+    
+    // DEBUG: Log result after conversion
+    if (textContent.includes('<span')) {
+      const resultText = result.map(r => r.text.content).join('');
+      console.log(`🔍 [table.cjs] After conversion: "${resultText.substring(0, 150)}..."`);
+      if (resultText.includes('<') || resultText.includes('>')) {
+        console.log(`❌ [table.cjs] WARNING: HTML tags still in result!`);
+      } else {
+        console.log(`✅ [table.cjs] All HTML tags successfully stripped`);
+      }
+    }
+    
+    return result;
   }
 
   // Extract table rows from thead

@@ -62,6 +62,12 @@ function convertRichTextBlock(input, options = {}) {
   const richText = [];
   let html = typeof input === "string" ? input : "";
   if (!html) return [];
+  
+  // DEBUG: Log input HTML if it contains span tags
+  if (html.includes('<span')) {
+    console.log(`🔍 [rich-text.cjs] convertRichTextBlock called with HTML containing <span>:`);
+    console.log(`   Input: "${html.substring(0, 250)}..."`);
+  }
 
   // Extract and store links first with indexed placeholders
   const links = [];
@@ -70,8 +76,30 @@ function convertRichTextBlock(input, options = {}) {
     let href = hrefMatch ? hrefMatch[1] : "";
     // Convert relative ServiceNow URLs to absolute
     href = convertServiceNowUrl(href);
+    
+    // CRITICAL: Strip span tags from link content BEFORE storing
+    // This handles cases like: <a href="...">Contact <span class="ph">Support</span></a>
+    let cleanedContent = content;
+    
+    // Strip span tags with ph/keyword/parmname/codeph classes from link content
+    cleanedContent = cleanedContent.replace(
+      /<span[^>]*class=["'][^"']*(?:\bph\b|\bkeyword\b|\bparmname\b|\bcodeph\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi,
+      (spanMatch, spanContent) => {
+        // Just return the content without the span tags
+        return spanContent || '';
+      }
+    );
+    
+    // Also strip uicontrol spans (these will be handled as bold+blue later)
+    cleanedContent = cleanedContent.replace(
+      /<span[^>]*class=["'][^"']*\buicontrol\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi,
+      (spanMatch, spanContent) => {
+        return `__BOLD_BLUE_START__${spanContent}__BOLD_BLUE_END__`;
+      }
+    );
+    
     const linkIndex = links.length;
-    links.push({ href, content });
+    links.push({ href, content: cleanedContent });
     // Use indexed placeholder that won't be caught by technical identifier regex
     return `__LINK_${linkIndex}__`;
   });
@@ -97,7 +125,11 @@ function convertRichTextBlock(input, options = {}) {
   // Handle spans with technical identifier classes (ph, keyword, parmname, codeph, etc.)
   // These tags wrap technical terms, product names, or code identifiers
   // CRITICAL FIX: Always return the content (not the HTML tags) even if not detected as technical
+  const htmlBefore = html;
   html = html.replace(/<span[^>]*class=["'][^"']*(?:\bph\b|\bkeyword\b|\bparmname\b|\bcodeph\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
+    if (process.env.SN2N_VERBOSE === '1') {
+      console.log(`🔍 Matched span with class ph/keyword/parmname/codeph: "${match.substring(0, 80)}"`);
+    }
     const cleanedContent = typeof content === "string" ? content.trim() : "";
     if (!cleanedContent) return " "; // Return space instead of empty match
     
@@ -114,6 +146,18 @@ function convertRichTextBlock(input, options = {}) {
     // ALWAYS return content without the span tags, regardless of whether it was formatted
     return replaced;
   });
+  
+  // DEBUG: Check if span replacement worked
+  if (htmlBefore.includes('<span') && htmlBefore !== html) {
+    console.log(`🔍 [rich-text.cjs] After span replacement:`);
+    console.log(`   Before: "${htmlBefore.substring(0, 150)}..."`);
+    console.log(`   After:  "${html.substring(0, 150)}..."`);
+    if (html.includes('<span')) {
+      console.log(`   ❌ WARNING: <span> tags still present after replacement!`);
+    } else {
+      console.log(`   ✅ All <span> tags successfully removed`);
+    }
+  }
   // Remove surrounding parentheses/brackets around inline code markers
   html = html.replace(/([\(\[])(\s*(?:__CODE_START__[\s\S]*?__CODE_END__\s*)+)([\)\]])/g, (match, open, codes, close) => {
     const codeRegex = /__CODE_START__([\s\S]*?)__CODE_END__/g;
@@ -158,7 +202,14 @@ function convertRichTextBlock(input, options = {}) {
 
   // Strip any remaining HTML tags that weren't converted to markers
   // This handles span tags, divs, and other markup that doesn't need special formatting
+  const beforeStrip = html;
   html = html.replace(/<[^>]+>/g, ' ');
+  
+  // Debug: Log if we stripped any span tags
+  if (beforeStrip !== html && beforeStrip.includes('<span')) {
+    console.log(`🧹 Stripped remaining HTML tags from: "${beforeStrip.substring(0, 100)}"`);
+    console.log(`   Result: "${html.substring(0, 100)}"`);
+  }
   
   // Clean up excessive whitespace from tag removal, BUT preserve newlines
   html = html.replace(/[^\S\n]+/g, ' '); // Replace consecutive non-newline whitespace with single space
@@ -246,7 +297,7 @@ function convertRichTextBlock(input, options = {}) {
           text: { content: '\n' },
           annotations: normalizeAnnotations(currentAnnotations),
         });
-      } else if (cleanedText.trim()) {
+      } else if (cleanedText.trim() || cleanedText.includes('\n')) {
         // Split by newlines first - each line becomes a separate rich_text element
         // This is necessary for table cells where newlines should create visual line breaks
         const lines = cleanedText.split('\n');
@@ -254,10 +305,10 @@ function convertRichTextBlock(input, options = {}) {
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i];
           
-          // Skip empty lines except the last one (which might be intentional trailing space)
-          if (!line.trim() && i < lines.length - 1) {
-            continue;
-          }
+          // CRITICAL: Don't skip empty lines - they represent intentional newlines
+          // When text starts with "\n", splitting creates an empty first element
+          // Skipping it loses the newline, causing bullets to run together
+          // Instead, we'll add content if non-empty, then always add newline between elements
           
           // Split long content into 2000-char chunks to comply with Notion API
           if (line.length > 2000) {
@@ -272,6 +323,7 @@ function convertRichTextBlock(input, options = {}) {
               remaining = remaining.substring(2000);
             }
           } else if (line.trim()) {
+            // Only add non-empty lines as content
             richText.push({
               type: "text",
               text: { content: line },
@@ -280,6 +332,7 @@ function convertRichTextBlock(input, options = {}) {
           }
           
           // Add newline as separate element between lines (but not after the last line)
+          // This preserves the original newline positions even when empty lines are present
           if (i < lines.length - 1) {
             richText.push({
               type: "text",
