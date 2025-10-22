@@ -119,7 +119,14 @@ function convertRichTextBlock(input, options = {}) {
   
   // Handle span with uicontrol class as bold + blue
   html = html.replace(/<span[^>]*class=["'][^"']*\buicontrol\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
-    return `__BOLD_BLUE_START__${content}__BOLD_BLUE_END__`;
+    // Decode HTML entities (e.g., &gt; → >, &lt; → <, &amp; → &)
+    const decoded = content
+      .replace(/&gt;/gi, '>')
+      .replace(/&lt;/gi, '<')
+      .replace(/&amp;/gi, '&')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'");
+    return `__BOLD_BLUE_START__${decoded}__BOLD_BLUE_END__`;
   });
   
   // Handle spans with note__title class - just extract content, no formatting
@@ -218,8 +225,15 @@ function convertRichTextBlock(input, options = {}) {
       return match; // Don't wrap, already in code block
     }
     
-    // Skip if part of a URL or link placeholder
-    if (match.includes('http') || match.includes('__LINK_')) {
+    // Skip if part of a URL - check for http:// or https:// or www. before the match
+    const contextBefore = string.substring(Math.max(0, offset - 20), offset);
+    const contextAfter = string.substring(offset + match.length, offset + match.length + 20);
+    if (contextBefore.match(/https?:\/\/|www\.|__LINK_\d+__/i) || contextAfter.match(/^[\w\-\.]*\.[\w\-]+\/|^:\d+/)) {
+      return match; // Skip URL-like patterns
+    }
+    
+    // Skip if part of a link placeholder
+    if (match.includes('__LINK_')) {
       return match;
     }
     return `__CODE_START__${identifier}__CODE_END__`;
