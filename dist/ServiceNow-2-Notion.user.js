@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.5
+// @version      9.2.6
 // @description  Extract ServiceNow content and send to Notion via Universal Workflow or proxy
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.5";
+    window.BUILD_VERSION = "9.2.6";
 (function () {
 
   // Configuration constants and default settings
@@ -6147,6 +6147,65 @@
 
 
   /**
+   * Wait for lazy-loaded content to appear on ServiceNow pages
+   * Scrolls to bottom and waits for dynamic content to load
+   * @param {number} maxWaitMs - Maximum time to wait in milliseconds
+   * @returns {Promise<void>}
+   */
+  async function waitForLazyContent(maxWaitMs = 3000) {
+    debug("🔄 Waiting for lazy-loaded content...");
+    
+    try {
+      // Store original scroll position
+      const originalScrollY = window.scrollY;
+      
+      // Get initial content length
+      const contentElement = document.querySelector('.zDocsTopicPageBody, [role="main"], main, article');
+      if (!contentElement) {
+        debug("⚠️ No content element found for lazy-load detection");
+        return;
+      }
+      
+      let previousLength = contentElement.innerHTML.length;
+      let stableCount = 0;
+      const requiredStableChecks = 2; // Content must be stable for 2 checks
+      const checkInterval = 500; // Check every 500ms
+      const maxChecks = Math.floor(maxWaitMs / checkInterval);
+      
+      // Scroll to bottom to trigger lazy loading
+      debug("📜 Scrolling to bottom to trigger lazy loading...");
+      window.scrollTo(0, document.body.scrollHeight);
+      
+      // Wait for content to stabilize
+      for (let i = 0; i < maxChecks; i++) {
+        await new Promise(resolve => setTimeout(resolve, checkInterval));
+        
+        const currentLength = contentElement.innerHTML.length;
+        
+        if (currentLength === previousLength) {
+          stableCount++;
+          if (stableCount >= requiredStableChecks) {
+            debug(`✅ Content stable at ${currentLength} chars after ${(i + 1) * checkInterval}ms`);
+            break;
+          }
+        } else {
+          debug(`🔄 Content changed: ${previousLength} → ${currentLength} chars`);
+          stableCount = 0;
+          previousLength = currentLength;
+        }
+      }
+      
+      // Restore original scroll position
+      window.scrollTo(0, originalScrollY);
+      debug("✅ Lazy content loading complete");
+      
+    } catch (error) {
+      debug("⚠️ Error waiting for lazy content:", error);
+      // Non-fatal, continue with extraction
+    }
+  }
+
+  /**
    * Normalize whitespace and clean up text content
    * @param {string} text - Text to normalize
    * @returns {string} Normalized text
@@ -6787,6 +6846,10 @@
         // Extract metadata
         overlayModule.setMessage("Reading page title and properties...");
         const metadata = extractServiceNowMetadata();
+
+        // Wait for lazy-loaded content to appear
+        overlayModule.setMessage("Loading dynamic content...");
+        await waitForLazyContent(3000); // Wait up to 3 seconds for lazy content
 
         // Find and extract content
         overlayModule.setMessage("Locating content elements...");
