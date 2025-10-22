@@ -10,11 +10,13 @@ import { showToast } from "./utils.js";
 
 // Simple hash function for content comparison
 function simpleHash(str) {
+  if (!str || str.length === 0) return 0;
+  
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i);
     hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32bit integer
+    hash |= 0; // Convert to 32bit signed integer
   }
   return hash;
 }
@@ -989,12 +991,14 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
             await new Promise((resolve) => setTimeout(resolve, 2000));
           }
 
-          const extractedData = await app.extractCurrentPageData();
+      const extractedData = await app.extractCurrentPageData();
 
-          // STEP 1.5: Check for duplicate content
-          const contentHash = simpleHash(extractedData.html || extractedData.content || "");
-          
-          if (contentHash === autoExtractState.lastContentHash) {
+      // STEP 1.5: Check for duplicate content
+      const contentToHash = extractedData.content?.combinedHtml || "";
+      const contentHash = simpleHash(contentToHash);
+
+      debug(`🔍 Content to hash length: ${contentToHash.length} characters`);
+      debug(`🔍 Calculated hash: ${contentHash}, Previous hash: ${autoExtractState.lastContentHash}`);          if (contentHash === autoExtractState.lastContentHash) {
             autoExtractState.duplicateCount++;
             debug(
               `⚠️ DUPLICATE CONTENT DETECTED (${autoExtractState.duplicateCount} consecutive)!`

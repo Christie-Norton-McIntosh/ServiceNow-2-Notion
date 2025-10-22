@@ -127,7 +127,11 @@ async function findParentListItemByMarker(rootBlockId, marker) {
 async function orchestrateDeepNesting(pageId, markerMap) {
   const { notion, log } = getGlobals();
   if (!markerMap || Object.keys(markerMap).length === 0) return { appended: 0 };
+  
+  const startTime = Date.now();
   let totalAppended = 0;
+  let markersCleanedSuccessfully = 0;
+  let markerCleanupFailed = 0;
   
   for (const marker of Object.keys(markerMap)) {
     let blocksToAppend = markerMap[marker] || [];
@@ -272,12 +276,14 @@ async function orchestrateDeepNesting(pageId, markerMap) {
             log(
               `✅ Orchestrator: removed marker from paragraph ${paragraphId}`
             );
+            markersCleanedSuccessfully++;
           }
         } catch (e) {
           log(
             "⚠️ Orchestrator: failed to remove marker from paragraph:",
             e && e.message
           );
+          markerCleanupFailed++;
         }
       }
 
@@ -302,12 +308,14 @@ async function orchestrateDeepNesting(pageId, markerMap) {
               [listItem.type]: { rich_text: safeNewRt },
             });
             log(`✅ Orchestrator: removed marker from list-item ${parentId}`);
+            markersCleanedSuccessfully++;
           }
         } catch (e) {
           log(
             "⚠️ Orchestrator: failed to remove marker from list-item:",
             e && e.message
           );
+          markerCleanupFailed++;
         }
       }
     } catch (err) {
@@ -335,16 +343,34 @@ async function orchestrateDeepNesting(pageId, markerMap) {
     }
   }
   
-  // After orchestrating individual markers, run a final sweep to remove any residual marker tokens
-  try {
-    const sweep = await sweepAndRemoveMarkersFromPage(pageId);
-    if (sweep && sweep.updated) {
-      log(
-        `🔍 Sweeper finished: updated ${sweep.updated} blocks to remove residual markers`
-      );
+  const orchestrationTime = Date.now() - startTime;
+  log(`⚡ Orchestration completed in ${orchestrationTime}ms (${totalAppended} blocks appended, ${markersCleanedSuccessfully} markers cleaned)`);
+  
+  // PERFORMANCE OPTIMIZATION: Skip the sweeper if all markers were successfully cleaned
+  // The sweeper is expensive (traverses entire page tree) and usually not needed
+  // if marker cleanup succeeded during orchestration
+  const totalMarkers = Object.keys(markerMap).length;
+  const shouldRunSweeper = markerCleanupFailed > 0 || markersCleanedSuccessfully < totalMarkers;
+  
+  if (shouldRunSweeper) {
+    log(`🔍 Running sweeper (${markerCleanupFailed} cleanup failures detected)...`);
+    // After orchestrating individual markers, run a final sweep to remove any residual marker tokens
+    try {
+      const sweepStart = Date.now();
+      const sweep = await sweepAndRemoveMarkersFromPage(pageId);
+      const sweepTime = Date.now() - sweepStart;
+      if (sweep && sweep.updated) {
+        log(
+          `🔍 Sweeper finished in ${sweepTime}ms: updated ${sweep.updated} blocks to remove residual markers`
+        );
+      } else {
+        log(`✅ Sweeper finished in ${sweepTime}ms: no residual markers found`);
+      }
+    } catch (e) {
+      log("⚠️ Orchestrator: sweeper failed:", e && e.message);
     }
-  } catch (e) {
-    log("⚠️ Orchestrator: sweeper failed:", e && e.message);
+  } else {
+    log(`⚡ SKIPPING sweeper - all ${totalMarkers} markers cleaned successfully (saves ~${Math.round(totalMarkers * 200)}ms)`);
   }
 
   return { appended: totalAppended };

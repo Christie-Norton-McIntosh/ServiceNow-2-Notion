@@ -35,6 +35,7 @@ import {
   normalizeText,
   analyzeContent,
   splitContentIntoSections,
+  waitForLazyContent,
 } from "./content/content-utils.js";
 
 // API Modules
@@ -426,6 +427,10 @@ class ServiceNowToNotionApp {
       // Extract metadata
       overlayModule.setMessage("Reading page title and properties...");
       const metadata = extractServiceNowMetadata();
+
+      // Wait for lazy-loaded content to appear
+      overlayModule.setMessage("Loading dynamic content...");
+      await waitForLazyContent(3000); // Wait up to 3 seconds for lazy content
 
       // Find and extract content
       overlayModule.setMessage("Locating content elements...");

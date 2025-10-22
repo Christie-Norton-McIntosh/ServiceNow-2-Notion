@@ -81,9 +81,9 @@ function convertRichTextBlock(input, options = {}) {
     // This handles cases like: <a href="...">Contact <span class="ph">Support</span></a>
     let cleanedContent = content;
     
-    // Strip span tags with ph/keyword/parmname/codeph classes from link content
+    // Strip span tags with ph/keyword/parmname/codeph/userinput classes from link content
     cleanedContent = cleanedContent.replace(
-      /<span[^>]*class=["'][^"']*(?:\bph\b|\bkeyword\b|\bparmname\b|\bcodeph\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi,
+      /<span[^>]*class=["'][^"']*(?:\bph\b|\bkeyword\b|\bparmname\b|\bcodeph\b|\buserinput\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi,
       (spanMatch, spanContent) => {
         // Just return the content without the span tags
         return spanContent || '';
@@ -122,8 +122,33 @@ function convertRichTextBlock(input, options = {}) {
     return `__BOLD_BLUE_START__${content}__BOLD_BLUE_END__`;
   });
   
+  // Handle spans with note__title class - just extract content, no formatting
+  // These are title labels like "Note:" in callouts that should be plain text
+  html = html.replace(/<span[^>]*class=["'][^"']*\bnote__title\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
+    if (process.env.SN2N_VERBOSE === '1') {
+      console.log(`🔍 Matched span with class note__title: "${match.substring(0, 80)}"`);
+    }
+    const cleanedContent = typeof content === "string" ? content.trim() : "";
+    if (!cleanedContent) return " "; // Return space instead of empty match
+    // Just return the content without the span tags (no special formatting)
+    return cleanedContent;
+  });
+  
+  // Handle spans with userinput class as inline code (preserve content exactly as-is)
+  // This is for user input placeholders like <instance-name> that should not be modified
+  html = html.replace(/<span[^>]*class=["'][^"']*\buserinput\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
+    if (process.env.SN2N_VERBOSE === '1') {
+      console.log(`🔍 Matched span with class userinput: "${match.substring(0, 80)}"`);
+    }
+    const cleanedContent = typeof content === "string" ? content.trim() : "";
+    if (!cleanedContent) return " "; // Return space instead of empty match
+    // Wrap entire content as code without any character modifications
+    return `__CODE_START__${cleanedContent}__CODE_END__`;
+  });
+  
   // Handle spans with technical identifier classes (ph, keyword, parmname, codeph, etc.)
   // These tags wrap technical terms, product names, or code identifiers
+  // These go through technical identifier detection (dots, underscores, etc.)
   // CRITICAL FIX: Always return the content (not the HTML tags) even if not detected as technical
   const htmlBefore = html;
   html = html.replace(/<span[^>]*class=["'][^"']*(?:\bph\b|\bkeyword\b|\bparmname\b|\bcodeph\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {

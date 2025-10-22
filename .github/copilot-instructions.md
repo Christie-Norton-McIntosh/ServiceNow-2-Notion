@@ -1,6 +1,28 @@
 
 # ServiceNow-2-Notion — Copilot Instructions (2025)
 
+Quick, actionable guidance for AI coding agents working in this repo. Keep edits small, reference real files, and verify with a local build and proxy run.
+
+## Agent quickstart (TL;DR)
+- Big picture: ES6 userscript in `src/**` → bundled to `dist/ServiceNow-2-Notion.user.js` (Rollup IIFE). Local proxy in `server/**` converts ServiceNow HTML to Notion blocks and creates pages.
+- Build userscript: `npm run build` (or `build:prod`); dev watch: `npm run dev`. After any `src/**` change, rebuild and re-upload the userscript to Tampermonkey.
+- Versioning (REQUIRED before build): bump the version so Tampermonkey detects updates and Rollup injects the correct banner/runtime. Use `npm version patch|minor|major` (or `npm run release:patch|minor|major`).
+- Run proxy: `npm start` (nodemon, port 3004). `.env` in `server/` or root: `NOTION_TOKEN`, `NOTION_VERSION`, optional `SN2N_VERBOSE=1`, `SN2N_EXTRA_DEBUG=1`.
+- Key files: `src/main.js` (userscript wiring), `server/sn2n-proxy.cjs` (Express entry), `server/services/servicenow.cjs` (HTML→blocks), `server/converters/{rich-text,table}.cjs`, `server/routes/w2n.cjs`, `server/orchestration/*.cjs`.
+- Patterns:
+  - Userscript UI: never auto-inject on import; provide `injectXxx()` + `setupXxx(el)` and wire injectors only in `src/main.js` (see `src/ui/property-mapping-modal.js`).
+  - DOM iteration: always snapshot live NodeLists with `Array.from(node.childNodes)` before modifying (avoid skipped nodes).
+  - Preserve HTML (don’t early-strip tags); let `rich-text.cjs` derive annotations (UIControl, keyword, parmname, codeph).
+  - Tables/newlines: use placeholder markers (e.g., `__NEWLINE__`) → normalize whitespace → restore markers (see `server/converters/table.cjs`).
+  - Deep nesting: initial create limited to 2 levels. Insert `sn2n:marker` tokens + `markerMap`, create page, then `orchestrateDeepNesting()` appends deeper children and cleans markers (see `server/orchestration/*.cjs`, invoked by `w2n.cjs`).
+  - Notion limits: chunk children in 100-block batches; append remaining after page create (`w2n.cjs`).
+  - Images: ServiceNow images must be downloaded+uploaded to Notion `file_uploads`; fallback to external URL only for non-ServiceNow images (`sn2n-proxy.cjs:createImageBlock`).
+  - Dedupe/filter: filter gray info callouts; dedupe identical blocks and images by id/URL (`server/utils/dedupe.cjs` used in `w2n.cjs`).
+- API surface: POST `/api/W2N` with `{ title, databaseId, contentHtml|content, properties?, url?, dryRun? }`. `dryRun` returns `{ children, hasVideos }` without creating a page. Health: `/health`, `/ping`, `/api/status`; DB: `/api/databases/:id`; logging: `/api/logging`.
+- Pitfalls: search for `w2n-` IDs before UI renames; wire modal injectors only in `src/main.js`; respect Notion nesting/100-block caps; use `Array.from()` with DOM; rebuild userscript after edits.
+
+---
+
 These instructions are for AI coding agents working in the ServiceNow-2-Notion repository. Follow these concise, actionable guidelines for immediate productivity and safe edits.
 
 ## �️ Big Picture Architecture
@@ -34,6 +56,8 @@ These instructions are for AI coding agents working in the ServiceNow-2-Notion r
 
 ## 🔧 Critical Developer Workflows
 
+IMPORTANT: Always bump the version BEFORE any build so the userscript header `@version` and `window.BUILD_VERSION` reflect changes and Tampermonkey pulls the update.
+
 **Build & Test Cycle:**
 ```bash
 npm run build    # Generate dist/ServiceNow-2-Notion.user.js
@@ -49,6 +73,7 @@ npm start        # Starts proxy server with nodemon (port 3004)
 **Version Management:**
 ```bash
 npm version patch/minor/major    # Updates package.json + rollup.config.js
+# Alternatively: npm run release:patch|minor|major (runs scripts/release.js)
 ```
 
 **Post-Update Procedures:**
