@@ -430,7 +430,7 @@ class ServiceNowToNotionApp {
 
       // Wait for lazy-loaded content to appear
       overlayModule.setMessage("Loading dynamic content...");
-      await waitForLazyContent(3000); // Wait up to 3 seconds for lazy content
+      await waitForLazyContent(5000); // Wait up to 5 seconds for lazy content
 
       // Find and extract content
       overlayModule.setMessage("Locating content elements...");
