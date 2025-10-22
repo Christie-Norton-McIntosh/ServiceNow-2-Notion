@@ -67,6 +67,61 @@ function getGlobals() {
   };
 }
 
+/**
+ * Enforces Notion's 2-level nesting limit by stripping children from blocks at depth >= 2.
+ * Blocks with stripped children have their children moved to a `_sn2n_deferred_children` array
+ * with markers for later orchestration.
+ * 
+ * @param {Array} blocks - Array of Notion blocks to process
+ * @param {number} currentDepth - Current nesting depth (0 = root level)
+ * @returns {object} Result with collected blocks that need markers
+ */
+function enforceNestingDepthLimit(blocks, currentDepth = 0) {
+  const { log } = getGlobals();
+  const deferredBlocks = [];
+  
+  if (!Array.isArray(blocks)) return { deferredBlocks };
+  
+  for (const block of blocks) {
+    if (!block || typeof block !== 'object') continue;
+    
+    const blockType = block.type;
+    if (!blockType) continue;
+    
+    // List items and other blocks that can have children
+    const childrenKey = ['bulleted_list_item', 'numbered_list_item', 'to_do', 'toggle', 'quote', 'callout'].includes(blockType) 
+      ? blockType 
+      : null;
+    
+    if (childrenKey && block[childrenKey] && Array.isArray(block[childrenKey].children)) {
+      const children = block[childrenKey].children;
+      
+      // At depth >= 2, we cannot have children in the initial page creation
+      // All children must be deferred for orchestration
+      if (currentDepth >= 2 && children.length > 0) {
+        log(`🔧 Enforcing nesting limit: Stripping ${children.length} children from ${blockType} at depth ${currentDepth}`);
+        
+        // Store children for later marker-based orchestration
+        block._sn2n_deferred_children = children;
+        
+        // Remove children from block (will be added via orchestration)
+        delete block[childrenKey].children;
+        
+        // Collect all deferred children for marker assignment
+        deferredBlocks.push(...children);
+      } else if (children.length > 0) {
+        // Recursively process children at shallower depths
+        const result = enforceNestingDepthLimit(children, currentDepth + 1);
+        if (result.deferredBlocks.length > 0) {
+          deferredBlocks.push(...result.deferredBlocks);
+        }
+      }
+    }
+  }
+  
+  return { deferredBlocks };
+}
+
 // isVideoIframeUrl, cleanHtmlText, and convertServiceNowUrl now imported from utils modules above
 
 /**
@@ -276,7 +331,27 @@ async function extractContentFromHtml(html) {
       return `__CODE_START__${content}__CODE_END__`;
     });
 
-    // Handle spans with technical identifier classes (ph, keyword, parmname, codeph, etc.) as inline code
+    // CRITICAL: Extract links FIRST, before identifier detection
+    // This prevents URLs like "integration.html" from being wrapped with code markers
+    const links = [];
+    text = text.replace(/<a[^>]*href=["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi, (match, href, content) => {
+      const linkIndex = links.length;
+      links.push({ href, content: cleanHtmlText(content) });
+      return `__LINK_${linkIndex}__`;
+    });
+
+    // Handle spans with userinput class as inline code (preserve content exactly as-is)
+    // This is for user input placeholders like <instance-name> that should not be modified
+    text = text.replace(/<span[^>]*class=["'][^"']*\buserinput\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
+      if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with userinput class: ${match.substring(0, 100)}`);
+      const cleanedContent = cleanHtmlText(content);
+      if (!cleanedContent || !cleanedContent.trim()) return match;
+      // Wrap entire content as code without any character modifications
+      return `__CODE_START__${cleanedContent}__CODE_END__`;
+    });
+
+    // Handle spans with technical identifier classes (ph, keyword, parmname, codeph) as inline code
+    // These go through technical identifier detection (dots, underscores, etc.)
     text = text.replace(/<span[^>]*class=["'][^"']*(?:\bph\b|\bkeyword\b|\bparmname\b|\bcodeph\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
   if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with technical class: ${match.substring(0, 100)}`);
   if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with technical class: ${match.substring(0, 100)}`);
@@ -345,14 +420,6 @@ async function extractContentFromHtml(html) {
     // Add soft return between </a> and any <p> tag
     text = text.replace(/(<\/a>)(\s*)(<p[^>]*>)/gi, (match, closingA, whitespace, openingP) => {
       return `${closingA}__SOFT_BREAK__${openingP}`;
-    });
-
-    // Handle links - extract before cleaning HTML
-    const links = [];
-    text = text.replace(/<a[^>]*href=["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi, (match, href, content) => {
-      const linkIndex = links.length;
-      links.push({ href, content: cleanHtmlText(content) });
-      return `__LINK_${linkIndex}__`;
     });
 
     // Split by markers and build rich text
@@ -1251,6 +1318,17 @@ async function extractContentFromHtml(html) {
               }
             });
             
+            // CRITICAL: Enforce Notion's 2-level nesting limit
+            // At this point, we're at depth 1 (inside a list item). 
+            // Any children we add will be at depth 2, and they CANNOT have their own children.
+            // Use enforceNestingDepthLimit to strip any grandchildren and mark them for orchestration.
+            const depthResult = enforceNestingDepthLimit(immediateChildren, 1);
+            if (depthResult.deferredBlocks.length > 0) {
+              console.log(`🔧 Enforced nesting depth: ${depthResult.deferredBlocks.length} blocks deferred for orchestration`);
+              // Add deferred blocks to markedBlocks so they get markers
+              markedBlocks.push(...depthResult.deferredBlocks);
+            }
+            
             // Use only immediateChildren - images are now handled separately with markers
             const allChildren = [...immediateChildren];
             
@@ -1398,6 +1476,13 @@ async function extractContentFromHtml(html) {
                   markedBlocks.push(block);
                 }
               });
+              
+              // CRITICAL: Enforce Notion's 2-level nesting limit
+              const depthResult = enforceNestingDepthLimit(validChildren, 1);
+              if (depthResult.deferredBlocks.length > 0) {
+                console.log(`🔧 Enforced nesting depth (no-text list item): ${depthResult.deferredBlocks.length} blocks deferred for orchestration`);
+                markedBlocks.push(...depthResult.deferredBlocks);
+              }
               
               console.log(`🔍 Creating bulleted_list_item with no text but ${validChildren.length} valid children`);
               
@@ -1592,6 +1677,17 @@ async function extractContentFromHtml(html) {
               }
             });
             
+            // CRITICAL: Enforce Notion's 2-level nesting limit
+            // At this point, we're at depth 1 (inside a list item). 
+            // Any children we add will be at depth 2, and they CANNOT have their own children.
+            // Use enforceNestingDepthLimit to strip any grandchildren and mark them for orchestration.
+            const depthResult = enforceNestingDepthLimit(immediateChildren, 1);
+            if (depthResult.deferredBlocks.length > 0) {
+              console.log(`🔧 Enforced nesting depth: ${depthResult.deferredBlocks.length} blocks deferred for orchestration`);
+              // Add deferred blocks to markedBlocks so they get markers
+              markedBlocks.push(...depthResult.deferredBlocks);
+            }
+            
             // Use only immediateChildren - images are now handled separately with markers
             const allChildren = [...immediateChildren];
             
@@ -1741,6 +1837,13 @@ async function extractContentFromHtml(html) {
                   markedBlocks.push(block);
                 }
               });
+              
+              // CRITICAL: Enforce Notion's 2-level nesting limit
+              const depthResult = enforceNestingDepthLimit(validChildren, 1);
+              if (depthResult.deferredBlocks.length > 0) {
+                console.log(`🔧 Enforced nesting depth (no-text numbered list item): ${depthResult.deferredBlocks.length} blocks deferred for orchestration`);
+                markedBlocks.push(...depthResult.deferredBlocks);
+              }
               
               console.log(`🔍 Creating numbered_list_item with no text but ${validChildren.length} valid children`);
               
@@ -2814,6 +2917,57 @@ async function extractContentFromHtml(html) {
   }
   
   console.log(`🔍 Found ${contentElements.length} elements to process`);
+  
+  // PREPROCESSING: Detect and wrap standalone "Before you begin" sections
+  // Pattern: <p>Before you begin</p> <p>Role required:</p> <ul>...</ul> [<ul>...</ul>]
+  // These should be wrapped in a <section class="prereq"> to be processed as a callout
+  // NOTE: These paragraphs may be deep inside container divs, so we search the entire DOM
+  
+  // Find all paragraphs with "Before you begin" text
+  $('p').each((idx, elem) => {
+    const $elem = $(elem);
+    const text = $elem.text().trim();
+    
+    if (text === 'Before you begin') {
+      console.log(`🔍 PREPROCESSING: Found "Before you begin" paragraph`);
+      
+      // Get the next sibling element
+      let $next = $elem.next();
+      if ($next.length > 0 && $next.prop('tagName').toLowerCase() === 'p') {
+        const nextText = $next.text().trim();
+        if (nextText.startsWith('Role required:')) {
+          console.log(`🔍 PREPROCESSING: Found "Role required:" paragraph - wrapping in prereq section`);
+          
+          // Collect elements to wrap
+          const $elementsToWrap = [$elem, $next];
+          let $current = $next.next();
+          
+          // Collect following <ul> elements
+          while ($current.length > 0 && $current.prop('tagName').toLowerCase() === 'ul') {
+            console.log(`🔍 PREPROCESSING: Found <ul> list - adding to prereq section`);
+            $elementsToWrap.push($current);
+            $current = $current.next();
+          }
+          
+          console.log(`🔍 PREPROCESSING: Wrapping ${$elementsToWrap.length} elements into prereq section`);
+          
+          // Create a <section class="prereq"> wrapper
+          const $prereqSection = $('<section class="prereq"></section>');
+          
+          // Move elements into the section (not clone, actual move)
+          $elementsToWrap.forEach($el => $prereqSection.append($el));
+          
+          // Insert the section before the first element's original position
+          // (which is now empty since we moved it)
+          $elem.parent().prepend($prereqSection);
+          
+          console.log(`✅ PREPROCESSING: Created prereq section`);
+        }
+      }
+    }
+  });
+  
+  console.log(`🔍 After prereq preprocessing: ${contentElements.length} elements to process`);
   
   for (const child of contentElements) {
     const childBlocks = await processElement(child);
