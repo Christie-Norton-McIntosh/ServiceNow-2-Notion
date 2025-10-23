@@ -2459,12 +2459,12 @@ async function extractContentFromHtml(html) {
                   }
                 };
                 
-                // Insert a new element with "Role required:" and the rest
+                // Insert a new element with "Role required:" and the rest (trim trailing newlines)
                 modifiedRichText.splice(i + 1, 0, {
                   ...element,
                   text: {
                     ...element.text,
-                    content: roleAndAfter
+                    content: roleAndAfter.trimEnd()
                   }
                 });
                 
