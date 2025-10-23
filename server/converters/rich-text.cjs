@@ -1,5 +1,12 @@
 const { convertServiceNowUrl } = require("../utils/url.cjs");
 const fs = require('fs');
+const { 
+  isTechnicalContent, 
+  processKbdContent, 
+  processTechnicalSpan,
+  decodeHtmlEntities: decodeEntities,
+  isInCodeBlock 
+} = require('../utils/html-formatting.cjs');
 /**
  * @fileoverview Rich Text Converter for Notion blocks
  * 
@@ -156,35 +163,13 @@ function convertRichTextBlock(input, options = {}) {
   // Handle italic/em tags
   html = html.replace(/<(i|em)([^>]*)>([\s\S]*?)<\/\1>/gi, (match, tag, attrs, content) => `__ITALIC_START__${content}__ITALIC_END__`);
   
-  // Handle kbd tags - distinguish between technical content (code) and UI labels (bold)
+  // Handle kbd tags - use shared utility for intelligent detection
   html = html.replace(/<kbd([^>]*)>([\s\S]*?)<\/kbd>/gi, (match, attrs, content) => {
     // Decode HTML entities within kbd content
-    let decoded = content
-      .replace(/&gt;/g, '>')
-      .replace(/&lt;/g, '<')
-      .replace(/&amp;/g, '&')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/&nbsp;/g, ' ');
+    const decoded = decodeEntities(content);
     
-    // Determine if content is technical or a UI label
-    // Technical indicators: URLs, paths, placeholders with < >, dots in domain-like patterns
-    const isTechnical = 
-      /^https?:\/\//i.test(decoded) ||           // URLs
-      /^[\/~]/i.test(decoded) ||                 // Paths starting with / or ~
-      /<[^>]+>/i.test(decoded) ||                // Placeholders like <instance-name>
-      /\.(com|net|org|io|dev|gov|edu)/i.test(decoded) || // Domain extensions
-      /^[\w\-]+\.[\w\-]+\./.test(decoded) ||     // Multi-level dotted identifiers (e.g., table.field.value)
-      /^[A-Z_]{4,}$/.test(decoded) ||            // ALL_CAPS with 4+ chars (constants like API_KEY, not Save)
-      /[\[\]{}();]/.test(decoded) ||             // Code-like characters
-      /^[a-z_][a-z0-9_]*$/i.test(decoded) &&     // Programming identifiers (snake_case/camelCase)
-        (decoded.includes('_') || /[a-z][A-Z]/.test(decoded)); // with underscore or camelCase
-    
-    if (isTechnical) {
-      return `__CODE_START__${decoded}__CODE_END__`;
-    } else {
-      return `__BOLD_START__${decoded}__BOLD_END__`;
-    }
+    // Use shared processing utility
+    return processKbdContent(decoded);
   });
   
   // Handle inline code tags
@@ -211,7 +196,7 @@ function convertRichTextBlock(input, options = {}) {
   });
   
   // Handle spans with technical identifier classes (ph, keyword, parmname, codeph, etc.)
-  // These tags wrap technical terms, product names, or code identifiers
+  // Use shared utility for simplified, consistent detection
   // CRITICAL FIX: Always return the content (not the HTML tags) even if not detected as technical
   // NOTE: This runs AFTER cmd handler, so <span class="ph cmd"> has already been processed
   const htmlBefore = html;
@@ -219,26 +204,9 @@ function convertRichTextBlock(input, options = {}) {
     if (process.env.SN2N_VERBOSE === '1') {
       console.log(`🔍 Matched span with class ph/keyword/parmname/codeph: "${match.substring(0, 80)}"`);
     }
-    const cleanedContent = typeof content === "string" ? content.trim() : "";
-    if (!cleanedContent) return " "; // Return space instead of empty match
     
-    // If content contains placeholder markers, just return it as-is (don't process for technical identifiers)
-    if (cleanedContent.includes('__PLACEHOLDER_')) {
-      return cleanedContent;
-    }
-    
-    // Check if content looks like a technical identifier (has dots or underscores)
-    const strictTechnicalTokenRegex = /[A-Za-z0-9][A-Za-z0-9._-]*[._][A-Za-z0-9._-]+/g;
-    let replaced = cleanedContent.replace(strictTechnicalTokenRegex, (token) => {
-      const bareToken = token.trim();
-      if (!bareToken) return token;
-      const bareAlphaNumeric = bareToken.replace(/[._-]/g, "");
-      if (bareAlphaNumeric && /^[A-Z0-9]+$/.test(bareAlphaNumeric)) return token;
-      return `__CODE_START__${bareToken}__CODE_END__`;
-    });
-    
-    // ALWAYS return content without the span tags, regardless of whether it was formatted
-    return replaced;
+    // Use shared processing utility
+    return processTechnicalSpan(content, options);
   });
   
   // DEBUG: Check if span replacement worked
