@@ -153,6 +153,27 @@ async function orchestrateDeepNesting(pageId, markerMap) {
         `✅ Orchestrator: Found parent ${parentId} for marker sn2n:${marker}. Will append ${blocksToAppend.length} block(s).`
       );
       
+      // Log what content we're about to append for debugging
+      blocksToAppend.forEach((block, idx) => {
+        let contentPreview = '';
+        try {
+          const blockType = block.type;
+          if (blockType && block[blockType]) {
+            const richText = block[blockType].rich_text;
+            if (Array.isArray(richText) && richText.length > 0) {
+              contentPreview = richText.map(rt => rt?.text?.content || '').join('').substring(0, 100);
+            } else if (blockType === 'table' && block[blockType].children) {
+              contentPreview = `[table: ${block[blockType].table_width} cols x ${block[blockType].children.length} rows]`;
+            } else if (blockType === 'image') {
+              contentPreview = '[image]';
+            }
+          }
+        } catch (e) {
+          contentPreview = '[unable to extract]';
+        }
+        log(`  📦 Block ${idx + 1}: type=${block.type}, content="${contentPreview}${contentPreview.length >= 100 ? '...' : ''}"`);
+      });
+      
       // Before appending, perform an append-time dedupe check for table blocks
       // to avoid duplicating tables that may already exist under the parent.
       try {

@@ -899,8 +899,12 @@ async function extractContentFromHtml(html) {
         $clone.find('> ul, > ol, > figure, > div.p').remove();
         let textOnlyHtml = $clone.html() || '';
         
+        console.log(`🔍 Callout textOnlyHtml (before title removal): "${textOnlyHtml.substring(0, 200)}${textOnlyHtml.length > 200 ? '...' : ''}"`);
+        
         // Remove note title span (it already has a colon like "Note:")
         textOnlyHtml = textOnlyHtml.replace(/<span[^>]*class=["'][^"']*note__title[^"']*["'][^>]*>([^<]*)<\/span>/gi, '$1 ');
+        
+        console.log(`🔍 Callout textOnlyHtml (after title removal): "${textOnlyHtml.substring(0, 200)}${textOnlyHtml.length > 200 ? '...' : ''}"`);
         
         // Parse HTML directly to preserve formatting (links, bold, etc.)
         const { richText: calloutRichText } = await parseRichText(textOnlyHtml);

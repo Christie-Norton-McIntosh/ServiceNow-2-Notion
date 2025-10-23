@@ -30,7 +30,24 @@ function collectAndStripMarkers(blocks, map = {}, depth = 0) {
     if (b && typeof b === "object") {
       if (b._sn2n_marker) {
         const m = String(b._sn2n_marker);
+        
+        // Get a preview of the block content for debugging
+        let contentPreview = '';
+        try {
+          const blockType = b.type;
+          if (blockType && b[blockType]) {
+            const richText = b[blockType].rich_text;
+            if (Array.isArray(richText) && richText.length > 0) {
+              contentPreview = richText.map(rt => rt?.text?.content || '').join('').substring(0, 100);
+            }
+          }
+        } catch (e) {
+          contentPreview = '[unable to extract]';
+        }
+        
         console.log(`${indent}🔖 collectAndStripMarkers: Found marker "${m}" at depth ${depth}, index ${i}, type: ${b.type}`);
+        console.log(`${indent}🔖   Content preview: "${contentPreview}${contentPreview.length >= 100 ? '...' : ''}"`);
+        
         // Collect markers at all depths for orchestration
         // Blocks will be appended to their marker location via API after page creation
         if (!map[m]) map[m] = [];
