@@ -58,9 +58,18 @@ These instructions are for AI coding agents working in the ServiceNow-2-Notion r
 
 IMPORTANT: Always bump the version BEFORE any build so the userscript header `@version` and `window.BUILD_VERSION` reflect changes and Tampermonkey pulls the update.
 
+**Automatic Build & Deploy:**
+The build process now automatically:
+1. **Pre-build**: Removes old `dist/ServiceNow-2-Notion.user.js` to prevent VS Code caching issues
+2. **Build**: Bumps version, bundles with Rollup
+3. **Post-build**: Commits and pushes the new build to Git automatically
+
 **Build & Test Cycle:**
 ```bash
-npm run build    # Generate dist/ServiceNow-2-Notion.user.js
+npm run build    # 1. Removes old dist file (pre-build)
+                 # 2. Bumps version
+                 # 3. Generates dist/ServiceNow-2-Notion.user.js
+                 # 4. Commits and pushes to Git (post-build)
 # Load into Tampermonkey, test on ServiceNow page
 ```
 
