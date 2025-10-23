@@ -294,11 +294,10 @@ async function extractContentFromHtml(html) {
       console.log(`🔍 [parseRichText] Restored <kbd>: "${content}" → ${formatted.includes('CODE') ? 'code' : 'bold'}`);
     });
 
-    // Handle span with cmd class (commands/instructions) as bold
-    // CRITICAL: This must run AFTER kbd restoration so nested <kbd> tags are already converted to markers
-    text = text.replace(/<span[^>]*class=["'][^"']*\bcmd\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
-      if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with cmd class: ${match.substring(0, 100)}`);
-      return `__BOLD_START__${content}__BOLD_END__`;
+    // Handle span with uicontrol class as bold + blue
+    text = text.replace(/<span[^>]*class=["'][^"']*uicontrol[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
+      if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with uicontrol class: ${match.substring(0, 100)}`);
+      return `__BOLD_BLUE_START__${content}__BOLD_BLUE_END__`;
     });
 
     // DEBUG: Check if we have ">" characters
@@ -312,6 +311,10 @@ async function extractContentFromHtml(html) {
     text = text.replace(/<\/?section[^>]*>/gi, ' ');
     text = text.replace(/<\/?article[^>]*>/gi, ' ');
     
+    // CRITICAL FIX: Strip <p> tags - they cause unwanted line breaks in callouts and inline text
+    // Replace with space to preserve word boundaries
+    text = text.replace(/<\/?p[^>]*>/gi, ' ');
+    
     // Safety: Remove any incomplete HTML tags that might have been truncated during chunking
     // Pattern: < followed by tag name followed by anything (but not closing >)
     // This catches cases where content was chunked mid-tag like "...text <div class=\"note"
@@ -324,6 +327,7 @@ async function extractContentFromHtml(html) {
     text = text.replace(/\s+/g, ' ').trim();
 
     console.log('🔍 [parseRichText] After HTML cleanup:', text.substring(0, 300));
+    console.log('🔍 [parseRichText] Has newline after cleanup?', text.includes('\n'));
     
     // DEBUG: Check if ">" is still there
     if (text.includes('>')) {
@@ -489,13 +493,6 @@ async function extractContentFromHtml(html) {
         return match;
       }
       return `__CODE_START__${identifier}__CODE_END__`;
-    });
-
-    // Handle span with uicontrol class as bold + blue
-    text = text.replace(/<span[^>]*class=["'][^"']*uicontrol[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
-  if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with uicontrol class: ${match.substring(0, 100)}`);
-  if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with uicontrol class: ${match.substring(0, 100)}`);
-      return `__BOLD_BLUE_START__${content}__BOLD_BLUE_END__`;
     });
 
     // Handle p/span with sectiontitle tasklabel class as bold
