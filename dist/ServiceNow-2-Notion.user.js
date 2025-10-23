@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.14
+// @version      9.2.15
 // @description  Extract ServiceNow content and send to Notion via Universal Workflow or proxy
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.14";
+    window.BUILD_VERSION = "9.2.15";
 (function () {
 
   // Configuration constants and default settings
@@ -1293,6 +1293,16 @@
    */
   async function sendProcessedContentToProxy(processedData) {
     debug("📤 Sending processed content to proxy for Notion upload");
+    
+    // DEBUG: Check if all articles are in the HTML being sent
+    if (processedData.contentHtml || processedData.content) {
+      const html = processedData.contentHtml || processedData.content;
+      console.log('📊 Total HTML length:', html.length);
+      const nested1Count = (html.match(/class="topic task nested1"/g) || []).length;
+      console.log('📊 Number of article.nested1 in HTML:', nested1Count);
+      const nested0Count = (html.match(/class="[^"]*nested0[^"]*"/g) || []).length;
+      console.log('📊 Number of article.nested0 in HTML:', nested0Count);
+    }
     
     // Import overlay module for status updates
     const { overlayModule } = await Promise.resolve().then(function () { return overlayProgress; });
