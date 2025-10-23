@@ -1,12 +1,12 @@
 {
   "name": "servicenow-2-notion",
-  "version": "9.2.7",
+  "version": "9.2.11",
   "description": "Modular ServiceNow content extractor for Universal Workflow",
   "type": "module",
   "main": "src/main.js",
   "scripts": {
-    "build": "rollup -c",
-    "build:prod": "NODE_ENV=production rollup -c",
+    "build": "node scripts/bump-version.cjs && rollup -c",
+    "build:prod": "node scripts/bump-version.cjs && NODE_ENV=production rollup -c",
     "dev": "rollup -c --watch",
     "watch": "rollup -c --watch",
     "start": "npx nodemon --watch server --ignore server/logs --exec \"node server/sn2n-proxy.cjs\"",
