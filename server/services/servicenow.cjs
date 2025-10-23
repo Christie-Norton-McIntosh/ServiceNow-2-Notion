@@ -446,9 +446,9 @@ async function extractContentFromHtml(html) {
       return `__LINK_${linkIndex}__`;
     });
 
-    // Handle spans with technical identifier classes (ph, keyword, parmname, codeph, etc.)
-    // Use shared utility for simplified technical detection
-    text = text.replace(/<span[^>]*class=["'][^"']*(?:\bph\b|\bkeyword\b|\bparmname\b|\bcodeph\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
+    // Handle spans with technical identifier classes (keyword, parmname, codeph, etc.)
+    // Note: Generic "ph" class removed - only specific technical classes get formatting
+    text = text.replace(/<span[^>]*class=["'][^"']*(?:\bkeyword\b|\bparmname\b|\bcodeph\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
       if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with technical class: ${match.substring(0, 100)}`);
       
       // Use shared processing utility (no activeBlocks needed in parseRichText context)
