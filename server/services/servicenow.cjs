@@ -255,6 +255,7 @@ async function extractContentFromHtml(html) {
     
     // CRITICAL: Extract and decode URLs from <kbd> tags FIRST
     // <kbd> tags contain user input URLs with &lt; &gt; entities that need special handling
+    // This handles most URLs since ServiceNow wraps technical content in <kbd> tags
     const kbdPlaceholders = [];
     text = text.replace(/<kbd[^>]*>([\s\S]*?)<\/kbd>/gi, (match, content) => {
       // Decode HTML entities within kbd content
@@ -271,34 +272,7 @@ async function extractContentFromHtml(html) {
       return placeholder;
     });
     
-    // CRITICAL: Extract and protect URLs FIRST before decoding HTML entities
-    // URLs might contain &lt; and &gt; which would become < > and break URL parsing
-    // We need to extract URLs with entities intact, then decode entities within the URL
-    // IMPORTANT: Match URLs including content up to closing tags (don't stop at < from placeholders)
-    const urlPlaceholders = [];
-    text = text.replace(/\b(https?:\/\/[^<\s]+(?:<[^>]+>[^<\s]*)*?)(?=<\/|[\s]|$)/gi, (match, url) => {
-      // First decode HTML entities within the URL
-      let cleanUrl = url
-        .replace(/&gt;/g, '>')
-        .replace(/&lt;/g, '<')
-        .replace(/&amp;/g, '&')
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        .replace(/&nbsp;/g, ' ');
-      // Clean HTML tags but preserve placeholder markers like <instance-name>
-      // Only remove actual HTML tags (those in the known tag list)
-      cleanUrl = cleanUrl.replace(/<\/?(?:code|span|div|p|strong|em|b|i|u)(?:\s[^>]*)?>/gi, '');
-      // CRITICAL: Remove any newlines that may have been introduced by HTML formatting
-      cleanUrl = cleanUrl.replace(/\n/g, '');
-      const placeholder = `__URL_PLACEHOLDER_${urlPlaceholders.length}__`;
-      urlPlaceholders.push(cleanUrl);
-      fs.appendFileSync('/Users/norton-mcintosh/GitHub/ServiceNow-2-Notion/debug-url-extract.log',
-        `URL ${urlPlaceholders.length}: Original=${JSON.stringify(url)} Clean=${JSON.stringify(cleanUrl)} HasNewline=${cleanUrl.includes('\n')}\n`);
-      console.log(`🔍 [parseRichText] Extracted URL ${urlPlaceholders.length}: "${cleanUrl}"`);
-      return placeholder;
-    });
-    
-    // CRITICAL: Decode HTML entities AFTER URL extraction
+    // CRITICAL: Decode HTML entities AFTER kbd extraction
     // This ensures &gt; becomes > for navigation breadcrumbs like "All > System OAuth > Keys"
     // But doesn't break URLs that contain &lt; and &gt; placeholders
     text = text
@@ -309,21 +283,8 @@ async function extractContentFromHtml(html) {
       .replace(/&#39;/g, "'")
       .replace(/&nbsp;/g, ' ');
 
-    console.log(`🔍 [parseRichText] After URL extraction (${urlPlaceholders.length} URLs):`, text.substring(0, 300));
+    console.log(`🔍 [parseRichText] After kbd extraction (${kbdPlaceholders.length} kbd tags):`, text.substring(0, 300));
 
-    // Restore URL placeholders with code markers BEFORE HTML cleanup
-    // CRITICAL: URLs must be wrapped in code markers to protect < and > from being treated as HTML tags
-    // This is essential for URLs with placeholder syntax like https://<instance-name>.service-now.com
-    urlPlaceholders.forEach((url, index) => {
-      // Remove any spaces or zero-width characters that may have been introduced by the source HTML
-      const sanitizedUrl = (url || '').replace(/[\s\u200B\u200C\u200D\uFEFF]/g, '');
-      const placeholder = `__URL_PLACEHOLDER_${index}__`;
-      text = text.replace(placeholder, `__CODE_START__${sanitizedUrl}__CODE_END__`);
-      fs.appendFileSync('/Users/norton-mcintosh/GitHub/ServiceNow-2-Notion/debug-url-extract.log',
-        `Restored URL ${index + 1}: ${JSON.stringify(sanitizedUrl)}\nText after restore: ${JSON.stringify(text.substring(0, 200))}\n`);
-      console.log(`🔍 [parseRichText] Restored URL ${index + 1} with code markers: "${sanitizedUrl}"`);
-    });
-    
     // Restore kbd placeholders with appropriate markers BEFORE HTML cleanup
     // Use shared utility for intelligent detection (technical → code, UI labels → bold)
     kbdPlaceholders.forEach((content, index) => {
