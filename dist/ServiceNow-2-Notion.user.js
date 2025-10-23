@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.16
+// @version      9.2.17
 // @description  Extract ServiceNow content and send to Notion via Universal Workflow or proxy
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.16";
+    window.BUILD_VERSION = "9.2.17";
 (function () {
 
   // Configuration constants and default settings
