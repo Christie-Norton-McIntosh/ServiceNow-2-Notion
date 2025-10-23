@@ -129,9 +129,10 @@ function convertRichTextBlock(input, options = {}) {
     // This handles cases like: <a href="...">Contact <span class="ph">Support</span></a>
     let cleanedContent = content;
     
-    // Strip span tags with ph/keyword/parmname/codeph classes from link content
+    // Strip span tags with keyword/parmname/codeph classes from link content
+    // Note: Generic "ph" class removed - only specific technical classes
     cleanedContent = cleanedContent.replace(
-      /<span[^>]*class=["'][^"']*(?:\bph\b|\bkeyword\b|\bparmname\b|\bcodeph\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi,
+      /<span[^>]*class=["'][^"']*(?:\bkeyword\b|\bparmname\b|\bcodeph\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi,
       (spanMatch, spanContent) => {
         // Just return the content without the span tags
         return spanContent || '';
@@ -195,14 +196,15 @@ function convertRichTextBlock(input, options = {}) {
     return `__BOLD_START__${content}__BOLD_END__`;
   });
   
-  // Handle spans with technical identifier classes (ph, keyword, parmname, codeph, etc.)
+  // Handle spans with technical identifier classes (keyword, parmname, codeph, etc.)
   // Use shared utility for simplified, consistent detection
   // CRITICAL FIX: Always return the content (not the HTML tags) even if not detected as technical
+  // NOTE: Generic "ph" class removed - only specific technical classes get formatting
   // NOTE: This runs AFTER cmd handler, so <span class="ph cmd"> has already been processed
   const htmlBefore = html;
-  html = html.replace(/<span[^>]*class=["'][^"']*(?:\bph\b|\bkeyword\b|\bparmname\b|\bcodeph\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
+  html = html.replace(/<span[^>]*class=["'][^"']*(?:\bkeyword\b|\bparmname\b|\bcodeph\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
     if (process.env.SN2N_VERBOSE === '1') {
-      console.log(`🔍 Matched span with class ph/keyword/parmname/codeph: "${match.substring(0, 80)}"`);
+      console.log(`🔍 Matched span with class keyword/parmname/codeph: "${match.substring(0, 80)}"`);
     }
     
     // Use shared processing utility

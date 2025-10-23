@@ -253,6 +253,7 @@ For each new handler, test:
 
 | Date | Change | Reason | Files |
 |------|--------|--------|-------|
+| 2025-10-23 | **Removed generic `ph` class from special formatting** | Generic `ph` class shouldn't get special formatting - only specific combinations like `keyword`, `parmname`, `codeph` | servicenow.cjs, rich-text.cjs |
 | 2025-10-23 | **Removed redundant URL extraction regex** | `<kbd>` tags already handle URLs through intelligent detection | servicenow.cjs |
 | 2025-10-23 | **Consolidated formatting logic** into shared utility | Reduce duplication, simplify maintenance, ensure consistency | `server/utils/html-formatting.cjs` (NEW), `servicenow.cjs`, `rich-text.cjs` |
 | 2025-10-23 | Moved `cmd` span handler from line 556 to 348 | Nested `<kbd>` inside `cmd` spans showing raw placeholders | servicenow.cjs |
