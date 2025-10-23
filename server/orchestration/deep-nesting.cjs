@@ -387,7 +387,8 @@ async function sweepAndRemoveMarkersFromPage(rootPageId) {
         try {
           // Check for rich_text on the block's typed payload
           const t = child.type;
-          const payload = child[t] || child.paragraph || {};
+          // Support multiple block types that have rich_text
+          const payload = child[t] || child.paragraph || child.callout || child.to_do || child.toggle || {};
           const rich = Array.isArray(payload.rich_text)
             ? payload.rich_text
             : [];
