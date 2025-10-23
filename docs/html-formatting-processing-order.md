@@ -34,11 +34,11 @@ Each path must handle the same HTML elements in a carefully orchestrated order t
 | Order | Line | Element | Marker Pattern | Logic |
 |-------|------|---------|---------------|-------|
 | 3 | ~288 | `<kbd>` restoration | `__CODE_START__` or `__BOLD_START__` | Intelligent detection: technical (including URLs) → code, UI labels → bold |
-| 4 | ~295 | `<span class="ph cmd">` | `__BOLD_START__content__BOLD_END__` | Commands/instructions → bold (MUST be after kbd restoration) |
+| 4 | ~295 | `<span class="uicontrol">` | `__BOLD_BLUE_START__...__BOLD_BLUE_END__` | UI control names |
 
 **Why this order?**
 - `<kbd>` tags are restored first, handling URLs and technical content automatically through intelligent detection
-- `cmd` spans MUST come after `<kbd>` restoration so nested `<kbd>` tags are already converted to markers
+- `uicontrol` spans provide semantic highlighting for UI elements
 
 ### Phase 3: HTML Cleanup
 **Purpose**: Remove structural HTML tags before annotation processing
@@ -62,13 +62,10 @@ Each path must handle the same HTML elements in a carefully orchestrated order t
 
 | Order | Line | Element/Class | Marker | Notes |
 |-------|------|---------------|--------|-------|
-| 12 | 550 | `<span class="uicontrol">` | `__BOLD_BLUE_START__...__BOLD_BLUE_END__` | UI control names |
-| 13 | 564 | `<span class="sectiontitle tasklabel">` | `__BOLD_START__...__BOLD_END__` | Section titles |
-| 14 | 574-649 | Technical identifiers (`ph`, `keyword`, `parmname`, `codeph`) | `__CODE_START__` or plain text | Check for CODE block context, technical patterns |
+| 12 | ~495 | `<span class="sectiontitle tasklabel">` | `__BOLD_START__...__BOLD_END__` | Section titles |
 
 **Why this order?**
-- Most specific classes first (`uicontrol`, `cmd`)
-- Generic technical classes last (`ph`, `keyword`) to avoid overriding specific handlers
+- This keeps formatting minimal and focused on truly semantic elements
 
 ### Phase 6: Standard HTML Tags
 **Purpose**: Convert standard HTML formatting to markers
@@ -131,9 +128,7 @@ Each path must handle the same HTML elements in a carefully orchestrated order t
 ### Phase 5: Semantic Spans
 | Order | Line | Element/Class | Marker | Notes |
 |-------|------|---------------|--------|-------|
-| 6 | 200-203 | `<span class="uicontrol">` | `__BOLD_BLUE_START__...__BOLD_BLUE_END__` | UI controls |
-| 7 | 207-211 | `<span class="ph cmd">` | `__BOLD_START__...__BOLD_END__` | Commands (MUST be before generic `ph` handler) |
-| 8 | 213-245 | Technical spans (`ph`, `keyword`, `parmname`, `codeph`) | `__CODE_START__` or plain text | Generic handler, runs last |
+| 6 | ~187 | `<span class="uicontrol">` | `__BOLD_BLUE_START__...__BOLD_BLUE_END__` | UI controls |
 
 ### Phase 6: Marker Conversion
 | Order | Line | Operation | Notes |
@@ -149,8 +144,7 @@ Each path must handle the same HTML elements in a carefully orchestrated order t
 1. **Extract before process**: Elements that need special handling (URLs, `<kbd>`) must be extracted to placeholders BEFORE other processing
 2. **Restore before siblings**: Placeholders must be restored to markers BEFORE sibling elements are processed
 3. **Specific before generic**: Handler order matters:
-   - `<span class="ph cmd">` BEFORE `<span class="ph">`
-   - `<span class="uicontrol">` BEFORE `<span class="ph">`
+   - `<span class="uicontrol">` processes specifically for UI controls
 4. **Both paths must match**: `servicenow.cjs` and `rich-text.cjs` must handle elements in compatible order
 5. **Nested structure**: Outer elements should be processed after inner elements are converted to markers
 
@@ -173,11 +167,11 @@ For HTML: `<span class="ph cmd">Click <kbd class="ph userinput">Save</kbd></span
 ```
 1. Extract <kbd>: "Click __KBD_PLACEHOLDER_0__"
 2. Restore <kbd>: "Click __BOLD_START__Save__BOLD_END__"  (UI label → bold)
-3. Process cmd span: "__BOLD_START__Click __BOLD_START__Save__BOLD_END____BOLD_END__"
-4. Convert markers: Nested bold annotations
+3. cmd span is ignored (no handler): text passes through as-is
+4. Convert markers: "Click" is plain text, "Save" is bold
 ```
 
-**Why it works**: `<kbd>` is converted to markers BEFORE `cmd` span is processed, so `cmd` handler sees markers, not placeholders.
+**Result**: Only the `<kbd>` content gets formatting, the `cmd` span wrapper is ignored.
 
 ---
 
@@ -186,7 +180,6 @@ For HTML: `<span class="ph cmd">Click <kbd class="ph userinput">Save</kbd></span
 Both files use similar logic to detect technical content vs. UI labels:
 
 ### Technical Indicators (→ code formatting)
-- URLs: `/^https?:\/\//i`
 - Paths: `/^[\/~]/i`
 - Placeholders: `/<[^>]+>/i`
 - Domain extensions: `/\.(com|net|org|io|dev|gov|edu)/i`
@@ -194,6 +187,8 @@ Both files use similar logic to detect technical content vs. UI labels:
 - Constants: `/^[A-Z_]{4,}$/` (4+ chars)
 - Code characters: `/[\[\]{}();]/`
 - Programming identifiers: `/^[a-z_][a-z0-9_]*$/i` with underscore or camelCase
+
+**Note**: URLs are handled by `<kbd>` tags, not by this pattern matching
 
 ### UI Labels (→ bold formatting)
 - Short words without technical indicators
@@ -253,7 +248,9 @@ For each new handler, test:
 
 | Date | Change | Reason | Files |
 |------|--------|--------|-------|
-| 2025-10-23 | **Removed generic `ph` class from special formatting** | Generic `ph` class shouldn't get special formatting - only specific combinations like `keyword`, `parmname`, `codeph` | servicenow.cjs, rich-text.cjs |
+| 2025-10-23 | **Removed `cmd` class handler** | Too much bold text; `cmd` spans now appear as plain text with nested elements still formatted | servicenow.cjs, rich-text.cjs |
+| 2025-10-23 | **Removed URL regex pattern from technical detection** | URLs now handled exclusively by `<kbd>` tags, pattern was redundant | html-formatting.cjs |
+| 2025-10-23 | **Removed generic `ph` class from special formatting** | Generic `ph` class shouldn't get special formatting - appears as plain text | servicenow.cjs, rich-text.cjs |
 | 2025-10-23 | **Removed redundant URL extraction regex** | `<kbd>` tags already handle URLs through intelligent detection | servicenow.cjs |
 | 2025-10-23 | **Consolidated formatting logic** into shared utility | Reduce duplication, simplify maintenance, ensure consistency | `server/utils/html-formatting.cjs` (NEW), `servicenow.cjs`, `rich-text.cjs` |
 | 2025-10-23 | Moved `cmd` span handler from line 556 to 348 | Nested `<kbd>` inside `cmd` spans showing raw placeholders | servicenow.cjs |
@@ -274,7 +271,6 @@ This new module consolidates common HTML formatting logic used by both processin
 |----------|---------|---------|
 | `isTechnicalContent(content)` | Detect if content is technical (code) vs UI label (bold) | Both paths |
 | `processKbdContent(content)` | Process `<kbd>` tags with intelligent detection | Both paths |
-| `processTechnicalSpan(content, options)` | Process technical identifier spans (simplified logic) | Both paths |
 | `decodeHtmlEntities(html)` | Decode HTML entities consistently | Both paths |
 | `isInCodeBlock(options)` | Check if in CODE block context | Both paths |
 | `wrapWithMarkers(content, type)` | Wrap content with annotation markers | Utility |
@@ -285,7 +281,6 @@ All patterns moved from duplicated code in both files to single source:
 
 ```javascript
 const TECHNICAL_PATTERNS = {
-  url: /^https?:\/\//i,
   path: /^[\/~\\]/i,
   placeholder: /<[^>]+>/i,
   domain: /\.(com|net|org|io|dev|gov|edu|mil|info|biz|tech|app|co|us|uk)/i,
@@ -310,29 +305,30 @@ const TECHNICAL_PATTERNS = {
 ## Quick Reference: Line Numbers (Updated 2025-10-23)
 
 ### servicenow.cjs
-- **252**: `<kbd>` extraction
-- **270**: URL extraction  
-- **313**: URL restoration
-- **~326**: `<kbd>` restoration (NOW USES SHARED UTILITY: `processKbdContent`)
-- **~355**: `cmd` span handler ⚡ (CRITICAL: After kbd restoration, USES SHARED UTILITY)
-- **~488**: Technical identifier spans (NOW USES SHARED UTILITY: `processTechnicalSpan`)
-- **~547**: `uicontrol` span handler
-- **~638**: `<code>` tag
-- **~642**: `<strong>`, `<b>` tags
-- **~665**: `<a>` link extraction
-- **~691**: Marker conversion to annotations
+- **~260**: `<kbd>` extraction (USES SHARED UTILITY: `processKbdContent`)
+- **~275**: HTML entity decode
+- **~288**: `<kbd>` restoration with intelligent detection
+- **~295**: `uicontrol` span handler (bold + blue for UI controls)
+- **~487**: `sectiontitle tasklabel` handler
+- **~636**: `<code>` tag
+- **~640**: `<strong>`, `<b>` tags
+- **~663**: `<a>` link extraction
+- **~689**: Marker conversion to annotations
 
 ### rich-text.cjs
-- **137**: `<a>` link extraction
-- **155**: `<strong>`, `<b>` tags
-- **~161**: `<kbd>` intelligent detection (NOW USES SHARED UTILITY: `processKbdContent`)
-- **~175**: `<code>` tag
-- **~185**: `uicontrol` span handler
-- **~192**: `cmd` span handler ⚡ (CRITICAL: Before generic ph handler)
-- **~200**: Technical identifier spans (NOW USES SHARED UTILITY: `processTechnicalSpan`)
-- **~250**: Marker conversion to annotations
+- **~119**: `<a>` link extraction (strips technical span tags from link content)
+- **~155**: `<strong>`, `<b>` tags
+- **~159**: `<kbd>` intelligent detection (USES SHARED UTILITY: `processKbdContent`)
+- **~190**: `<code>` tag
+- **~187**: `uicontrol` span handler (bold + blue for UI controls)
+- **~257**: Marker conversion to annotations
 
-⚠️ **Note**: Line numbers are approximate after consolidation. Use grep to find exact locations.
+⚠️ **Note**: Line numbers are approximate after consolidation and recent changes. Use grep to find exact locations.
+
+**Key Changes (2025-10-23)**:
+- ✅ Removed redundant URL extraction - `<kbd>` tags now handle URLs
+- ✅ Removed generic `ph` class from special formatting - only specific technical classes processed
+- ✅ Consolidated formatting logic into shared utilities
 
 ---
 

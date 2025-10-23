@@ -193,15 +193,23 @@ async function convertTableBlock(tableHtml, options = {}) {
       processedHtml = processedHtml.replace(/<img[^>]*>/gi, ' • ');
     }
     
-    // Handle note callouts in table cells - add newlines before and after
+    // Handle note callouts in table cells - strip the wrapper and keep only the content
     // Pattern: <div class="note note note_note">...</div>
-    if (/<div[^>]*class=["'][^"']*note note_note[^"']*["'][^>]*>/i.test(processedHtml)) {
+    // Do NOT create a callout block - just extract the text content as a new paragraph
+    if (/<div[^>]*class=["'][^"']*note[^"']*["'][^>]*>/i.test(processedHtml)) {
       processedHtml = processedHtml.replace(
-        /<div[^>]*class=["'][^"']*note note_note[^"']*["'][^>]*>([\s\S]*?)<\/div>/gi,
+        /<div[^>]*class=["'][^"']*note[^"']*["'][^>]*>([\s\S]*?)<\/div>/gi,
         (match, content, offset, fullString) => {
-          // Preserve HTML tags in note content instead of stripping to plain text
+          // Load the note content with Cheerio to process it
           const $note = cheerio.load(content, { decodeEntities: true });
-          const noteHtml = $note('body').html().replace(/\s+/g, ' ').trim();
+          
+          // Remove the note title span (e.g., "Note:", "Warning:", etc.)
+          $note('.note__title').remove();
+          
+          // Get the remaining content - use html() to preserve formatting tags
+          // but Cheerio with decodeEntities:true will decode HTML entities
+          let noteContent = $note('body').html() || '';
+          noteContent = noteContent.replace(/\s+/g, ' ').trim();
           
           // Check if there's text before this note (not just tags)
           const beforeNote = fullString.substring(0, offset);
@@ -209,7 +217,9 @@ async function convertTableBlock(tableHtml, options = {}) {
           
           // Add newline before if there's text before the note
           const prefix = textBeforeNote ? '__NEWLINE__' : '';
-          return `${prefix}${noteHtml}__NEWLINE__`;
+          
+          // Return content without the note wrapper, adding newline after
+          return `${prefix}${noteContent}__NEWLINE__`;
         }
       );
     }

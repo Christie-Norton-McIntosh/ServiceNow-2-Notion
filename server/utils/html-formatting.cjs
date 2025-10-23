@@ -8,11 +8,9 @@
 /**
  * Technical content detection patterns
  * Consolidated from servicenow.cjs and rich-text.cjs
+ * Note: URLs are handled by <kbd> tag processing, not pattern matching
  */
 const TECHNICAL_PATTERNS = {
-  // URLs and web addresses
-  url: /^https?:\/\//i,
-  
   // File paths (Unix/Windows)
   path: /^[\/~\\]/i,
   
@@ -53,7 +51,7 @@ function isTechnicalContent(content) {
   if (!trimmed) return false;
   
   // Check each technical pattern
-  if (TECHNICAL_PATTERNS.url.test(trimmed)) return true;
+  // Note: URL detection removed - URLs are handled by <kbd> tag processing
   if (TECHNICAL_PATTERNS.path.test(trimmed)) return true;
   if (TECHNICAL_PATTERNS.placeholder.test(trimmed)) return true;
   if (TECHNICAL_PATTERNS.domain.test(trimmed)) return true;

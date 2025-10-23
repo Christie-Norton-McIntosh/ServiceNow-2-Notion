@@ -189,13 +189,6 @@ function convertRichTextBlock(input, options = {}) {
     return `__BOLD_BLUE_START__${content}__BOLD_BLUE_END__`;
   });
   
-  // Handle span with cmd class (commands/instructions) as bold
-  // MUST be before the generic ph handler since cmd often appears with ph: <span class="ph cmd">
-  html = html.replace(/<span[^>]*class=["'][^"']*\bcmd\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
-    console.log(`🔍 [rich-text.cjs] Matched cmd span: "${content.substring(0, 80)}"`);
-    return `__BOLD_START__${content}__BOLD_END__`;
-  });
-  
   // Handle spans with technical identifier classes (keyword, parmname, codeph, etc.)
   // Use shared utility for simplified, consistent detection
   // CRITICAL FIX: Always return the content (not the HTML tags) even if not detected as technical
