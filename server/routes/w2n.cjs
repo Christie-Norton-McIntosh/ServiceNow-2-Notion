@@ -9,6 +9,8 @@ const router = express.Router();
 const fs = require('fs');
 const path = require('path');
 
+console.log('🔥🔥🔥 W2N.CJS MODULE LOADED AT:', new Date().toISOString());
+
 // Import services
 const notionService = require('../services/notion.cjs');
 const servicenowService = require('../services/servicenow.cjs');
