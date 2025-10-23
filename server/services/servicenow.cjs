@@ -30,6 +30,13 @@ const { convertServiceNowUrl, isVideoIframeUrl } = require('../utils/url.cjs');
 const { cleanHtmlText } = require('../converters/rich-text.cjs');
 const { convertRichTextBlock } = require('../converters/rich-text.cjs');
 const { normalizeAnnotations: normalizeAnnotationsLocal } = require('../utils/notion-format.cjs');
+const { 
+  isTechnicalContent, 
+  processKbdContent, 
+  processTechnicalSpan,
+  decodeHtmlEntities: decodeEntities,
+  isInCodeBlock 
+} = require('../utils/html-formatting.cjs');
 
 // FORCE CLEAR MODULE CACHE for table converter to pick up changes
 const tablePath = require.resolve('../converters/table.cjs');
@@ -318,32 +325,19 @@ async function extractContentFromHtml(html) {
     });
     
     // Restore kbd placeholders with appropriate markers BEFORE HTML cleanup
-    // Distinguish between technical input (code) and UI labels (bold)
+    // Use shared utility for intelligent detection (technical → code, UI labels → bold)
     kbdPlaceholders.forEach((content, index) => {
       const placeholder = `__KBD_PLACEHOLDER_${index}__`;
-      
-      // Determine if content is technical or a UI label
-      // Technical indicators: URLs, paths, placeholders with < >, dots in domain-like patterns
-      const isTechnical = 
-        /^https?:\/\//i.test(content) ||           // URLs
-        /^[\/~]/i.test(content) ||                 // Paths starting with / or ~
-        /<[^>]+>/i.test(content) ||                // Placeholders like <instance-name>
-        /\.(com|net|org|io|dev|gov|edu)/i.test(content) || // Domain extensions
-        /^[\w\-]+\.[\w\-]+\./.test(content) ||     // Multi-level dotted identifiers (e.g., table.field.value)
-        /^[A-Z_]{4,}$/.test(content) ||            // ALL_CAPS with 4+ chars (constants like API_KEY, not Save)
-        /[\[\]{}();]/.test(content) ||             // Code-like characters
-        /^[a-z_][a-z0-9_]*$/i.test(content) &&     // Programming identifiers (snake_case/camelCase)
-          (content.includes('_') || /[a-z][A-Z]/.test(content)); // with underscore or camelCase
-      
-      if (isTechnical) {
-        // Technical content: wrap in code markers
-        text = text.replace(placeholder, `__CODE_START__${content}__CODE_END__`);
-        console.log(`🔍 [parseRichText] Restored <kbd> as code: "${content}"`);
-      } else {
-        // UI label/navigation: wrap in bold markers
-        text = text.replace(placeholder, `__BOLD_START__${content}__BOLD_END__`);
-        console.log(`🔍 [parseRichText] Restored <kbd> as bold: "${content}"`);
-      }
+      const formatted = processKbdContent(content);
+      text = text.replace(placeholder, formatted);
+      console.log(`🔍 [parseRichText] Restored <kbd>: "${content}" → ${formatted.includes('CODE') ? 'code' : 'bold'}`);
+    });
+
+    // Handle span with cmd class (commands/instructions) as bold
+    // CRITICAL: This must run AFTER kbd restoration so nested <kbd> tags are already converted to markers
+    text = text.replace(/<span[^>]*class=["'][^"']*\bcmd\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
+      if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with cmd class: ${match.substring(0, 100)}`);
+      return `__BOLD_START__${content}__BOLD_END__`;
     });
 
     // DEBUG: Check if we have ">" characters
@@ -491,31 +485,20 @@ async function extractContentFromHtml(html) {
       return `__LINK_${linkIndex}__`;
     });
 
-    // Handle spans with technical identifier classes (ph, keyword, parmname, codeph, etc.) as inline code
+    // Handle spans with technical identifier classes (ph, keyword, parmname, codeph, etc.)
+    // Use shared utility for simplified technical detection
     text = text.replace(/<span[^>]*class=["'][^"']*(?:\bph\b|\bkeyword\b|\bparmname\b|\bcodeph\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
-  if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with technical class: ${match.substring(0, 100)}`);
-  if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with technical class: ${match.substring(0, 100)}`);
-      const cleanedContent = cleanHtmlText(content);
-      if (!cleanedContent || !cleanedContent.trim()) return match;
-
-      const technicalTokenRegex = /[A-Za-z0-9][A-Za-z0-9._-]*[._][A-Za-z0-9._-]*/g;
-      const strictTechnicalTokenRegex = /[A-Za-z0-9][A-Za-z0-9._-]*[._][A-Za-z0-9._-]+/g;
-
-      let replaced = cleanedContent;
-      replaced = replaced.replace(strictTechnicalTokenRegex, (token) => {
-        const bareToken = token.trim();
-        if (!bareToken) return token;
-
-        // Skip uppercase acronyms without lowercase characters after removing separators
-        const bareAlphaNumeric = bareToken.replace(/[._-]/g, "");
-        if (bareAlphaNumeric && /^[A-Z0-9]+$/.test(bareAlphaNumeric)) {
-          return token;
-        }
-        return `__CODE_START__${bareToken}__CODE_END__`;
-      });
-
-      if (replaced !== cleanedContent) return replaced;
-      return match;
+      if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with technical class: ${match.substring(0, 100)}`);
+      
+      // Use shared processing utility
+      const result = processTechnicalSpan(content, { activeBlocks });
+      
+      // If unchanged (returned as-is), return original match to preserve HTML
+      if (result === content || result === content.trim()) {
+        return match;
+      }
+      
+      return result;
     });
 
     // Handle raw technical identifiers in parentheses/brackets as inline code
@@ -552,12 +535,6 @@ async function extractContentFromHtml(html) {
   if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with uicontrol class: ${match.substring(0, 100)}`);
   if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with uicontrol class: ${match.substring(0, 100)}`);
       return `__BOLD_BLUE_START__${content}__BOLD_BLUE_END__`;
-    });
-
-    // Handle span with cmd class (commands/instructions) as bold
-    text = text.replace(/<span[^>]*class=["'][^"']*\bcmd\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
-      if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with cmd class: ${match.substring(0, 100)}`);
-      return `__BOLD_START__${content}__BOLD_END__`;
     });
 
     // Handle p/span with sectiontitle tasklabel class as bold
