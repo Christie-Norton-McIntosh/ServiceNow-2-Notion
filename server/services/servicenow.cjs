@@ -912,52 +912,65 @@ async function extractContentFromHtml(html) {
           childBlocks.push(...nestedProcessed);
         }
         
-        console.log(`🔍 Creating callout with ${calloutRichText.length} rich_text elements and ${childBlocks.length} deferred children`);
+        // Check if callout has actual content or is just empty/whitespace
+        const calloutContent = calloutRichText.map(rt => rt.text.content).join('').trim();
+        const hasCalloutContent = calloutContent.length > 0;
         
-        // Create callout WITHOUT children property (Notion API requirement)
-        // Children will be appended via orchestrator using a marker
-        const calloutBlock = {
-          object: "block",
-          type: "callout",
-          callout: {
-            rich_text: calloutRichText.length > 0 ? calloutRichText : [{ type: "text", text: { content: "" } }],
-            icon: { type: "emoji", emoji: calloutIcon },
-            color: calloutColor
-          }
-        };
+        console.log(`🔍 Callout content after removing title: "${calloutContent.substring(0, 100)}${calloutContent.length > 100 ? '...' : ''}"`);
+        console.log(`🔍 Has callout content: ${hasCalloutContent}, Has ${childBlocks.length} deferred children`);
         
-        // Add marker for orchestrator to append children after creation
-        if (childBlocks.length > 0) {
-          const marker = generateMarker();
-          
-          // Tag each child block with the marker for orchestration
-          childBlocks.forEach(block => {
-            block._sn2n_marker = marker;
-          });
-          
-          // Add marker text to end of callout rich_text (will be found by orchestrator)
-          const markerToken = `(sn2n:${marker})`;
-          calloutBlock.callout.rich_text.push({
-            type: "text",
-            text: { content: ` ${markerToken}` },
-            annotations: {
-              bold: false,
-              italic: false,
-              strikethrough: false,
-              underline: false,
-              code: false,
-              color: "default"
-            }
-          });
-          
-          if (getExtraDebug && getExtraDebug()) log(`🔍 Added marker ${markerToken} for ${childBlocks.length} deferred blocks`);
-        }
-        
-        processedBlocks.push(calloutBlock);
-        
-        // Add child blocks to processedBlocks so they get collected by orchestrator
-        if (childBlocks.length > 0) {
+        // If callout has no content and has nested blocks, skip creating the empty callout
+        // Just add the nested blocks directly - they'll be processed as siblings
+        if (!hasCalloutContent && childBlocks.length > 0) {
+          console.log(`🔍 Skipping empty callout (no content, only nested blocks) - adding nested blocks directly`);
           processedBlocks.push(...childBlocks);
+        } else {
+          // Create callout WITH content (even if it's just the title)
+          console.log(`🔍 Creating callout with ${calloutRichText.length} rich_text elements and ${childBlocks.length} deferred children`);
+          
+          const calloutBlock = {
+            object: "block",
+            type: "callout",
+            callout: {
+              rich_text: calloutRichText.length > 0 ? calloutRichText : [{ type: "text", text: { content: "" } }],
+              icon: { type: "emoji", emoji: calloutIcon },
+              color: calloutColor
+            }
+          };
+          
+          // Add marker for orchestrator to append children after creation
+          if (childBlocks.length > 0) {
+            const marker = generateMarker();
+            
+            // Tag each child block with the marker for orchestration
+            childBlocks.forEach(block => {
+              block._sn2n_marker = marker;
+            });
+            
+            // Add marker text to end of callout rich_text (will be found by orchestrator)
+            const markerToken = `(sn2n:${marker})`;
+            calloutBlock.callout.rich_text.push({
+              type: "text",
+              text: { content: ` ${markerToken}` },
+              annotations: {
+                bold: false,
+                italic: false,
+                strikethrough: false,
+                underline: false,
+                code: false,
+                color: "default"
+              }
+            });
+            
+            if (getExtraDebug && getExtraDebug()) log(`🔍 Added marker ${markerToken} for ${childBlocks.length} deferred blocks`);
+          }
+          
+          processedBlocks.push(calloutBlock);
+          
+          // Add child blocks to processedBlocks so they get collected by orchestrator
+          if (childBlocks.length > 0) {
+            processedBlocks.push(...childBlocks);
+          }
         }
       } else {
         // No nested blocks - process as simple callout with just rich_text
