@@ -837,6 +837,13 @@ async function extractContentFromHtml(html) {
   const elemClass = $elem.attr('class') || 'none';
   if (getExtraDebug && getExtraDebug()) log(`🔍 Processing element: <${tagName}>, class="${elemClass}"`);
     
+    // CRITICAL DIAGNOSTIC: Track article.nested0
+    if (tagName === 'article' && elemClass.includes('nested0')) {
+      console.log(`🚨🚨🚨 ARTICLE.NESTED0 FOUND AT PROCESSELEMENT ENTRY!`);
+      console.log(`🚨 Direct children count: ${$elem.find('> *').length}`);
+      console.log(`🚨 Children types: ${$elem.find('> *').toArray().map(c => `<${c.name} class="${$(c).attr('class') || ''}">`).join(', ')}`);
+    }
+    
     // Special debug for div elements with 'note' in class
     if (tagName === 'div' && elemClass !== 'none' && elemClass.includes('note')) {
       console.log(`🔍 ⚠️ DIV WITH NOTE CLASS FOUND! Full class="${elemClass}", HTML preview: ${$.html($elem).substring(0, 150)}`);
@@ -1282,7 +1289,7 @@ async function extractContentFromHtml(html) {
       } else {
         // Figure without image - process children normally
         console.log(`🔍 Figure has no image, processing children`);
-        const children = $elem.children().toArray();
+        const children = $elem.find('> *').toArray();
         for (const child of children) {
           const childBlocks = await processElement(child);
           processedBlocks.push(...childBlocks);
@@ -1374,7 +1381,7 @@ async function extractContentFromHtml(html) {
     } else if (tagName === 'dd') {
       // Definition description - process children (may contain paragraphs, lists, images, etc.)
       console.log(`🔍 Processing <dd> (definition description)`);
-      const children = $elem.children().toArray();
+      const children = $elem.find('> *').toArray();
       
       if (children.length > 0) {
         // Process all child elements
@@ -1413,7 +1420,7 @@ async function extractContentFromHtml(html) {
     } else if (tagName === 'dl') {
       // Definition list - process dt/dd pairs
       console.log(`🔍 Processing <dl> (definition list)`);
-      const children = $elem.children().toArray();
+      const children = $elem.find('> *').toArray();
       
       for (const child of children) {
         const childBlocks = await processElement(child);
@@ -2535,7 +2542,7 @@ async function extractContentFromHtml(html) {
     } else if (tagName === 'div' && $elem.hasClass('contentPlaceholder')) {
       // contentPlaceholder divs can contain actual content like "Related Content" sections
       // Check if it has meaningful content before skipping
-      const children = $elem.children().toArray();
+      const children = $elem.find('> *').toArray();
       const hasContent = children.some(child => {
         const $child = $(child);
         const text = cleanHtmlText($child.html() || '').trim();
@@ -2914,7 +2921,9 @@ async function extractContentFromHtml(html) {
     } else {
       // Container element (div, section, main, article, etc.) - recursively process children
       // First check if there's direct text content mixed with child elements
-      const children = $elem.children().toArray();
+      
+      // Use find('> *') to get ALL direct children, more reliable than .children()
+      const children = $elem.find('> *').toArray();
       const fullHtml = $elem.html() || '';
       
       // Clone and remove all child elements to see if there's text content
@@ -3051,6 +3060,28 @@ async function extractContentFromHtml(html) {
         // No mixed content or no children - process normally
         console.log(`🔍 Container element <${tagName}>, recursively processing ${children.length} children`);
         
+        // SPECIAL DIAGNOSTIC for article.nested0
+        const elemClass = $elem.attr('class') || '';
+        if (elemClass.includes('nested0')) {
+          console.log(`🚨 ARTICLE.NESTED0 DETECTED! Cheerio says ${children.length} children`);
+          console.log(`🚨 Let's verify with different selectors:`);
+          console.log(`🚨   .find('> *'): ${$elem.find('> *').length}`);
+          console.log(`🚨   .children(): ${$elem.children().length}`);
+          console.log(`🚨   .find('> article.nested1'): ${$elem.find('> article.nested1').length}`);
+          console.log(`🚨   .find('article.nested1'): ${$elem.find('article.nested1').length}`);
+          console.log(`🚨 HTML length: ${$elem.html()?.length || 0}`);
+        }
+        
+        // Log what children we're about to process
+        if (children.length > 0) {
+          children.forEach((child, idx) => {
+            const childTag = child.name || 'unknown';
+            const childClass = $(child).attr('class') || '';
+            const childId = $(child).attr('id') || '';
+            console.log(`🔍   Child ${idx + 1}/${children.length}: <${childTag}>${childClass ? ` class="${childClass}"` : ''}${childId ? ` id="${childId}"` : ''}`);
+          });
+        }
+        
         if (children.length === 0) {
           // No children - check if there's text content to preserve
           const containerText = cleanHtmlText(fullHtml).trim();
@@ -3079,10 +3110,15 @@ async function extractContentFromHtml(html) {
           }
         } else {
           // Has children - process them
+          let processedChildCount = 0;
           for (const child of children) {
+            processedChildCount++;
+            console.log(`🔍   Processing child ${processedChildCount}/${children.length}: <${child.name}>${$(child).attr('class') ? ` class="${$(child).attr('class')}"` : ''}`);
             const childBlocks = await processElement(child);
+            console.log(`🔍   Child ${processedChildCount} produced ${childBlocks.length} blocks`);
             processedBlocks.push(...childBlocks);
           }
+          console.log(`🔍   Finished processing all ${processedChildCount}/${children.length} children`);
         }
         
         // Mark container as processed
@@ -3099,30 +3135,41 @@ async function extractContentFromHtml(html) {
   
   if ($('.zDocsTopicPageBody').length > 0) {
     // ServiceNow zDocsTopicPageBody - process all children (includes article AND contentPlaceholder with Related Content)
-    contentElements = $('.zDocsTopicPageBody').children().toArray();
+    contentElements = $('.zDocsTopicPageBody').find('> *').toArray();
     console.log(`🔍 Processing from .zDocsTopicPageBody, found ${contentElements.length} children`);
+    console.log(`🔍 Top-level children: ${contentElements.map(c => `<${c.name} class="${$(c).attr('class') || ''}">`).join(', ')}`);
   } else if ($('body').length > 0) {
     // Full HTML document with body tag
-    contentElements = $('body').children().toArray();
+    contentElements = $('body').find('> *').toArray();
     console.log(`🔍 Processing from <body>, found ${contentElements.length} children`);
   } else if ($('.dita, .refbody, article, main, [role="main"]').length > 0) {
     // ServiceNow documentation content wrappers - process the full article including related content
     const mainArticle = $('article.dita, .refbody').first();
     if (mainArticle.length > 0) {
-      contentElements = mainArticle.children().toArray();
+      contentElements = mainArticle.find('> *').toArray();
       console.log(`🔍 Processing from article.dita, found ${contentElements.length} children`);
+      console.log(`🔍 article.dita children: ${contentElements.map(c => `<${c.name} class="${$(c).attr('class') || ''}">`).join(', ')}`);
     } else {
       // Fallback to original logic
-      contentElements = $('.dita, .refbody, article, main, [role="main"]').first().children().toArray();
+      contentElements = $('.dita, .refbody, article, main, [role="main"]').first().find('> *').toArray();
       console.log(`🔍 Processing from content wrapper, found ${contentElements.length} children`);
     }
   } else {
     // HTML fragment - get all top-level elements
-    contentElements = $.root().children().toArray().filter(el => el.type === 'tag');
+    contentElements = $.root().find('> *').toArray().filter(el => el.type === 'tag');
     console.log(`🔍 Processing from root, found ${contentElements.length} top-level elements`);
   }
   
   console.log(`🔍 Found ${contentElements.length} elements to process`);
+  
+  // CRITICAL DIAGNOSTIC: Check if article.nested0 exists in the DOM at all
+  const nested0Count = $('article.nested0').length;
+  console.log(`🚨 CRITICAL: article.nested0 count in entire DOM: ${nested0Count}`);
+  if (nested0Count > 0) {
+    const nested0 = $('article.nested0').first();
+    console.log(`🚨 article.nested0 direct children: ${nested0.find('> *').length}`);
+    console.log(`🚨 article.nested0 children types: ${nested0.find('> *').toArray().map(c => `<${c.name} class="${$(c).attr('class') || ''}">`).slice(0, 10).join(', ')}...`);
+  }
   
   for (const child of contentElements) {
     const childBlocks = await processElement(child);
