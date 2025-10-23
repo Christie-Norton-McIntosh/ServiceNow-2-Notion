@@ -916,17 +916,23 @@ async function extractContentFromHtml(html) {
           childBlocks.push(...nestedProcessed);
         }
         
-        // Check if callout has actual content or is just empty/whitespace
+        // Check if callout has actual content or is just empty/whitespace/title-only
         const calloutContent = calloutRichText.map(rt => rt.text.content).join('').trim();
         const hasCalloutContent = calloutContent.length > 0;
         
-        console.log(`🔍 Callout content after removing title: "${calloutContent.substring(0, 100)}${calloutContent.length > 100 ? '...' : ''}"`);
-        console.log(`🔍 Has callout content: ${hasCalloutContent}, Has ${childBlocks.length} deferred children`);
+        // Check if content is ONLY the note title (e.g., "Note:", "Important:", etc.)
+        // These patterns match common note title formats
+        const titleOnlyPattern = /^(note|important|warning|caution|tip|info):\s*$/i;
+        const isTitleOnly = titleOnlyPattern.test(calloutContent);
         
-        // If callout has no content and has nested blocks, skip creating the empty callout
+        console.log(`🔍 Callout content after removing title: "${calloutContent.substring(0, 100)}${calloutContent.length > 100 ? '...' : ''}"`);
+        console.log(`🔍 Has callout content: ${hasCalloutContent}, Is title-only: ${isTitleOnly}, Has ${childBlocks.length} deferred children`);
+        
+        // If callout has no content (or only title) and has nested blocks, skip creating the callout
         // Just add the nested blocks directly - they'll be processed as siblings
-        if (!hasCalloutContent && childBlocks.length > 0) {
-          console.log(`🔍 Skipping empty callout (no content, only nested blocks) - adding nested blocks directly`);
+        // This prevents callouts like "Note: (sn2n:marker)" from appearing
+        if ((!hasCalloutContent || isTitleOnly) && childBlocks.length > 0) {
+          console.log(`🔍 Skipping ${isTitleOnly ? 'title-only' : 'empty'} callout (${isTitleOnly ? `"${calloutContent}"` : 'no content'}, only nested blocks) - adding nested blocks directly`);
           processedBlocks.push(...childBlocks);
         } else {
           // Create callout WITH content (even if it's just the title)
