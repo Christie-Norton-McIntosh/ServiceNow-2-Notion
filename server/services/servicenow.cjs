@@ -490,8 +490,8 @@ async function extractContentFromHtml(html) {
     text = text.replace(/<span[^>]*class=["'][^"']*(?:\bph\b|\bkeyword\b|\bparmname\b|\bcodeph\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
       if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with technical class: ${match.substring(0, 100)}`);
       
-      // Use shared processing utility
-      const result = processTechnicalSpan(content, { activeBlocks });
+      // Use shared processing utility (no activeBlocks needed in parseRichText context)
+      const result = processTechnicalSpan(content);
       
       // If unchanged (returned as-is), return original match to preserve HTML
       if (result === content || result === content.trim()) {
