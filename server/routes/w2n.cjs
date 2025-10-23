@@ -37,6 +37,78 @@ function getGlobals() {
   };
 }
 
+/**
+ * Clean marker tokens from blocks (for dryRun mode)
+ * Recursively removes (sn2n:...) markers from rich_text content
+ * @param {Array} blocks - Array of Notion blocks
+ * @returns {Array} Cleaned blocks
+ */
+function cleanMarkersFromBlocks(blocks) {
+  if (!Array.isArray(blocks)) return blocks;
+  
+  return blocks.map(block => {
+    const cleaned = { ...block };
+    
+    // Clean markers from rich_text in the block's main content
+    const blockType = block.type;
+    if (blockType && cleaned[blockType] && cleaned[blockType].rich_text) {
+      cleaned[blockType].rich_text = cleanMarkersFromRichText(cleaned[blockType].rich_text);
+    }
+    
+    // Recursively clean children if present
+    if (cleaned[blockType] && cleaned[blockType].children) {
+      cleaned[blockType].children = cleanMarkersFromBlocks(cleaned[blockType].children);
+    }
+    
+    // Handle table rows
+    if (blockType === 'table' && cleaned.table && cleaned.table.children) {
+      cleaned.table.children = cleaned.table.children.map(row => {
+        if (row.table_row && row.table_row.cells) {
+          return {
+            ...row,
+            table_row: {
+              ...row.table_row,
+              cells: row.table_row.cells.map(cell => cleanMarkersFromRichText(cell))
+            }
+          };
+        }
+        return row;
+      });
+    }
+    
+    return cleaned;
+  });
+}
+
+/**
+ * Clean marker tokens from rich_text array
+ * @param {Array} richTextArray - Array of rich_text objects
+ * @returns {Array} Cleaned rich_text array
+ */
+function cleanMarkersFromRichText(richTextArray) {
+  if (!Array.isArray(richTextArray)) return richTextArray;
+  
+  return richTextArray
+    .map(rt => {
+      if (rt.text && rt.text.content) {
+        // Remove marker pattern: (sn2n:xxx)
+        const cleaned = rt.text.content.replace(/\s*\(sn2n:[a-z0-9-]+\)\s*/gi, '');
+        if (cleaned !== rt.text.content) {
+          return {
+            ...rt,
+            text: {
+              ...rt.text,
+              content: cleaned.trim()
+            }
+          };
+        }
+      }
+      return rt;
+    })
+    .filter(rt => rt.text && rt.text.content && rt.text.content.trim().length > 0);
+}
+
+
 router.post('/W2N', async (req, res) => {
   const { notion, log, sendSuccess, sendError, htmlToNotionBlocks, ensureFileUploadAvailable, 
           collectAndStripMarkers, removeCollectedBlocks, deepStripPrivateKeys, 
@@ -89,6 +161,9 @@ router.post('/W2N', async (req, res) => {
           if (hasVideos) {
             log(`🎥 (dryRun) Video content detected`);
           }
+          
+          // Clean markers from blocks for dryRun (since orchestration won't run)
+          children = cleanMarkersFromBlocks(children);
         } else if (payload.content) {
           children = [
             {
