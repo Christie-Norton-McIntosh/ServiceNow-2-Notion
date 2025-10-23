@@ -1406,10 +1406,16 @@ async function extractContentFromHtml(html) {
       for (let li of listItems) {
         const $li = $(li);
         
-        // Check if list item contains nested block elements (pre, ul, ol, div.note, p, div.itemgroup, etc.)
+        // Check if list item contains nested block elements (pre, ul, ol, div.note, p, etc.)
         // Note: We search for div.p wrappers which may contain div.note elements
-        // We ALSO search for div.note directly in case it's a direct child of <li>
-        const nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.itemgroup, > div.stepxmp, > div.info, > div.note').toArray();
+        // IMPORTANT: div.itemgroup and div.info are NOT block elements - they're just wrappers
+        // We need to look INSIDE them for actual block elements (div.note, pre, ul, etc.)
+        // First, unwrap div.itemgroup and div.info so we can find nested blocks properly
+        $li.find('> div.itemgroup, > div.info').each((i, wrapper) => {
+          $(wrapper).replaceWith($(wrapper).html());
+        });
+        
+        const nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.stepxmp, > div.note').toArray();
         
         if (nestedBlocks.length > 0) {
           console.log(`🔍 List item contains ${nestedBlocks.length} nested block elements`);
@@ -1417,7 +1423,7 @@ async function extractContentFromHtml(html) {
           // Extract text content without nested blocks for the list item text
           const $textOnly = $li.clone();
           // Remove nested blocks (including div.p which may contain div.note, AND direct div.note children)
-          $textOnly.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.itemgroup, > div.stepxmp, > div.info, > div.note').remove();
+          $textOnly.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.stepxmp, > div.note').remove();
           const textOnlyHtml = $textOnly.html();
           
           // Process nested blocks first to add as children
