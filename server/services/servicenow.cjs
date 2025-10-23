@@ -25,6 +25,7 @@
 const axios = require('axios');
 const FormData = require('form-data');
 const cheerio = require('cheerio');
+const fs = require('fs');
 const { convertServiceNowUrl, isVideoIframeUrl } = require('../utils/url.cjs');
 const { cleanHtmlText } = require('../converters/rich-text.cjs');
 const { convertRichTextBlock } = require('../converters/rich-text.cjs');
@@ -217,6 +218,139 @@ async function extractContentFromHtml(html) {
     const videoBlocks = [];
     let text = html;
 
+    // DEBUG: Log input HTML BEFORE normalization
+    if (text && (text.includes('http') || text.includes('<code'))) {
+      fs.appendFileSync('/Users/norton-mcintosh/GitHub/ServiceNow-2-Notion/debug-url-extract.log',
+        `\n=== parseRichText BEFORE normalization ===\n${JSON.stringify(text)}\n`);
+    }
+    
+    // CRITICAL: Normalize newlines within and around HTML tags
+    // Source HTML may have tags split across lines like "</\ncode>" which breaks tag matching
+    // Also remove newlines immediately before closing tags like "content\n</code>"
+    
+    // Step 1: Remove newlines inside tag brackets (< ... >)
+    text = text.replace(/<([^>]*)>/g, (match, inside) => {
+      const normalized = inside.replace(/\s+/g, ' ').trim();
+      return `<${normalized}>`;
+    });
+    
+    // Step 2: Remove newlines immediately before closing tags
+    text = text.replace(/\s*\n\s*(<\/[^>]+>)/g, '$1');
+    
+    // Step 3: Remove newlines immediately after opening tags  
+    text = text.replace(/(<[^/>][^>]*>)\s*\n\s*/g, '$1');
+    
+    // DEBUG: Log AFTER normalization
+    if (html && (html.includes('http') || html.includes('<code'))) {
+      fs.appendFileSync('/Users/norton-mcintosh/GitHub/ServiceNow-2-Notion/debug-url-extract.log',
+        `=== AFTER normalization ===\n${JSON.stringify(text)}\n=== END ===\n`);
+    }
+    
+    // CRITICAL: Extract and decode URLs from <kbd> tags FIRST
+    // <kbd> tags contain user input URLs with &lt; &gt; entities that need special handling
+    const kbdPlaceholders = [];
+    text = text.replace(/<kbd[^>]*>([\s\S]*?)<\/kbd>/gi, (match, content) => {
+      // Decode HTML entities within kbd content
+      let decoded = content
+        .replace(/&gt;/g, '>')
+        .replace(/&lt;/g, '<')
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&nbsp;/g, ' ');
+      const placeholder = `__KBD_PLACEHOLDER_${kbdPlaceholders.length}__`;
+      kbdPlaceholders.push(decoded);
+      console.log(`🔍 [parseRichText] Extracted <kbd> content: "${decoded}"`);
+      return placeholder;
+    });
+    
+    // CRITICAL: Extract and protect URLs FIRST before decoding HTML entities
+    // URLs might contain &lt; and &gt; which would become < > and break URL parsing
+    // We need to extract URLs with entities intact, then decode entities within the URL
+    // IMPORTANT: Match URLs including content up to closing tags (don't stop at < from placeholders)
+    const urlPlaceholders = [];
+    text = text.replace(/\b(https?:\/\/[^<\s]+(?:<[^>]+>[^<\s]*)*?)(?=<\/|[\s]|$)/gi, (match, url) => {
+      // First decode HTML entities within the URL
+      let cleanUrl = url
+        .replace(/&gt;/g, '>')
+        .replace(/&lt;/g, '<')
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&nbsp;/g, ' ');
+      // Clean HTML tags but preserve placeholder markers like <instance-name>
+      // Only remove actual HTML tags (those in the known tag list)
+      cleanUrl = cleanUrl.replace(/<\/?(?:code|span|div|p|strong|em|b|i|u)(?:\s[^>]*)?>/gi, '');
+      // CRITICAL: Remove any newlines that may have been introduced by HTML formatting
+      cleanUrl = cleanUrl.replace(/\n/g, '');
+      const placeholder = `__URL_PLACEHOLDER_${urlPlaceholders.length}__`;
+      urlPlaceholders.push(cleanUrl);
+      fs.appendFileSync('/Users/norton-mcintosh/GitHub/ServiceNow-2-Notion/debug-url-extract.log',
+        `URL ${urlPlaceholders.length}: Original=${JSON.stringify(url)} Clean=${JSON.stringify(cleanUrl)} HasNewline=${cleanUrl.includes('\n')}\n`);
+      console.log(`🔍 [parseRichText] Extracted URL ${urlPlaceholders.length}: "${cleanUrl}"`);
+      return placeholder;
+    });
+    
+    // CRITICAL: Decode HTML entities AFTER URL extraction
+    // This ensures &gt; becomes > for navigation breadcrumbs like "All > System OAuth > Keys"
+    // But doesn't break URLs that contain &lt; and &gt; placeholders
+    text = text
+      .replace(/&gt;/g, '>')
+      .replace(/&lt;/g, '<')
+      .replace(/&amp;/g, '&')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&nbsp;/g, ' ');
+
+    console.log(`🔍 [parseRichText] After URL extraction (${urlPlaceholders.length} URLs):`, text.substring(0, 300));
+
+    // Restore URL placeholders with code markers BEFORE HTML cleanup
+    // CRITICAL: URLs must be wrapped in code markers to protect < and > from being treated as HTML tags
+    // This is essential for URLs with placeholder syntax like https://<instance-name>.service-now.com
+    urlPlaceholders.forEach((url, index) => {
+      // Remove any spaces or zero-width characters that may have been introduced by the source HTML
+      const sanitizedUrl = (url || '').replace(/[\s\u200B\u200C\u200D\uFEFF]/g, '');
+      const placeholder = `__URL_PLACEHOLDER_${index}__`;
+      text = text.replace(placeholder, `__CODE_START__${sanitizedUrl}__CODE_END__`);
+      fs.appendFileSync('/Users/norton-mcintosh/GitHub/ServiceNow-2-Notion/debug-url-extract.log',
+        `Restored URL ${index + 1}: ${JSON.stringify(sanitizedUrl)}\nText after restore: ${JSON.stringify(text.substring(0, 200))}\n`);
+      console.log(`🔍 [parseRichText] Restored URL ${index + 1} with code markers: "${sanitizedUrl}"`);
+    });
+    
+    // Restore kbd placeholders with appropriate markers BEFORE HTML cleanup
+    // Distinguish between technical input (code) and UI labels (bold)
+    kbdPlaceholders.forEach((content, index) => {
+      const placeholder = `__KBD_PLACEHOLDER_${index}__`;
+      
+      // Determine if content is technical or a UI label
+      // Technical indicators: URLs, paths, placeholders with < >, dots in domain-like patterns
+      const isTechnical = 
+        /^https?:\/\//i.test(content) ||           // URLs
+        /^[\/~]/i.test(content) ||                 // Paths starting with / or ~
+        /<[^>]+>/i.test(content) ||                // Placeholders like <instance-name>
+        /\.(com|net|org|io|dev|gov|edu)/i.test(content) || // Domain extensions
+        /^[\w\-]+\.[\w\-]+\./.test(content) ||     // Multi-level dotted identifiers (e.g., table.field.value)
+        /^[A-Z_]{4,}$/.test(content) ||            // ALL_CAPS with 4+ chars (constants like API_KEY, not Save)
+        /[\[\]{}();]/.test(content) ||             // Code-like characters
+        /^[a-z_][a-z0-9_]*$/i.test(content) &&     // Programming identifiers (snake_case/camelCase)
+          (content.includes('_') || /[a-z][A-Z]/.test(content)); // with underscore or camelCase
+      
+      if (isTechnical) {
+        // Technical content: wrap in code markers
+        text = text.replace(placeholder, `__CODE_START__${content}__CODE_END__`);
+        console.log(`🔍 [parseRichText] Restored <kbd> as code: "${content}"`);
+      } else {
+        // UI label/navigation: wrap in bold markers
+        text = text.replace(placeholder, `__BOLD_START__${content}__BOLD_END__`);
+        console.log(`🔍 [parseRichText] Restored <kbd> as bold: "${content}"`);
+      }
+    });
+
+    // DEBUG: Check if we have ">" characters
+    if (text.includes('>') && !text.includes('<')) {
+      console.log('🔍 [parseRichText] Found standalone ">" character before cleanup');
+    }
+
     // CRITICAL FIX: Strip ALL div tags (not just note divs) - they're structural containers
     // that should have been processed at element level, not appearing in rich text
     text = text.replace(/<\/?div[^>]*>/gi, ' ');  // Remove ALL div tags (opening and closing)
@@ -227,10 +361,23 @@ async function extractContentFromHtml(html) {
     // Pattern: < followed by tag name followed by anything (but not closing >)
     // This catches cases where content was chunked mid-tag like "...text <div class=\"note"
     text = text.replace(/<\/?[a-z][a-z0-9]*[^>]*$/gi, ' ');  // Incomplete tag at end
-    text = text.replace(/^[^<]*>/gi, ' ');  // Incomplete tag at beginning (leftover from previous chunk)
+    // FIXED: Only match incomplete closing tags at beginning (e.g., "class='foo'>"), not standalone ">"
+    // The pattern now requires at least one non-< character before the > to avoid matching standalone >
+    text = text.replace(/^[^<]+?(?:class|id|style|href|src)=[^>]*>/gi, ' ');  // Incomplete tag at beginning
     
     // Clean up extra whitespace from tag removal
     text = text.replace(/\s+/g, ' ').trim();
+
+    console.log('🔍 [parseRichText] After HTML cleanup:', text.substring(0, 300));
+    
+    // DEBUG: Check if ">" is still there
+    if (text.includes('>')) {
+      console.log('🔍 [parseRichText] ">" character still present after cleanup');
+    } else if (html.includes('>') && !html.includes('<')) {
+      console.log('⚠️ [parseRichText] ">" character was REMOVED during cleanup!');
+    }
+
+    console.log('🔍 [parseRichText] After URL restoration:', text.substring(0, 300));
 
     // Extract and process iframe tags (videos/embeds) - do this FIRST before images
     const iframeRegex = /<iframe[^>]*>.*?<\/iframe>/gis;
@@ -328,6 +475,10 @@ async function extractContentFromHtml(html) {
 
     // Handle inline code tags
     text = text.replace(/<code([^>]*)>([\s\S]*?)<\/code>/gi, (match, attrs, content) => {
+      // If content already has CODE markers (from URL restoration), don't double-wrap
+      if (content.includes('__CODE_START__')) {
+        return content;
+      }
       return `__CODE_START__${content}__CODE_END__`;
     });
 
@@ -340,18 +491,7 @@ async function extractContentFromHtml(html) {
       return `__LINK_${linkIndex}__`;
     });
 
-    // Handle spans with userinput class as inline code (preserve content exactly as-is)
-    // This is for user input placeholders like <instance-name> that should not be modified
-    text = text.replace(/<span[^>]*class=["'][^"']*\buserinput\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
-      if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with userinput class: ${match.substring(0, 100)}`);
-      const cleanedContent = cleanHtmlText(content);
-      if (!cleanedContent || !cleanedContent.trim()) return match;
-      // Wrap entire content as code without any character modifications
-      return `__CODE_START__${cleanedContent}__CODE_END__`;
-    });
-
-    // Handle spans with technical identifier classes (ph, keyword, parmname, codeph) as inline code
-    // These go through technical identifier detection (dots, underscores, etc.)
+    // Handle spans with technical identifier classes (ph, keyword, parmname, codeph, etc.) as inline code
     text = text.replace(/<span[^>]*class=["'][^"']*(?:\bph\b|\bkeyword\b|\bparmname\b|\bcodeph\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
   if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with technical class: ${match.substring(0, 100)}`);
   if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with technical class: ${match.substring(0, 100)}`);
@@ -391,9 +531,17 @@ async function extractContentFromHtml(html) {
     // Handle standalone multi-word identifiers connected by _ or . (no spaces) as inline code
     // Examples: com.snc.incident.mim.ml_solution, sys_user_table, package.class.method
     // Must have at least 2 segments and no brackets/parentheses
-    text = text.replace(/\b([a-zA-Z][a-zA-Z0-9]*(?:[_.][a-zA-Z][a-zA-Z0-9]*)+)(?![_.a-zA-Z0-9])/g, (match, identifier) => {
+    text = text.replace(/\b([a-zA-Z][a-zA-Z0-9]*(?:[_.][a-zA-Z][a-zA-Z0-9]*)+)(?![_.a-zA-Z0-9])/g, (match, identifier, offset) => {
       // Skip if already wrapped or if it's part of a URL
       if (match.includes('__CODE_START__') || match.includes('http')) {
+        return match;
+      }
+      // Check if this identifier is inside a CODE_START...CODE_END block (URL)
+      const before = text.substring(0, offset);
+      const lastCodeStart = before.lastIndexOf('__CODE_START__');
+      const lastCodeEnd = before.lastIndexOf('__CODE_END__');
+      if (lastCodeStart > lastCodeEnd) {
+        // We're inside a CODE block, don't wrap again
         return match;
       }
       return `__CODE_START__${identifier}__CODE_END__`;
@@ -406,6 +554,12 @@ async function extractContentFromHtml(html) {
       return `__BOLD_BLUE_START__${content}__BOLD_BLUE_END__`;
     });
 
+    // Handle span with cmd class (commands/instructions) as bold
+    text = text.replace(/<span[^>]*class=["'][^"']*\bcmd\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
+      if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with cmd class: ${match.substring(0, 100)}`);
+      return `__BOLD_START__${content}__BOLD_END__`;
+    });
+
     // Handle p/span with sectiontitle tasklabel class as bold
     text = text.replace(/<(p|span)[^>]*class=["'][^"']*sectiontitle[^"']*tasklabel[^"']*["'][^>]*>([\s\S]*?)<\/\1>/gi, (match, tag, content) => {
   if (getExtraDebug && getExtraDebug()) log(`🔍 Found sectiontitle tasklabel: "${content.substring(0, 50)}"`);
@@ -414,16 +568,35 @@ async function extractContentFromHtml(html) {
       return `__BOLD_START__${content}__BOLD_END__`;
     });
 
-    // Handle line breaks (<br> tags) as newlines
-    text = text.replace(/<br\s*\/?>/gi, '\n');
+  // Handle line breaks (<br> tags) as newlines
+  text = text.replace(/<br\s*\/?>/gi, '\n');
     
+    // CRITICAL: Handle <abbr> tags - preserve their content (navigation arrows like " > ")
+    // Must happen BEFORE splitting on markers and BEFORE cleanHtmlText is called
+    text = text.replace(/<abbr[^>]*>([\s\S]*?)<\/abbr>/gi, (match, content) => {
+      console.log(`🔍 [parseRichText] Extracting abbr content: "${content}"`);
+      return content; // Keep the content, remove the abbr tags
+    });
+    
+    // Repair any broken marker tokens that may have picked up whitespace
+    text = text.replace(/__\s+CODE\s+START__/g, '__CODE_START__');
+    text = text.replace(/__\s+CODE\s+END__/g, '__CODE_END__');
+    text = text.replace(/__\s+BOLD\s+START__/g, '__BOLD_START__');
+    text = text.replace(/__\s+BOLD\s+END__/g, '__BOLD_END__');
+    text = text.replace(/__\s+ITALIC\s+START__/g, '__ITALIC_START__');
+    text = text.replace(/__\s+ITALIC\s+END__/g, '__ITALIC_END__');
+
     // Add soft return between </a> and any <p> tag
     text = text.replace(/(<\/a>)(\s*)(<p[^>]*>)/gi, (match, closingA, whitespace, openingP) => {
       return `${closingA}__SOFT_BREAK__${openingP}`;
     });
 
     // Split by markers and build rich text
+    fs.appendFileSync('/Users/norton-mcintosh/GitHub/ServiceNow-2-Notion/debug-url-extract.log',
+      `\n=== BEFORE SPLIT ===\n${JSON.stringify(text.substring(0, 300))}\n`);
     const parts = text.split(/(__BOLD_START__|__BOLD_END__|__BOLD_BLUE_START__|__BOLD_BLUE_END__|__ITALIC_START__|__ITALIC_END__|__CODE_START__|__CODE_END__|__LINK_\d+__|__SOFT_BREAK__)/);
+    fs.appendFileSync('/Users/norton-mcintosh/GitHub/ServiceNow-2-Notion/debug-url-extract.log',
+      `Parts: ${JSON.stringify(parts.slice(0, 15))}\n`);
 
     let currentAnnotations = { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: "default" };
 
@@ -481,7 +654,19 @@ async function extractContentFromHtml(html) {
           }
         }
       } else if (part) {
-        const cleanedText = cleanHtmlText(part);
+        // Final safety: normalize any broken marker tokens inside this part before cleaning
+        const normalizedPart = part
+          .replace(/__\s+CODE\s+START__/g, '__CODE_START__')
+          .replace(/__\s+CODE\s+END__/g, '__CODE_END__')
+          .replace(/__\s+BOLD\s+START__/g, '__BOLD_START__')
+          .replace(/__\s+BOLD\s+END__/g, '__BOLD_END__')
+          .replace(/__\s+ITALIC\s+START__/g, '__ITALIC_START__')
+          .replace(/__\s+ITALIC\s+END__/g, '__ITALIC_END__')
+          .replace(/[\u200B\u200C\u200D\uFEFF]/g, '');
+
+        const cleanedText = cleanHtmlText(normalizedPart);
+        fs.appendFileSync('/Users/norton-mcintosh/GitHub/ServiceNow-2-Notion/debug-url-extract.log',
+          `cleanHtmlText: INPUT=${JSON.stringify(normalizedPart.substring(0, 200))}\nOUTPUT=${JSON.stringify(cleanedText.substring(0, 200))}\nHas newline? ${cleanedText.includes('\n')}\n`);
         if (cleanedText.trim()) {
           // Split on newlines to create separate rich text elements for line breaks
           const lines = cleanedText.split('\n');
@@ -630,6 +815,60 @@ async function extractContentFromHtml(html) {
     }
   }
 
+  // CRITICAL: Protect technical placeholders BEFORE Cheerio parsing
+  // Cheerio will treat <instance-name> as an HTML tag, so we must convert to markers first
+  const technicalPlaceholders = [];
+  
+  // Common HTML tags that should NOT be protected
+  const HTML_TAGS = new Set([
+    'a', 'abbr', 'address', 'area', 'article', 'aside', 'audio',
+    'b', 'base', 'bdi', 'bdo', 'blockquote', 'body', 'br', 'button',
+    'canvas', 'caption', 'cite', 'code', 'col', 'colgroup',
+    'data', 'datalist', 'dd', 'del', 'details', 'dfn', 'dialog', 'div', 'dl', 'dt',
+    'em', 'embed',
+    'fieldset', 'figcaption', 'figure', 'footer', 'form',
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'head', 'header', 'hgroup', 'hr', 'html',
+    'i', 'iframe', 'img', 'input', 'ins',
+    'kbd',
+    'label', 'legend', 'li', 'link',
+    'main', 'map', 'mark', 'meta', 'meter',
+    'nav', 'noscript',
+    'object', 'ol', 'optgroup', 'option', 'output',
+    'p', 'param', 'picture', 'pre', 'progress',
+    'q',
+    'rp', 'rt', 'ruby',
+    's', 'samp', 'script', 'section', 'select', 'slot', 'small', 'source', 'span', 'strong', 'style', 'sub', 'summary', 'sup', 'svg',
+    'table', 'tbody', 'td', 'template', 'textarea', 'tfoot', 'th', 'thead', 'time', 'title', 'tr', 'track',
+    'u', 'ul',
+    'var', 'video',
+    'wbr'
+  ]);
+  
+  html = html.replace(/<([^>]+)>/g, (match, content) => {
+    const trimmed = content.trim();
+    
+    // Extract tag name (first word, ignoring / for closing tags)
+    const tagMatch = /^\/?\s*([a-z][a-z0-9-]*)/i.exec(trimmed);
+    if (!tagMatch) {
+      // Doesn't start with valid tag pattern, protect it
+      const marker = `__TECH_PLACEHOLDER_${technicalPlaceholders.length}__`;
+      technicalPlaceholders.push(content);
+      return marker;
+    }
+    
+    const tagName = tagMatch[1].toLowerCase();
+    
+    // If it's a known HTML tag, leave it alone
+    if (HTML_TAGS.has(tagName)) {
+      return match;
+    }
+    
+    // Unknown tag, protect it as a placeholder
+    const marker = `__TECH_PLACEHOLDER_${technicalPlaceholders.length}__`;
+    technicalPlaceholders.push(content);
+    return marker;
+  });
+  
   // Use cheerio to parse HTML and process elements in document order
   let $;
   try {
@@ -640,12 +879,14 @@ async function extractContentFromHtml(html) {
   } catch (error) {
     log(`❌ Cheerio load ERROR: ${error.message}`);
     // Fall back to single paragraph
+    // CRITICAL: Don't use cleanHtmlText() here - it strips code tags which breaks URLs
+    // convertRichTextBlock() already handles HTML cleaning internally
     return {
       blocks: [{
         object: "block",
         type: "paragraph",
         paragraph: {
-          rich_text: convertRichTextBlock(cleanHtmlText(html)),
+          rich_text: convertRichTextBlock(html),
         },
       }],
       hasVideos: false
@@ -711,15 +952,16 @@ async function extractContentFromHtml(html) {
       const { color: calloutColor, icon: calloutIcon } = getCalloutPropsFromClasses(classAttr);
 
       // Check if callout contains nested block elements (ul, ol, figure, etc.)
-      const nestedBlocks = $elem.find('> ul, > ol, > figure, > div.p, > p');
+      // NOTE: <p> tags should NOT be treated as nested blocks - they're part of callout rich_text
+      const nestedBlocks = $elem.find('> ul, > ol, > figure, > div.p');
       console.log(`🔍 Callout nested blocks check: found ${nestedBlocks.length} elements`);
       
       if (nestedBlocks.length > 0) {
         console.log(`🔍 Callout contains ${nestedBlocks.length} nested block elements - processing with children`);
         
-        // Clone and remove nested blocks to get just the text content
+        // Clone and remove nested blocks to get just the text content (keep <p> tags)
         const $clone = $elem.clone();
-        $clone.find('> ul, > ol, > figure, > div.p, > p').remove();
+        $clone.find('> ul, > ol, > figure, > div.p').remove();
         let textOnlyHtml = $clone.html() || '';
         
         // Remove note title span (it already has a colon like "Note:")
@@ -2918,57 +3160,6 @@ async function extractContentFromHtml(html) {
   
   console.log(`🔍 Found ${contentElements.length} elements to process`);
   
-  // PREPROCESSING: Detect and wrap standalone "Before you begin" sections
-  // Pattern: <p>Before you begin</p> <p>Role required:</p> <ul>...</ul> [<ul>...</ul>]
-  // These should be wrapped in a <section class="prereq"> to be processed as a callout
-  // NOTE: These paragraphs may be deep inside container divs, so we search the entire DOM
-  
-  // Find all paragraphs with "Before you begin" text
-  $('p').each((idx, elem) => {
-    const $elem = $(elem);
-    const text = $elem.text().trim();
-    
-    if (text === 'Before you begin') {
-      console.log(`🔍 PREPROCESSING: Found "Before you begin" paragraph`);
-      
-      // Get the next sibling element
-      let $next = $elem.next();
-      if ($next.length > 0 && $next.prop('tagName').toLowerCase() === 'p') {
-        const nextText = $next.text().trim();
-        if (nextText.startsWith('Role required:')) {
-          console.log(`🔍 PREPROCESSING: Found "Role required:" paragraph - wrapping in prereq section`);
-          
-          // Collect elements to wrap
-          const $elementsToWrap = [$elem, $next];
-          let $current = $next.next();
-          
-          // Collect following <ul> elements
-          while ($current.length > 0 && $current.prop('tagName').toLowerCase() === 'ul') {
-            console.log(`🔍 PREPROCESSING: Found <ul> list - adding to prereq section`);
-            $elementsToWrap.push($current);
-            $current = $current.next();
-          }
-          
-          console.log(`🔍 PREPROCESSING: Wrapping ${$elementsToWrap.length} elements into prereq section`);
-          
-          // Create a <section class="prereq"> wrapper
-          const $prereqSection = $('<section class="prereq"></section>');
-          
-          // Move elements into the section (not clone, actual move)
-          $elementsToWrap.forEach($el => $prereqSection.append($el));
-          
-          // Insert the section before the first element's original position
-          // (which is now empty since we moved it)
-          $elem.parent().prepend($prereqSection);
-          
-          console.log(`✅ PREPROCESSING: Created prereq section`);
-        }
-      }
-    }
-  });
-  
-  console.log(`🔍 After prereq preprocessing: ${contentElements.length} elements to process`);
-  
   for (const child of contentElements) {
     const childBlocks = await processElement(child);
     // console.log(`🔍 Element <${child.name}> produced ${childBlocks.length} blocks`);
@@ -3062,8 +3253,8 @@ async function extractContentFromHtml(html) {
       // This handles edge cases like unclosed tags or malformed HTML
       cleanedContent = cleanedContent.replace(/<[^>]*>/g, " ");
       
-      // Remove any residual HTML-like patterns that might have slipped through
-      cleanedContent = cleanedContent.replace(/&lt;[^&]*&gt;/g, " ");
+      // REMOVED: Don't strip HTML-encoded angle brackets - they may be legitimate content like navigation arrows (" > ")
+      // cleanedContent = cleanedContent.replace(/&lt;[^&]*&gt;/g, " ");
       
       // Clean up multiple spaces
       cleanedContent = cleanedContent.replace(/\s+/g, " ").trim();
@@ -3085,6 +3276,23 @@ async function extractContentFromHtml(html) {
   
   // No post-processing needed - proper nesting structure handles list numbering restart
   console.log(`✅ Extraction complete: ${blocks.length} blocks`);
+  
+  // Restore technical placeholders in all rich_text content
+  function restorePlaceholders(obj) {
+    if (Array.isArray(obj)) {
+      obj.forEach(item => restorePlaceholders(item));
+    } else if (obj && typeof obj === 'object') {
+      if (obj.type === 'text' && obj.text && typeof obj.text.content === 'string') {
+        obj.text.content = obj.text.content.replace(/__TECH_PLACEHOLDER_(\d+)__/g, (match, index) => {
+          const placeholder = technicalPlaceholders[parseInt(index)];
+          return placeholder ? `<${placeholder}>` : match;
+        });
+      }
+      Object.values(obj).forEach(value => restorePlaceholders(value));
+    }
+  }
+  restorePlaceholders(blocks);
+  
   return { blocks, hasVideos: hasDetectedVideos };
 }
 

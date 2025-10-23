@@ -1,4 +1,5 @@
 const { convertServiceNowUrl } = require("../utils/url.cjs");
+const fs = require('fs');
 /**
  * @fileoverview Rich Text Converter for Notion blocks
  * 
@@ -63,6 +64,46 @@ function convertRichTextBlock(input, options = {}) {
   let html = typeof input === "string" ? input : "";
   if (!html) return [];
   
+  // DEBUG: Log what we receive
+  if (html && html.includes('__CODE_START__')) {
+    fs.appendFileSync('/Users/norton-mcintosh/GitHub/ServiceNow-2-Notion/debug-url-extract.log',
+      `\n=== convertRichTextBlock INPUT ===\n${JSON.stringify(html.substring(0, 300))}\n`);
+  }
+  
+  // CRITICAL: Protect technical placeholders FIRST before any HTML processing
+  // Convert <placeholder-text> and &lt;placeholder-text&gt; patterns to markers
+  // This ensures they survive HTML stripping and entity decoding
+  // Examples: <instance-name>, <Tool ID>, &lt;file-name&gt;, &lt;Tool ID&gt;
+  const placeholders = [];
+  
+  // First, protect HTML-encoded placeholders: &lt;placeholder-text&gt;
+  html = html.replace(/&lt;([^&]+)&gt;/g, (match, content) => {
+    const trimmed = content.trim();
+    // Check if it's an HTML tag (e.g., &lt;div&gt;) or a placeholder
+    const isHtmlTag = /^\/?\s*[a-z][a-z0-9]*(\s|$)/i.test(trimmed);
+    if (!isHtmlTag) {
+      const placeholder = `__PLACEHOLDER_${placeholders.length}__`;
+      placeholders.push(content);
+      return placeholder;
+    }
+    return match; // Leave encoded HTML tags for normal decoding
+  });
+  
+  // Then, protect already-decoded placeholders: <placeholder-text>
+  html = html.replace(/<([^>]+)>/g, (match, content) => {
+    const trimmed = content.trim();
+    // HTML tags: start with / or lowercase letter, followed by tag name (no spaces/hyphens in tag name itself)
+    // Examples: <div>, </div>, <span class="x">, <a href="...">
+    const isHtmlTag = /^\/?\s*[a-z][a-z0-9]*(\s|$|>)/i.test(trimmed);
+    if (!isHtmlTag) {
+      const placeholder = `__PLACEHOLDER_${placeholders.length}__`;
+      placeholders.push(content);
+      return placeholder;
+    }
+    // It's an HTML tag, leave it alone for normal processing
+    return match;
+  });
+  
   // DEBUG: Log input HTML if it contains span tags
   if (html.includes('<span')) {
     console.log(`🔍 [rich-text.cjs] convertRichTextBlock called with HTML containing <span>:`);
@@ -81,9 +122,9 @@ function convertRichTextBlock(input, options = {}) {
     // This handles cases like: <a href="...">Contact <span class="ph">Support</span></a>
     let cleanedContent = content;
     
-    // Strip span tags with ph/keyword/parmname/codeph/userinput classes from link content
+    // Strip span tags with ph/keyword/parmname/codeph classes from link content
     cleanedContent = cleanedContent.replace(
-      /<span[^>]*class=["'][^"']*(?:\bph\b|\bkeyword\b|\bparmname\b|\bcodeph\b|\buserinput\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi,
+      /<span[^>]*class=["'][^"']*(?:\bph\b|\bkeyword\b|\bparmname\b|\bcodeph\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi,
       (spanMatch, spanContent) => {
         // Just return the content without the span tags
         return spanContent || '';
@@ -114,49 +155,65 @@ function convertRichTextBlock(input, options = {}) {
   html = html.replace(/<(b|strong)([^>]*)>([\s\S]*?)<\/\1>/gi, (match, tag, attrs, content) => `__BOLD_START__${content}__BOLD_END__`);
   // Handle italic/em tags
   html = html.replace(/<(i|em)([^>]*)>([\s\S]*?)<\/\1>/gi, (match, tag, attrs, content) => `__ITALIC_START__${content}__ITALIC_END__`);
+  
+  // Handle kbd tags - distinguish between technical content (code) and UI labels (bold)
+  html = html.replace(/<kbd([^>]*)>([\s\S]*?)<\/kbd>/gi, (match, attrs, content) => {
+    // Decode HTML entities within kbd content
+    let decoded = content
+      .replace(/&gt;/g, '>')
+      .replace(/&lt;/g, '<')
+      .replace(/&amp;/g, '&')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&nbsp;/g, ' ');
+    
+    // Determine if content is technical or a UI label
+    // Technical indicators: URLs, paths, placeholders with < >, dots in domain-like patterns
+    const isTechnical = 
+      /^https?:\/\//i.test(decoded) ||           // URLs
+      /^[\/~]/i.test(decoded) ||                 // Paths starting with / or ~
+      /<[^>]+>/i.test(decoded) ||                // Placeholders like <instance-name>
+      /\.(com|net|org|io|dev|gov|edu)/i.test(decoded) || // Domain extensions
+      /^[\w\-]+\.[\w\-]+\./.test(decoded) ||     // Multi-level dotted identifiers (e.g., table.field.value)
+      /^[A-Z_]{4,}$/.test(decoded) ||            // ALL_CAPS with 4+ chars (constants like API_KEY, not Save)
+      /[\[\]{}();]/.test(decoded) ||             // Code-like characters
+      /^[a-z_][a-z0-9_]*$/i.test(decoded) &&     // Programming identifiers (snake_case/camelCase)
+        (decoded.includes('_') || /[a-z][A-Z]/.test(decoded)); // with underscore or camelCase
+    
+    if (isTechnical) {
+      return `__CODE_START__${decoded}__CODE_END__`;
+    } else {
+      return `__BOLD_START__${decoded}__BOLD_END__`;
+    }
+  });
+  
   // Handle inline code tags
-  html = html.replace(/<code([^>]*)>([\s\S]*?)<\/code>/gi, (match, attrs, content) => `__CODE_START__${content}__CODE_END__`);
+  html = html.replace(/<code([^>]*)>([\s\S]*?)<\/code>/gi, (match, attrs, content) => {
+    const result = `__CODE_START__${content}__CODE_END__`;
+    fs.appendFileSync('/Users/norton-mcintosh/GitHub/ServiceNow-2-Notion/debug-richtext.log', 
+      `CODE TAG: "${content.substring(0, 100)}" → "${result.substring(0, 150)}"\n`);
+    return result;
+  });
+  
+  fs.appendFileSync('/Users/norton-mcintosh/GitHub/ServiceNow-2-Notion/debug-richtext.log', 
+    `AFTER CODE TAGS: "${html.substring(0, 200)}"\n\n`);
   
   // Handle span with uicontrol class as bold + blue
   html = html.replace(/<span[^>]*class=["'][^"']*\buicontrol\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
-    // Decode HTML entities (e.g., &gt; → >, &lt; → <, &amp; → &)
-    const decoded = content
-      .replace(/&gt;/gi, '>')
-      .replace(/&lt;/gi, '<')
-      .replace(/&amp;/gi, '&')
-      .replace(/&quot;/gi, '"')
-      .replace(/&#39;/gi, "'");
-    return `__BOLD_BLUE_START__${decoded}__BOLD_BLUE_END__`;
+    return `__BOLD_BLUE_START__${content}__BOLD_BLUE_END__`;
   });
   
-  // Handle spans with note__title class - just extract content, no formatting
-  // These are title labels like "Note:" in callouts that should be plain text
-  html = html.replace(/<span[^>]*class=["'][^"']*\bnote__title\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
-    if (process.env.SN2N_VERBOSE === '1') {
-      console.log(`🔍 Matched span with class note__title: "${match.substring(0, 80)}"`);
-    }
-    const cleanedContent = typeof content === "string" ? content.trim() : "";
-    if (!cleanedContent) return " "; // Return space instead of empty match
-    // Just return the content without the span tags (no special formatting)
-    return cleanedContent;
-  });
-  
-  // Handle spans with userinput class as inline code (preserve content exactly as-is)
-  // This is for user input placeholders like <instance-name> that should not be modified
-  html = html.replace(/<span[^>]*class=["'][^"']*\buserinput\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
-    if (process.env.SN2N_VERBOSE === '1') {
-      console.log(`🔍 Matched span with class userinput: "${match.substring(0, 80)}"`);
-    }
-    const cleanedContent = typeof content === "string" ? content.trim() : "";
-    if (!cleanedContent) return " "; // Return space instead of empty match
-    // Wrap entire content as code without any character modifications
-    return `__CODE_START__${cleanedContent}__CODE_END__`;
+  // Handle span with cmd class (commands/instructions) as bold
+  // MUST be before the generic ph handler since cmd often appears with ph: <span class="ph cmd">
+  html = html.replace(/<span[^>]*class=["'][^"']*\bcmd\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
+    console.log(`🔍 [rich-text.cjs] Matched cmd span: "${content.substring(0, 80)}"`);
+    return `__BOLD_START__${content}__BOLD_END__`;
   });
   
   // Handle spans with technical identifier classes (ph, keyword, parmname, codeph, etc.)
   // These tags wrap technical terms, product names, or code identifiers
-  // These go through technical identifier detection (dots, underscores, etc.)
   // CRITICAL FIX: Always return the content (not the HTML tags) even if not detected as technical
+  // NOTE: This runs AFTER cmd handler, so <span class="ph cmd"> has already been processed
   const htmlBefore = html;
   html = html.replace(/<span[^>]*class=["'][^"']*(?:\bph\b|\bkeyword\b|\bparmname\b|\bcodeph\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
     if (process.env.SN2N_VERBOSE === '1') {
@@ -164,6 +221,11 @@ function convertRichTextBlock(input, options = {}) {
     }
     const cleanedContent = typeof content === "string" ? content.trim() : "";
     if (!cleanedContent) return " "; // Return space instead of empty match
+    
+    // If content contains placeholder markers, just return it as-is (don't process for technical identifiers)
+    if (cleanedContent.includes('__PLACEHOLDER_')) {
+      return cleanedContent;
+    }
     
     // Check if content looks like a technical identifier (has dots or underscores)
     const strictTechnicalTokenRegex = /[A-Za-z0-9][A-Za-z0-9._-]*[._][A-Za-z0-9._-]+/g;
@@ -214,7 +276,13 @@ function convertRichTextBlock(input, options = {}) {
   // Examples: com.snc.incident.mim.ml_solution, sys_user_table, package.class.method, com.glide.service-portal
   // Must have at least 2 segments separated by . or _ and no brackets/parentheses
   // Use a function to check context to avoid matching inside already-wrapped code
+  const beforeTech = html;
   html = html.replace(/\b([a-zA-Z][-a-zA-Z0-9]*(?:[_.][a-zA-Z][-a-zA-Z0-9]*)+)\b/g, (match, identifier, offset, string) => {
+    // Skip internal markers (placeholder, link, code markers)
+    if (match.startsWith('__PLACEHOLDER_') || match.startsWith('__LINK_') || match.startsWith('__CODE_')) {
+      return match;
+    }
+    
     // Check if we're inside a __CODE_START__...__CODE_END__ block
     const beforeMatch = string.substring(0, offset);
     const lastCodeStart = beforeMatch.lastIndexOf('__CODE_START__');
@@ -222,27 +290,30 @@ function convertRichTextBlock(input, options = {}) {
     
     // If there's a CODE_START after the last CODE_END, we're inside a code block
     if (lastCodeStart > lastCodeEnd) {
+      console.log(`� [TECH ID] Skipping "${match}" - inside code block (start:${lastCodeStart}, end:${lastCodeEnd})`);
       return match; // Don't wrap, already in code block
     }
     
-    // Skip if part of a URL - check for http:// or https:// or www. before the match
-    const contextBefore = string.substring(Math.max(0, offset - 20), offset);
-    const contextAfter = string.substring(offset + match.length, offset + match.length + 20);
-    if (contextBefore.match(/https?:\/\/|www\.|__LINK_\d+__/i) || contextAfter.match(/^[\w\-\.]*\.[\w\-]+\/|^:\d+/)) {
-      return match; // Skip URL-like patterns
+    // Skip if part of a URL - check if there's http:// or https:// within 100 chars before this match
+    // Also check for URL protocol markers that may have been wrapped in __CODE_START__
+    const contextBefore = string.substring(Math.max(0, offset - 100), offset);
+    if (/https?:\/\/[^\s]*$/.test(contextBefore) || /__CODE_START__https?:\/\/[^\s]*$/.test(contextBefore)) {
+      console.log(`� [TECH ID] Skipping "${match}" - part of URL`);
+      return match; // Part of a URL, don't wrap
     }
     
-    // Skip if part of a link placeholder
-    if (match.includes('__LINK_')) {
-      return match;
-    }
+    console.log(`� [TECH ID] Wrapping "${match}" as inline code`);
     return `__CODE_START__${identifier}__CODE_END__`;
   });
+  if (beforeTech !== html) {
+    console.log(`🔧 [AFTER TECH ID] HTML (first 300 chars): "${html.substring(0, 300)}"`);
+  }
 
   // Strip any remaining HTML tags that weren't converted to markers
   // This handles span tags, divs, and other markup that doesn't need special formatting
+  // CRITICAL: Only strip KNOWN HTML tags, preserve technical placeholders like <instance-name>
   const beforeStrip = html;
-  html = html.replace(/<[^>]+>/g, ' ');
+  html = html.replace(/<\/?(?:div|span|p|a|img|br|hr|b|i|u|strong|em|code|pre|ul|ol|li|table|tr|td|th|tbody|thead|tfoot|h[1-6]|font|center|small|big|sub|sup|abbr|cite|del|ins|mark|s|strike|blockquote|q|address|article|aside|footer|header|main|nav|section|details|summary|figure|figcaption|time|video|audio|source|canvas|svg|path|g|rect|circle|line|polyline|polygon)(?:\s+[^>]*)?>/gi, ' ');
   
   // Debug: Log if we stripped any span tags
   if (beforeStrip !== html && beforeStrip.includes('<span')) {
@@ -383,7 +454,103 @@ function convertRichTextBlock(input, options = {}) {
       }
     }
   }
-  return richText;
+  
+  // Restore placeholders: convert __PLACEHOLDER_N__ markers back to <content>
+  richText.forEach(rt => {
+    if (rt.type === 'text' && rt.text && typeof rt.text.content === 'string') {
+      rt.text.content = rt.text.content.replace(/__PLACEHOLDER_(\d+)__/g, (match, index) => {
+        const placeholder = placeholders[parseInt(index)];
+        return placeholder ? `<${placeholder}>` : match;
+      });
+    }
+  });
+  
+  // POST-PROCESSING: Fix split URLs and code blocks
+  // When URLs or code content gets split across multiple segments, reassemble them
+  const fixedRichText = [];
+  let mergeCount = 0;
+  
+  for (let i = 0; i < richText.length; i++) {
+    const current = richText[i];
+    
+    // Skip non-text segments
+    if (current.type !== 'text' || !current.text) {
+      fixedRichText.push(current);
+      continue;
+    }
+    
+    // Check if we should merge with the previous segment
+    if (fixedRichText.length > 0) {
+      const prev = fixedRichText[fixedRichText.length - 1];
+      
+      if (prev.type === 'text' && prev.text) {
+        const prevContent = prev.text.content;
+        const currentContent = current.text.content;
+        
+        // CASE 1: Merge consecutive CODE segments (same code annotation)
+        // This handles URLs or identifiers that got split: "service-" + "now.com"
+        const bothCode = prev.annotations?.code === true && current.annotations?.code === true;
+        const sameCodeColor = prev.annotations?.color === current.annotations?.color;
+        
+        if (bothCode && sameCodeColor && currentContent !== '\n') {
+          console.log(`🔧 [MERGE CASE 1] Merging CODE segments: "${prevContent}" + "${currentContent}"`);
+          // Merge by removing trailing space from prev and concatenating
+          prev.text.content = prevContent.trimEnd() + currentContent.trimStart();
+          mergeCount++;
+          continue; // Skip adding current, we merged it
+        }
+        
+        // CASE 2: Fix split URLs where part of URL lost CODE annotation
+        // Pattern: prev is CODE with URL-like content, current starts with "/" or "?" or "#"
+        // Example: prev="https://example.com" (CODE), current="/api" (NOT CODE)
+        const prevIsCode = prev.annotations?.code === true;
+        const prevLooksLikeUrl = /https?:\/\/[^\s]+/.test(prevContent);
+        const currentIsUrlContinuation = /^[/?#]/.test(currentContent.trim());
+        
+        if (prevIsCode && prevLooksLikeUrl && currentIsUrlContinuation) {
+          console.log(`🔧 [MERGE CASE 2] Merging URL continuation: "${prevContent}" + "${currentContent}"`);
+          // Merge current into prev and apply CODE annotation to the merged content
+          prev.text.content = prevContent.trimEnd() + currentContent.trimStart();
+          mergeCount++;
+          // Keep prev's CODE annotation
+          continue; // Skip adding current, we merged it into prev
+        }
+        
+        // CASE 3: Merge segments with identical annotations and no newlines
+        const sameAnnotations = JSON.stringify(prev.annotations) === JSON.stringify(current.annotations);
+        const sameLink = (!prev.text.link && !current.text.link) || 
+          (prev.text.link && current.text.link && prev.text.link.url === current.text.link.url);
+        const notNewline = currentContent !== '\n';
+        
+        if (sameAnnotations && sameLink && notNewline) {
+          console.log(`🔧 [MERGE CASE 3] Merging same annotations: "${prevContent}" + "${currentContent}"`);
+          // Merge content intelligently
+          if (prevContent.endsWith(' ') && currentContent.startsWith(' ')) {
+            // Both have space at boundary - keep only one
+            prev.text.content = prevContent + currentContent.trimStart();
+          } else if (prevContent.endsWith(' ') || currentContent.startsWith(' ')) {
+            // One has space - keep it
+            prev.text.content = prevContent + currentContent;
+          } else {
+            // No spaces - check if we need one
+            // Add space if prev doesn't end with punctuation and current doesn't start with punctuation
+            const needsSpace = !/[.,;:!?)\]}>-]$/.test(prevContent) && !/^[.,;:!?(\[{<-]/.test(currentContent);
+            prev.text.content = needsSpace ? prevContent + ' ' + currentContent : prevContent + currentContent;
+          }
+          mergeCount++;
+          continue; // Skip adding current, we merged it
+        }
+      }
+    }
+    
+    fixedRichText.push(current);
+  }
+  
+  if (mergeCount > 0) {
+    console.log(`✅ [POST-PROCESS] Merged ${mergeCount} segments: ${richText.length} → ${fixedRichText.length}`);
+  }
+  
+  return fixedRichText;
 }
 
 

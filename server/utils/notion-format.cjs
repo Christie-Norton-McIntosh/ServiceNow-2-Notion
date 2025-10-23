@@ -133,9 +133,62 @@ function normalizeAnnotations(annotations) {
 function cleanHtmlText(html) {
   if (!html) return "";
 
-  // Decode HTML entities (before removing tags)
+  // DEBUG: Log if input contains URLs
+  if (html.includes('http')) {
+    console.log('🚨 [cleanHtmlText] INPUT WITH URL:', html.substring(0, 500));
+  }
+
+  // CRITICAL STEP 1: Protect technical placeholders FIRST (before any processing)
+  // Convert &lt;placeholder-text&gt; patterns to markers so they survive HTML stripping
+  // This handles both already-decoded (<instance-name>) and HTML-encoded (&lt;Tool ID&gt;) placeholders
+  const technicalPlaceholders = [];
+  html = html.replace(/&lt;([^&]+)&gt;/g, (match, content) => {
+    // Check if this looks like an HTML tag or a placeholder
+    const isHtmlTag = /^\/?\s*[a-z][a-z0-9]*(\s|$)/i.test(content.trim());
+    if (!isHtmlTag) {
+      const marker = `__TECH_PLACEHOLDER_${technicalPlaceholders.length}__`;
+      technicalPlaceholders.push(content);
+      return marker;
+    }
+    return match; // Leave HTML-encoded tags for normal decoding
+  });
+  
+  // Also protect already-decoded placeholders like <instance-name>
+  html = html.replace(/<([^>]+)>/g, (match, content) => {
+    const isHtmlTag = /^\/?\s*[a-z][a-z0-9]*(\s|$|>)/i.test(content.trim());
+    if (!isHtmlTag) {
+      const marker = `__TECH_PLACEHOLDER_${technicalPlaceholders.length}__`;
+      technicalPlaceholders.push(content);
+      return marker;
+    }
+    return match; // Leave HTML tags for normal processing
+  });
+
+  // CRITICAL STEP 2: Extract and protect URLs (may contain placeholder markers now)
+  const urlPlaceholders = [];
+  let text = html.replace(/\b(https?:\/\/[^\s]+?)(?=\s|$)/gi, (match, url) => {
+    console.log('🚨 [cleanHtmlText] FOUND URL:', url);
+    // Decode HTML entities within the URL
+    let cleanUrl = url
+      .replace(/&gt;/g, '>')
+      .replace(/&lt;/g, '<')
+      .replace(/&amp;/g, '&')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&nbsp;/g, ' ');
+    // Clean any actual HTML tags from URL but preserve placeholders
+    // Match only known HTML tags, not arbitrary text in angle brackets
+    // Common tags: div, span, p, a, img, br, hr, b, i, u, strong, em, etc.
+    cleanUrl = cleanUrl.replace(/<\/?(?:div|span|p|a|img|br|hr|b|i|u|strong|em|code|pre|ul|ol|li|table|tr|td|th|h[1-6]|font|center|small|big|sub|sup)(?:\s+[^>]*)?>/gi, '');
+    console.log('🚨 [cleanHtmlText] DECODED URL:', cleanUrl);
+    const placeholder = `__URL_PLACEHOLDER_${urlPlaceholders.length}__`;
+    urlPlaceholders.push(cleanUrl);
+    return placeholder;
+  });
+
+  // Decode HTML entities (after URL extraction)
   // This ensures entity-encoded tags like &lt;div&gt; get decoded to <div> so they can be stripped
-  let text = html
+  text = text
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
@@ -150,21 +203,34 @@ function cleanHtmlText(html) {
     ); // All hex entities
 
   // NOW remove HTML tags (including any that were entity-encoded)
-  // This regex removes ALL tags including those with attributes
-  text = text.replace(/<[^>]*>/g, " ");
+  // Match actual HTML tags but preserve technical placeholders like <instance-name> or <Tool ID>
+  // HTML tags: <tagname>, <tagname attr="value">, </tagname>
+  // Preserved: <instance-name>, <Tool ID>, <file.txt>, <hostname>, etc.
+  text = text.replace(/<\/?(?:div|span|p|a|img|br|hr|b|i|u|strong|em|code|pre|ul|ol|li|table|tr|td|th|tbody|thead|tfoot|h[1-6]|font|center|small|big|sub|sup|abbr|cite|del|ins|mark|s|strike|blockquote|q|address|article|aside|footer|header|main|nav|section|details|summary|figure|figcaption|time|video|audio|source|canvas|svg|path|g|rect|circle|line|polyline|polygon)(?:\s+[^>]*)?>/gi, ' ');
   
   // Safety: Remove incomplete HTML tags that might have been truncated during chunking
-  // Pattern 1: < followed by tag content but no closing > (at end of string)
-  text = text.replace(/<[^>]*$/g, " ");
+  // Only match known HTML tag names at end of string
+  text = text.replace(/<\/?(?:div|span|p|a|img|br|hr|b|i|u|strong|em|code|pre|ul|ol|li|table|tr|td|th|h[1-6]|font|center|small|big|sub|sup)(?:\s+[^>]*)?$/gi, ' ');
   
-  // Pattern 2: Closing > without opening < (at start of string) 
-  text = text.replace(/^[^<]*>/g, " ");
+  // Pattern 2: Only strip if it starts with tag-like content (tag name followed by = for attributes)
+  // This ensures we don't strip legitimate content like "All > System"
+  text = text.replace(/^[a-z][a-z0-9]*\s*[a-z]+\s*=\s*[^>]*>/gi, " ");
   
-  // Safety: Remove any leftover < or > that might indicate malformed HTML
-  text = text.replace(/</g, " ").replace(/>/g, " ");
+  // REMOVED: Don't strip standalone < and > characters - they may be legitimate content like navigation arrows
+  // text = text.replace(/</g, " ").replace(/>/g, " ");
 
   // Clean up whitespace
   text = text.replace(/\s+/g, " ").trim();
+
+  // Restore URL placeholders
+  urlPlaceholders.forEach((url, index) => {
+    text = text.replace(`__URL_PLACEHOLDER_${index}__`, url);
+  });
+
+  // Restore technical placeholders (convert markers back to <content>)
+  technicalPlaceholders.forEach((content, index) => {
+    text = text.replace(`__TECH_PLACEHOLDER_${index}__`, `<${content}>`);
+  });
 
   return text;
 }

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.7
+// @version      9.2.11
 // @description  Extract ServiceNow content and send to Notion via Universal Workflow or proxy
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.7";
+    window.BUILD_VERSION = "9.2.11";
 (function () {
 
   // Configuration constants and default settings
@@ -6148,11 +6148,11 @@
 
   /**
    * Wait for lazy-loaded content to appear on ServiceNow pages
-   * Scrolls progressively through page and waits for dynamic content to load
+   * Scrolls to bottom and waits for dynamic content to load
    * @param {number} maxWaitMs - Maximum time to wait in milliseconds
    * @returns {Promise<void>}
    */
-  async function waitForLazyContent(maxWaitMs = 5000) {
+  async function waitForLazyContent(maxWaitMs = 3000) {
     debug("🔄 Waiting for lazy-loaded content...");
     
     try {
@@ -6168,26 +6168,15 @@
       
       let previousLength = contentElement.innerHTML.length;
       let stableCount = 0;
-      const requiredStableChecks = 3; // Content must be stable for 3 checks
-      const checkInterval = 400; // Check every 400ms
+      const requiredStableChecks = 2; // Content must be stable for 2 checks
+      const checkInterval = 500; // Check every 500ms
       const maxChecks = Math.floor(maxWaitMs / checkInterval);
       
-      // Progressive scroll: scroll through page in chunks to trigger lazy-load observers
-      debug("📜 Progressively scrolling to trigger lazy loading...");
-      const scrollSteps = 5;
-      const scrollHeight = document.body.scrollHeight;
-      for (let step = 0; step <= scrollSteps; step++) {
-        const scrollTo = (scrollHeight / scrollSteps) * step;
-        window.scrollTo(0, scrollTo);
-        await new Promise(resolve => setTimeout(resolve, 100)); // Brief pause between scrolls
-      }
-      
-      // Final scroll to bottom
+      // Scroll to bottom to trigger lazy loading
+      debug("📜 Scrolling to bottom to trigger lazy loading...");
       window.scrollTo(0, document.body.scrollHeight);
-      await new Promise(resolve => setTimeout(resolve, 300)); // Wait a bit longer at bottom
       
       // Wait for content to stabilize
-      debug("⏳ Waiting for content to stabilize...");
       for (let i = 0; i < maxChecks; i++) {
         await new Promise(resolve => setTimeout(resolve, checkInterval));
         

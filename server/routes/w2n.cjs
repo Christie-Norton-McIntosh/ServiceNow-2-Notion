@@ -43,8 +43,6 @@ router.post('/W2N', async (req, res) => {
           orchestrateDeepNesting, getExtraDebug, normalizeAnnotations, normalizeUrl, 
           isValidImageUrl } = getGlobals();
   
-  const requestStartTime = Date.now();
-  
   try {
     const payload = req.body;
     log("📝 Processing W2N request for:", payload.title);
@@ -523,9 +521,6 @@ router.post('/W2N', async (req, res) => {
     }
 
     log("🔗 Page URL:", response.url);
-    
-    const totalTime = Date.now() - requestStartTime;
-    log(`⚡ TOTAL W2N REQUEST TIME: ${totalTime}ms (${(totalTime / 1000).toFixed(2)}s)`);
 
     return sendSuccess(res, {
       pageUrl: response.url,
@@ -537,8 +532,7 @@ router.post('/W2N', async (req, res) => {
     });
   } catch (error) {
     const { log, sendError } = getGlobals();
-    const totalTime = Date.now() - requestStartTime;
-    log(`❌ W2N REQUEST FAILED after ${totalTime}ms:`, error.message);
+    log("❌ Error creating Notion page:", error.message);
     if (error && error.body) {
       try {
         const parsed =
