@@ -20,27 +20,24 @@ Each path must handle the same HTML elements in a carefully orchestrated order t
 
 | Order | Line | Element | Placeholder Pattern | Notes |
 |-------|------|---------|-------------------|-------|
-| 1 | 252 | `<kbd>` tags | `__KBD_PLACEHOLDER_N__` | Extract user input/technical content, decode HTML entities |
-| 2 | 270 | URLs | `__URL_PLACEHOLDER_N__` | Extract URLs (especially with `<placeholder>` syntax), decode entities |
-| 3 | 298 | Decode entities | N/A | Global HTML entity decode AFTER URL extraction |
+| 1 | ~260 | `<kbd>` tags | `__KBD_PLACEHOLDER_N__` | Extract user input/technical content (including URLs), decode HTML entities |
+| 2 | ~275 | Decode entities | N/A | Global HTML entity decode AFTER kbd extraction |
 
 **Why this order?**
-- `<kbd>` often contains URLs, so extract first
-- URLs must be extracted before global entity decode to protect `&lt;` and `&gt;` in placeholders
-- Entity decode happens after extraction to prevent breaking URL patterns
+- `<kbd>` tags handle most URLs since ServiceNow wraps technical content in `<kbd>`
+- Extract kbd first to protect URLs with `&lt;` and `&gt;` from entity decode
+- Entity decode happens after extraction to prevent breaking URL patterns in kbd tags
 
 ### Phase 2: Placeholder Restoration with Markers
 **Purpose**: Convert placeholders to annotation markers that will be processed into Notion formatting
 
 | Order | Line | Element | Marker Pattern | Logic |
 |-------|------|---------|---------------|-------|
-| 4 | 313 | URL restoration | `__CODE_START__url__CODE_END__` | Wrap all URLs in code markers |
-| 5 | 320 | `<kbd>` restoration | `__CODE_START__` or `__BOLD_START__` | Intelligent detection: technical → code, UI labels → bold |
-| 6 | 348 | `<span class="ph cmd">` | `__BOLD_START__content__BOLD_END__` | Commands/instructions → bold (MUST be after kbd restoration) |
+| 3 | ~288 | `<kbd>` restoration | `__CODE_START__` or `__BOLD_START__` | Intelligent detection: technical (including URLs) → code, UI labels → bold |
+| 4 | ~295 | `<span class="ph cmd">` | `__BOLD_START__content__BOLD_END__` | Commands/instructions → bold (MUST be after kbd restoration) |
 
 **Why this order?**
-- URLs restored first (most specific)
-- `<kbd>` restored next (can contain URLs or be contained by other elements)
+- `<kbd>` tags are restored first, handling URLs and technical content automatically through intelligent detection
 - `cmd` spans MUST come after `<kbd>` restoration so nested `<kbd>` tags are already converted to markers
 
 ### Phase 3: HTML Cleanup
@@ -256,6 +253,7 @@ For each new handler, test:
 
 | Date | Change | Reason | Files |
 |------|--------|--------|-------|
+| 2025-10-23 | **Removed redundant URL extraction regex** | `<kbd>` tags already handle URLs through intelligent detection | servicenow.cjs |
 | 2025-10-23 | **Consolidated formatting logic** into shared utility | Reduce duplication, simplify maintenance, ensure consistency | `server/utils/html-formatting.cjs` (NEW), `servicenow.cjs`, `rich-text.cjs` |
 | 2025-10-23 | Moved `cmd` span handler from line 556 to 348 | Nested `<kbd>` inside `cmd` spans showing raw placeholders | servicenow.cjs |
 | Earlier | Added `<kbd>` intelligent detection | `<kbd>` tags appearing as plain text | servicenow.cjs, rich-text.cjs |
