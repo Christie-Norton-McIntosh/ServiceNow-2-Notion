@@ -37,78 +37,6 @@ function getGlobals() {
   };
 }
 
-/**
- * Clean marker tokens from blocks (for dryRun mode)
- * Recursively removes (sn2n:...) markers from rich_text content
- * @param {Array} blocks - Array of Notion blocks
- * @returns {Array} Cleaned blocks
- */
-function cleanMarkersFromBlocks(blocks) {
-  if (!Array.isArray(blocks)) return blocks;
-  
-  return blocks.map(block => {
-    const cleaned = { ...block };
-    
-    // Clean markers from rich_text in the block's main content
-    const blockType = block.type;
-    if (blockType && cleaned[blockType] && cleaned[blockType].rich_text) {
-      cleaned[blockType].rich_text = cleanMarkersFromRichText(cleaned[blockType].rich_text);
-    }
-    
-    // Recursively clean children if present
-    if (cleaned[blockType] && cleaned[blockType].children) {
-      cleaned[blockType].children = cleanMarkersFromBlocks(cleaned[blockType].children);
-    }
-    
-    // Handle table rows
-    if (blockType === 'table' && cleaned.table && cleaned.table.children) {
-      cleaned.table.children = cleaned.table.children.map(row => {
-        if (row.table_row && row.table_row.cells) {
-          return {
-            ...row,
-            table_row: {
-              ...row.table_row,
-              cells: row.table_row.cells.map(cell => cleanMarkersFromRichText(cell))
-            }
-          };
-        }
-        return row;
-      });
-    }
-    
-    return cleaned;
-  });
-}
-
-/**
- * Clean marker tokens from rich_text array
- * @param {Array} richTextArray - Array of rich_text objects
- * @returns {Array} Cleaned rich_text array
- */
-function cleanMarkersFromRichText(richTextArray) {
-  if (!Array.isArray(richTextArray)) return richTextArray;
-  
-  return richTextArray
-    .map(rt => {
-      if (rt.text && rt.text.content) {
-        // Remove marker pattern: (sn2n:xxx)
-        const cleaned = rt.text.content.replace(/\s*\(sn2n:[a-z0-9-]+\)\s*/gi, '');
-        if (cleaned !== rt.text.content) {
-          return {
-            ...rt,
-            text: {
-              ...rt.text,
-              content: cleaned.trim()
-            }
-          };
-        }
-      }
-      return rt;
-    })
-    .filter(rt => rt.text && rt.text.content && rt.text.content.trim().length > 0);
-}
-
-
 router.post('/W2N', async (req, res) => {
   const { notion, log, sendSuccess, sendError, htmlToNotionBlocks, ensureFileUploadAvailable, 
           collectAndStripMarkers, removeCollectedBlocks, deepStripPrivateKeys, 
@@ -118,6 +46,17 @@ router.post('/W2N', async (req, res) => {
   try {
     const payload = req.body;
     log("📝 Processing W2N request for:", payload.title);
+    
+    // CRITICAL DEBUG: Log payload structure
+    log(`🚨 PAYLOAD KEYS: ${Object.keys(payload).join(', ')}`);
+    log(`🚨 payload.contentHtml exists: ${!!payload.contentHtml}`);
+    log(`🚨 payload.content exists: ${!!payload.content}`);
+    if (payload.contentHtml) {
+      log(`🚨 payload.contentHtml length: ${payload.contentHtml.length}`);
+    }
+    if (payload.content) {
+      log(`🚨 payload.content length: ${payload.content.length}`);
+    }
 
     // DEBUG: Check if HTML contains pre tags at the API entry point
     if (payload.contentHtml) {
@@ -126,6 +65,16 @@ router.post('/W2N', async (req, res) => {
       log(
         `🔍 DEBUG API: contentHtml has <pre>: ${hasPreTags}, has </pre>: ${hasClosingPreTags}`
       );
+      
+      // COUNT ARTICLE.NESTED1 ELEMENTS AT API ENTRY
+      const nested1Matches = payload.contentHtml.match(/class="topic task nested1"/g);
+      const nested1Count = nested1Matches ? nested1Matches.length : 0;
+      log(`🚨🚨🚨 API ENTRY POINT: Found ${nested1Count} article.nested1 elements in received HTML`);
+      
+      // Check for nested0
+      const nested0Matches = payload.contentHtml.match(/class="[^"]*nested0[^"]*"/g);
+      const nested0Count = nested0Matches ? nested0Matches.length : 0;
+      log(`🚨🚨🚨 API ENTRY POINT: Found ${nested0Count} article.nested0 elements in received HTML`);
       if (hasPreTags) {
         const preIndex = payload.contentHtml.indexOf("<pre");
         const preSnippet = payload.contentHtml.substring(
@@ -161,9 +110,6 @@ router.post('/W2N', async (req, res) => {
           if (hasVideos) {
             log(`🎥 (dryRun) Video content detected`);
           }
-          
-          // Clean markers from blocks for dryRun (since orchestration won't run)
-          children = cleanMarkersFromBlocks(children);
         } else if (payload.content) {
           children = [
             {

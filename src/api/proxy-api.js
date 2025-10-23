@@ -465,6 +465,16 @@ export async function pingProxy() {
 export async function sendProcessedContentToProxy(processedData) {
   debug("📤 Sending processed content to proxy for Notion upload");
   
+  // DEBUG: Check if all articles are in the HTML being sent
+  if (processedData.contentHtml || processedData.content) {
+    const html = processedData.contentHtml || processedData.content;
+    console.log('📊 Total HTML length:', html.length);
+    const nested1Count = (html.match(/class="topic task nested1"/g) || []).length;
+    console.log('📊 Number of article.nested1 in HTML:', nested1Count);
+    const nested0Count = (html.match(/class="[^"]*nested0[^"]*"/g) || []).length;
+    console.log('📊 Number of article.nested0 in HTML:', nested0Count);
+  }
+  
   // Import overlay module for status updates
   const { overlayModule } = await import("../ui/overlay-progress.js");
   
