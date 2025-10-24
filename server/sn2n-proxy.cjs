@@ -1688,6 +1688,21 @@ try {
   app.post("/api/W2N", (req, res, next) => {
     console.log('🔥🔥🔥 HOT-RELOAD WRAPPER HIT! Method:', req.method, 'URL:', req.url, 'at', new Date().toISOString());
     
+    // Quick app-level probe: capture a short BEFORE snippet near where the fix inserts </article>
+    // We also log AFTER (in res.finish) to compare and confirm the fix path executed
+    let __w2nBeforeSnip = null;
+    try {
+      const __h = req && req.body && typeof req.body === 'object' ? req.body.contentHtml : null;
+      if (typeof __h === 'string' && __h.length > 0) {
+        const __mt = __h.indexOf('<div class="miniTOC');
+        const __pre = __mt > -1 ? __h.substring(0, __mt) : __h;
+        const __last = __pre.lastIndexOf('</article>');
+        const __start = Math.max(0, __last - 60);
+        const __end = Math.min(__h.length, (__last > -1 ? __last + 60 : 120));
+        __w2nBeforeSnip = __h.substring(__start, __end).replace(/\s+/g, ' ').slice(0, 160);
+      }
+    } catch (_) {}
+
     // Resolve path and clear cache on EVERY W2N request
     const w2nPath = require.resolve('./routes/w2n.cjs');
     delete require.cache[w2nPath];
@@ -1698,6 +1713,27 @@ try {
     // Mount the freshly loaded router at /api and let it handle /W2N
     const tempApp = require('express')();
     tempApp.use('/api', freshRouter);
+    
+    // Log AFTER snippet once the route has completed (req.body is the same object the route mutates)
+    res.on('finish', () => {
+      try {
+        const __h2 = req && req.body && typeof req.body === 'object' ? req.body.contentHtml : null;
+        if (typeof __h2 === 'string' && __h2.length > 0) {
+          const __mt2 = __h2.indexOf('<div class="miniTOC');
+          const __pre2 = __mt2 > -1 ? __h2.substring(0, __mt2) : __h2;
+          const __last2 = __pre2.lastIndexOf('</article>');
+          const __start2 = Math.max(0, __last2 - 60);
+          const __end2 = Math.min(__h2.length, (__last2 > -1 ? __last2 + 60 : 120));
+          const __snip2 = __h2.substring(__start2, __end2).replace(/\s+/g, ' ').slice(0, 160);
+          console.log(`[W2N FIX PROBE] before:"${__w2nBeforeSnip || ''}" | after:"${__snip2}"`);
+        } else {
+          console.log(`[W2N FIX PROBE] before:"${__w2nBeforeSnip || ''}" | after:""`);
+        }
+      } catch (e) {
+        console.log('[W2N FIX PROBE] error:', e && e.message ? e.message : e);
+      }
+    });
+
     tempApp(req, res, next);
   });
   
