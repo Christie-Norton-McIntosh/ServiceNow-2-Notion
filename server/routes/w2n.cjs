@@ -10,6 +10,7 @@ const fs = require('fs');
 const path = require('path');
 
 console.log('🔥🔥🔥 W2N.CJS MODULE LOADED AT:', new Date().toISOString());
+console.log('🔥🔥🔥 MODULE VERSION: 02:16:45 - FORCE RELOAD');
 
 // Import services
 const notionService = require('../services/notion.cjs');
@@ -45,7 +46,8 @@ router.post('/W2N', async (req, res) => {
           orchestrateDeepNesting, getExtraDebug, normalizeAnnotations, normalizeUrl, 
           isValidImageUrl } = getGlobals();
   
-  log('🔥🔥🔥 W2N ROUTE HANDLER ENTRY - FILE VERSION 02:00:00');
+  console.log('🔥🔥🔥🔥🔥 W2N ROUTE HANDLER ENTRY - FILE VERSION 02:16:45 🔥🔥🔥🔥🔥');
+  log('🔥🔥🔥 W2N ROUTE HANDLER ENTRY - FILE VERSION 02:16:45');
   
   try {
     const payload = req.body;
