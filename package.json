@@ -11,7 +11,7 @@
     "build:prod": "node scripts/bump-version.cjs && NODE_ENV=production rollup -c && node scripts/post-build.cjs",
     "dev": "rollup -c --watch",
     "watch": "rollup -c --watch",
-    "start": "npx nodemon --watch server --ignore server/logs --exec \"node server/sn2n-proxy.cjs\"",
+    "start": "node server/sn2n-proxy.cjs",
     "start:dev": "npx nodemon --watch server --ignore server/logs --exec \"node server/sn2n-proxy.cjs\"",
     "start:pm2": "pm2 start server/sn2n-proxy.cjs --name sn2n-proxy --output server/sn2n-proxy.out --error server/sn2n-proxy.err",
     "clean": "rm -rf dist",

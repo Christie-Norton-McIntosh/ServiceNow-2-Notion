@@ -1676,13 +1676,32 @@ global.normalizeCodeLanguage = normalizeCodeLanguage;
 
 // Main API routes with fallback for legacy monolith usage (loaded after global context)
 try {
-  // CRITICAL FIX: Clear require cache for routes to ensure latest code is loaded
-  const w2nPath = require.resolve('./routes/w2n.cjs');
-  delete require.cache[w2nPath];
-  console.log('🔄 Cleared require cache for w2n.cjs at:', new Date().toISOString());
+  // TEST ROUTE: Verify routing works at all
+  app.post("/api/W2N_TEST", (req, res) => {
+    console.log('🧪 TEST ROUTE HIT!');
+    res.json({ test: 'success', message: 'Routing works!' });
+  });
   
-  const w2nRouter = require('./routes/w2n.cjs');
-  app.use("/api", w2nRouter);
+  // HOT-RELOAD FIX: Dynamically load w2n.cjs on EVERY request to bypass all caching
+  // CRITICAL: This wrapper MUST be registered BEFORE other /api routes
+  // to intercept W2N requests and hot-reload the module
+  app.post("/api/W2N", (req, res, next) => {
+    console.log('🔥🔥🔥 HOT-RELOAD WRAPPER HIT! Method:', req.method, 'URL:', req.url, 'at', new Date().toISOString());
+    
+    // Resolve path and clear cache on EVERY W2N request
+    const w2nPath = require.resolve('./routes/w2n.cjs');
+    delete require.cache[w2nPath];
+    const freshRouter = require('./routes/w2n.cjs');
+    
+    console.log('🔥 Reloaded w2n.cjs, mounting router for this request');
+    
+    // Mount the freshly loaded router at /api and let it handle /W2N
+    const tempApp = require('express')();
+    tempApp.use('/api', freshRouter);
+    tempApp(req, res, next);
+  });
+  
+  console.log('✅ W2N router configured with HOT-RELOAD wrapper');
   app.use("/api", require('./routes/databases.cjs'));
   app.use("/api", require('./routes/upload.cjs'));
 } catch (e) {

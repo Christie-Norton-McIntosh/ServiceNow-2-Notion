@@ -10,7 +10,7 @@ const fs = require('fs');
 const path = require('path');
 
 console.log('🔥🔥🔥 W2N.CJS MODULE LOADED AT:', new Date().toISOString());
-console.log('🔥🔥🔥 MODULE VERSION: 02:16:45 - FORCE RELOAD');
+console.log('🔥🔥🔥 MODULE VERSION: 03:18:00 - WITH REGEX FIX');
 
 // Import services
 const notionService = require('../services/notion.cjs');
@@ -46,8 +46,8 @@ router.post('/W2N', async (req, res) => {
           orchestrateDeepNesting, getExtraDebug, normalizeAnnotations, normalizeUrl, 
           isValidImageUrl } = getGlobals();
   
-  console.log('🔥🔥🔥🔥🔥 W2N ROUTE HANDLER ENTRY - FILE VERSION 02:16:45 🔥🔥🔥🔥🔥');
-  log('🔥🔥🔥 W2N ROUTE HANDLER ENTRY - FILE VERSION 02:16:45');
+  console.log('🔥🔥🔥🔥🔥 W2N ROUTE HANDLER ENTRY - FILE VERSION 03:18:00 - WITH REGEX FIX 🔥🔥🔥🔥🔥');
+  log('🔥🔥🔥 W2N ROUTE HANDLER ENTRY - FILE VERSION 03:18:00 - WITH REGEX FIX');
   
   try {
     const payload = req.body;
@@ -86,10 +86,14 @@ router.post('/W2N', async (req, res) => {
     
     log('🔥🔥🔥 AFTER DIAGNOSTIC BLOCK - THIS LINE SHOULD ALWAYS EXECUTE');
     
+    log('🔧 PRE-FIX: About to check for nested0...');
+    
     // FIX: ServiceNow HTML has unclosed article.nested0 tag - FIX OUTSIDE THE IF BLOCK
     // This causes Cheerio to auto-close it prematurely, making later articles siblings instead of children
-    log(`🔧 DEBUG: About to check for nested0. payload.contentHtml exists: ${!!payload.contentHtml}, includes nested0: ${payload.contentHtml && payload.contentHtml.includes('class="nested0"')}`);
-    if (payload.contentHtml && payload.contentHtml.includes('class="nested0"')) {
+    try {
+      const hasNested0 = payload.contentHtml && /class="[^"]*nested0[^"]*"/.test(payload.contentHtml);
+      log(`🔧 DEBUG: About to check for nested0. payload.contentHtml exists: ${!!payload.contentHtml}, has nested0: ${hasNested0}`);
+    if (hasNested0) {
       log('🔧 Attempting to fix unclosed article.nested0 tag...');
       const miniTOCIndex = payload.contentHtml.indexOf('<div class="miniTOC');
       if (miniTOCIndex > -1) {
@@ -109,6 +113,10 @@ router.post('/W2N', async (req, res) => {
       } else {
         log('⚠️ Could not find miniTOC to determine where to insert fix');
       }
+    }
+    } catch (fixError) {
+      log('❌ ERROR in HTML fix logic:', fixError.message);
+      log('❌ Stack trace:', fixError.stack);
     }
 
     if (!payload.title || (!payload.content && !payload.contentHtml)) {
