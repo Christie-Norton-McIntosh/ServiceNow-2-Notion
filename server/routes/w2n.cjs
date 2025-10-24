@@ -45,6 +45,8 @@ router.post('/W2N', async (req, res) => {
           orchestrateDeepNesting, getExtraDebug, normalizeAnnotations, normalizeUrl, 
           isValidImageUrl } = getGlobals();
   
+  log('🔥🔥🔥 W2N ROUTE HANDLER ENTRY - FILE VERSION 00:57:00');
+  
   try {
     const payload = req.body;
     log("📝 Processing W2N request for:", payload.title);
@@ -77,13 +79,33 @@ router.post('/W2N', async (req, res) => {
       const nested0Matches = payload.contentHtml.match(/class="[^"]*nested0[^"]*"/g);
       const nested0Count = nested0Matches ? nested0Matches.length : 0;
       log(`🚨🚨🚨 API ENTRY POINT: Found ${nested0Count} article.nested0 elements in received HTML`);
-      if (hasPreTags) {
-        const preIndex = payload.contentHtml.indexOf("<pre");
-        const preSnippet = payload.contentHtml.substring(
-          preIndex,
-          preIndex + 200
-        );
-        log(`🔍 DEBUG API: Pre tag snippet: ${preSnippet}`);
+      log('🔥🔥🔥 INSIDE DIAGNOSTIC BLOCK - LAST LINE BEFORE CLOSING BRACE');
+    }
+    
+    log('🔥🔥🔥 AFTER DIAGNOSTIC BLOCK - THIS LINE SHOULD ALWAYS EXECUTE');
+    
+    // FIX: ServiceNow HTML has unclosed article.nested0 tag - FIX OUTSIDE THE IF BLOCK
+    // This causes Cheerio to auto-close it prematurely, making later articles siblings instead of children
+    log(`🔧 DEBUG: About to check for nested0. payload.contentHtml exists: ${!!payload.contentHtml}, includes nested0: ${payload.contentHtml && payload.contentHtml.includes('class="nested0"')}`);
+    if (payload.contentHtml && payload.contentHtml.includes('class="nested0"')) {
+      log('🔧 Attempting to fix unclosed article.nested0 tag...');
+      const miniTOCIndex = payload.contentHtml.indexOf('<div class="miniTOC');
+      if (miniTOCIndex > -1) {
+        // Find the last </article> before miniTOC
+        const beforeMiniTOC = payload.contentHtml.substring(0, miniTOCIndex);
+        const lastArticleCloseIndex = beforeMiniTOC.lastIndexOf('</article>');
+        if (lastArticleCloseIndex > -1) {
+          // Insert </article> to close nested0 after the last nested1 article closes
+          const insertIndex = lastArticleCloseIndex + '</article>'.length;
+          payload.contentHtml = payload.contentHtml.substring(0, insertIndex) + 
+                                '</article>' +  // Close article.nested0
+                                payload.contentHtml.substring(insertIndex);
+          log(`🔧 FIXED: Inserted missing </article> tag to close article.nested0 at position ${insertIndex}`);
+        } else {
+          log('⚠️ Could not find last </article> tag to insert fix');
+        }
+      } else {
+        log('⚠️ Could not find miniTOC to determine where to insert fix');
       }
     }
 
