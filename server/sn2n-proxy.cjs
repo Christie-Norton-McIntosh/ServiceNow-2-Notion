@@ -1676,6 +1676,11 @@ global.normalizeCodeLanguage = normalizeCodeLanguage;
 
 // Main API routes with fallback for legacy monolith usage (loaded after global context)
 try {
+  // CRITICAL FIX: Clear require cache for routes to ensure latest code is loaded
+  const w2nPath = require.resolve('./routes/w2n.cjs');
+  delete require.cache[w2nPath];
+  console.log('🔄 Cleared require cache for w2n.cjs at:', new Date().toISOString());
+  
   const w2nRouter = require('./routes/w2n.cjs');
   app.use("/api", w2nRouter);
   app.use("/api", require('./routes/databases.cjs'));
