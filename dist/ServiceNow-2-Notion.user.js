@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.18
-// @description  Extract ServiceNow content and send to Notion via Universal Workflow or proxy
+// @version      9.2.19
+// @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
 // @match        https://*.servicenow.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.18";
+    window.BUILD_VERSION = "9.2.19";
 (function () {
 
   // Configuration constants and default settings
@@ -3884,8 +3884,8 @@
           throw new Error("No content extracted from page");
         }
 
-        // Send to Notion
-        debug(`📤 Sending page ${currentPageNum} to Notion...`);
+        // Process and save to Notion
+        debug(`📤 Saving page ${currentPageNum} to Notion...`);
         overlayModule.setMessage(`Processing page ${currentPageNum}...`);
         
         // Process the content using the app's processWithProxy method
