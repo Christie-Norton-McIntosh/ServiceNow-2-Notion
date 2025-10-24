@@ -45,7 +45,7 @@ router.post('/W2N', async (req, res) => {
           orchestrateDeepNesting, getExtraDebug, normalizeAnnotations, normalizeUrl, 
           isValidImageUrl } = getGlobals();
   
-  log('🔥🔥🔥 W2N ROUTE HANDLER ENTRY - FILE VERSION 00:57:00');
+  log('🔥🔥🔥 W2N ROUTE HANDLER ENTRY - FILE VERSION 02:00:00');
   
   try {
     const payload = req.body;
