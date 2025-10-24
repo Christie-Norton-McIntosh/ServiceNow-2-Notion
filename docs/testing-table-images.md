@@ -8,7 +8,7 @@ Use this checklist when testing the table image extraction feature on ServiceNow
 
 1. **Open Browser Console** (F12 → Console tab)
 2. **Navigate to a ServiceNow page with tables containing images**
-3. **Click "Send to Notion" button**
+3. **Click "Save Current Page" button**
 
 ### What to Look For
 

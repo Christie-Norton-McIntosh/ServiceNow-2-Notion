@@ -1291,8 +1291,8 @@ async function continueAutoExtractionLoop(autoExtractState) {
         throw new Error("No content extracted from page");
       }
 
-      // Send to Notion
-      debug(`📤 Sending page ${currentPageNum} to Notion...`);
+      // Process and save to Notion
+      debug(`📤 Saving page ${currentPageNum} to Notion...`);
       overlayModule.setMessage(`Processing page ${currentPageNum}...`);
       
       // Process the content using the app's processWithProxy method

@@ -17,7 +17,7 @@ export default {
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
 // @version      ${version}
-// @description  Extract ServiceNow content and send to Notion via Universal Workflow or proxy
+// @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
 // @match        https://*.servicenow.com/*
