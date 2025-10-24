@@ -9,8 +9,9 @@ const router = express.Router();
 const fs = require('fs');
 const path = require('path');
 
+// FORCE RELOAD TIMESTAMP: 2025-10-24T04:53:00.000Z  
 console.log('🔥🔥🔥 W2N.CJS MODULE LOADED AT:', new Date().toISOString());
-console.log('🔥🔥🔥 MODULE VERSION: 03:18:00 - WITH REGEX FIX');
+console.log('🔥🔥🔥 MODULE VERSION: 04:53:00 - TIMESTAMP FORCE RELOAD WITH REGEX FIX');
 
 // Import services
 const notionService = require('../services/notion.cjs');
