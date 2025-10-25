@@ -1004,11 +1004,11 @@ async function extractContentFromHtml(html) {
         console.log(`🔍 Callout content after removing title: "${calloutContent.substring(0, 100)}${calloutContent.length > 100 ? '...' : ''}"`);
         console.log(`🔍 Has callout content: ${hasCalloutContent}, Is title-only: ${isTitleOnly}, Has ${childBlocks.length} deferred children`);
         
-        // If callout has no content (or only title) and has nested blocks, skip creating the callout
+        // If callout has NO content (not even a title) and has nested blocks, skip creating the callout
         // Just add the nested blocks directly - they'll be processed as siblings
-        // This prevents callouts like "Note: (sn2n:marker)" from appearing
-        if ((!hasCalloutContent || isTitleOnly) && childBlocks.length > 0) {
-          console.log(`🔍 Skipping ${isTitleOnly ? 'title-only' : 'empty'} callout (${isTitleOnly ? `"${calloutContent}"` : 'no content'}, only nested blocks) - adding nested blocks directly`);
+        // However, if it has a title (even if title-only), still create the callout to preserve the Note/Warning/etc. label
+        if (!hasCalloutContent && childBlocks.length > 0) {
+          console.log(`🔍 Skipping empty callout (no content, only nested blocks) - adding nested blocks directly`);
           processedBlocks.push(...childBlocks);
         } else {
           // Create callout WITH content (even if it's just the title)
