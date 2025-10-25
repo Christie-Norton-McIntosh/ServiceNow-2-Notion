@@ -846,6 +846,17 @@ async function extractContentFromHtml(html) {
     html = fixedHtml;
   }
 
+  // CRITICAL DIAGNOSTIC: Count articles in RAW HTML before Cheerio parsing
+  const rawNested1Count = (html.match(/class="topic task nested1"/g) || []).length;
+  const rawNested0Count = (html.match(/class="[^"]*nested0[^"]*"/g) || []).length;
+  console.log(`🔥🔥🔥 BEFORE CHEERIO LOAD: Raw HTML has ${rawNested0Count} nested0 and ${rawNested1Count} nested1 articles`);
+  console.log(`🔥🔥🔥 Raw HTML length: ${html.length} characters`);
+  
+  // DUMP: Find all article IDs in raw HTML
+  const articleIdMatches = html.match(/id="(dev-ops-[^"]+)"/g) || [];
+  const articleIds = articleIdMatches.map(m => m.match(/id="([^"]+)"/)[1]).filter(id => id.startsWith('dev-ops-'));
+  console.log(`🔥🔥🔥 Article IDs in raw HTML: ${articleIds.join(', ')}`);
+  
   // Use cheerio to parse HTML and process elements in document order
   let $;
   try {
@@ -853,6 +864,21 @@ async function extractContentFromHtml(html) {
       decodeEntities: false,
       _useHtmlParser2: true 
     });
+    
+    // CRITICAL DIAGNOSTIC: Count articles AFTER Cheerio parsing
+    const cheerioNested1Count = $('article.nested1').length;
+    const cheerioNested0Count = $('article.nested0').length;
+    console.log(`🔥🔥🔥 AFTER CHEERIO LOAD: Cheerio found ${cheerioNested0Count} nested0 and ${cheerioNested1Count} nested1 articles`);
+    console.log(`🔥🔥🔥 CHEERIO LOST ${rawNested1Count - cheerioNested1Count} articles during parsing!`);
+    
+    // DUMP: Show where all articles are in the DOM
+    $('article.nested1').each((i, el) => {
+      const $el = $(el);
+      const id = $el.attr('id');
+      const parents = $el.parents().map((j, p) => `<${p.name} class="${$(p).attr('class') || ''}">`).get().join(' > ');
+      console.log(`🔥 Article ${i+1}: id="${id}", path: ${parents}`);
+    });
+    
   } catch (error) {
     log(`❌ Cheerio load ERROR: ${error.message}`);
     // Fall back to single paragraph
@@ -3215,6 +3241,22 @@ async function extractContentFromHtml(html) {
       const nested0 = $('.zDocsTopicPageBody article.nested0').first();
       const nested1Children = nested0.find('> article.nested1').length;
       console.log(`🔍 DIAGNOSTIC: article.nested0 has ${nested1Children} direct article.nested1 children`);
+    }
+    
+    // FIX: Also collect any orphaned article.nested1 elements that are NOT inside .zDocsTopicPageBody
+    // These can occur when Cheerio parsing leaves some articles as top-level elements
+    const allNested1 = $('article.nested1').toArray();
+    const orphanedNested1 = allNested1.filter(article => {
+      const $article = $(article);
+      // Check if this article is NOT a descendant of .zDocsTopicPageBody
+      return $article.closest('.zDocsTopicPageBody').length === 0;
+    });
+    
+    if (orphanedNested1.length > 0) {
+      console.log(`🔍 FIX: Found ${orphanedNested1.length} orphaned article.nested1 elements outside .zDocsTopicPageBody`);
+      console.log(`🔍 FIX: Orphaned article IDs: ${orphanedNested1.map(a => $(a).attr('id') || 'NO-ID').join(', ')}`);
+      // Add orphaned articles to the contentElements array
+      contentElements.push(...orphanedNested1);
     }
   } else if ($('body').length > 0) {
     // Full HTML document with body tag
