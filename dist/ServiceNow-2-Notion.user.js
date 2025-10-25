@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.22
+// @version      9.2.23
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.22";
+    window.BUILD_VERSION = "9.2.23";
 (function () {
 
   // Configuration constants and default settings
@@ -7077,6 +7077,15 @@
             ? pageData.contentHtml.substring(0, 100)
             : "EMPTY",
         });
+
+        // DEBUG: Count articles in pageData before sending
+        if (pageData.contentHtml) {
+          const articlesInPayload = (pageData.contentHtml.match(/class="topic task nested1"/g) || []).length;
+          console.log("🚨🚨🚨 CLIENT SENDING:", articlesInPayload, "article.nested1 elements");
+          console.log("   pageData.contentHtml length:", pageData.contentHtml.length);
+          console.log("   pageData.content length:", pageData.content ? pageData.content.length : 0);
+          console.log("   Are they the same?", pageData.contentHtml === pageData.content);
+        }
 
         // DEBUG: Log full HTML content being sent to proxy
         if (pageData.contentHtml) {
