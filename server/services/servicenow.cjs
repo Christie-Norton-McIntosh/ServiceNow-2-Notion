@@ -964,23 +964,38 @@ async function extractContentFromHtml(html) {
       // Check if callout contains nested block elements (ul, ol, figure, table, pre, etc.)
       // NOTE: <p> tags should NOT be treated as nested blocks - they're part of callout rich_text
       // IMPORTANT: div.p is a ServiceNow wrapper that often contains mixed content (text + blocks)
-      // We need to detect blocks INSIDE div.p and extract them, while preserving div.p text content
+      // For div.p with nested blocks: process the ENTIRE div.p as a child block (it will handle mixed content)
       
-      // Find nested blocks that are direct children OR inside div.p containers
+      // Find nested blocks that are direct children (excluding div.p which needs special handling)
       const directNestedBlocks = $elem.find('> ul, > ol, > figure, > table, > pre, > div.table-wrap, > div.note, > div.itemgroup, > div.info');
-      const divPNestedBlocks = $elem.find('> div.p > ul, > div.p > ol, > div.p > figure, > div.p > table, > div.p > pre');
-      const allNestedBlocks = $([...directNestedBlocks.toArray(), ...divPNestedBlocks.toArray()]);
       
-      console.log(`🔍 Callout nested blocks check: found ${directNestedBlocks.length} direct + ${divPNestedBlocks.length} inside div.p = ${allNestedBlocks.length} total`);
+      // Check if any div.p elements contain nested blocks - if so, treat the entire div.p as a nested block
+      const divPWithBlocks = $elem.find('> div.p').filter((i, divP) => {
+        return $(divP).find('> ul, > ol, > figure, > table, > pre').length > 0;
+      });
+      
+      const allNestedBlocks = $([...directNestedBlocks.toArray(), ...divPWithBlocks.toArray()]);
+      
+      console.log(`🔍 Callout nested blocks check: found ${directNestedBlocks.length} direct + ${divPWithBlocks.length} div.p with blocks = ${allNestedBlocks.length} total`);
       
       if (allNestedBlocks.length > 0) {
         console.log(`🔍 Callout contains ${allNestedBlocks.length} nested block elements - processing with children`);
         
         // Clone and remove nested blocks to get just the text content
-        // For div.p: remove nested blocks INSIDE it, but keep the div.p text content
+        // Remove direct nested blocks AND any div.p that contains nested blocks
         const $clone = $elem.clone();
         $clone.find('> ul, > ol, > figure, > table, > pre, > div.table-wrap, > div.note, > div.itemgroup, > div.info').remove();
-        $clone.find('> div.p > ul, > div.p > ol, > div.p > figure, > div.p > table, > div.p > pre').remove();
+        
+        // Remove div.p elements that contain nested blocks (these are processed as child blocks)
+        $clone.find('> div.p').each((i, divP) => {
+          const $divP = $(divP);
+          const hasNestedBlocks = $divP.find('> ul, > ol, > figure, > table, > pre').length > 0;
+          if (hasNestedBlocks) {
+            console.log(`🔍 Removing div.p with nested blocks from callout text (will be processed as child block)`);
+            $divP.remove();
+          }
+        });
+        
         let textOnlyHtml = $clone.html() || '';
         
         console.log(`🔍 Callout textOnlyHtml (before title removal): "${textOnlyHtml.substring(0, 200)}${textOnlyHtml.length > 200 ? '...' : ''}"`);
