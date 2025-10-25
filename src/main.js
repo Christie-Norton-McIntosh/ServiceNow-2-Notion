@@ -681,6 +681,15 @@ class ServiceNowToNotionApp {
           : "EMPTY",
       });
 
+      // DEBUG: Count articles in pageData before sending
+      if (pageData.contentHtml) {
+        const articlesInPayload = (pageData.contentHtml.match(/class="topic task nested1"/g) || []).length;
+        console.log("🚨🚨🚨 CLIENT SENDING:", articlesInPayload, "article.nested1 elements");
+        console.log("   pageData.contentHtml length:", pageData.contentHtml.length);
+        console.log("   pageData.content length:", pageData.content ? pageData.content.length : 0);
+        console.log("   Are they the same?", pageData.contentHtml === pageData.content);
+      }
+
       // DEBUG: Log full HTML content being sent to proxy
       if (pageData.contentHtml) {
         debug("🔍 DEBUG: Full HTML content being sent to proxy:");
