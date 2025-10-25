@@ -1,4 +1,4 @@
-const { convertRichTextBlock } = require('./converters/rich-text.cjs');
+const { convertRichTextBlock } = require('../converters/rich-text.cjs');
 
 console.log('Test 1: span with only ph class');
 const html1 = 'Contact <span class="ph">Customer Service and Support</span>';

@@ -7,7 +7,7 @@ process.env.SN2N_VERBOSE = '1';
 process.env.SN2N_EXTRA_DEBUG = '1';
 
 // Load the service
-const servicenowService = require('./services/servicenow.cjs');
+const servicenowService = require('../services/servicenow.cjs');
 
 // Test HTML: nested kbd inside cmd span (your exact case)
 const testHtml = `<span class="ph cmd">Leave the remaining permissions as <kbd class="ph userinput">No access</kbd> (default).</span>`;

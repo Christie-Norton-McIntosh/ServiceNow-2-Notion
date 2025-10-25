@@ -1,5 +1,5 @@
 // Test with actual HTML from the logs
-const { convertRichTextBlock } = require('./converters/rich-text.cjs');
+const { convertRichTextBlock } = require('../converters/rich-text.cjs');
 
 console.log('Test: Actual HTML from server logs');
 const actualHtml = `

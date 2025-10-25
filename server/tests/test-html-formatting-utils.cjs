@@ -5,7 +5,7 @@ const {
   processTechnicalSpan,
   decodeHtmlEntities,
   TECHNICAL_PATTERNS 
-} = require('./utils/html-formatting.cjs');
+} = require('../utils/html-formatting.cjs');
 
 console.log('\n🧪 Testing Consolidated HTML Formatting Utilities\n');
 
