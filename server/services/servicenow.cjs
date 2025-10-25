@@ -963,16 +963,24 @@ async function extractContentFromHtml(html) {
 
       // Check if callout contains nested block elements (ul, ol, figure, table, pre, etc.)
       // NOTE: <p> tags should NOT be treated as nested blocks - they're part of callout rich_text
-      // IMPORTANT: Include ALL block-level elements to prevent parseRichText() from receiving block content
-      const nestedBlocks = $elem.find('> ul, > ol, > figure, > div.p, > table, > pre, > div.table-wrap, > div.note, > div.itemgroup, > div.info');
-      console.log(`🔍 Callout nested blocks check: found ${nestedBlocks.length} elements`);
+      // IMPORTANT: div.p is a ServiceNow wrapper that often contains mixed content (text + blocks)
+      // We need to detect blocks INSIDE div.p and extract them, while preserving div.p text content
       
-      if (nestedBlocks.length > 0) {
-        console.log(`🔍 Callout contains ${nestedBlocks.length} nested block elements - processing with children`);
+      // Find nested blocks that are direct children OR inside div.p containers
+      const directNestedBlocks = $elem.find('> ul, > ol, > figure, > table, > pre, > div.table-wrap, > div.note, > div.itemgroup, > div.info');
+      const divPNestedBlocks = $elem.find('> div.p > ul, > div.p > ol, > div.p > figure, > div.p > table, > div.p > pre');
+      const allNestedBlocks = $([...directNestedBlocks.toArray(), ...divPNestedBlocks.toArray()]);
+      
+      console.log(`🔍 Callout nested blocks check: found ${directNestedBlocks.length} direct + ${divPNestedBlocks.length} inside div.p = ${allNestedBlocks.length} total`);
+      
+      if (allNestedBlocks.length > 0) {
+        console.log(`🔍 Callout contains ${allNestedBlocks.length} nested block elements - processing with children`);
         
-        // Clone and remove nested blocks to get just the text content (keep <p> tags)
+        // Clone and remove nested blocks to get just the text content
+        // For div.p: remove nested blocks INSIDE it, but keep the div.p text content
         const $clone = $elem.clone();
-        $clone.find('> ul, > ol, > figure, > div.p, > table, > pre, > div.table-wrap, > div.note, > div.itemgroup, > div.info').remove();
+        $clone.find('> ul, > ol, > figure, > table, > pre, > div.table-wrap, > div.note, > div.itemgroup, > div.info').remove();
+        $clone.find('> div.p > ul, > div.p > ol, > div.p > figure, > div.p > table, > div.p > pre').remove();
         let textOnlyHtml = $clone.html() || '';
         
         console.log(`🔍 Callout textOnlyHtml (before title removal): "${textOnlyHtml.substring(0, 200)}${textOnlyHtml.length > 200 ? '...' : ''}"`);
@@ -987,7 +995,7 @@ async function extractContentFromHtml(html) {
         
         // Process nested blocks as children - these will be appended after page creation
         const childBlocks = [];
-        for (const nestedBlock of nestedBlocks.toArray()) {
+        for (const nestedBlock of allNestedBlocks.toArray()) {
           const nestedProcessed = await processElement(nestedBlock);
           childBlocks.push(...nestedProcessed);
         }
