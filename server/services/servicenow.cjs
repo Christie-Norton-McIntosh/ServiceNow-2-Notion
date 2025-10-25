@@ -961,9 +961,10 @@ async function extractContentFromHtml(html) {
       const classAttr = $elem.attr('class') || '';
       const { color: calloutColor, icon: calloutIcon } = getCalloutPropsFromClasses(classAttr);
 
-      // Check if callout contains nested block elements (ul, ol, figure, etc.)
+      // Check if callout contains nested block elements (ul, ol, figure, table, pre, etc.)
       // NOTE: <p> tags should NOT be treated as nested blocks - they're part of callout rich_text
-      const nestedBlocks = $elem.find('> ul, > ol, > figure, > div.p');
+      // IMPORTANT: Include ALL block-level elements to prevent parseRichText() from receiving block content
+      const nestedBlocks = $elem.find('> ul, > ol, > figure, > div.p, > table, > pre, > div.table-wrap, > div.note, > div.itemgroup, > div.info');
       console.log(`🔍 Callout nested blocks check: found ${nestedBlocks.length} elements`);
       
       if (nestedBlocks.length > 0) {
@@ -971,7 +972,7 @@ async function extractContentFromHtml(html) {
         
         // Clone and remove nested blocks to get just the text content (keep <p> tags)
         const $clone = $elem.clone();
-        $clone.find('> ul, > ol, > figure, > div.p').remove();
+        $clone.find('> ul, > ol, > figure, > div.p, > table, > pre, > div.table-wrap, > div.note, > div.itemgroup, > div.info').remove();
         let textOnlyHtml = $clone.html() || '';
         
         console.log(`🔍 Callout textOnlyHtml (before title removal): "${textOnlyHtml.substring(0, 200)}${textOnlyHtml.length > 200 ? '...' : ''}"`);
