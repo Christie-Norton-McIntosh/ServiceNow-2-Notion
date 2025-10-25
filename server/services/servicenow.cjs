@@ -996,7 +996,12 @@ async function extractContentFromHtml(html) {
         // Process nested blocks as children - these will be appended after page creation
         const childBlocks = [];
         for (const nestedBlock of allNestedBlocks.toArray()) {
+          const $nestedBlock = $(nestedBlock);
+          const blockTag = nestedBlock.name;
+          const blockClass = $nestedBlock.attr('class') || '';
+          console.log(`🔍 Processing callout nested block: <${blockTag}${blockClass ? ` class="${blockClass}"` : ''}>`);
           const nestedProcessed = await processElement(nestedBlock);
+          console.log(`🔍   Returned ${nestedProcessed.length} blocks: ${nestedProcessed.map(b => b.type).join(', ')}`);
           childBlocks.push(...nestedProcessed);
         }
         
