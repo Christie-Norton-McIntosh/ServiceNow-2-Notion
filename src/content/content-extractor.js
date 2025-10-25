@@ -9,11 +9,17 @@ import { constructServiceNowBaseUrl } from "./metadata-extractor.js";
  * @returns {Object} Object with combinedHtml and combinedImages
  */
 export async function extractContentWithIframes(contentElement) {
+  console.log("🚀🚀🚀 EXTRACTION STARTED - extractContentWithIframes called");
+  console.log("   - contentElement tagName:", contentElement?.tagName);
+  console.log("   - contentElement id:", contentElement?.id);
+  console.log("   - contentElement class:", contentElement?.className);
+  
   let combinedHtml = "";
   let combinedImages = [];
 
   // Handle case where no content element is found
   if (!contentElement) {
+    console.log("⚠️⚠️⚠️ No content element provided!");
     debug("⚠️ No content element provided, using document.body as fallback");
     contentElement = document.body;
   }
@@ -92,6 +98,10 @@ export async function extractContentWithIframes(contentElement) {
       let iframeContent = "";
 
       if (iframeDoc) {
+        console.log("✅✅✅ iframeDoc successfully accessed");
+        console.log("   - iframeDoc.body exists:", !!iframeDoc.body);
+        console.log("   - iframeDoc.body innerHTML length:", iframeDoc.body?.innerHTML?.length || 0);
+        
         // Check if the iframe document itself has a useful URL
         if (
           iframeDoc.location &&
@@ -107,6 +117,7 @@ export async function extractContentWithIframes(contentElement) {
         }
 
         // Strategy 1: Look for specific book content containers FIRST
+        console.log("🔎🔎🔎 Starting Strategy 1: Checking bookContentSelectors");
         const bookContentSelectors = [
           ".zDocsTopicPageBody", // ServiceNow docs - capture page body including article AND contentPlaceholder (Related Content)
           "[role='main'] section",
@@ -124,8 +135,13 @@ export async function extractContentWithIframes(contentElement) {
         ];
 
         for (const selector of bookContentSelectors) {
+          console.log(`   🔍 Testing selector: "${selector}"`);
           const container = iframeDoc.querySelector(selector);
+          console.log(`      - Element found:`, !!container);
+          console.log(`      - innerHTML length:`, container?.innerHTML?.trim().length || 0);
+          
           if (container?.innerHTML?.trim().length > 200) {
+            console.log(`   ✅ Selector matched! Using: "${selector}"`);
             iframeContent = container.innerHTML;
             
             // 🔍 DIAGNOSTIC: Count articles in extracted content
