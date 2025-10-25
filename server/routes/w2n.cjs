@@ -86,39 +86,6 @@ router.post('/W2N', async (req, res) => {
     }
     
     log('🔥🔥🔥 AFTER DIAGNOSTIC BLOCK - THIS LINE SHOULD ALWAYS EXECUTE');
-    
-    log('🔧 PRE-FIX: About to check for nested0...');
-    
-    // FIX: ServiceNow HTML has unclosed article.nested0 tag - FIX OUTSIDE THE IF BLOCK
-    // This causes Cheerio to auto-close it prematurely, making later articles siblings instead of children
-    try {
-      const hasNested0 = payload.contentHtml && /class="[^"]*nested0[^"]*"/.test(payload.contentHtml);
-      log(`🔧 DEBUG: About to check for nested0. payload.contentHtml exists: ${!!payload.contentHtml}, has nested0: ${hasNested0}`);
-    if (hasNested0) {
-      log('🔧 Attempting to fix unclosed article.nested0 tag...');
-      const miniTOCIndex = payload.contentHtml.indexOf('<div class="miniTOC');
-      if (miniTOCIndex > -1) {
-        // Find the last </article> before miniTOC
-        const beforeMiniTOC = payload.contentHtml.substring(0, miniTOCIndex);
-        const lastArticleCloseIndex = beforeMiniTOC.lastIndexOf('</article>');
-        if (lastArticleCloseIndex > -1) {
-          // Insert </article> to close nested0 after the last nested1 article closes
-          const insertIndex = lastArticleCloseIndex + '</article>'.length;
-          payload.contentHtml = payload.contentHtml.substring(0, insertIndex) + 
-                                '</article>' +  // Close article.nested0
-                                payload.contentHtml.substring(insertIndex);
-          log(`🔧 FIXED: Inserted missing </article> tag to close article.nested0 at position ${insertIndex}`);
-        } else {
-          log('⚠️ Could not find last </article> tag to insert fix');
-        }
-      } else {
-        log('⚠️ Could not find miniTOC to determine where to insert fix');
-      }
-    }
-    } catch (fixError) {
-      log('❌ ERROR in HTML fix logic:', fixError.message);
-      log('❌ Stack trace:', fixError.stack);
-    }
 
     if (!payload.title || (!payload.content && !payload.contentHtml)) {
       return sendError(

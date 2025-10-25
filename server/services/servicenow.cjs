@@ -170,6 +170,8 @@ function enforceNestingDepthLimit(blocks, currentDepth = 0) {
 async function extractContentFromHtml(html) {
   const { log, normalizeAnnotations, isValidImageUrl, downloadAndUploadImage, normalizeUrl, getExtraDebug } = getGlobals();
   
+  console.log('🚨🚨🚨 SERVICENOW.CJS FUNCTION START - MODULE LOADED 🚨🚨🚨');
+  
   // cleanHtmlText already imported at top of file
   if (!html || typeof html !== "string") {
     return { blocks: [], hasVideos: false };
@@ -804,6 +806,46 @@ async function extractContentFromHtml(html) {
     return marker;
   });
   
+  // FIX: ServiceNow HTML has malformed structure with extra closing </article> tags
+  // Count opening and closing article tags
+  console.log('🔍 HTML FIX: Checking article tags...');
+  const openingArticleTags = (html.match(/<article[^>]*>/g) || []).length;
+  const closingArticleTags = (html.match(/<\/article>/g) || []).length;
+  console.log(`🔍 HTML FIX: Found ${openingArticleTags} opening, ${closingArticleTags} closing article tags`);
+  
+  if (closingArticleTags > openingArticleTags) {
+    const extraClosingTags = closingArticleTags - openingArticleTags;
+    console.log(`� HTML FIX: Found ${extraClosingTags} extra closing </article> tags. Removing them...`);
+    
+    // Remove the extra closing tags by replacing them with empty string
+    // We'll remove them from the end of the HTML working backwards
+    let fixedHtml = html;
+    let removed = 0;
+    let lastIndex = fixedHtml.length;
+    
+    while (removed < extraClosingTags && lastIndex > 0) {
+      lastIndex = fixedHtml.lastIndexOf('</article>', lastIndex - 1);
+      if (lastIndex === -1) break;
+      
+      // Check if this closing tag is actually needed by counting tags before it
+      const htmlBefore = fixedHtml.substring(0, lastIndex);
+      const openingsBefore = (htmlBefore.match(/<article[^>]*>/g) || []).length;
+      const closingsBefore = (htmlBefore.match(/<\/article>/g) || []).length;
+      
+      // If we have more or equal closings than openings at this point, this tag is extra
+      if (closingsBefore >= openingsBefore) {
+        fixedHtml = fixedHtml.substring(0, lastIndex) + fixedHtml.substring(lastIndex + '</article>'.length);
+        removed++;
+        console.log(`�   Removed extra closing tag at position ${lastIndex}`);
+        // Reset search from the end since we modified the string
+        lastIndex = fixedHtml.length;
+      }
+    }
+    
+    console.log(`� HTML FIX COMPLETE: Removed ${removed} extra closing </article> tags`);
+    html = fixedHtml;
+  }
+
   // Use cheerio to parse HTML and process elements in document order
   let $;
   try {
@@ -3062,6 +3104,23 @@ async function extractContentFromHtml(html) {
         
         // SPECIAL DIAGNOSTIC for article.nested0
         const elemClass = $elem.attr('class') || '';
+        const elemId = $elem.attr('id') || '';
+        
+        // TRACK ARTICLE.NESTED1 PROCESSING
+        let articleTitle = null;
+        if (tagName === 'article' && elemClass.includes('nested1')) {
+          // Try to find the heading for this article
+          const $heading = $elem.find('> h1, > h2').first();
+          if ($heading.length > 0) {
+            articleTitle = cleanHtmlText($heading.text()).trim().substring(0, 80);
+          }
+          console.log(`\n📘 ========== ARTICLE.NESTED1 START ==========`);
+          console.log(`📘 Article ID: ${elemId || 'NO ID'}`);
+          console.log(`📘 Article Title: "${articleTitle || 'NO TITLE'}"`);
+          console.log(`📘 Children count: ${children.length}`);
+          console.log(`📘 ============================================\n`);
+        }
+        
         if (elemClass.includes('nested0')) {
           console.log(`🚨 ARTICLE.NESTED0 DETECTED! Cheerio says ${children.length} children`);
           console.log(`🚨 Let's verify with different selectors:`);
@@ -3119,6 +3178,15 @@ async function extractContentFromHtml(html) {
             processedBlocks.push(...childBlocks);
           }
           console.log(`🔍   Finished processing all ${processedChildCount}/${children.length} children`);
+          
+          // TRACK ARTICLE.NESTED1 COMPLETION
+          if (tagName === 'article' && elemClass.includes('nested1')) {
+            console.log(`\n📘 ========== ARTICLE.NESTED1 END ==========`);
+            console.log(`📘 Article ID: ${elemId || 'NO ID'}`);
+            console.log(`📘 Article Title: "${articleTitle || 'NO TITLE'}"`);
+            console.log(`📘 Total blocks produced: ${processedBlocks.length}`);
+            console.log(`📘 ==========================================\n`);
+          }
         }
         
         // Mark container as processed
@@ -3138,6 +3206,16 @@ async function extractContentFromHtml(html) {
     contentElements = $('.zDocsTopicPageBody').find('> *').toArray();
     console.log(`🔍 Processing from .zDocsTopicPageBody, found ${contentElements.length} children`);
     console.log(`🔍 Top-level children: ${contentElements.map(c => `<${c.name} class="${$(c).attr('class') || ''}">`).join(', ')}`);
+    
+    // DIAGNOSTIC: Check nested structure
+    const nested1InBody = $('.zDocsTopicPageBody article.nested1').length;
+    const nested0InBody = $('.zDocsTopicPageBody article.nested0').length;
+    console.log(`🔍 DIAGNOSTIC: Found ${nested0InBody} article.nested0 and ${nested1InBody} article.nested1 inside .zDocsTopicPageBody`);
+    if (nested0InBody > 0) {
+      const nested0 = $('.zDocsTopicPageBody article.nested0').first();
+      const nested1Children = nested0.find('> article.nested1').length;
+      console.log(`🔍 DIAGNOSTIC: article.nested0 has ${nested1Children} direct article.nested1 children`);
+    }
   } else if ($('body').length > 0) {
     // Full HTML document with body tag
     contentElements = $('body').find('> *').toArray();
@@ -3167,8 +3245,28 @@ async function extractContentFromHtml(html) {
   console.log(`🚨 CRITICAL: article.nested0 count in entire DOM: ${nested0Count}`);
   if (nested0Count > 0) {
     const nested0 = $('article.nested0').first();
-    console.log(`🚨 article.nested0 direct children: ${nested0.find('> *').length}`);
-    console.log(`🚨 article.nested0 children types: ${nested0.find('> *').toArray().map(c => `<${c.name} class="${$(c).attr('class') || ''}">`).slice(0, 10).join(', ')}...`);
+    const nested0Html = nested0.html() || '';
+    const nested0Children = nested0.find('> *').toArray();
+    console.log(`🚨 article.nested0 direct children: ${nested0Children.length}`);
+    console.log(`🚨 article.nested0 HTML length: ${nested0Html.length}`);
+    console.log(`🚨 article.nested0 children types: ${nested0Children.map(c => `<${c.name} class="${$(c).attr('class') || ''}" id="${$(c).attr('id') || ''}">`).join(', ')}`);
+    
+    // Check how many times each article ID appears in the HTML
+    const articleIds = ['dev-ops-config-github-acct-jwt', 'dev-ops-generate-jks-cert-github', 
+      'dev-ops-attach-jks-cert-github', 'dev-ops-create-jwt-key-github',
+      'dev-ops-create-jwt-prov-github', 'dev-ops-reg-github-oauth-prov-jwt', 'dev-ops-create-cred-github-jwt'];
+    console.log(`\n🔍 CHECKING ARTICLE IDs IN CHEERIO-PARSED HTML:`);
+    articleIds.forEach(id => {
+      const count = (nested0Html.match(new RegExp(id, 'g')) || []).length;
+      console.log(`🔍   ${id}: appears ${count} times in nested0 HTML`);
+    });
+    
+    // CRITICAL: Dump the actual article.nested0 HTML to file for inspection
+    const fs = require('fs');
+    const path = require('path');
+    const dumpPath = path.join(__dirname, '..', 'logs', `article-nested0-dump-${Date.now()}.html`);
+    fs.writeFileSync(dumpPath, nested0Html, 'utf8');
+    console.log(`🚨 DUMPED article.nested0 HTML to: ${dumpPath}`);
   }
   
   for (const child of contentElements) {

@@ -127,7 +127,17 @@ export async function extractContentWithIframes(contentElement) {
           const container = iframeDoc.querySelector(selector);
           if (container?.innerHTML?.trim().length > 200) {
             iframeContent = container.innerHTML;
-            debug(`📄 Strategy 1 (${selector}): ${iframeContent.length} chars`);
+            
+            // 🔍 DIAGNOSTIC: Count articles in extracted content
+            const articleCount = (iframeContent.match(/<article[^>]*>/g) || []).length;
+            const h2Count = (iframeContent.match(/<h2[^>]*>/g) || []).length;
+            console.log(`🔍🔍🔍 EXTRACTION DIAGNOSTIC (${selector}):`);
+            console.log(`   - Content length: ${iframeContent.length} chars`);
+            console.log(`   - Article tags found: ${articleCount}`);
+            console.log(`   - H2 headings found: ${h2Count}`);
+            console.log(`   - First 500 chars:`, iframeContent.substring(0, 500));
+            
+            debug(`📄 Strategy 1 (${selector}): ${iframeContent.length} chars, ${articleCount} articles, ${h2Count} h2 headings`);
             break;
           }
         }
