@@ -1081,8 +1081,12 @@ async function extractContentFromHtml(html) {
           
           processedBlocks.push(calloutBlock);
           
-          // Add child blocks to processedBlocks so they get collected by orchestrator
+          // Add child blocks to processedBlocks so collectAndStripMarkers can find them.
+          // Mark them with a special flag to indicate they're callout children.
           if (childBlocks.length > 0) {
+            childBlocks.forEach(block => {
+              block._sn2n_callout_child = true;
+            });
             processedBlocks.push(...childBlocks);
           }
         }
@@ -1639,25 +1643,8 @@ async function extractContentFromHtml(html) {
               markedBlocks.push(...depthResult.deferredBlocks);
             }
             
-            // ORDERING FIX: If there are container blocks (callouts) in markedBlocks,
-            // also mark the immediateChildren so everything goes through orchestration
-            // and maintains correct source order. Otherwise, immediateChildren get added
-            // to the list item first, then markedBlocks get appended, reversing the order.
-            const hasContainerBlocks = markedBlocks.some(b => 
-              b && (b.type === 'callout' || b.type === 'table' || b.type === 'heading_3')
-            );
-            
-            let allChildren;
-            if (hasContainerBlocks && immediateChildren.length > 0) {
-              console.log(`🔄 Deferring ${immediateChildren.length} immediate children for orchestration to maintain correct order with container blocks`);
-              // Move immediate children to marked blocks - they'll all be orchestrated together
-              // Use push() to add AFTER container blocks, maintaining source order
-              markedBlocks.push(...immediateChildren);
-              allChildren = [];
-            } else {
-              // Use only immediateChildren - images are now handled separately with markers
-              allChildren = [...immediateChildren];
-            }
+            // Use only immediateChildren - images are now handled separately with markers
+            const allChildren = [...immediateChildren];
             
             if (liRichText.length > 0 && liRichText.some(rt => rt.text.content.trim())) {
               const richTextChunks = splitRichTextArray(liRichText);
@@ -2023,25 +2010,8 @@ async function extractContentFromHtml(html) {
               markedBlocks.push(...depthResult.deferredBlocks);
             }
             
-            // ORDERING FIX: If there are container blocks (callouts) in markedBlocks,
-            // also mark the immediateChildren so everything goes through orchestration
-            // and maintains correct source order. Otherwise, immediateChildren get added
-            // to the list item first, then markedBlocks get appended, reversing the order.
-            const hasContainerBlocks = markedBlocks.some(b => 
-              b && (b.type === 'callout' || b.type === 'table' || b.type === 'heading_3')
-            );
-            
-            let allChildren;
-            if (hasContainerBlocks && immediateChildren.length > 0) {
-              console.log(`🔄 Deferring ${immediateChildren.length} immediate children for orchestration to maintain correct order with container blocks`);
-              // Move immediate children to marked blocks - they'll all be orchestrated together
-              // Use push() to add AFTER container blocks, maintaining source order
-              markedBlocks.push(...immediateChildren);
-              allChildren = [];
-            } else {
-              // Use only immediateChildren - images are now handled separately with markers
-              allChildren = [...immediateChildren];
-            }
+            // Use only immediateChildren - images are now handled separately with markers
+            const allChildren = [...immediateChildren];
             
             if (liRichText.length > 0 && liRichText.some(rt => rt.text.content.trim())) {
               const richTextChunks = splitRichTextArray(liRichText);
