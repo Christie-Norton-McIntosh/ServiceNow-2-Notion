@@ -257,12 +257,17 @@ function convertRichTextBlock(input, options = {}) {
       return match; // Don't wrap, already in code block
     }
     
-    // Skip if part of a URL - check if there's http:// or https:// within 100 chars before this match
-    // Also check for URL protocol markers that may have been wrapped in __CODE_START__
-    const contextBefore = string.substring(Math.max(0, offset - 100), offset);
-    if (/https?:\/\/[^\s]*$/.test(contextBefore) || /__CODE_START__https?:\/\/[^\s]*$/.test(contextBefore)) {
-      console.log(`� [TECH ID] Skipping "${match}" - part of URL`);
-      return match; // Part of a URL, don't wrap
+    // Skip if this identifier is IMMEDIATELY part of an active URL
+    // Check if the protocol (http:// or https://) is immediately before this match with no whitespace break
+    // Example: "https://api.github.com/<installation_id>" - <installation_id> is part of this URL (skip)
+    // But: "https://api.github.com/tokens. For enterprise: https://<HOST_URL>" - <HOST_URL> is a NEW URL (don't skip)
+    const contextBefore = string.substring(Math.max(0, offset - 10), offset);
+    // Check if we're immediately after a protocol (less than 10 chars back, no whitespace between)
+    const immediatelyAfterProtocol = /https?:\/\/$/i.test(contextBefore);
+    
+    if (immediatelyAfterProtocol) {
+      console.log(`🚫 [TECH ID] Skipping "${match}" - immediately after URL protocol`);
+      return match; // This is the start of a URL hostname, don't wrap
     }
     
     console.log(`� [TECH ID] Wrapping "${match}" as inline code`);
