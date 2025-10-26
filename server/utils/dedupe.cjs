@@ -93,6 +93,27 @@ function dedupeAndFilterBlocks(blockArray, options = {}) {
         continue;
       }
       
+      // Never dedupe common section headings/labels that appear in multiple places
+      // (e.g., "Procedure", "About this task", "Before you begin")
+      if (blk && blk.type === 'paragraph') {
+        const txt = plainTextFromRich(blk.paragraph?.rich_text || []);
+        const isCommonHeading = /^(Procedure|About this task|Steps|Requirements?|Overview)$/i.test(txt.trim());
+        if (isCommonHeading) {
+          out.push(blk);
+          continue;
+        }
+      }
+      
+      // Never dedupe callouts with common patterns like "Before you begin" or "Role required"
+      if (blk && blk.type === 'callout') {
+        const txt = plainTextFromRich(blk.callout?.rich_text || []);
+        const isCommonCallout = /^(Before you begin|Role required:|Prerequisites?|Note:|Important:|Warning:)/i.test(txt.trim());
+        if (isCommonCallout) {
+          out.push(blk);
+          continue;
+        }
+      }
+      
       // Filter out gray info callouts only (keep blue notes)
       if (
         blk &&
