@@ -22,6 +22,8 @@ async function findParentListItemByMarker(rootBlockId, marker) {
   const { notion, log } = getGlobals();
   if (!notion) throw new Error("Notion client not initialized");
   const token = `sn2n:${marker}`;
+  
+  log(`🔍 BFS START: Searching for marker ${token} starting from ${rootBlockId}`);
 
   async function listChildren(blockId, cursor) {
     const res = await notion.blocks.children.list({
@@ -45,6 +47,7 @@ async function findParentListItemByMarker(rootBlockId, marker) {
       const res = await listChildren(current, cursor);
       cursor = res.has_more ? res.next_cursor : undefined;
       const children = res.results || [];
+      log(`🔍 BFS: Examining ${children.length} children of ${current} (looking for ${token})`);
       for (const child of children) {
         try {
           if (
@@ -61,14 +64,18 @@ async function findParentListItemByMarker(rootBlockId, marker) {
               const ownPlain = ownRich
                 .map((rt) => rt?.text?.content || "")
                 .join(" ");
+              log(`🔍 BFS: Checking ${child.type} ${child.id}, text="${ownPlain.substring(0, 100)}"`);
               if (ownPlain.includes(token)) {
+                log(`✅ BFS: FOUND marker ${token} in ${child.type} ${child.id}`);
                 return { parentId: child.id, paragraphId: null };
               }
             } catch (e) {
+              log(`⚠️ BFS: Error checking ${child.type} ${child.id}: ${e.message}`);
               // ignore and continue
             }
 
             if (child.has_children) {
+              log(`🔍 BFS: ${child.type} ${child.id} has_children=true, searching its children...`);
               let cCursor = undefined;
               do {
                 const childList = await notion.blocks.children.list({
@@ -80,6 +87,7 @@ async function findParentListItemByMarker(rootBlockId, marker) {
                   ? childList.next_cursor
                   : undefined;
                 const subChildren = childList.results || [];
+                log(`🔍 BFS: Found ${subChildren.length} children in ${child.type} ${child.id}`);
                 for (const sc of subChildren) {
                   try {
                     const scPayload = sc[sc.type] || sc.paragraph || {};
@@ -89,10 +97,11 @@ async function findParentListItemByMarker(rootBlockId, marker) {
                     const plain = r
                       .map((rt) => rt?.text?.content || "")
                       .join(" ");
+                    log(`🔍 BFS: Checking child ${sc.type} ${sc.id}, text="${plain.substring(0, 80)}"`);
                     if (plain.includes(token)) {
-                      // If the child with the marker is itself a list item, return the child's ID as parentId
-                      // (we want to append TO the child list item, not to its parent)
-                      if (sc.type === "numbered_list_item" || sc.type === "bulleted_list_item") {
+                      // If the child with the marker is itself a list item or callout, return the child's ID as parentId
+                      // (we want to append TO the child, not to its parent)
+                      if (sc.type === "numbered_list_item" || sc.type === "bulleted_list_item" || sc.type === "callout") {
                         return { parentId: sc.id, paragraphId: null };
                       }
                       
@@ -262,6 +271,11 @@ async function orchestrateDeepNesting(pageId, markerMap) {
         // fall through to normal append behavior
       }
 
+      // Note: We do NOT clean marker tokens before appending because:
+      // - The appended blocks might themselves be parents (e.g., a callout with marker for its children)
+      // - Those child markers need to remain so the orchestrator can find the parent later
+      // - Markers are cleaned AFTER all children are appended (in the marker removal step below)
+
       // Ensure no private helper keys are present before appending under parent
       deepStripPrivateKeys(blocksToAppend);
       const result = await appendBlocksToBlockId(parentId, blocksToAppend);
@@ -302,33 +316,51 @@ async function orchestrateDeepNesting(pageId, markerMap) {
         }
       }
 
-      // If the marker was found on the list-item's own rich_text (paragraphId === null),
-      // attempt to retrieve and update the list-item block to remove the inline marker.
+      // If the marker was found on the block's own rich_text (paragraphId === null),
+      // attempt to retrieve and update the block to remove the inline marker.
+      // This handles list-items, callouts, and other block types with rich_text.
       if (!paragraphId) {
-        try {
-          const listItem = await notion.blocks.retrieve({ block_id: parentId });
-          const payload = listItem[listItem.type] || {};
-          const existingRt = Array.isArray(payload.rich_text)
-            ? payload.rich_text
-            : [];
-          const newRt = removeMarkerFromRichTextArray(existingRt, marker);
-          const joinedOld = existingRt
-            .map((r) => r.text?.content || "")
-            .join(" ");
-          const joinedNew = newRt.map((r) => r.text?.content || "").join(" ");
-          if (joinedOld !== joinedNew) {
-            const safeNewRt = sanitizeRichTextArray(newRt);
-            await notion.blocks.update({
-              block_id: parentId,
-              [listItem.type]: { rich_text: safeNewRt },
-            });
-            log(`✅ Orchestrator: removed marker from list-item ${parentId}`);
+        let retries = 3;
+        let delay = 1000;
+        let success = false;
+        
+        while (retries > 0 && !success) {
+          try {
+            const block = await notion.blocks.retrieve({ block_id: parentId });
+            const blockType = block.type;
+            const payload = block[blockType] || {};
+            const existingRt = Array.isArray(payload.rich_text)
+              ? payload.rich_text
+              : [];
+            const newRt = removeMarkerFromRichTextArray(existingRt, marker);
+            const joinedOld = existingRt
+              .map((r) => r.text?.content || "")
+              .join(" ");
+            const joinedNew = newRt.map((r) => r.text?.content || "").join(" ");
+            if (joinedOld !== joinedNew) {
+              const safeNewRt = sanitizeRichTextArray(newRt);
+              await notion.blocks.update({
+                block_id: parentId,
+                [blockType]: { rich_text: safeNewRt },
+              });
+              log(`✅ Orchestrator: removed marker from ${blockType} ${parentId}`);
+              success = true;
+            } else {
+              success = true; // No change needed
+            }
+          } catch (e) {
+            retries--;
+            if (retries > 0) {
+              log(`⚠️ Orchestrator: marker removal failed (${retries} retries left), waiting ${delay}ms: ${e && e.message}`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+              delay *= 2; // Exponential backoff
+            } else {
+              log(
+                "⚠️ Orchestrator: failed to remove marker from block after all retries:",
+                e && e.message
+              );
+            }
           }
-        } catch (e) {
-          log(
-            "⚠️ Orchestrator: failed to remove marker from list-item:",
-            e && e.message
-          );
         }
       }
     } catch (err) {
@@ -353,6 +385,12 @@ async function orchestrateDeepNesting(pageId, markerMap) {
       } catch (e) {
         log("❌ Orchestrator fallback append failed:", e && e.message);
       }
+    }
+    
+    // Add a small delay between orchestration rounds to allow Notion API to propagate changes
+    // This helps ensure newly-appended blocks (like callouts) are visible in the next BFS search
+    if (Object.keys(markerMap).indexOf(marker) < Object.keys(markerMap).length - 1) {
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
   }
   
