@@ -218,6 +218,10 @@ async function extractContentFromHtml(html) {
   html = html.replace(/<div[^>]*class="(?![^\"]*code-toolbar)[^\"]*\btoolbar\b[^\"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
   html = html.replace(/<button[^>]*class="[^\"]*copy-to-clipboard-button[^\"]*"[^>]*>[\s\S]*?<\/button>/gi, "");
 
+  // DIAGNOSTIC: Check HTML length AFTER initial cleanup
+  const sectionsAfterCleanup = (html.match(/<section[^>]*id="[^"]*"/g) || []).length;
+  console.log(`🔥🔥🔥 AFTER INITIAL CLEANUP: HTML length: ${html.length} chars, sections: ${sectionsAfterCleanup}`);
+
   // Block array for collecting converted Notion blocks
   const blocks = [];
 
