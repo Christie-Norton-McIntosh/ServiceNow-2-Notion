@@ -83,6 +83,20 @@ function convertRichTextBlock(input, options = {}) {
   // Examples: <instance-name>, <Tool ID>, &lt;file-name&gt;, &lt;Tool ID&gt;
   const placeholders = [];
   
+    // Decode any HTML entities first
+  html = decodeEntities(html);
+  
+  // Remove SVG elements entirely (including their content) FIRST - these are just decorative icons
+  // This must happen before placeholder extraction to prevent SVG content from being protected
+  // Prevents SVG markup like "<use xlink:href="#ico-related-link"></use>" from appearing as text
+  const beforeSvgStrip = html;
+  html = html.replace(/<svg[\s\S]*?<\/svg>/gi, '');
+  if (beforeSvgStrip !== html) {
+    console.log(`🔍 [SVG STRIP] Removed SVG elements from HTML`);
+    console.log(`   Before: "${beforeSvgStrip.substring(0, 200)}"`);
+    console.log(`   After: "${html.substring(0, 200)}"`);
+  }
+  
   // First, protect HTML-encoded placeholders: &lt;placeholder-text&gt;
   html = html.replace(/&lt;([^&]+)&gt;/g, (match, content) => {
     const trimmed = content.trim();
@@ -101,13 +115,16 @@ function convertRichTextBlock(input, options = {}) {
     const trimmed = content.trim();
     // HTML tags: start with / or lowercase letter, followed by tag name (no spaces/hyphens in tag name itself)
     // Examples: <div>, </div>, <span class="x">, <a href="...">
+    // SVG tags: svg, use, path, g, etc.
     const isHtmlTag = /^\/?\s*[a-z][a-z0-9]*(\s|$|>)/i.test(trimmed);
-    if (!isHtmlTag) {
+    const isSvgTag = /^\/?\s*(svg|use|path|g|rect|circle|line|polyline|polygon|defs|symbol)/i.test(trimmed);
+    
+    if (!isHtmlTag && !isSvgTag) {
       const placeholder = `__PLACEHOLDER_${placeholders.length}__`;
       placeholders.push(content);
       return placeholder;
     }
-    // It's an HTML tag, leave it alone for normal processing
+    // It's an HTML or SVG tag, leave it alone for normal processing
     return match;
   });
   
@@ -125,9 +142,13 @@ function convertRichTextBlock(input, options = {}) {
     // Convert relative ServiceNow URLs to absolute
     href = convertServiceNowUrl(href);
     
-    // CRITICAL: Strip span tags from link content BEFORE storing
+    // CRITICAL: Strip span tags and SVG icons from link content BEFORE storing
     // This handles cases like: <a href="...">Contact <span class="ph">Support</span></a>
+    // and: <a href="..."><svg>...</svg>Link Text</a>
     let cleanedContent = content;
+    
+    // Strip SVG icons from link content (these are just decorative icons)
+    cleanedContent = cleanedContent.replace(/<svg[\s\S]*?<\/svg>/gi, '');
     
     // Strip span tags with keyword/parmname/codeph classes from link content
     // Note: Generic "ph" class removed - only specific technical classes
@@ -172,6 +193,40 @@ function convertRichTextBlock(input, options = {}) {
     // Use shared processing utility
     return processKbdContent(decoded);
   });
+
+  // Wrap complete URLs in special markers BEFORE <code> tag processing
+  // This prevents <code> tags from wrapping URLs that should stay intact
+  // Match complete URLs including dots in domain and path, but stop at whitespace or sentence-ending punctuation followed by space/end
+  const beforeUrls = html;
+  html = html.replace(/(https?:\/\/[^\s<]+)/gi, (match) => {
+    // Remove trailing punctuation that's clearly not part of the URL
+    let url = match;
+    let trailing = '';
+    
+    // If URL ends with sentence punctuation, remove it (but keep dots/commas that are part of the URL)
+    const trailingPuncMatch = url.match(/([.,;:!?)\]}\s]+)$/);
+    if (trailingPuncMatch) {
+      // Only remove if it's clearly sentence-ending (like ". " or "." at end)
+      const punct = trailingPuncMatch[1];
+      // Keep the punctuation that's part of URLs, remove sentence-ending punctuation
+      if (punct.match(/^[.,;:!?)\]}\s]+$/)) {
+        trailing = punct;
+        url = url.slice(0, -punct.length);
+      }
+    }
+    
+    console.log(`🔗 [URL WRAP] Found URL: "${url}"`);
+    if (trailing) {
+      console.log(`   Trailing: "${trailing}"`);
+    }
+    // Wrap URL with protective markers, preserve trailing punctuation
+    const result = `__URL_START__${url}__URL_END__${trailing}`;
+    console.log(`   Result: "${result.substring(0, 150)}"`);
+    return result;
+  });
+  if (beforeUrls !== html) {
+    console.log(`🔗 [URL WRAP] HTML changed after URL wrapping`);
+  }
   
   // Handle inline code tags
   html = html.replace(/<code([^>]*)>([\s\S]*?)<\/code>/gi, (match, attrs, content) => {
@@ -192,9 +247,40 @@ function convertRichTextBlock(input, options = {}) {
   // Handle spans with technical identifier classes (keyword, parmname, codeph, etc.)
   // Use shared utility for simplified, consistent detection
   // CRITICAL FIX: Always return the content (not the HTML tags) even if not detected as technical
-  // NOTE: Generic "ph" class removed - only specific technical classes get formatting
+  // NOTE: Generic "ph" class removed from inline code formatting - only specific technical classes get formatting
   // NOTE: This runs AFTER cmd handler, so <span class="ph cmd"> has already been processed
   const htmlBefore = html;
+  
+  // Log if we have span tags to process
+  if (html.includes('<span') && html.includes('com.snc.incident.ml')) {
+    console.log(`🔍 [ph span strip] BEFORE stripping, HTML contains com.snc.incident.ml:`);
+    const snippet = html.substring(html.indexOf('com.snc.incident.ml') - 50, html.indexOf('com.snc.incident.ml') + 100);
+    console.log(`   "${snippet}"`);
+  }
+  
+  // First, strip generic <span class="ph"> tags that don't have technical identifiers
+  // This allows their content to be processed by the technical identifier regex later
+  // CRITICAL: Run in a loop to handle nested spans (innermost to outermost)
+  let lastHtml;
+  let iterations = 0;
+  do {
+    lastHtml = html;
+    html = html.replace(/<span[^>]*class=["'][^"']*\bph\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, '$1');
+    iterations++;
+    if (iterations > 1 && lastHtml !== html) {
+      console.log(`🔍 [ph span strip] Iteration ${iterations}: removed ${(lastHtml.match(/<span/g) || []).length - (html.match(/<span/g) || []).length} span tags`);
+    }
+  } while (html !== lastHtml && html.includes('<span') && iterations < 10);
+  
+  // Log after stripping
+  if (htmlBefore.includes('<span') && htmlBefore.includes('com.snc.incident.ml')) {
+    console.log(`🔍 [ph span strip] AFTER ${iterations} iteration(s):`);
+    const snippet = html.substring(html.indexOf('com.snc.incident.ml') - 50, html.indexOf('com.snc.incident.ml') + 100);
+    console.log(`   "${snippet}"`);
+    console.log(`   Spans remaining: ${(html.match(/<span/g) || []).length}`);
+  }
+  
+  // Then handle specific technical identifier classes
   html = html.replace(/<span[^>]*class=["'][^"']*(?:\bkeyword\b|\bparmname\b|\bcodeph\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
     if (process.env.SN2N_VERBOSE === '1') {
       console.log(`🔍 Matched span with class keyword/parmname/codeph: "${match.substring(0, 80)}"`);
@@ -232,7 +318,8 @@ function convertRichTextBlock(input, options = {}) {
   });
   // Handle raw technical identifiers in parentheses/brackets as inline code
   // Must contain at least one dot or underscore to be considered a technical identifier
-  html = html.replace(/([\(\[])[ \t\n\r]*([a-zA-Z][-a-zA-Z0-9]*(?:[_.][-a-zA-Z0-9]+)+)[ \t\n\r]*([\)\]])/g, (match, open, code, close) => `__CODE_START__${code.trim()}__CODE_END__`);
+  // Preserve the brackets/parentheses in the output
+  html = html.replace(/([\(\[])[ \t\n\r]*([a-zA-Z][-a-zA-Z0-9]*(?:[_.][-a-zA-Z0-9]+)+)[ \t\n\r]*([\)\]])/g, (match, open, code, close) => `__CODE_START__${open}${code.trim()}${close}__CODE_END__`);
 
   // Standalone multi-word identifiers connected by _ or . (no spaces) as inline code
   // Each segment must start with a letter, can contain letters, numbers, and hyphens
@@ -241,20 +328,35 @@ function convertRichTextBlock(input, options = {}) {
   // Use a function to check context to avoid matching inside already-wrapped code
   const beforeTech = html;
   html = html.replace(/\b([a-zA-Z][-a-zA-Z0-9]*(?:[_.][a-zA-Z][-a-zA-Z0-9]*)+)\b/g, (match, identifier, offset, string) => {
-    // Skip internal markers (placeholder, link, code markers)
-    if (match.startsWith('__PLACEHOLDER_') || match.startsWith('__LINK_') || match.startsWith('__CODE_')) {
+    // Skip internal markers (placeholder, link, code markers, URL markers)
+    if (match.startsWith('__PLACEHOLDER_') || match.startsWith('__LINK_') || match.startsWith('__CODE_') || match.startsWith('__URL_')) {
       return match;
     }
     
-    // Check if we're inside a __CODE_START__...__CODE_END__ block
+    // Check if we're inside a __CODE_START__...__CODE_END__ or __URL_START__...__URL_END__ block
     const beforeMatch = string.substring(0, offset);
     const lastCodeStart = beforeMatch.lastIndexOf('__CODE_START__');
     const lastCodeEnd = beforeMatch.lastIndexOf('__CODE_END__');
+    const lastUrlStart = beforeMatch.lastIndexOf('__URL_START__');
+    const lastUrlEnd = beforeMatch.lastIndexOf('__URL_END__');
     
     // If there's a CODE_START after the last CODE_END, we're inside a code block
     if (lastCodeStart > lastCodeEnd) {
-      console.log(`� [TECH ID] Skipping "${match}" - inside code block (start:${lastCodeStart}, end:${lastCodeEnd})`);
+      if (match.includes('github') || match.includes('api') || match.includes('com')) {
+        console.log(`🚫 [TECH ID - URL DEBUG] Skipping "${match}" at offset ${offset}`);
+        console.log(`   lastCodeStart: ${lastCodeStart}, lastCodeEnd: ${lastCodeEnd}`);
+        console.log(`   Context before (100 chars): "${beforeMatch.substring(Math.max(0, beforeMatch.length - 100))}"`);
+      }
       return match; // Don't wrap, already in code block
+    }
+    
+    // If there's a URL_START after the last URL_END, we're inside a URL block
+    if (lastUrlStart > lastUrlEnd) {
+      if (match.includes('github') || match.includes('api') || match.includes('com')) {
+        console.log(`🚫 [TECH ID - URL PROTECTION] Skipping "${match}" - inside URL block`);
+        console.log(`   lastUrlStart: ${lastUrlStart}, lastUrlEnd: ${lastUrlEnd}`);
+      }
+      return match; // Don't wrap, part of URL
     }
     
     // Skip if this identifier is IMMEDIATELY part of an active URL
@@ -276,6 +378,11 @@ function convertRichTextBlock(input, options = {}) {
   if (beforeTech !== html) {
     console.log(`🔧 [AFTER TECH ID] HTML (first 300 chars): "${html.substring(0, 300)}"`);
   }
+
+  // Convert URL markers to code markers AFTER technical identifier processing
+  // This ensures URLs are wrapped as inline code without their parts being wrapped separately
+  html = html.replace(/__URL_START__/g, '__CODE_START__');
+  html = html.replace(/__URL_END__/g, '__CODE_END__');
 
   // Strip any remaining HTML tags that weren't converted to markers
   // This handles span tags, divs, and other markup that doesn't need special formatting

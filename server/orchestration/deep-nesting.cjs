@@ -13,16 +13,18 @@ function getGlobals() {
 }
 
 /**
- * Clean OTHER marker tokens from blocks recursively before appending
- * This prevents nested markers from being found again and causing duplicate content
- * BUT preserves the current marker so the parent can still be found
+ * Clean marker tokens from blocks that are NOT in the marker map
+ * This prevents duplicate content from orphaned markers
+ * BUT preserves markers that still need to be found as parents
  * @param {Array} blocks - Array of blocks to clean
- * @param {string} currentMarker - The marker currently being processed (should NOT be cleaned)
- * @param {Array} allMarkers - All markers that exist (for cleaning nested ones)
+ * @param {Array} allMarkers - All markers that exist in the marker map (should NOT be cleaned)
  * @returns {Array} Cleaned blocks
  */
-function cleanNestedMarkersFromBlocks(blocks, currentMarker, allMarkers = []) {
+function cleanOrphanedMarkersFromBlocks(blocks, allMarkers = []) {
   if (!Array.isArray(blocks)) return blocks;
+  
+  // Convert to Set for faster lookup
+  const markerSet = new Set(allMarkers);
   
   return blocks.map(block => {
     if (!block || typeof block !== 'object') return block;
@@ -42,13 +44,13 @@ function cleanNestedMarkersFromBlocks(blocks, currentMarker, allMarkers = []) {
       
       if (matches && matches.length > 0) {
         let cleanedRichText = richText;
-        // Remove each marker found EXCEPT the current one
+        // Remove only markers that are NOT in the marker map
         matches.forEach(markerToken => {
           // Extract marker name from (sn2n:XXXXX) format
           const markerName = markerToken.slice(6, -1); // Remove (sn2n: and )
           
-          // Only clean if this is NOT the current marker being processed
-          if (markerName !== currentMarker) {
+          // Only clean if this marker is NOT in the map (orphaned marker)
+          if (!markerSet.has(markerName)) {
             cleanedRichText = removeMarkerFromRichTextArray(cleanedRichText, markerName);
           }
         });
@@ -58,7 +60,7 @@ function cleanNestedMarkersFromBlocks(blocks, currentMarker, allMarkers = []) {
     
     // Recursively clean children if present
     if (Array.isArray(blockData.children)) {
-      blockData.children = cleanNestedMarkersFromBlocks(blockData.children, currentMarker, allMarkers);
+      blockData.children = cleanOrphanedMarkersFromBlocks(blockData.children, allMarkers);
     }
     
     return block;
@@ -204,9 +206,9 @@ async function orchestrateDeepNesting(pageId, markerMap) {
         log(
           `⚠️ Orchestrator: parent not found for marker sn2n:${marker}. Appending to page root instead.`
         );
-        // Clean nested markers (but not current marker) and ensure no private keys on blocks before appending to page root
+        // Clean orphaned markers (preserve all markers in the map) and ensure no private keys
         const allMarkers = Object.keys(markerMap);
-        blocksToAppend = cleanNestedMarkersFromBlocks(blocksToAppend, marker, allMarkers);
+        blocksToAppend = cleanOrphanedMarkersFromBlocks(blocksToAppend, allMarkers);
         deepStripPrivateKeys(blocksToAppend);
         await appendBlocksToBlockId(pageId, blocksToAppend);
         totalAppended += blocksToAppend.length;
@@ -326,13 +328,14 @@ async function orchestrateDeepNesting(pageId, markerMap) {
         // fall through to normal append behavior
       }
 
-      // Clean nested marker tokens from blocks before appending (but preserve the current marker)
-      // This prevents the orchestrator from finding nested markers again and creating duplicates
-      // Example: If we're appending a callout for marker "ABC" that contains "(sn2n:XYZ)",
-      //          we clean XYZ but keep ABC so the parent can still be found
-      log(`🧹 Orchestrator: cleaning nested markers (except ${marker}) from ${blocksToAppend.length} block(s) before append`);
+      // Clean orphaned marker tokens (preserve ALL markers in the map)
+      // This prevents duplicates from markers that aren't parents themselves
+      // but KEEPS markers that need to be found later as parents
+      // Example: If appending callout with "(sn2n:XYZ)" where XYZ is also in markerMap,
+      //          keep XYZ so it can be found as a parent later
+      log(`🧹 Orchestrator: cleaning orphaned markers from ${blocksToAppend.length} block(s) before append (preserving ${Object.keys(markerMap).length} map markers)`);
       const allMarkers = Object.keys(markerMap);
-      blocksToAppend = cleanNestedMarkersFromBlocks(blocksToAppend, marker, allMarkers);
+      blocksToAppend = cleanOrphanedMarkersFromBlocks(blocksToAppend, allMarkers);
 
       // Ensure no private helper keys are present before appending under parent
       deepStripPrivateKeys(blocksToAppend);
