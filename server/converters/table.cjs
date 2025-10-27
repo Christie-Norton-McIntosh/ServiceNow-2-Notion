@@ -325,7 +325,7 @@ async function convertTableBlock(tableHtml, options = {}) {
       // Now restore intentional newlines from markers
       textContent = textContent.replace(/__NEWLINE__/g, '\n');
       
-      // DEBUG: Log list content before conversion (always log for bullets)
+      // DEBUG: Log result structure for bullets
       if (textContent.includes('•')) {
         console.log(`🔍 [table.cjs LIST PATH] About to convert list text with bullets:`);
         console.log(`   Text (first 300 chars): "${textContent.substring(0, 300)}"`);

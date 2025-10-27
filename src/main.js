@@ -583,6 +583,13 @@ class ServiceNowToNotionApp {
       const htmlContent =
         extractedData.content?.combinedHtml || extractedData.contentHtml || "";
 
+      // DEBUG: Log HTML length and section count BEFORE creating pageData
+      console.log('🔍🔍🔍 MAIN.JS - HTML content length:', htmlContent.length);
+      const sectionCount = (htmlContent.match(/<section[^>]*id="predictive-intelligence-for-incident__section_/g) || []).length;
+      console.log('🔍🔍🔍 MAIN.JS - Sections in HTML:', sectionCount);
+      console.log('🔍🔍🔍 MAIN.JS - First 500 chars:', htmlContent.substring(0, 500));
+      console.log('🔍🔍🔍 MAIN.JS - Last 500 chars:', htmlContent.substring(htmlContent.length - 500));
+
       const pageData = {
         title: extractedData.title || document.title || "Untitled Page",
         content: htmlContent, // Proxy expects content field with HTML

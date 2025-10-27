@@ -29,10 +29,28 @@ export async function apiCall(method, endpoint, data = null) {
     const config = getConfig();
     const url = config.proxyUrl + endpoint;
 
+    // DEBUG: Log data size before stringification
+    if (data && (data.content || data.contentHtml)) {
+      const html = data.content || data.contentHtml;
+      console.log('🔍 apiCall - HTML length before stringify:', html.length);
+      const sectionCount = (html.match(/<section[^>]*id="predictive-intelligence-for-incident__section_/g) || []).length;
+      console.log('🔍 apiCall - Sections before stringify:', sectionCount);
+    }
+
     if (typeof GM_xmlhttpRequest === "undefined") {
       // Fallback to fetch if GM_xmlhttpRequest is not available
       fallbackFetchCall(method, url, data).then(resolve).catch(reject);
       return;
+    }
+
+    const stringifiedData = data ? JSON.stringify(data) : undefined;
+    
+    // DEBUG: Log stringified data size
+    if (stringifiedData && data && (data.content || data.contentHtml)) {
+      console.log('🔍 apiCall - Stringified data length:', stringifiedData.length);
+      // Check if sections are still in stringified data
+      const sectionCountAfter = (stringifiedData.match(/predictive-intelligence-for-incident__section_/g) || []).length;
+      console.log('🔍 apiCall - Sections in stringified data:', sectionCountAfter);
     }
 
     GM_xmlhttpRequest({
@@ -41,7 +59,7 @@ export async function apiCall(method, endpoint, data = null) {
       headers: {
         "Content-Type": "application/json",
       },
-      data: data ? JSON.stringify(data) : undefined,
+      data: stringifiedData,
       onload: function (response) {
         try {
           const result = JSON.parse(response.responseText);
@@ -468,11 +486,13 @@ export async function sendProcessedContentToProxy(processedData) {
   // DEBUG: Check if all articles are in the HTML being sent
   if (processedData.contentHtml || processedData.content) {
     const html = processedData.contentHtml || processedData.content;
-    console.log('📊 Total HTML length:', html.length);
+    console.log('📊 PROXY-API.JS - Total HTML length:', html.length);
+    const sectionCount = (html.match(/<section[^>]*id="predictive-intelligence-for-incident__section_/g) || []).length;
+    console.log('📊 PROXY-API.JS - Sections in HTML:', sectionCount);
     const nested1Count = (html.match(/class="topic task nested1"/g) || []).length;
-    console.log('📊 Number of article.nested1 in HTML:', nested1Count);
+    console.log('📊 PROXY-API.JS - Number of article.nested1 in HTML:', nested1Count);
     const nested0Count = (html.match(/class="[^"]*nested0[^"]*"/g) || []).length;
-    console.log('📊 Number of article.nested0 in HTML:', nested0Count);
+    console.log('📊 PROXY-API.JS - Number of article.nested0 in HTML:', nested0Count);
   }
   
   // Import overlay module for status updates
@@ -480,6 +500,12 @@ export async function sendProcessedContentToProxy(processedData) {
   
   try {
     overlayModule.setMessage("Converting HTML to Notion blocks...");
+    
+    // DEBUG: Log right before API call
+    console.log('🚀 PROXY-API.JS - About to call apiCall with processedData');
+    console.log('🚀 PROXY-API.JS - processedData.content length:', processedData.content?.length);
+    console.log('🚀 PROXY-API.JS - processedData.contentHtml length:', processedData.contentHtml?.length);
+    
     const result = await apiCall("POST", "/api/W2N", processedData);
 
     debug("Raw proxy response:", JSON.stringify(result, null, 2));

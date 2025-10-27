@@ -186,6 +186,10 @@ async function extractContentFromHtml(html) {
   html = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
   html = html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
 
+  // CRITICAL: Remove SVG icon elements FIRST - these are decorative only, no content value
+  // Must happen before any other processing to prevent SVG tags from being converted to placeholders
+  html = html.replace(/<svg[\s\S]*?<\/svg>/gi, "");
+
   // Remove ServiceNow documentation helper UI elements
   html = html.replace(/<div[^>]*class="[^\"]*zDocsCodeExplanationContainer[^\"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
   html = html.replace(/<button[^>]*class="[^\"]*zDocsAiActionsButton[^\"]*"[^>]*>[\s\S]*?<\/button>/gi, "");
@@ -301,6 +305,27 @@ async function extractContentFromHtml(html) {
       if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with uicontrol class: ${match.substring(0, 100)}`);
       return `__BOLD_BLUE_START__${content}__BOLD_BLUE_END__`;
     });
+
+    // CRITICAL: Strip generic <span class="ph"> tags BEFORE HTML cleanup
+    // This exposes technical identifiers like (com.snc.incident.ml) so the technical identifier
+    // regex in rich-text.cjs can detect them and format them as inline code with brackets
+    // Run in a loop to handle nested spans (innermost to outermost)
+    let lastText;
+    let iterations = 0;
+    do {
+      lastText = text;
+      text = text.replace(/<span[^>]*class=["'][^"']*\bph\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, '$1');
+      iterations++;
+      if (iterations > 1 && lastText !== text) {
+        console.log(`🔍 [ph span strip] Iteration ${iterations}: removed ph spans`);
+      }
+    } while (text !== lastText && text.includes('<span') && iterations < 10);
+    
+    if (text.includes('com.snc.incident.ml')) {
+      console.log(`🔍 [ph span strip] AFTER ${iterations} iteration(s), text with com.snc.incident.ml:`);
+      const snippet = text.substring(text.indexOf('com.snc.incident.ml') - 50, text.indexOf('com.snc.incident.ml') + 100);
+      console.log(`   "${snippet}"`);
+    }
 
     // DEBUG: Check if we have ">" characters
     if (text.includes('>') && !text.includes('<')) {
@@ -1427,7 +1452,9 @@ async function extractContentFromHtml(html) {
       let level = parseInt(tagName.charAt(1));
       if (level > 3) level = 3; // Notion max is heading_3
       
-      const innerHtml = $elem.html() || '';
+      let innerHtml = $elem.html() || '';
+      // Strip SVG icon elements (decorative only, no content value)
+      innerHtml = innerHtml.replace(/<svg[\s\S]*?<\/svg>/gi, '');
       console.log(`🔍 Heading ${level} innerHtml: "${innerHtml.substring(0, 100)}"`);
       const { richText: headingRichText, imageBlocks: headingImages } = await parseRichText(innerHtml);
       console.log(`🔍 Heading ${level} rich_text has ${headingRichText.length} elements, first: ${JSON.stringify(headingRichText[0])}`);
@@ -1890,7 +1917,9 @@ async function extractContentFromHtml(html) {
           }
         } else {
           // Simple list item with no nested blocks
-          const liHtml = $li.html() || '';
+          let liHtml = $li.html() || '';
+          // Strip SVG icon elements (decorative only, no content value)
+          liHtml = liHtml.replace(/<svg[\s\S]*?<\/svg>/gi, '');
           console.log(`🔍 List item HTML: "${liHtml.substring(0, 100)}"`);
           const { richText: liRichText, imageBlocks: liImages } = await parseRichText(liHtml);
           console.log(`🔍 List item rich_text: ${liRichText.length} elements`);
@@ -2303,7 +2332,9 @@ async function extractContentFromHtml(html) {
           }
         } else {
           // Simple list item with no nested blocks
-          const liHtml = $li.html() || '';
+          let liHtml = $li.html() || '';
+          // Strip SVG icon elements (decorative only, no content value)
+          liHtml = liHtml.replace(/<svg[\s\S]*?<\/svg>/gi, '');
           console.log(`🔍 Ordered list item HTML: "${liHtml.substring(0, 100)}"`);
           const { richText: liRichText, imageBlocks: liImages } = await parseRichText(liHtml);
           console.log(`🔍 Ordered list item rich_text: ${liRichText.length} elements`);
@@ -2514,6 +2545,9 @@ async function extractContentFromHtml(html) {
       }
       
       let innerHtml = $elem.html() || '';
+      
+      // Strip SVG icon elements (decorative only, no content value)
+      innerHtml = innerHtml.replace(/<svg[\s\S]*?<\/svg>/gi, '');
       
       // CRITICAL: Remove any literal note div tags that may appear as text in paragraph content
       // These can appear when ServiceNow HTML contains note divs as literal text
