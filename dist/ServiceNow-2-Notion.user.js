@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.28
+// @version      9.2.29
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.28";
+    window.BUILD_VERSION = "9.2.29";
 (function () {
 
   // Configuration constants and default settings
@@ -5458,10 +5458,17 @@
 
               // Remove navigation elements from the clone
               // BUT: Keep nav elements that are inside article/section tags (these are "Related Links" content)
+              // Note: Can't use descendant selectors in :not(), so we'll remove manually
               const navElements = mainClone.querySelectorAll(
-                "nav:not(article nav):not(section nav), [role='navigation']:not(article [role='navigation']):not(section [role='navigation']), .navigation, .breadcrumb, .menu, header, footer"
+                "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer"
               );
-              navElements.forEach((el) => el.remove());
+              navElements.forEach((el) => {
+                // Keep nav elements that are inside article or section tags
+                const isInsideArticleOrSection = el.closest('article, section');
+                if (!isInsideArticleOrSection) {
+                  el.remove();
+                }
+              });
 
               if (mainClone.innerHTML?.trim().length > 200) {
                 iframeContent = mainClone.innerHTML;
