@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.37
+// @version      9.2.38
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.37";
+    window.BUILD_VERSION = "9.2.38";
 (function () {
 
   // Configuration constants and default settings
@@ -5857,7 +5857,18 @@
 
       unwantedSelectors.forEach((selector) => {
         const elements = doc.querySelectorAll(selector);
-        elements.forEach((el) => el.remove());
+        if (elements.length > 0) {
+          console.log(`🧹 Removing ${elements.length} elements matching "${selector}"`);
+        }
+        elements.forEach((el) => {
+          // Check if element is inside a nav that's inside article/section
+          const insideNav = el.closest('nav, [role="navigation"]');
+          const insideArticle = el.closest('article, section');
+          if (insideNav && insideArticle) {
+            console.log(`⚠️ WARNING: Removing ${el.tagName}.${el.className} inside content nav! (selector: ${selector})`);
+          }
+          el.remove();
+        });
       });
 
       // Check length after removing unwanted elements
