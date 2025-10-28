@@ -686,6 +686,8 @@ export function cleanHtmlContent(htmlContent) {
   try {
     // Create a temporary document to manipulate HTML safely
     const doc = new DOMParser().parseFromString(htmlContent, "text/html");
+    const navCountBefore = doc.querySelectorAll('nav, [role="navigation"]').length;
+    console.log(`🧹 cleanHtmlContent START: ${htmlContent.length} chars, ${navCountBefore} nav elements`);
 
     // Remove unwanted elements
     const unwantedSelectors = [
@@ -707,8 +709,32 @@ export function cleanHtmlContent(htmlContent) {
 
     unwantedSelectors.forEach((selector) => {
       const elements = doc.querySelectorAll(selector);
-      elements.forEach((el) => el.remove());
+      if (elements.length > 0) {
+        console.log(`🧹 Removing ${elements.length} elements matching "${selector}"`);
+      }
+      elements.forEach((el) => {
+        // Check if element is inside a nav that's inside article/section
+        const insideNav = el.closest('nav, [role="navigation"]');
+        const insideArticle = el.closest('article, section');
+        if (insideNav && insideArticle) {
+          console.log(`⚠️ WARNING: Removing ${el.tagName}.${el.className} inside content nav! (selector: ${selector})`);
+          console.log(`   Content preview: ${el.innerHTML?.substring(0, 200)}`);
+        }
+        
+        // Log large removals
+        const elHtmlLength = el.outerHTML?.length || 0;
+        if (elHtmlLength > 200) {
+          console.log(`⚠️ Removing large ${el.tagName} (${elHtmlLength} chars) - Preview: ${el.outerHTML?.substring(0, 150)}`);
+        }
+        
+        el.remove();
+      });
     });
+
+    // Check length after removing unwanted elements
+    const afterUnwantedHtml = doc.body.innerHTML;
+    const navCountAfterUnwanted = (afterUnwantedHtml.match(/<nav[^>]*>/g) || []).length;
+    console.log(`🧹 After removing unwanted: ${afterUnwantedHtml.length} chars, ${navCountAfterUnwanted} nav elements`);
 
     // Remove navigation elements that are NOT inside article/section
     // (Keep content-related navigation like "Related Links")
@@ -727,10 +753,12 @@ export function cleanHtmlContent(htmlContent) {
     const emptyElements = doc.querySelectorAll(
       "p:empty, div:empty, span:empty"
     );
+    console.log(`🧹 cleanHtmlContent: Found ${emptyElements.length} empty elements to remove`);
     emptyElements.forEach((el) => el.remove());
 
     // Remove elements with only whitespace (but preserve pre/code elements)
     const textNodes = doc.querySelectorAll("p, div, span");
+    let whitespaceRemoved = 0;
     textNodes.forEach((el) => {
       // Don't remove code blocks or their parents
       if (
@@ -741,9 +769,11 @@ export function cleanHtmlContent(htmlContent) {
         return;
       }
       if (el.textContent.trim() === "" && el.children.length === 0) {
+        whitespaceRemoved++;
         el.remove();
       }
     });
+    console.log(`🧹 cleanHtmlContent: Removed ${whitespaceRemoved} whitespace-only elements`);
 
     // Clean up image references
     const images = doc.querySelectorAll("img");
@@ -772,8 +802,12 @@ export function cleanHtmlContent(htmlContent) {
     // Process code-toolbar elements as code blocks
     processCodeToolbarElements(doc);
 
+    const cleanedHtml = doc.body.innerHTML;
+    const navCountAfter = (cleanedHtml.match(/<nav[^>]*>/g) || []).length;
+    console.log(`🧹 cleanHtmlContent END: ${cleanedHtml.length} chars, ${navCountAfter} nav elements`);
+    
     debug(`✅ HTML content cleaned successfully`);
-    return doc.body.innerHTML;
+    return cleanedHtml;
   } catch (error) {
     debug("❌ Error cleaning HTML content:", error);
     return htmlContent; // Return original if cleaning fails
