@@ -144,16 +144,18 @@ export async function extractContentWithIframes(contentElement) {
             console.log(`   ✅ Selector matched! Using: "${selector}"`);
             iframeContent = container.innerHTML;
             
-            // 🔍 DIAGNOSTIC: Count articles in extracted content
+            // 🔍 DIAGNOSTIC: Count articles and nav elements in extracted content
             const articleCount = (iframeContent.match(/<article[^>]*>/g) || []).length;
             const h2Count = (iframeContent.match(/<h2[^>]*>/g) || []).length;
+            const navCount = (iframeContent.match(/<nav[^>]*>/g) || []).length;
             console.log(`🔍🔍🔍 EXTRACTION DIAGNOSTIC (${selector}):`);
             console.log(`   - Content length: ${iframeContent.length} chars`);
             console.log(`   - Article tags found: ${articleCount}`);
             console.log(`   - H2 headings found: ${h2Count}`);
+            console.log(`   - Nav tags found: ${navCount}`);
             console.log(`   - First 500 chars:`, iframeContent.substring(0, 500));
             
-            debug(`📄 Strategy 1 (${selector}): ${iframeContent.length} chars, ${articleCount} articles, ${h2Count} h2 headings`);
+            debug(`📄 Strategy 1 (${selector}): ${iframeContent.length} chars, ${articleCount} articles, ${h2Count} h2 headings, ${navCount} nav elements`);
             break;
           }
         }
@@ -166,10 +168,18 @@ export async function extractContentWithIframes(contentElement) {
             const mainClone = mainElement.cloneNode(true);
 
             // Remove navigation elements from the clone
+            // BUT: Keep nav elements that are inside article/section tags (these are "Related Links" content)
+            // Note: Can't use descendant selectors in :not(), so we'll remove manually
             const navElements = mainClone.querySelectorAll(
-              "nav, [role='navigation'], .navigation, .nav, .breadcrumb, .menu, header, footer"
+              "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer"
             );
-            navElements.forEach((el) => el.remove());
+            navElements.forEach((el) => {
+              // Keep nav elements that are inside article or section tags
+              const isInsideArticleOrSection = el.closest('article, section');
+              if (!isInsideArticleOrSection) {
+                el.remove();
+              }
+            });
 
             if (mainClone.innerHTML?.trim().length > 200) {
               iframeContent = mainClone.innerHTML;
@@ -306,9 +316,32 @@ export async function extractContentWithIframes(contentElement) {
   } else {
     // Regular content element processing
     debug("📄 Processing regular content element");
+    console.log("📄📄📄 Regular content processing - cloning and filtering nav elements");
+
+    // Clone the content element to avoid modifying the original DOM
+    const contentClone = contentElement.cloneNode(true);
+
+    // Apply nav filtering - remove navigation elements that are NOT inside article/section
+    const navElements = contentClone.querySelectorAll(
+      "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer"
+    );
+    console.log(`📄 Found ${navElements.length} navigation elements in regular content`);
+    
+    let removedCount = 0;
+    navElements.forEach((el) => {
+      const isInsideArticleOrSection = el.closest('article, section');
+      if (!isInsideArticleOrSection) {
+        console.log(`   ❌ Removing nav: ${el.tagName} (not inside article/section)`);
+        el.remove();
+        removedCount++;
+      } else {
+        console.log(`   ✅ Keeping nav: ${el.tagName} (inside article/section)`);
+      }
+    });
+    console.log(`📄 Removed ${removedCount} navigation elements, kept ${navElements.length - removedCount}`);
 
     // Look for nested iframes and extract their content
-    const nestedIframes = contentElement.querySelectorAll("iframe");
+    const nestedIframes = contentClone.querySelectorAll("iframe");
     if (nestedIframes.length > 0) {
       debug(`🔍 Found ${nestedIframes.length} nested iframes to process`);
 
@@ -321,9 +354,11 @@ export async function extractContentWithIframes(contentElement) {
       }
     }
 
-    // If no iframe content found, use the regular element content
+    // If no iframe content found, use the filtered element content
     if (!combinedHtml) {
-      combinedHtml = contentElement.outerHTML || contentElement.innerHTML;
+      combinedHtml = contentClone.outerHTML || contentClone.innerHTML;
+      const navCount = (combinedHtml.match(/<nav[^>]*>/g) || []).length;
+      console.log(`📄 Using filtered content: ${combinedHtml.length} chars, ${navCount} nav tags`);
     }
 
     // Replace images/SVGs inside tables with bullet symbols

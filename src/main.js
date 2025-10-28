@@ -433,6 +433,10 @@ class ServiceNowToNotionApp {
       
       overlayModule.setMessage("Extracting content from page...");
       const content = await extractContentWithIframes(contentElement);
+      
+      // DEBUG: Check content right after extraction
+      const navInCombined = (content.combinedHtml?.match(/<nav[^>]*>/g) || []).length;
+      console.log(`🔍 AFTER EXTRACTION: combinedHtml=${content.combinedHtml?.length} chars, ${navInCombined} nav tags`);
 
       // Analyze and process content (with null safety)
       overlayModule.setMessage("Analyzing content structure...");
