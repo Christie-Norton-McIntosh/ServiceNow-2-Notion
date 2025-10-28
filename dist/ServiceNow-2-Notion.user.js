@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.39
+// @version      9.2.40
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.39";
+    window.BUILD_VERSION = "9.2.40";
 (function () {
 
   // Configuration constants and default settings
@@ -5858,21 +5858,23 @@
       unwantedSelectors.forEach((selector) => {
         const elements = doc.querySelectorAll(selector);
         if (elements.length > 0) {
-          console.log(`🧹 Removing ${elements.length} elements matching "${selector}"`);
+          console.log(`🧹 Checking ${elements.length} elements matching "${selector}"`);
         }
         elements.forEach((el) => {
           // Check if element is inside a nav that's inside article/section
           const insideNav = el.closest('nav, [role="navigation"]');
           const insideArticle = el.closest('article, section');
+          
+          // Don't remove if inside content nav
           if (insideNav && insideArticle) {
-            console.log(`⚠️ WARNING: Removing ${el.tagName}.${el.className} inside content nav! (selector: ${selector})`);
-            console.log(`   Content preview: ${el.innerHTML?.substring(0, 200)}`);
+            console.log(`✅ Preserving ${el.tagName}.${el.className} inside content nav (selector: ${selector})`);
+            return; // Skip removal
           }
           
           // Log large removals
           const elHtmlLength = el.outerHTML?.length || 0;
           if (elHtmlLength > 200) {
-            console.log(`⚠️ Removing large ${el.tagName} (${elHtmlLength} chars) - Preview: ${el.outerHTML?.substring(0, 150)}`);
+            console.log(`🧹 Removing large ${el.tagName} (${elHtmlLength} chars) matching "${selector}"`);
           }
           
           el.remove();
