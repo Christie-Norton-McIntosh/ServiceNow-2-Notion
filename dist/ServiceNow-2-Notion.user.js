@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.40
+// @version      9.2.41
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.40";
+    window.BUILD_VERSION = "9.2.41";
 (function () {
 
   // Configuration constants and default settings
@@ -5865,14 +5865,20 @@
           const insideNav = el.closest('nav, [role="navigation"]');
           const insideArticle = el.closest('article, section');
           
+          const elHtmlLength = el.outerHTML?.length || 0;
+          
+          // Log what we're checking for large elements
+          if (elHtmlLength > 200) {
+            console.log(`🔍 Large ${el.tagName} (${elHtmlLength} chars): insideNav=${!!insideNav}, insideArticle=${!!insideArticle}`);
+          }
+          
           // Don't remove if inside content nav
           if (insideNav && insideArticle) {
-            console.log(`✅ Preserving ${el.tagName}.${el.className} inside content nav (selector: ${selector})`);
+            console.log(`✅ Preserving ${el.tagName} (${elHtmlLength} chars) inside content nav (selector: ${selector})`);
             return; // Skip removal
           }
           
-          // Log large removals
-          const elHtmlLength = el.outerHTML?.length || 0;
+          // Log removals
           if (elHtmlLength > 200) {
             console.log(`🧹 Removing large ${el.tagName} (${elHtmlLength} chars) matching "${selector}"`);
           }
