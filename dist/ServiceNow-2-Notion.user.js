@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.35
+// @version      9.2.36
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.35";
+    window.BUILD_VERSION = "9.2.36";
 (function () {
 
   // Configuration constants and default settings
@@ -5834,6 +5834,8 @@
     try {
       // Create a temporary document to manipulate HTML safely
       const doc = new DOMParser().parseFromString(htmlContent, "text/html");
+      const navCountBefore = doc.querySelectorAll('nav, [role="navigation"]').length;
+      console.log(`🧹 cleanHtmlContent START: ${htmlContent.length} chars, ${navCountBefore} nav elements`);
 
       // Remove unwanted elements
       const unwantedSelectors = [
@@ -5875,10 +5877,12 @@
       const emptyElements = doc.querySelectorAll(
         "p:empty, div:empty, span:empty"
       );
+      console.log(`🧹 cleanHtmlContent: Found ${emptyElements.length} empty elements to remove`);
       emptyElements.forEach((el) => el.remove());
 
       // Remove elements with only whitespace (but preserve pre/code elements)
       const textNodes = doc.querySelectorAll("p, div, span");
+      let whitespaceRemoved = 0;
       textNodes.forEach((el) => {
         // Don't remove code blocks or their parents
         if (
@@ -5889,9 +5893,11 @@
           return;
         }
         if (el.textContent.trim() === "" && el.children.length === 0) {
+          whitespaceRemoved++;
           el.remove();
         }
       });
+      console.log(`🧹 cleanHtmlContent: Removed ${whitespaceRemoved} whitespace-only elements`);
 
       // Clean up image references
       const images = doc.querySelectorAll("img");
@@ -5920,8 +5926,12 @@
       // Process code-toolbar elements as code blocks
       processCodeToolbarElements(doc);
 
+      const cleanedHtml = doc.body.innerHTML;
+      const navCountAfter = (cleanedHtml.match(/<nav[^>]*>/g) || []).length;
+      console.log(`🧹 cleanHtmlContent END: ${cleanedHtml.length} chars, ${navCountAfter} nav elements`);
+      
       debug(`✅ HTML content cleaned successfully`);
-      return doc.body.innerHTML;
+      return cleanedHtml;
     } catch (error) {
       debug("❌ Error cleaning HTML content:", error);
       return htmlContent; // Return original if cleaning fails
