@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.30
+// @version      9.2.31
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.30";
+    window.BUILD_VERSION = "9.2.31";
 (function () {
 
   // Configuration constants and default settings
@@ -5607,9 +5607,32 @@
     } else {
       // Regular content element processing
       debug("📄 Processing regular content element");
+      console.log("📄📄📄 Regular content processing - cloning and filtering nav elements");
+
+      // Clone the content element to avoid modifying the original DOM
+      const contentClone = contentElement.cloneNode(true);
+
+      // Apply nav filtering - remove navigation elements that are NOT inside article/section
+      const navElements = contentClone.querySelectorAll(
+        "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer"
+      );
+      console.log(`📄 Found ${navElements.length} navigation elements in regular content`);
+      
+      let removedCount = 0;
+      navElements.forEach((el) => {
+        const isInsideArticleOrSection = el.closest('article, section');
+        if (!isInsideArticleOrSection) {
+          console.log(`   ❌ Removing nav: ${el.tagName} (not inside article/section)`);
+          el.remove();
+          removedCount++;
+        } else {
+          console.log(`   ✅ Keeping nav: ${el.tagName} (inside article/section)`);
+        }
+      });
+      console.log(`📄 Removed ${removedCount} navigation elements, kept ${navElements.length - removedCount}`);
 
       // Look for nested iframes and extract their content
-      const nestedIframes = contentElement.querySelectorAll("iframe");
+      const nestedIframes = contentClone.querySelectorAll("iframe");
       if (nestedIframes.length > 0) {
         debug(`🔍 Found ${nestedIframes.length} nested iframes to process`);
 
@@ -5622,9 +5645,14 @@
         }
       }
 
-      // If no iframe content found, use the regular element content
+      // If no iframe content found, use the filtered element content
       if (!combinedHtml) {
-        combinedHtml = contentElement.outerHTML || contentElement.innerHTML;
+        combinedHtml = contentClone.outerHTML || contentClone.innerHTML;
+        console.log(`📄 Using filtered content: ${combinedHtml.length} chars`);
+        
+        // Count nav tags in final HTML
+        const navCount = (combinedHtml.match(/<nav[^>]*>/g) || []).length;
+        console.log(`📄 Final HTML contains ${navCount} <nav> tags`);
       }
 
       // Replace images/SVGs inside tables with bullet symbols
