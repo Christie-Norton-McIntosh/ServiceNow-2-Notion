@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.29
+// @version      9.2.30
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.29";
+    window.BUILD_VERSION = "9.2.30";
 (function () {
 
   // Configuration constants and default settings
@@ -5435,16 +5435,18 @@
               console.log(`   ✅ Selector matched! Using: "${selector}"`);
               iframeContent = container.innerHTML;
               
-              // 🔍 DIAGNOSTIC: Count articles in extracted content
+              // 🔍 DIAGNOSTIC: Count articles and nav elements in extracted content
               const articleCount = (iframeContent.match(/<article[^>]*>/g) || []).length;
               const h2Count = (iframeContent.match(/<h2[^>]*>/g) || []).length;
+              const navCount = (iframeContent.match(/<nav[^>]*>/g) || []).length;
               console.log(`🔍🔍🔍 EXTRACTION DIAGNOSTIC (${selector}):`);
               console.log(`   - Content length: ${iframeContent.length} chars`);
               console.log(`   - Article tags found: ${articleCount}`);
               console.log(`   - H2 headings found: ${h2Count}`);
+              console.log(`   - Nav tags found: ${navCount}`);
               console.log(`   - First 500 chars:`, iframeContent.substring(0, 500));
               
-              debug(`📄 Strategy 1 (${selector}): ${iframeContent.length} chars, ${articleCount} articles, ${h2Count} h2 headings`);
+              debug(`📄 Strategy 1 (${selector}): ${iframeContent.length} chars, ${articleCount} articles, ${h2Count} h2 headings, ${navCount} nav elements`);
               break;
             }
           }
