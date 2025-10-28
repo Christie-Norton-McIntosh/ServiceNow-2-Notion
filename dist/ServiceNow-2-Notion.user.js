@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.27
+// @version      9.2.28
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.27";
+    window.BUILD_VERSION = "9.2.28";
 (function () {
 
   // Configuration constants and default settings
@@ -5457,8 +5457,9 @@
               const mainClone = mainElement.cloneNode(true);
 
               // Remove navigation elements from the clone
+              // BUT: Keep nav elements that are inside article/section tags (these are "Related Links" content)
               const navElements = mainClone.querySelectorAll(
-                "nav, [role='navigation'], .navigation, .nav, .breadcrumb, .menu, header, footer"
+                "nav:not(article nav):not(section nav), [role='navigation']:not(article [role='navigation']):not(section [role='navigation']), .navigation, .breadcrumb, .menu, header, footer"
               );
               navElements.forEach((el) => el.remove());
 
