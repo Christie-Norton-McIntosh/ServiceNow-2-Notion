@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.34
+// @version      9.2.35
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.34";
+    window.BUILD_VERSION = "9.2.35";
 (function () {
 
   // Configuration constants and default settings
@@ -5844,8 +5844,7 @@
         ".advertisement",
         ".ads",
         ".sidebar",
-        ".navigation",
-        ".breadcrumb",
+        // Note: .navigation and .breadcrumb removed from here - handled separately below
         ".search",
         '[class*="search"]',
         "button",
@@ -5857,6 +5856,19 @@
       unwantedSelectors.forEach((selector) => {
         const elements = doc.querySelectorAll(selector);
         elements.forEach((el) => el.remove());
+      });
+
+      // Remove navigation elements that are NOT inside article/section
+      // (Keep content-related navigation like "Related Links")
+      const navElements = doc.querySelectorAll(".navigation, .breadcrumb, nav, [role='navigation']");
+      navElements.forEach((el) => {
+        const isInsideArticleOrSection = el.closest('article, section');
+        if (!isInsideArticleOrSection) {
+          console.log(`🧹 cleanHtmlContent: Removing ${el.tagName}.${el.className} (not inside article/section)`);
+          el.remove();
+        } else {
+          console.log(`🧹 cleanHtmlContent: Keeping ${el.tagName}.${el.className} (inside article/section)`);
+        }
       });
 
       // Remove empty paragraphs and divs (but preserve pre/code elements)
