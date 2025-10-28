@@ -908,57 +908,29 @@ async function extractContentFromHtml(html) {
   console.log(`🔥🔥🔥 Article IDs in raw HTML: ${rawArticleIds.length > 0 ? rawArticleIds.join(', ') : 'NONE'}`);
   console.log(`🔥🔥🔥 Raw HTML length: ${html.length} characters`);
   
-  // FIX: ServiceNow HTML sometimes has unclosed <div class="p"> tags that contain nested divs
-  // This causes Cheerio to treat subsequent sibling elements as children of the div
-  // We need to find where each <div class="p"> should close and add missing </div> tags
-  console.log('🔍 HTML FIX: Checking for improperly closed div.p tags...');
+  // FIX: ServiceNow HTML has malformed structure with EXTRA closing </div> tags
+  // Pattern: <div class="p"><div class="table-wrap"></div><div class="zDocs..."></div><table>...</table></div></div></div>
+  // This has 1 opening <div class="p"> but 3 closing </div> tags (2 are for nested divs, 1 extra)
+  // Cheerio treats the extra </div> tags as closing parent elements, making siblings become children
+  console.log('🔍 HTML FIX: Checking for extra closing div tags after tables...');
   
   let fixedHtml = html;
   let totalFixed = 0;
   
-  // Strategy: For each section, find <div class="p"> tags and ensure they close before next sibling
-  // Pattern to watch: <div class="p"><table>...</table></div></div> followed by <div class="p"> or <p class="p">
-  // The parent div.p is missing a closing tag, so the subsequent elements become nested children
+  // Strategy: Find pattern </table></div></div></div> and replace with </table></div>
+  // The table-wrap and zDocsFilterTableDiv are self-closing, so we only need ONE </div> for the parent div.p
+  const extraDivPattern = /<\/table><\/div><\/div><\/div>/g;
+  const matches = fixedHtml.match(extraDivPattern);
   
-  // Find sections and check for this pattern
-  const sectionPattern = /<section([^>]*)>([\s\S]*?)<\/section>/gi;
-  
-  fixedHtml = html.replace(sectionPattern, (match, attrs, innerHTML) => {
-    let fixedInnerHTML = innerHTML;
-    let sectionFixed = 0;
-    
-    // Look for pattern: </table></div></div> NOT followed by </div> but followed by <div or <p
-    // This indicates the parent div.p wrapper is not closed
-    const tableEndPattern = /<\/table><\/div><\/div>(\s*)(<div class="p"|<p class="p")/g;
-    
-    // Check each match to see if it needs a closing div
-    let matchFound = false;
-    fixedInnerHTML = fixedInnerHTML.replace(tableEndPattern, (m, whitespace, nextTag) => {
-      // Check if there's already a </div> in the whitespace
-      if (whitespace.includes('</div>')) {
-        return m; // Already has closing tag
-      }
-      matchFound = true;
-      sectionFixed++;
-      console.log(`  🔧 Adding missing </div> after table, before ${nextTag.substring(0, 20)}...`);
-      return `</table></div></div></div>${whitespace}${nextTag}`;
-    });
-    
-    if (sectionFixed > 0) {
-      totalFixed += sectionFixed;
-      console.log(`  ✅ Fixed ${sectionFixed} unclosed div.p tag(s) in this section`);
-      return `<section${attrs}>${fixedInnerHTML}</section>`;
-    }
-    
-    return match;
-  });
-  
-  if (totalFixed > 0) {
+  if (matches && matches.length > 0) {
+    console.log(`🔍 HTML FIX: Found ${matches.length} instances of triple closing divs after </table>`);
+    fixedHtml = fixedHtml.replace(extraDivPattern, '</table></div>');
+    totalFixed = matches.length;
+    console.log(`✅ HTML FIX COMPLETE: Removed ${totalFixed * 2} extra </div> tag(s) after tables`);
     html = fixedHtml;
-    console.log(`✅ HTML FIX COMPLETE: Added ${totalFixed} missing </div> tag(s) to properly close div.p wrappers`);
     console.log(`🔥🔥🔥 AFTER HTML FIX: HTML length is now ${html.length} characters`);
   } else {
-    console.log(`✅ HTML FIX: No improperly closed div.p tags found`);
+    console.log(`✅ HTML FIX: No extra closing div tags found after tables`);
   }
   
   // DIAGNOSTIC: Check if sections have their h2 elements in raw HTML
@@ -968,36 +940,6 @@ async function extractContentFromHtml(html) {
       const sectionStart = sectionMatch[1];
       const hasH2 = /<h2[^>]*>/.test(sectionStart);
       console.log(`🔥 Section ${sectionId} in RAW HTML: ${hasH2 ? '✅ HAS h2' : '❌ NO h2'} - Preview: ${sectionStart.substring(0, 150).replace(/\s+/g, ' ')}`);
-    }
-    
-    // DEEP DIVE: Full innerHTML of first section
-    if (sectionId === 'predictive-intelligence-for-incident__section_ifk_n1t_kbb') {
-      const fullSectionMatch = html.match(new RegExp(`<section[^>]*id="${sectionId}"[^>]*>([\\s\\S]*?)<\\/section>`, 'i'));
-      if (fullSectionMatch) {
-        const innerHTML = fullSectionMatch[1];
-        console.log(`\n🔍🔍🔍 FIRST SECTION RAW innerHTML (length ${innerHTML.length}):`);
-        console.log(`  ✓ Contains "Solution definitions and the required plugins": ${innerHTML.includes('Solution definitions and the required plugins')}`);
-        console.log(`  ✓ Contains "For more information on classification": ${innerHTML.includes('For more information on classification')}`);
-        console.log(`  ✓ <div class="p"> count: ${(innerHTML.match(/<div class="p"[^>]*>/g) || []).length}`);
-        console.log(`  ✓ <p class="p"> count: ${(innerHTML.match(/<p class="p"[^>]*>/g) || []).length}`);
-        console.log(`  First 500 chars: ${innerHTML.substring(0, 500).replace(/\s+/g, ' ')}`);
-        console.log(`  Last 500 chars: ${innerHTML.substring(innerHTML.length - 500).replace(/\s+/g, ' ')}\n`);
-        
-        // CRITICAL: Find where the first div.p ends
-        const firstDivPStart = innerHTML.indexOf('<div class="p">');
-        if (firstDivPStart >= 0) {
-          // Extract 5000 chars from first div.p to see full structure including closing tags
-          const divPSegment = innerHTML.substring(firstDivPStart, firstDivPStart + 5000);
-          console.log(`\n🔍🔍🔍 FIRST <div class="p"> STRUCTURE (5000 chars):`);
-          console.log(divPSegment);
-          console.log('🔍🔍🔍 END OF STRUCTURE\n');
-          
-          // Count opening and closing div tags within this segment
-          const openDivs = (divPSegment.match(/<div/g) || []).length;
-          const closeDivs = (divPSegment.match(/<\/div>/g) || []).length;
-          console.log(`\n🔍 DIV TAG BALANCE: ${openDivs} opening <div>, ${closeDivs} closing </div> (diff: ${openDivs - closeDivs})\n`);
-        }
-      }
     }
   }
   
@@ -1032,27 +974,6 @@ async function extractContentFromHtml(html) {
       const childCount = $section.find('> *').length;
       const childTags = $section.find('> *').map((i, el) => el.name).get().join(', ');
       console.log(`🔥 Section ${sectionId} in CHEERIO: ${hasH2 ? '✅ HAS h2' : '❌ NO h2'} "${h2Text}" - ${childCount} children: [${childTags}]`);
-      
-      // DEEP DIVE: Full innerHTML comparison for first section
-      if (sectionId === 'predictive-intelligence-for-incident__section_ifk_n1t_kbb') {
-        const cheerioHTML = $section.html() || '';
-        console.log(`\n🔍🔍🔍 FIRST SECTION CHEERIO innerHTML (length ${cheerioHTML.length}):`);
-        console.log(`  ✓ Contains "Solution definitions and the required plugins": ${cheerioHTML.includes('Solution definitions and the required plugins')}`);
-        console.log(`  ✓ Contains "For more information on classification": ${cheerioHTML.includes('For more information on classification')}`);
-        console.log(`  ✓ <div class="p"> count: ${(cheerioHTML.match(/<div class="p"[^>]*>/g) || []).length}`);
-        console.log(`  ✓ <p class="p"> count: ${(cheerioHTML.match(/<p class="p"[^>]*>/g) || []).length}`);
-        
-        // List ALL direct children
-        const allChildren = $section.children();
-        console.log(`  ✓ Direct children count: ${allChildren.length}`);
-        allChildren.each((i, el) => {
-          const tagName = el.name;
-          const className = $(el).attr('class') || '';
-          const textPreview = $(el).text().substring(0, 80).replace(/\s+/g, ' ');
-          console.log(`    Child ${i}: <${tagName}${className ? ` class="${className}"` : ''}> - "${textPreview}"`);
-        });
-        console.log('');
-      }
     }
     
     const lostSections = rawSectionIds.length - cheerioSectionIds.length;
