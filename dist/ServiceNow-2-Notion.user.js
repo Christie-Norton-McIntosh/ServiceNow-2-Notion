@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.38
+// @version      9.2.39
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.38";
+    window.BUILD_VERSION = "9.2.39";
 (function () {
 
   // Configuration constants and default settings
@@ -5866,7 +5866,15 @@
           const insideArticle = el.closest('article, section');
           if (insideNav && insideArticle) {
             console.log(`⚠️ WARNING: Removing ${el.tagName}.${el.className} inside content nav! (selector: ${selector})`);
+            console.log(`   Content preview: ${el.innerHTML?.substring(0, 200)}`);
           }
+          
+          // Log large removals
+          const elHtmlLength = el.outerHTML?.length || 0;
+          if (elHtmlLength > 200) {
+            console.log(`⚠️ Removing large ${el.tagName} (${elHtmlLength} chars) - Preview: ${el.outerHTML?.substring(0, 150)}`);
+          }
+          
           el.remove();
         });
       });
