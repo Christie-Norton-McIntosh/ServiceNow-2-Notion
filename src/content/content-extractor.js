@@ -701,30 +701,36 @@ export function cleanHtmlContent(htmlContent) {
       // Note: .navigation and .breadcrumb removed from here - handled separately below
       ".search",
       '[class*="search"]',
-      "button",
-      "input",
-      "form",
+      // Note: button, input, form removed - they might contain or wrap content
       ".skip-link",
     ];
 
     unwantedSelectors.forEach((selector) => {
       const elements = doc.querySelectorAll(selector);
       if (elements.length > 0) {
-        console.log(`🧹 Removing ${elements.length} elements matching "${selector}"`);
+        console.log(`🧹 Checking ${elements.length} elements matching "${selector}"`);
       }
       elements.forEach((el) => {
         // Check if element is inside a nav that's inside article/section
         const insideNav = el.closest('nav, [role="navigation"]');
         const insideArticle = el.closest('article, section');
-        if (insideNav && insideArticle) {
-          console.log(`⚠️ WARNING: Removing ${el.tagName}.${el.className} inside content nav! (selector: ${selector})`);
-          console.log(`   Content preview: ${el.innerHTML?.substring(0, 200)}`);
+        
+        const elHtmlLength = el.outerHTML?.length || 0;
+        
+        // Log what we're checking for large elements
+        if (elHtmlLength > 200) {
+          console.log(`🔍 Large ${el.tagName} (${elHtmlLength} chars): insideNav=${!!insideNav}, insideArticle=${!!insideArticle}`);
         }
         
-        // Log large removals
-        const elHtmlLength = el.outerHTML?.length || 0;
+        // Don't remove if inside content nav
+        if (insideNav && insideArticle) {
+          console.log(`✅ Preserving ${el.tagName} (${elHtmlLength} chars) inside content nav (selector: ${selector})`);
+          return; // Skip removal
+        }
+        
+        // Log removals
         if (elHtmlLength > 200) {
-          console.log(`⚠️ Removing large ${el.tagName} (${elHtmlLength} chars) - Preview: ${el.outerHTML?.substring(0, 150)}`);
+          console.log(`🧹 Removing large ${el.tagName} (${elHtmlLength} chars) matching "${selector}"`);
         }
         
         el.remove();
