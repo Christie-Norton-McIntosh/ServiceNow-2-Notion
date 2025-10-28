@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.42
+// @version      9.2.43
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.42";
+    window.BUILD_VERSION = "9.2.43";
 (function () {
 
   // Configuration constants and default settings
@@ -5617,10 +5617,20 @@
         "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer"
       );
       console.log(`📄 Found ${navElements.length} navigation elements in regular content`);
+      console.log(`📄 contentClone tagName: ${contentClone.tagName}, id: ${contentClone.id}, class: ${contentClone.className}`);
       
       let removedCount = 0;
-      navElements.forEach((el) => {
+      navElements.forEach((el, index) => {
+        const parentArticle = el.closest('article');
+        const parentSection = el.closest('section');
         const isInsideArticleOrSection = el.closest('article, section');
+        const elPreview = el.outerHTML?.substring(0, 200) || '';
+        
+        console.log(`📄 Nav ${index + 1}: tagName=${el.tagName}, role=${el.getAttribute('role')}, class=${el.className}`);
+        console.log(`   - parentArticle: ${parentArticle ? parentArticle.tagName + '#' + (parentArticle.id || 'no-id') : 'none'}`);
+        console.log(`   - parentSection: ${parentSection ? parentSection.tagName + '#' + (parentSection.id || 'no-id') : 'none'}`);
+        console.log(`   - Preview: ${elPreview}`);
+        
         if (!isInsideArticleOrSection) {
           console.log(`   ❌ Removing nav: ${el.tagName} (not inside article/section)`);
           el.remove();
