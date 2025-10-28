@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.31
+// @version      9.2.32
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.31";
+    window.BUILD_VERSION = "9.2.32";
 (function () {
 
   // Configuration constants and default settings
@@ -6894,6 +6894,12 @@
         
         overlayModule.setMessage("Extracting content from page...");
         const content = await extractContentWithIframes(contentElement);
+        
+        // DEBUG: Check content right after extraction
+        console.log('🔍🔍🔍 MAIN.JS - Right after extraction:');
+        console.log('   - content.combinedHtml length:', content.combinedHtml?.length);
+        console.log('   - content.html length:', content.html?.length);
+        console.log('   - Nav count in combinedHtml:', (content.combinedHtml?.match(/<nav[^>]*>/g) || []).length);
 
         // Analyze and process content (with null safety)
         overlayModule.setMessage("Analyzing content structure...");
