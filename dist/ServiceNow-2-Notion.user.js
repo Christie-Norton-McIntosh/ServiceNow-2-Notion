@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.32
+// @version      9.2.33
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.32";
+    window.BUILD_VERSION = "9.2.33";
 (function () {
 
   // Configuration constants and default settings
@@ -5648,11 +5648,8 @@
       // If no iframe content found, use the filtered element content
       if (!combinedHtml) {
         combinedHtml = contentClone.outerHTML || contentClone.innerHTML;
-        console.log(`📄 Using filtered content: ${combinedHtml.length} chars`);
-        
-        // Count nav tags in final HTML
         const navCount = (combinedHtml.match(/<nav[^>]*>/g) || []).length;
-        console.log(`📄 Final HTML contains ${navCount} <nav> tags`);
+        console.log(`📄 Using filtered content: ${combinedHtml.length} chars, ${navCount} nav tags`);
       }
 
       // Replace images/SVGs inside tables with bullet symbols
@@ -6896,10 +6893,8 @@
         const content = await extractContentWithIframes(contentElement);
         
         // DEBUG: Check content right after extraction
-        console.log('🔍🔍🔍 MAIN.JS - Right after extraction:');
-        console.log('   - content.combinedHtml length:', content.combinedHtml?.length);
-        console.log('   - content.html length:', content.html?.length);
-        console.log('   - Nav count in combinedHtml:', (content.combinedHtml?.match(/<nav[^>]*>/g) || []).length);
+        const navInCombined = (content.combinedHtml?.match(/<nav[^>]*>/g) || []).length;
+        console.log(`🔍 AFTER EXTRACTION: combinedHtml=${content.combinedHtml?.length} chars, ${navInCombined} nav tags`);
 
         // Analyze and process content (with null safety)
         overlayModule.setMessage("Analyzing content structure...");
