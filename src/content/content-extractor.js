@@ -696,8 +696,7 @@ export function cleanHtmlContent(htmlContent) {
       ".advertisement",
       ".ads",
       ".sidebar",
-      ".navigation",
-      ".breadcrumb",
+      // Note: .navigation and .breadcrumb removed from here - handled separately below
       ".search",
       '[class*="search"]',
       "button",
@@ -709,6 +708,19 @@ export function cleanHtmlContent(htmlContent) {
     unwantedSelectors.forEach((selector) => {
       const elements = doc.querySelectorAll(selector);
       elements.forEach((el) => el.remove());
+    });
+
+    // Remove navigation elements that are NOT inside article/section
+    // (Keep content-related navigation like "Related Links")
+    const navElements = doc.querySelectorAll(".navigation, .breadcrumb, nav, [role='navigation']");
+    navElements.forEach((el) => {
+      const isInsideArticleOrSection = el.closest('article, section');
+      if (!isInsideArticleOrSection) {
+        console.log(`🧹 cleanHtmlContent: Removing ${el.tagName}.${el.className} (not inside article/section)`);
+        el.remove();
+      } else {
+        console.log(`🧹 cleanHtmlContent: Keeping ${el.tagName}.${el.className} (inside article/section)`);
+      }
     });
 
     // Remove empty paragraphs and divs (but preserve pre/code elements)
