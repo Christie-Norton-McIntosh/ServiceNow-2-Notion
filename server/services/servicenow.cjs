@@ -887,16 +887,119 @@ async function extractContentFromHtml(html) {
     html = fixedHtml;
   }
 
-  // CRITICAL DIAGNOSTIC: Count articles in RAW HTML before Cheerio parsing
+  // CRITICAL DIAGNOSTIC: Count ALL structural elements in RAW HTML before Cheerio parsing
+  const rawSectionMatches = html.match(/<section[^>]*id="[^"]*"/g) || [];
+  const rawSectionIds = rawSectionMatches.map(m => {
+    const idMatch = m.match(/id="([^"]+)"/);
+    return idMatch ? idMatch[1] : 'no-id';
+  });
+  
+  const rawArticleMatches = html.match(/<article[^>]*id="[^"]*"/g) || [];
+  const rawArticleIds = rawArticleMatches.map(m => {
+    const idMatch = m.match(/id="([^"]+)"/);
+    return idMatch ? idMatch[1] : 'no-id';
+  });
+  
   const rawNested1Count = (html.match(/class="topic task nested1"/g) || []).length;
   const rawNested0Count = (html.match(/class="[^"]*nested0[^"]*"/g) || []).length;
-  console.log(`🔥🔥🔥 BEFORE CHEERIO LOAD: Raw HTML has ${rawNested0Count} nested0 and ${rawNested1Count} nested1 articles`);
+  
+  console.log(`🔥🔥🔥 BEFORE CHEERIO LOAD: Raw HTML has ${rawSectionIds.length} sections, ${rawArticleIds.length} articles (${rawNested0Count} nested0, ${rawNested1Count} nested1)`);
+  console.log(`🔥🔥🔥 Section IDs in raw HTML: ${rawSectionIds.length > 0 ? rawSectionIds.join(', ') : 'NONE'}`);
+  console.log(`🔥🔥🔥 Article IDs in raw HTML: ${rawArticleIds.length > 0 ? rawArticleIds.join(', ') : 'NONE'}`);
   console.log(`🔥🔥🔥 Raw HTML length: ${html.length} characters`);
   
-  // DUMP: Find all article IDs in raw HTML
-  const articleIdMatches = html.match(/id="(dev-ops-[^"]+)"/g) || [];
-  const articleIds = articleIdMatches.map(m => m.match(/id="([^"]+)"/)[1]).filter(id => id.startsWith('dev-ops-'));
-  console.log(`🔥🔥🔥 Article IDs in raw HTML: ${articleIds.join(', ')}`);
+  // FIX: ServiceNow HTML sometimes has unclosed <div class="p"> tags that contain nested divs
+  // This causes Cheerio to treat subsequent sibling elements as children of the div
+  // We need to find where each <div class="p"> should close and add missing </div> tags
+  console.log('🔍 HTML FIX: Checking for improperly closed div.p tags...');
+  
+  let fixedHtml = html;
+  let totalFixed = 0;
+  
+  // Strategy: For each section, find <div class="p"> tags and ensure they close before next sibling
+  // Pattern to watch: <div class="p"><table>...</table></div></div> followed by <div class="p"> or <p class="p">
+  // The parent div.p is missing a closing tag, so the subsequent elements become nested children
+  
+  // Find sections and check for this pattern
+  const sectionPattern = /<section([^>]*)>([\s\S]*?)<\/section>/gi;
+  
+  fixedHtml = html.replace(sectionPattern, (match, attrs, innerHTML) => {
+    let fixedInnerHTML = innerHTML;
+    let sectionFixed = 0;
+    
+    // Look for pattern: </table></div></div> NOT followed by </div> but followed by <div or <p
+    // This indicates the parent div.p wrapper is not closed
+    const tableEndPattern = /<\/table><\/div><\/div>(\s*)(<div class="p"|<p class="p")/g;
+    
+    // Check each match to see if it needs a closing div
+    let matchFound = false;
+    fixedInnerHTML = fixedInnerHTML.replace(tableEndPattern, (m, whitespace, nextTag) => {
+      // Check if there's already a </div> in the whitespace
+      if (whitespace.includes('</div>')) {
+        return m; // Already has closing tag
+      }
+      matchFound = true;
+      sectionFixed++;
+      console.log(`  🔧 Adding missing </div> after table, before ${nextTag.substring(0, 20)}...`);
+      return `</table></div></div></div>${whitespace}${nextTag}`;
+    });
+    
+    if (sectionFixed > 0) {
+      totalFixed += sectionFixed;
+      console.log(`  ✅ Fixed ${sectionFixed} unclosed div.p tag(s) in this section`);
+      return `<section${attrs}>${fixedInnerHTML}</section>`;
+    }
+    
+    return match;
+  });
+  
+  if (totalFixed > 0) {
+    html = fixedHtml;
+    console.log(`✅ HTML FIX COMPLETE: Added ${totalFixed} missing </div> tag(s) to properly close div.p wrappers`);
+    console.log(`🔥🔥🔥 AFTER HTML FIX: HTML length is now ${html.length} characters`);
+  } else {
+    console.log(`✅ HTML FIX: No improperly closed div.p tags found`);
+  }
+  
+  // DIAGNOSTIC: Check if sections have their h2 elements in raw HTML
+  for (const sectionId of rawSectionIds) {
+    const sectionMatch = html.match(new RegExp(`<section[^>]*id="${sectionId}"[^>]*>([\\s\\S]{0,500})`));
+    if (sectionMatch) {
+      const sectionStart = sectionMatch[1];
+      const hasH2 = /<h2[^>]*>/.test(sectionStart);
+      console.log(`🔥 Section ${sectionId} in RAW HTML: ${hasH2 ? '✅ HAS h2' : '❌ NO h2'} - Preview: ${sectionStart.substring(0, 150).replace(/\s+/g, ' ')}`);
+    }
+    
+    // DEEP DIVE: Full innerHTML of first section
+    if (sectionId === 'predictive-intelligence-for-incident__section_ifk_n1t_kbb') {
+      const fullSectionMatch = html.match(new RegExp(`<section[^>]*id="${sectionId}"[^>]*>([\\s\\S]*?)<\\/section>`, 'i'));
+      if (fullSectionMatch) {
+        const innerHTML = fullSectionMatch[1];
+        console.log(`\n🔍🔍🔍 FIRST SECTION RAW innerHTML (length ${innerHTML.length}):`);
+        console.log(`  ✓ Contains "Solution definitions and the required plugins": ${innerHTML.includes('Solution definitions and the required plugins')}`);
+        console.log(`  ✓ Contains "For more information on classification": ${innerHTML.includes('For more information on classification')}`);
+        console.log(`  ✓ <div class="p"> count: ${(innerHTML.match(/<div class="p"[^>]*>/g) || []).length}`);
+        console.log(`  ✓ <p class="p"> count: ${(innerHTML.match(/<p class="p"[^>]*>/g) || []).length}`);
+        console.log(`  First 500 chars: ${innerHTML.substring(0, 500).replace(/\s+/g, ' ')}`);
+        console.log(`  Last 500 chars: ${innerHTML.substring(innerHTML.length - 500).replace(/\s+/g, ' ')}\n`);
+        
+        // CRITICAL: Find where the first div.p ends
+        const firstDivPStart = innerHTML.indexOf('<div class="p">');
+        if (firstDivPStart >= 0) {
+          // Extract 5000 chars from first div.p to see full structure including closing tags
+          const divPSegment = innerHTML.substring(firstDivPStart, firstDivPStart + 5000);
+          console.log(`\n🔍🔍🔍 FIRST <div class="p"> STRUCTURE (5000 chars):`);
+          console.log(divPSegment);
+          console.log('🔍🔍🔍 END OF STRUCTURE\n');
+          
+          // Count opening and closing div tags within this segment
+          const openDivs = (divPSegment.match(/<div/g) || []).length;
+          const closeDivs = (divPSegment.match(/<\/div>/g) || []).length;
+          console.log(`\n🔍 DIV TAG BALANCE: ${openDivs} opening <div>, ${closeDivs} closing </div> (diff: ${openDivs - closeDivs})\n`);
+        }
+      }
+    }
+  }
   
   // Use cheerio to parse HTML and process elements in document order
   let $;
@@ -906,19 +1009,71 @@ async function extractContentFromHtml(html) {
       _useHtmlParser2: true 
     });
     
-    // CRITICAL DIAGNOSTIC: Count articles AFTER Cheerio parsing
+    // CRITICAL DIAGNOSTIC: Count ALL structural elements AFTER Cheerio parsing
+    const cheerioSections = $('section[id]');
+    const cheerioSectionIds = cheerioSections.map((i, el) => $(el).attr('id')).get();
+    
+    const cheerioArticles = $('article[id]');
+    const cheerioArticleIds = cheerioArticles.map((i, el) => $(el).attr('id')).get();
+    
     const cheerioNested1Count = $('article.nested1').length;
     const cheerioNested0Count = $('article.nested0').length;
-    console.log(`🔥🔥🔥 AFTER CHEERIO LOAD: Cheerio found ${cheerioNested0Count} nested0 and ${cheerioNested1Count} nested1 articles`);
-    console.log(`🔥🔥🔥 CHEERIO LOST ${rawNested1Count - cheerioNested1Count} articles during parsing!`);
     
-    // DUMP: Show where all articles are in the DOM
-    $('article.nested1').each((i, el) => {
-      const $el = $(el);
-      const id = $el.attr('id');
-      const parents = $el.parents().map((j, p) => `<${p.name} class="${$(p).attr('class') || ''}">`).get().join(' > ');
-      console.log(`🔥 Article ${i+1}: id="${id}", path: ${parents}`);
-    });
+    console.log(`🔥🔥🔥 AFTER CHEERIO LOAD: Cheerio found ${cheerioSectionIds.length} sections, ${cheerioArticleIds.length} articles (${cheerioNested0Count} nested0, ${cheerioNested1Count} nested1)`);
+    console.log(`🔥🔥🔥 Section IDs in Cheerio DOM: ${cheerioSectionIds.length > 0 ? cheerioSectionIds.join(', ') : 'NONE'}`);
+    console.log(`🔥🔥🔥 Article IDs in Cheerio DOM: ${cheerioArticleIds.length > 0 ? cheerioArticleIds.join(', ') : 'NONE'}`);
+    
+    // DIAGNOSTIC: Check if sections have their h2 elements in Cheerio DOM
+    for (const sectionId of cheerioSectionIds) {
+      const $section = $(`section[id="${sectionId}"]`);
+      const $h2 = $section.find('> h2').first();
+      const hasH2 = $h2.length > 0;
+      const h2Text = hasH2 ? $h2.text().substring(0, 50) : 'N/A';
+      const childCount = $section.find('> *').length;
+      const childTags = $section.find('> *').map((i, el) => el.name).get().join(', ');
+      console.log(`🔥 Section ${sectionId} in CHEERIO: ${hasH2 ? '✅ HAS h2' : '❌ NO h2'} "${h2Text}" - ${childCount} children: [${childTags}]`);
+      
+      // DEEP DIVE: Full innerHTML comparison for first section
+      if (sectionId === 'predictive-intelligence-for-incident__section_ifk_n1t_kbb') {
+        const cheerioHTML = $section.html() || '';
+        console.log(`\n🔍🔍🔍 FIRST SECTION CHEERIO innerHTML (length ${cheerioHTML.length}):`);
+        console.log(`  ✓ Contains "Solution definitions and the required plugins": ${cheerioHTML.includes('Solution definitions and the required plugins')}`);
+        console.log(`  ✓ Contains "For more information on classification": ${cheerioHTML.includes('For more information on classification')}`);
+        console.log(`  ✓ <div class="p"> count: ${(cheerioHTML.match(/<div class="p"[^>]*>/g) || []).length}`);
+        console.log(`  ✓ <p class="p"> count: ${(cheerioHTML.match(/<p class="p"[^>]*>/g) || []).length}`);
+        
+        // List ALL direct children
+        const allChildren = $section.children();
+        console.log(`  ✓ Direct children count: ${allChildren.length}`);
+        allChildren.each((i, el) => {
+          const tagName = el.name;
+          const className = $(el).attr('class') || '';
+          const textPreview = $(el).text().substring(0, 80).replace(/\s+/g, ' ');
+          console.log(`    Child ${i}: <${tagName}${className ? ` class="${className}"` : ''}> - "${textPreview}"`);
+        });
+        console.log('');
+      }
+    }
+    
+    const lostSections = rawSectionIds.length - cheerioSectionIds.length;
+    const lostArticles = rawArticleIds.length - cheerioArticleIds.length;
+    
+    if (lostSections > 0 || lostArticles > 0) {
+      console.log(`🔥🔥🔥 ⚠️ CHEERIO LOST ${lostSections} sections and ${lostArticles} articles during parsing!`);
+      
+      // Show which specific IDs were lost
+      const lostSectionIds = rawSectionIds.filter(id => !cheerioSectionIds.includes(id));
+      const lostArticleIds = rawArticleIds.filter(id => !cheerioArticleIds.includes(id));
+      
+      if (lostSectionIds.length > 0) {
+        console.log(`🔥🔥🔥 Lost section IDs: ${lostSectionIds.join(', ')}`);
+      }
+      if (lostArticleIds.length > 0) {
+        console.log(`🔥🔥🔥 Lost article IDs: ${lostArticleIds.join(', ')}`);
+      }
+    } else {
+      console.log(`🔥🔥🔥 ✅ Cheerio parsed all sections and articles successfully!`);
+    }
     
   } catch (error) {
     log(`❌ Cheerio load ERROR: ${error.message}`);
@@ -3349,7 +3504,18 @@ async function extractContentFromHtml(html) {
         $elem.remove();
       } else {
         // No mixed content or no children - process normally
-        console.log(`🔍 Container element <${tagName}>, recursively processing ${children.length} children`);
+        const childTagSummary = children.map(c => {
+          const $c = $(c);
+          const tag = c.name || c.type;
+          const id = $c.attr('id');
+          const cls = $c.attr('class');
+          if (tag === 'section' || tag === 'article') {
+            return `<${tag} id="${id || 'no-id'}" class="${cls || 'no-class'}">`;
+          }
+          return tag;
+        }).join(', ');
+        
+        console.log(`🔍 Container element <${tagName}>, recursively processing ${children.length} children: [${childTagSummary}]`);
         
         // SPECIAL DIAGNOSTIC for article.nested0
         const elemClass = $elem.attr('class') || '';
@@ -3417,6 +3583,48 @@ async function extractContentFromHtml(html) {
             }
           }
         } else {
+          // SPECIAL HANDLING FOR SECTIONS: Check if first child is a UIControl paragraph acting as heading
+          // Some ServiceNow sections don't have h2 tags, they use <p class="p"><span class="ph uicontrol">Title</span></p>
+          if (tagName === 'section' && children.length > 0) {
+            const firstChild = $(children[0]);
+            const firstChildTag = children[0].name;
+            
+            // Check if first child is <p class="p"> with only a single <span class="ph uicontrol">
+            if (firstChildTag === 'p' && firstChild.hasClass('p')) {
+              const firstChildHtml = firstChild.html() || '';
+              const uiControlMatch = firstChildHtml.match(/^\s*<span[^>]*class=["'][^"']*\bph\b[^"']*\buicontrol\b[^"']*["'][^>]*>([^<]+)<\/span>\s*$/);
+              
+              if (uiControlMatch) {
+                const headingText = uiControlMatch[1].trim();
+                console.log(`🔍 ✨ SECTION HEADING FIX: Converting UIControl paragraph to heading_2: "${headingText}"`);
+                
+                // Create a heading_2 block for this text
+                processedBlocks.push({
+                  object: "block",
+                  type: "heading_2",
+                  heading_2: {
+                    rich_text: [{
+                      type: "text",
+                      text: { content: headingText },
+                      annotations: {
+                        bold: true,
+                        italic: false,
+                        strikethrough: false,
+                        underline: false,
+                        code: false,
+                        color: "blue"
+                      }
+                    }]
+                  }
+                });
+                
+                // Remove this child from the list so it's not processed again
+                children.shift();
+                console.log(`🔍 Remaining children after heading extraction: ${children.length}`);
+              }
+            }
+          }
+          
           // Has children - process them
           let processedChildCount = 0;
           for (const child of children) {
@@ -3452,9 +3660,79 @@ async function extractContentFromHtml(html) {
   
   if ($('.zDocsTopicPageBody').length > 0) {
     // ServiceNow zDocsTopicPageBody - process all children (includes article AND contentPlaceholder with Related Content)
-    contentElements = $('.zDocsTopicPageBody').find('> *').toArray();
-    console.log(`🔍 Processing from .zDocsTopicPageBody, found ${contentElements.length} children`);
-    console.log(`🔍 Top-level children: ${contentElements.map(c => `<${c.name} class="${$(c).attr('class') || ''}">`).join(', ')}`);
+    const topLevelChildren = $('.zDocsTopicPageBody').find('> *').toArray();
+    console.log(`🔍 Processing from .zDocsTopicPageBody, found ${topLevelChildren.length} top-level children`);
+    console.log(`🔍 Top-level children: ${topLevelChildren.map(c => `<${c.name} class="${$(c).attr('class') || ''}">`).join(', ')}`);
+    
+    // CRITICAL FIX: Check if sections exist deeper in the tree (not just as direct children)
+    // ServiceNow pages often have structure: .zDocsTopicPageBody > div.zDocsTopicPageBodyContent > article > main > article.dita > div.body.conbody
+    // And sections can be either children of body.conbody OR siblings of it!
+    const allSectionsInPage = $('section[id]').toArray();
+    const allSectionsInBody = $('.zDocsTopicPageBody section[id]').toArray();
+    const allArticles = $('.zDocsTopicPageBody article').toArray();
+    
+    console.log(`🔍 CRITICAL: Found ${allSectionsInPage.length} sections in ENTIRE PAGE`);
+    console.log(`🔍 CRITICAL: Found ${allSectionsInBody.length} sections inside .zDocsTopicPageBody`);
+    console.log(`🔍 CRITICAL: Found ${allArticles.length} articles inside .zDocsTopicPageBody`);
+    
+    // Check where the missing sections are
+    const sectionsOutsideBody = allSectionsInPage.filter(s => {
+      return $(s).closest('.zDocsTopicPageBody').length === 0;
+    });
+    
+    if (sectionsOutsideBody.length > 0) {
+      console.log(`🔍 ⚠️ WARNING: ${sectionsOutsideBody.length} sections are OUTSIDE .zDocsTopicPageBody!`);
+      console.log(`🔍 Outside section IDs: ${sectionsOutsideBody.map(s => $(s).attr('id')).join(', ')}`);
+      
+      // Find common parent of ALL sections (both inside and outside .zDocsTopicPageBody)
+      const allSectionParents = allSectionsInPage.map(s => $(s).parent());
+      console.log(`🔍 All section parents: ${allSectionParents.map(p => `<${p.prop('tagName')} class="${p.attr('class') || 'no-class'}">`).join(', ')}`);
+      
+      // CRITICAL FIX: If sections are orphaned or outside .zDocsTopicPageBody, we need to collect them manually
+      // This happens when the HTML structure is malformed and Cheerio can't properly nest them
+      console.log(`🔍 FIX: Collecting ALL ${allSectionsInPage.length} sections from entire page since some are orphaned`);
+      
+      // Strategy: Find the container that has content BEFORE the first section (like shortdesc),
+      // then append all sections to the content elements
+      const firstSectionInBody = allSectionsInBody[0];
+      if (firstSectionInBody) {
+        const sectionParent = $(firstSectionInBody).parent();
+        const precedingElements = sectionParent.children().toArray().filter(el => {
+          // Get elements that come before any section
+          return el.name !== 'section';
+        });
+        
+        console.log(`🔍 FIX: Found ${precedingElements.length} elements before sections (e.g., shortdesc)`);
+        
+        // Combine preceding elements + ALL sections
+        contentElements = [...precedingElements, ...allSectionsInPage];
+        console.log(`🔍 FIX: ✅ Using ${contentElements.length} total elements (${precedingElements.length} preceding + ${allSectionsInPage.length} sections)`);
+      } else {
+        // No sections in body at all - just use all sections from page
+        contentElements = allSectionsInPage;
+        console.log(`🔍 FIX: ✅ Using ALL ${allSectionsInPage.length} sections from page`);
+      }
+    } else if (allSectionsInBody.length > 0) {
+      // Sections exist inside .zDocsTopicPageBody! Find their common parent
+      const firstSection = $(allSectionsInBody[0]);
+      const sectionParent = firstSection.parent();
+      const sectionParentTag = sectionParent.prop('tagName');
+      const sectionParentClass = sectionParent.attr('class') || 'no-class';
+      
+      console.log(`🔍 Sections are children of: <${sectionParentTag} class="${sectionParentClass}">`);
+      console.log(`🔍 Section parent has ${sectionParent.children().length} children total`);
+      
+      // Get ALL children of the section parent (includes sections + any preceding content)
+      const sectionParentChildren = sectionParent.children().toArray();
+      console.log(`🔍 Section parent children: ${sectionParentChildren.map(c => `<${c.name} class="${$(c).attr('class') || ''}" id="${$(c).attr('id') || ''}">`).join(', ')}`);
+      
+      // Use section parent's children as our content elements
+      contentElements = sectionParentChildren;
+      console.log(`🔍 ✅ Using ${contentElements.length} elements from section parent as contentElements`);
+    } else {
+      // No sections found, use original top-level children
+      contentElements = topLevelChildren;
+    }
     
     // DIAGNOSTIC: Check nested structure
     const nested1InBody = $('.zDocsTopicPageBody article.nested1').length;
@@ -3501,6 +3779,32 @@ async function extractContentFromHtml(html) {
     // HTML fragment - get all top-level elements
     contentElements = $.root().find('> *').toArray().filter(el => el.type === 'tag');
     console.log(`🔍 Processing from root, found ${contentElements.length} top-level elements`);
+    
+    // DIAGNOSTIC: Show structure of root elements
+    const rootStructure = contentElements.map(el => {
+      const $el = $(el);
+      const tag = el.name;
+      const id = $el.attr('id') || 'no-id';
+      const cls = $el.attr('class') || 'no-class';
+      const childCount = $el.find('> *').length;
+      
+      // For sections and articles, show their immediate children
+      if (tag === 'section' || tag === 'article' || tag === 'div') {
+        const children = $el.find('> *').toArray().map(c => {
+          const cTag = c.name;
+          const cId = $(c).attr('id') || '';
+          const cCls = $(c).attr('class') || '';
+          if (cTag === 'section' || cTag === 'article') {
+            return `${cTag}#${cId}`;
+          }
+          return cTag;
+        }).slice(0, 5).join(', '); // Show first 5 children
+        return `<${tag} id="${id}" class="${cls}">[${childCount} children: ${children}${childCount > 5 ? '...' : ''}]`;
+      }
+      return `<${tag} id="${id}" class="${cls}">[${childCount} children]`;
+    }).join('\n      ');
+    
+    console.log(`🔍 Root structure:\n      ${rootStructure}`);
   }
   
   console.log(`🔍 Found ${contentElements.length} elements to process`);
@@ -3535,8 +3839,13 @@ async function extractContentFromHtml(html) {
   }
   
   for (const child of contentElements) {
+    const childId = $(child).attr('id') || 'no-id';
+    const childClass = $(child).attr('class') || 'no-class';
+    const childTag = child.name;
+    console.log(`🔍 Processing contentElement: <${childTag} id="${childId}" class="${childClass}">`);
+    
     const childBlocks = await processElement(child);
-    // console.log(`🔍 Element <${child.name}> produced ${childBlocks.length} blocks`);
+    console.log(`🔍   → Element <${childTag} id="${childId}"> produced ${childBlocks.length} blocks`);
     blocks.push(...childBlocks);
   }
   
