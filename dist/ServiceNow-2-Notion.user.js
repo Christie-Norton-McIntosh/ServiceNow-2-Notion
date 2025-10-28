@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.36
+// @version      9.2.37
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.36";
+    window.BUILD_VERSION = "9.2.37";
 (function () {
 
   // Configuration constants and default settings
@@ -5859,6 +5859,11 @@
         const elements = doc.querySelectorAll(selector);
         elements.forEach((el) => el.remove());
       });
+
+      // Check length after removing unwanted elements
+      const afterUnwantedHtml = doc.body.innerHTML;
+      const navCountAfterUnwanted = (afterUnwantedHtml.match(/<nav[^>]*>/g) || []).length;
+      console.log(`🧹 After removing unwanted: ${afterUnwantedHtml.length} chars, ${navCountAfterUnwanted} nav elements`);
 
       // Remove navigation elements that are NOT inside article/section
       // (Keep content-related navigation like "Related Links")
