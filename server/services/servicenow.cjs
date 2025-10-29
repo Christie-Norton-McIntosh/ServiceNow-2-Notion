@@ -484,6 +484,16 @@ async function extractContentFromHtml(html) {
       return `__CODE_START__${content}__CODE_END__`;
     });
 
+    // Handle <samp> tags (sample output/system output) - treat same as inline code
+    text = text.replace(/<samp([^>]*)>([\s\S]*?)<\/samp>/gi, (match, attrs, content) => {
+      console.log(`💾 [SAMP TAG in parseRichText] Converting <samp> to inline code: "${content.substring(0, 100)}"`);
+      // If content already has CODE markers, don't double-wrap
+      if (content.includes('__CODE_START__')) {
+        return content;
+      }
+      return `__CODE_START__${content}__CODE_END__`;
+    });
+
     // CRITICAL: Extract links FIRST, before identifier detection
     // This prevents URLs like "integration.html" from being wrapped with code markers
     const links = [];
@@ -1150,6 +1160,12 @@ async function extractContentFromHtml(html) {
         textOnlyHtml = textOnlyHtml.replace(/<span[^>]*class=["'][^"']*note__title[^"']*["'][^>]*>([^<]*)<\/span>/gi, '$1 ');
         
         console.log(`🔍 Callout textOnlyHtml (after title removal): "${textOnlyHtml.substring(0, 200)}${textOnlyHtml.length > 200 ? '...' : ''}"`);
+        
+        // Check for samp/plugin activation patterns for debugging
+        if (textOnlyHtml.includes('samp') || textOnlyHtml.includes('Plugin Activation') || textOnlyHtml.includes('&lt;')) {
+          console.log(`💾 [SAMP DEBUG] Callout contains samp/plugin text or escaped HTML:`);
+          console.log(`   Full HTML: "${textOnlyHtml}"`);
+        }
         
         // Parse HTML directly to preserve formatting (links, bold, etc.)
         const { richText: calloutRichText } = await parseRichText(textOnlyHtml);
