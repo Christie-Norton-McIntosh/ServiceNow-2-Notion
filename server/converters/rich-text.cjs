@@ -318,8 +318,8 @@ function convertRichTextBlock(input, options = {}) {
   });
   // Handle raw technical identifiers in parentheses/brackets as inline code
   // Must contain at least one dot or underscore to be considered a technical identifier
-  // Preserve the brackets/parentheses in the output
-  html = html.replace(/([\(\[])[ \t\n\r]*([a-zA-Z][-a-zA-Z0-9]*(?:[_.][-a-zA-Z0-9]+)+)[ \t\n\r]*([\)\]])/g, (match, open, code, close) => `__CODE_START__${open}${code.trim()}${close}__CODE_END__`);
+  // Remove the brackets/parentheses from the output (treat same as parentheses around code)
+  html = html.replace(/([\(\[])[ \t\n\r]*([a-zA-Z][-a-zA-Z0-9]*(?:[_.][-a-zA-Z0-9]+)+)[ \t\n\r]*([\)\]])/g, (match, open, code, close) => `__CODE_START__${code.trim()}__CODE_END__`);
 
   // Standalone multi-word identifiers connected by _ or . (no spaces) as inline code
   // Each segment must start with a letter, can contain letters, numbers, and hyphens

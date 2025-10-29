@@ -47,8 +47,8 @@ router.post('/W2N', async (req, res) => {
           orchestrateDeepNesting, getExtraDebug, normalizeAnnotations, normalizeUrl, 
           isValidImageUrl } = getGlobals();
   
-  console.log('🔥🔥🔥🔥🔥 W2N ROUTE HANDLER ENTRY - FILE VERSION 03:18:00 - WITH REGEX FIX 🔥🔥🔥🔥🔥');
-  log('🔥🔥🔥 W2N ROUTE HANDLER ENTRY - FILE VERSION 03:18:00 - WITH REGEX FIX');
+  console.log('🔥🔥🔥🔥🔥 W2N ROUTE HANDLER ENTRY - FILE VERSION 07:20:00 - WITH CONSOLE.LOG NAV DIAGNOSTIC 🔥🔥🔥🔥🔥');
+  log('🔥🔥🔥 W2N ROUTE HANDLER ENTRY - FILE VERSION 07:20:00 - WITH CONSOLE.LOG NAV DIAGNOSTIC');
   
   try {
     const payload = req.body;
@@ -65,24 +65,28 @@ router.post('/W2N', async (req, res) => {
       log(`🚨 payload.content length: ${payload.content.length}`);
     }
 
-    // DEBUG: Check if HTML contains pre tags at the API entry point
+    // DEBUG: Check if HTML contains pre tags and nav tags at the API entry point
     if (payload.contentHtml) {
       const hasPreTags = payload.contentHtml.includes("<pre");
       const hasClosingPreTags = payload.contentHtml.includes("</pre>");
-      log(
+      console.log(
         `🔍 DEBUG API: contentHtml has <pre>: ${hasPreTags}, has </pre>: ${hasClosingPreTags}`
       );
+      
+      // Check for nav tags
+      const navCount = (payload.contentHtml.match(/<nav[^>]*>/g) || []).length;
+      console.log(`🔍 DEBUG API: Found ${navCount} <nav> tags in received HTML`);
       
       // COUNT ARTICLE.NESTED1 ELEMENTS AT API ENTRY
       const nested1Matches = payload.contentHtml.match(/class="topic task nested1"/g);
       const nested1Count = nested1Matches ? nested1Matches.length : 0;
-      log(`🚨🚨🚨 API ENTRY POINT: Found ${nested1Count} article.nested1 elements in received HTML`);
+      console.log(`🚨🚨🚨 API ENTRY POINT: Found ${nested1Count} article.nested1 elements in received HTML`);
       
       // Check for nested0
       const nested0Matches = payload.contentHtml.match(/class="[^"]*nested0[^"]*"/g);
       const nested0Count = nested0Matches ? nested0Matches.length : 0;
-      log(`🚨🚨🚨 API ENTRY POINT: Found ${nested0Count} article.nested0 elements in received HTML`);
-      log('🔥🔥🔥 INSIDE DIAGNOSTIC BLOCK - LAST LINE BEFORE CLOSING BRACE');
+      console.log(`🚨🚨🚨 API ENTRY POINT: Found ${nested0Count} article.nested0 elements in received HTML`);
+      console.log('🔥🔥🔥 INSIDE DIAGNOSTIC BLOCK - LAST LINE BEFORE CLOSING BRACE');
     }
     
     log('🔥🔥🔥 AFTER DIAGNOSTIC BLOCK - THIS LINE SHOULD ALWAYS EXECUTE');

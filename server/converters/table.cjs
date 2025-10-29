@@ -203,7 +203,8 @@ async function convertTableBlock(tableHtml, options = {}) {
           // Load the note content with Cheerio to process it
           const $note = cheerio.load(content, { decodeEntities: true });
           
-          // Remove the note title span (e.g., "Note:", "Warning:", etc.)
+          // Extract the note title (e.g., "Note:", "Warning:", etc.) but keep it
+          const noteTitle = $note('.note__title').text().trim();
           $note('.note__title').remove();
           
           // Get the remaining content - use html() to preserve formatting tags
@@ -215,11 +216,15 @@ async function convertTableBlock(tableHtml, options = {}) {
           const beforeNote = fullString.substring(0, offset);
           const textBeforeNote = beforeNote.replace(/<[^>]+>/g, '').trim();
           
+          // If there's text before, add newline + bullet marker to make it a new list item
           // Add newline before if there's text before the note
-          const prefix = textBeforeNote ? '__NEWLINE__' : '';
+          const prefix = textBeforeNote ? '__NEWLINE__• ' : '';
+          
+          // Prepend the note title (e.g., "Note:") to the content
+          const contentWithTitle = noteTitle ? `${noteTitle} ${noteContent}` : noteContent;
           
           // Return content without the note wrapper, adding newline after
-          return `${prefix}${noteContent}__NEWLINE__`;
+          return `${prefix}${contentWithTitle}__NEWLINE__`;
         }
       );
     }
@@ -286,8 +291,9 @@ async function convertTableBlock(tableHtml, options = {}) {
       .replace(/\s{2,}/g, ' ')    // Collapse multiple spaces to single space
       .trim();
     
-    // Restore intentional newlines from paragraph boundaries
-    textContent = textContent.replace(/__NEWLINE__/g, '\n');
+    // DON'T restore intentional newlines yet - keep as __NEWLINE__ markers
+    // They will be restored later in list processing (line 330) or at the end for non-lists
+    // textContent = textContent.replace(/__NEWLINE__/g, '\n');
     
     // Remove lists, replace <li> with bullets
     if (/<[uo]l[^>]*>/i.test(textContent)) {
@@ -369,6 +375,9 @@ async function convertTableBlock(tableHtml, options = {}) {
       textContent = textContent.replace(/([^\n])(\s*•\s*)/g, '$1__NEWLINE__$2');
       textContent = textContent.replace(/^\s+/, ""); // Clean leading whitespace
       textContent = textContent.replace(/__NEWLINE__/g, '\n'); // Restore newlines
+    } else {
+      // For non-list content, restore intentional newlines from markers
+      textContent = textContent.replace(/__NEWLINE__/g, '\n');
     }
     
     // Use rich text block conversion for all other cell content
