@@ -115,44 +115,45 @@ async function main() {
     log(`📤 Pushing branch to remote...`, 'blue');
     exec(`git push -u origin ${branchName}`);
     
-    // Create PR using GitHub CLI (gh) if available
-    log(`🔀 Creating pull request...`, 'blue');
-    try {
-      const prTitle = `Build v${version} userscript`;
-      const prBody = `Automated build for version ${version}\n\n**Changes:**\n- Updated dist/ServiceNow-2-Notion.user.js\n- Bumped version to ${version}\n\n---\n*This PR was created automatically by post-build script*`;
-      
-      // Create PR with auto-merge
-      const prResult = exec(`gh pr create --base main --head ${branchName} --title "${prTitle}" --body "${prBody}" --assignee "@me"`, { silent: true });
-      const prNumber = prResult.match(/#(\d+)/)?.[1];
-      
-      if (prNumber) {
-        log(`✅ PR #${prNumber} created successfully`, 'green');
+      // Create PR using GitHub CLI (gh) if available
+      log(`🔀 Creating pull request...`, 'blue');
+      try {
+        const prTitle = `Build v${version} userscript`;
+        const prBody = `Automated build for version ${version}\n\n**Changes:**\n- Updated dist/ServiceNow-2-Notion.user.js\n- Bumped version to ${version}\n\n---\n*This PR was created automatically by post-build script*`;
         
-        // Auto-merge the PR
-        log(`🤖 Auto-merging PR #${prNumber}...`, 'blue');
-        exec(`gh pr merge ${prNumber} --auto --squash --delete-branch`);
-        log(`✅ PR #${prNumber} will auto-merge when checks pass`, 'green');
+        // Create PR and capture full output
+        const prOutput = exec(`gh pr create --base main --head ${branchName} --title "${prTitle}" --body "${prBody}" --assignee "@me"`, { silent: true });
         
-        // Switch back to main and pull
-        log(`🔙 Switching back to main...`, 'blue');
-        exec('git checkout main');
+        // Parse PR URL to get number
+        const prUrlMatch = prOutput.match(/https:\/\/github\.com\/[^\/]+\/[^\/]+\/pull\/(\d+)/);
+        const prNumber = prUrlMatch ? prUrlMatch[1] : null;
         
-        // Small delay to let GitHub process
-        setTimeout(() => {
-          exec('git pull origin main', { ignoreError: true });
+        if (prNumber) {
+          log(`✅ PR #${prNumber} created successfully`, 'green');
+          
+          // Auto-merge the PR
+          log(`🤖 Auto-merging PR #${prNumber}...`, 'blue');
+          exec(`gh pr merge ${prNumber} --auto --squash --delete-branch`);
+          log(`✅ PR #${prNumber} merged and branch deleted`, 'green');
+          
+          // Switch back to main and sync
+          log(`🔙 Switching back to main...`, 'blue');
+          exec('git checkout main');
+          
+          // Pull with rebase to handle squashed commit
+          log(`🔄 Syncing with remote main...`, 'blue');
+          exec('git pull --rebase origin main', { ignoreError: true });
           log(`✅ Synced with remote main`, 'green');
-        }, 2000);
-      } else {
-        log(`⚠️  Could not determine PR number`, 'yellow');
-      }
-    } catch (ghError) {
-      log(`⚠️  GitHub CLI not available or PR creation failed`, 'yellow');
-      log(`   Install: brew install gh`, 'yellow');
-      log(`   Or manually create PR from: ${branchName}`, 'yellow');
-      log(`   Then run: git checkout main`, 'yellow');
-    }
-    
-  } catch (error) {
+        } else {
+          log(`⚠️  Could not determine PR number from output:`, 'yellow');
+          log(prOutput.trim(), 'yellow');
+        }
+      } catch (ghError) {
+        log(`⚠️  GitHub CLI not available or PR creation failed`, 'yellow');
+        log(`   Install: brew install gh`, 'yellow');
+        log(`   Or manually create PR from: ${branchName}`, 'yellow');
+        log(`   Then run: git checkout main`, 'yellow');
+      }  } catch (error) {
     log('⚠️  Warning: Could not create automated PR.', 'yellow');
     log(`   ${error.message}`, 'yellow');
   }
