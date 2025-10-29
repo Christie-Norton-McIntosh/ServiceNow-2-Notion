@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.45
+// @version      9.2.46
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.45";
+    window.BUILD_VERSION = "9.2.46";
 (function () {
 
   // Configuration constants and default settings
@@ -3012,7 +3012,16 @@
           window.ServiceNowToNotion.autoExtractState
         ) {
           window.ServiceNowToNotion.autoExtractState.running = false;
-          showToast("⏹ Stopping AutoExtract after current page...", 3000);
+          showToast("⏹ Stopping AutoExtract immediately...", 3000);
+          
+          // Close any open progress overlay immediately
+          try {
+            if (window.W2NSavingProgress && window.W2NSavingProgress.close) {
+              window.W2NSavingProgress.close();
+            }
+          } catch (e) {
+            debug("Warning: Could not close overlay on stop:", e);
+          }
         }
         // Restore buttons
         startAutoExtractBtn.style.display = "block";
@@ -3388,6 +3397,14 @@
     const button = document.getElementById("w2n-start-autoextract");
 
     while (autoExtractState.running && !autoExtractState.paused) {
+      // Check running state at the very beginning of each iteration
+      if (!autoExtractState.running) {
+        debug(`⏹ AutoExtract stopped at beginning of loop iteration`);
+        stopAutoExtract(autoExtractState);
+        if (button) button.textContent = "Start AutoExtract";
+        return;
+      }
+      
       autoExtractState.currentPage++;
       const currentPageNum = autoExtractState.currentPage;
       debug(`📄 Processing page number: ${currentPageNum}`);
@@ -3644,6 +3661,18 @@
               autoExtractState.duplicateCount = 0;
               autoExtractState.lastContentHash = contentHash;
               debug(`✅ Content is unique (hash: ${contentHash})`);
+            }
+
+            // Check if stop was requested before creating the page
+            if (!autoExtractState.running) {
+              debug(`⏹ AutoExtract stop requested before creating page ${currentPageNum}`);
+              showToast(
+                `⏹ AutoExtract stopped before page ${currentPageNum}. Processed ${autoExtractState.totalProcessed} pages.`,
+                4000
+              );
+              stopAutoExtract(autoExtractState);
+              if (button) button.textContent = "Start AutoExtract";
+              return;
             }
 
             // STEP 2: Create Notion page and wait for success
@@ -7260,9 +7289,14 @@
                 }
               }, 1000);
             }
+          } else {
+            // AutoExtract mode: close overlay to let AutoExtract control the UI
+            try {
+              overlayModule.close && overlayModule.close();
+            } catch (err) {
+              debug("Warning: Failed to close overlay in AutoExtract mode:", err);
+            }
           }
-          // For autoextract: don't close the overlay, just continue
-          // The overlay will remain visible and show progress for the next page
         } else {
           throw new Error(result.error || "Proxy processing failed");
         }
