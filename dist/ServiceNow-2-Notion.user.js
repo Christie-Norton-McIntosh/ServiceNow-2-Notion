@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.48
+// @version      9.2.49
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.48";
+    window.BUILD_VERSION = "9.2.49";
 (function () {
 
   // Configuration constants and default settings
@@ -3639,6 +3639,7 @@
         // STEP 1.5: Check for duplicate content
         const contentToHash = extractedData.content?.combinedHtml || "";
         const contentHash = simpleHash(contentToHash);
+        let isDuplicate = false; // Track if this is a duplicate skip
 
         debug(`🔍 Content to hash length: ${contentToHash.length} characters`);
         debug(`🔍 Calculated hash: ${contentHash}, Previous hash: ${autoExtractState.lastContentHash}`);          if (contentHash === autoExtractState.lastContentHash) {
@@ -3656,13 +3657,14 @@
                 return;
               }
               
-              // Skip this duplicate but continue (might be temporary navigation issue)
-              debug(`⊘ Skipping duplicate content, will retry navigation...`);
+              // Skip this duplicate and go straight to navigation (don't create page)
+              debug(`⊘ Skipping duplicate content, will retry navigation without creating page...`);
               showToast(
-                `⚠️ Duplicate content #${autoExtractState.duplicateCount}, retrying...`,
+                `⚠️ Duplicate content #${autoExtractState.duplicateCount}, skipping to navigation...`,
                 3000
               );
-              break; // Break from capture attempts loop to go to next page
+              isDuplicate = true; // Flag this as a duplicate skip
+              break; // Break from capture attempts loop to go to navigation
             } else {
               // Content is different, reset duplicate counter
               autoExtractState.duplicateCount = 0;
@@ -3713,13 +3715,21 @@
           }
         }
 
-        if (!captureSuccess) {
+        // Check if capture failed (but allow duplicate skip to proceed to navigation)
+        if (!captureSuccess && !isDuplicate) {
           const errorMessage = `❌ AutoExtract STOPPED: Page ${currentPageNum} failed to capture after ${maxCaptureAttempts} attempts.\n\nTotal pages processed: ${autoExtractState.totalProcessed}`;
           alert(errorMessage);
           stopAutoExtract(autoExtractState);
           if (button)
             button.textContent = `❌ Stopped: Page ${currentPageNum} failed`;
           return;
+        }
+        
+        // If this was a duplicate skip, don't increment the page number counter
+        // (we'll retry the same page after navigation)
+        if (isDuplicate) {
+          debug(`⊘ Duplicate detected - will navigate and retry extraction on next page`);
+          overlayModule.setMessage(`Skipping duplicate, navigating to next...`);
         }
 
         // Check if stop was requested before continuing to next page
