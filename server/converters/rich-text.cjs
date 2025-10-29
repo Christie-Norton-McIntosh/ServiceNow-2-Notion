@@ -321,6 +321,14 @@ function convertRichTextBlock(input, options = {}) {
   // Remove the brackets/parentheses from the output (treat same as parentheses around code)
   html = html.replace(/([\(\[])[ \t\n\r]*([a-zA-Z][-a-zA-Z0-9]*(?:[_.][-a-zA-Z0-9]+)+)[ \t\n\r]*([\)\]])/g, (match, open, code, close) => `__CODE_START__${code.trim()}__CODE_END__`);
 
+  // Handle "Role required:" followed by comma-separated single-word role names as inline code
+  // Examples: "Role required: admin", "Role required: admin, asset", "Role required: sam"
+  html = html.replace(/\b(Role required:)\s+((?:[a-z_]+(?:,\s*)?)+)/gi, (match, label, roles) => {
+    // Split roles by comma, wrap each in code markers
+    const roleList = roles.split(/,\s*/).map(role => `__CODE_START__${role.trim()}__CODE_END__`).join(', ');
+    return `${label} ${roleList}`;
+  });
+
   // Standalone multi-word identifiers connected by _ or . (no spaces) as inline code
   // Each segment must start with a letter, can contain letters, numbers, and hyphens
   // Examples: com.snc.incident.mim.ml_solution, sys_user_table, package.class.method, com.glide.service-portal
