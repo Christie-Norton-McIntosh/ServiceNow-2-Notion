@@ -418,7 +418,7 @@ function convertRichTextBlock(input, options = {}) {
   // This handles span tags, divs, and other markup that doesn't need special formatting
   // CRITICAL: Only strip KNOWN HTML tags, preserve technical placeholders like <instance-name>
   const beforeStrip = html;
-  html = html.replace(/<\/?(?:div|span|p|a|img|br|hr|b|i|u|strong|em|code|pre|ul|ol|li|table|tr|td|th|tbody|thead|tfoot|h[1-6]|font|center|small|big|sub|sup|abbr|cite|del|ins|mark|s|strike|blockquote|q|address|article|aside|footer|header|main|nav|section|details|summary|figure|figcaption|time|video|audio|source|canvas|svg|path|g|rect|circle|line|polyline|polygon)(?:\s+[^>]*)?>/gi, ' ');
+  html = html.replace(/<\/?(?:div|span|p|a|img|br|hr|b|i|u|strong|em|code|samp|pre|ul|ol|li|table|tr|td|th|tbody|thead|tfoot|h[1-6]|font|center|small|big|sub|sup|abbr|cite|del|ins|mark|s|strike|blockquote|q|address|article|aside|footer|header|main|nav|section|details|summary|figure|figcaption|time|video|audio|source|canvas|svg|path|g|rect|circle|line|polyline|polygon)(?:\s+[^>]*)?>/gi, ' ');
   
   // Debug: Log if we stripped any span tags
   if (beforeStrip !== html && beforeStrip.includes('<span')) {
