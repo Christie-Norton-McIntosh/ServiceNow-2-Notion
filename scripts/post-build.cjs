@@ -89,15 +89,72 @@ async function main() {
   log(`\n💾 Committing: "${commitMessage}"`, 'blue');
   exec(`git commit -m "${commitMessage}"`);
 
-  // Push to remote
-  log('\n🔄 Pushing to remote...', 'blue');
+  // Create branch, push, and create auto-merge PR
+  log('\n🔄 Creating automated PR...', 'blue');
   try {
+    const branchName = `build-v${version}`;
     const currentBranch = exec('git branch --show-current', { silent: true }).trim();
-    exec(`git push origin ${currentBranch}`);
-    log(`✅ Successfully pushed to ${currentBranch}`, 'green');
+    
+    // Check if we're already on a build branch
+    if (currentBranch === branchName) {
+      log(`✅ Already on branch ${branchName}`, 'blue');
+    } else if (currentBranch !== 'main') {
+      // If on another branch, just push normally
+      log(`📍 On branch ${currentBranch}, pushing directly...`, 'yellow');
+      exec(`git push origin ${currentBranch}`);
+      log(`✅ Successfully pushed to ${currentBranch}`, 'green');
+      log('\n✨ Post-build complete!', 'green');
+      return;
+    } else {
+      // Create and checkout new branch from main
+      log(`🌿 Creating branch: ${branchName}`, 'blue');
+      exec(`git checkout -b ${branchName}`);
+    }
+    
+    // Push branch to remote
+    log(`📤 Pushing branch to remote...`, 'blue');
+    exec(`git push -u origin ${branchName}`);
+    
+    // Create PR using GitHub CLI (gh) if available
+    log(`🔀 Creating pull request...`, 'blue');
+    try {
+      const prTitle = `Build v${version} userscript`;
+      const prBody = `Automated build for version ${version}\n\n**Changes:**\n- Updated dist/ServiceNow-2-Notion.user.js\n- Bumped version to ${version}\n\n---\n*This PR was created automatically by post-build script*`;
+      
+      // Create PR with auto-merge
+      const prResult = exec(`gh pr create --base main --head ${branchName} --title "${prTitle}" --body "${prBody}" --assignee "@me"`, { silent: true });
+      const prNumber = prResult.match(/#(\d+)/)?.[1];
+      
+      if (prNumber) {
+        log(`✅ PR #${prNumber} created successfully`, 'green');
+        
+        // Auto-merge the PR
+        log(`🤖 Auto-merging PR #${prNumber}...`, 'blue');
+        exec(`gh pr merge ${prNumber} --auto --squash --delete-branch`);
+        log(`✅ PR #${prNumber} will auto-merge when checks pass`, 'green');
+        
+        // Switch back to main and pull
+        log(`🔙 Switching back to main...`, 'blue');
+        exec('git checkout main');
+        
+        // Small delay to let GitHub process
+        setTimeout(() => {
+          exec('git pull origin main', { ignoreError: true });
+          log(`✅ Synced with remote main`, 'green');
+        }, 2000);
+      } else {
+        log(`⚠️  Could not determine PR number`, 'yellow');
+      }
+    } catch (ghError) {
+      log(`⚠️  GitHub CLI not available or PR creation failed`, 'yellow');
+      log(`   Install: brew install gh`, 'yellow');
+      log(`   Or manually create PR from: ${branchName}`, 'yellow');
+      log(`   Then run: git checkout main`, 'yellow');
+    }
+    
   } catch (error) {
-    log('⚠️  Warning: Could not push to remote. You may need to push manually.', 'yellow');
-    log('   Run: git push', 'yellow');
+    log('⚠️  Warning: Could not create automated PR.', 'yellow');
+    log(`   ${error.message}`, 'yellow');
   }
 
   log('\n✨ Post-build complete!', 'green');
