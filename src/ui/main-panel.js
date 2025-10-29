@@ -827,6 +827,13 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
         }
       }
 
+      // If access-limited was detected and resolved, give the page extra time to stabilize
+      if (accessLimitedReloadAttempts > 0 && !isPageAccessLimited()) {
+        debug(`✅ Access-limited resolved after ${accessLimitedReloadAttempts} reload(s), stabilizing page...`);
+        overlayModule.setMessage(`Page access restored, stabilizing...`);
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+      }
+
       // If still access limited after reload attempts, skip this page and move to next
       if (isPageAccessLimited()) {
         debug(
