@@ -6,22 +6,41 @@ This directory contains versioned backups of the ServiceNow-2-Notion project.
 
 ## Latest Backup
 
-**Version**: 9.2.0  
-**Date**: October 16, 2025 22:31:13  
-**Directory**: `backup-v9.2.0-20251016-223113/`  
-**Files**: 73 files  
-**Size**: 1.2 MB  
+**Version**: 9.2.44  
+**Date**: October 28, 2025 23:16:18  
+**Directory**: `v9.2.44-20251028-231618/`  
+**Files**: Complete source backup  
+**Size**: ~1.2 MB  
 
-### Key Changes in v9.2.0
-- Comprehensive testing documentation (TESTING_SCENARIOS.md)
-- Implementation summary documentation
-- Code cleanup (removed excessive debug logging)
-- README updates with Key Features section
-- Version bumped from 9.1.0 to 9.2.0
+### Key Changes in v9.2.44
+- Role name inline code formatting in "Role required:" text
+- Pattern matching added to `servicenow.cjs` for single-word roles (admin, sam, asset)
+- Final formatting fix completing ServiceNow extraction enhancement series
 
 ---
 
 ## Backup History
+
+### v9.2.44 (October 28, 2025)
+- **Directory**: `v9.2.44-20251028-231618/`
+- **Changes**: Role name formatting as inline code
+- **Release Notes**: `release_notes_9.2.44.md`
+- **Status**: ✅ Current
+
+### v9.2.25 (October 25, 2025)
+- **Directory**: `v9.2.25-20251025-130627/`
+- **Changes**: Additional formatting improvements
+- **Status**: ✅ Complete
+
+### v9.2.4 (October 21, 2025)
+- **Directory**: `v9.2.4-bullet-points-fix-20251021-075314/`
+- **Changes**: Bullet point formatting fixes
+- **Release Notes**: `release_notes_9.2.4.md`
+- **Status**: ✅ Complete
+
+### v9.2.1 (October 18, 2025)
+- **Directory**: `backup-9.2.1-20251018-000000/`
+- **Status**: ✅ Complete
 
 ### v9.2.0 (October 16, 2025)
 - **Directory**: `backup-v9.2.0-20251016-223113/`
@@ -132,12 +151,16 @@ Example: `backup-v9.2.0-20251016-223113/`
 
 | Version | Date | Files | Size | Status |
 |---------|------|-------|------|--------|
-| 9.2.0 | 2025-10-16 | 73 | 1.2 MB | ✅ Current |
-| 9.1.0 | 2025-10-15 | ~70 | ~1.1 MB | ✅ Previous |
+| 9.2.44 | 2025-10-28 | Complete | ~1.2 MB | ✅ Current |
+| 9.2.25 | 2025-10-25 | Complete | ~1.2 MB | ✅ Previous |
+| 9.2.4 | 2025-10-21 | Complete | ~1.1 MB | ✅ Previous |
+| 9.2.1 | 2025-10-18 | Complete | ~1.1 MB | ✅ Previous |
+| 9.2.0 | 2025-10-16 | 73 | 1.2 MB | ✅ Stable |
+| 9.1.0 | 2025-10-15 | ~70 | ~1.1 MB | 📦 Archived |
 | 9.0.0 | 2025-10-13 | ~65 | ~1.0 MB | 📦 Archived |
 | 8.2.5 | 2025-10-07 | ~60 | ~0.9 MB | 📦 Archived |
 
 ---
 
-**Last Updated**: October 16, 2025  
+**Last Updated**: October 28, 2025  
 **Maintained By**: Christie Norton-McIntosh
