@@ -1022,6 +1022,21 @@ async function extractContentFromHtml(html) {
   const elemClass = $elem.attr('class') || 'none';
   if (getExtraDebug && getExtraDebug()) log(`🔍 Processing element: <${tagName}>, class="${elemClass}"`);
     
+    // SKIP UI CHROME ELEMENTS (dropdown menus, export buttons, filter divs, etc.)
+    // Check this FIRST before any other processing
+    if (tagName === 'button') {
+      console.log(`🔍 Skipping button element (UI chrome)`);
+      return []; // Return empty array - don't process buttons
+    }
+    
+    if (tagName === 'div' && elemClass !== 'none') {
+      const isUiChrome = /zDocsFilterTableDiv|zDocsFilterColumnsTableDiv|zDocsDropdownMenu|dropdown-menu|zDocsTopicPageTableExportButton|zDocsTopicPageTableExportMenu/.test(elemClass);
+      if (isUiChrome) {
+        console.log(`🔍 Skipping UI chrome div with classes: ${elemClass}`);
+        return []; // Return empty array - don't process UI chrome divs
+      }
+    }
+    
     // CRITICAL DIAGNOSTIC: Track article.nested0
     if (tagName === 'article' && elemClass.includes('nested0')) {
       console.log(`🚨🚨🚨 ARTICLE.NESTED0 FOUND AT PROCESSELEMENT ENTRY!`);
@@ -2728,45 +2743,74 @@ async function extractContentFromHtml(html) {
       // Convert entire section to a callout with pushpin emoji
       console.log(`🔍 Processing prereq section as callout`);
       
-      // Parse each child element separately to preserve paragraph boundaries
+      // Parse each child (including text nodes) separately to preserve paragraph boundaries
       const richTextElements = [];
       const imageBlocks = [];
       
-      // Get all direct children
-      const $children = $elem.children();
-      console.log(`🔍 Prereq section has ${$children.length} direct children`);
+      // Get all direct children INCLUDING text nodes (use .contents() not .children())
+      const allChildren = $elem.contents();
+      console.log(`🔍 Prereq section has ${allChildren.length} direct children (including text nodes)`);
       
-      for (let i = 0; i < $children.length; i++) {
-        const $child = $children.eq(i);
-        const childTag = $child.get(0)?.tagName?.toLowerCase();
-        const childHtml = $child.html() || '';
+      for (let i = 0; i < allChildren.length; i++) {
+        const child = allChildren[i];
+        const isTextNode = child.type === 'text';
         
-        console.log(`🔍   Child ${i}: <${childTag}> class="${$child.attr('class')}" content="${childHtml.substring(0, 60)}..."`);
-        
-        // Parse this child's HTML to rich text
-        const { richText: childRichText, imageBlocks: childImages } = await parseRichText(childHtml);
-        
-        // Add a line break between children (but not before the first one)
-        if (richTextElements.length > 0 && childRichText.length > 0) {
-          // Add line break to the end of the last element
-          const lastIdx = richTextElements.length - 1;
-          richTextElements[lastIdx] = {
-            ...richTextElements[lastIdx],
-            text: { 
-              ...richTextElements[lastIdx].text, 
-              content: richTextElements[lastIdx].text.content + '\n' 
+        if (isTextNode) {
+          // Handle text node
+          const textContent = $(child).text().trim();
+          if (textContent) {
+            console.log(`🔍   Child ${i}: TEXT NODE content="${textContent.substring(0, 60)}..."`);
+            
+            // Parse the text content to rich text
+            const { richText: childRichText, imageBlocks: childImages } = await parseRichText(textContent);
+            
+            // Add a line break between children (but not before the first one)
+            if (richTextElements.length > 0 && childRichText.length > 0) {
+              const lastIdx = richTextElements.length - 1;
+              richTextElements[lastIdx] = {
+                ...richTextElements[lastIdx],
+                text: { 
+                  ...richTextElements[lastIdx].text, 
+                  content: richTextElements[lastIdx].text.content + '\n' 
+                }
+              };
+              console.log(`🔍   Added line break after previous child`);
             }
-          };
-          console.log(`🔍   Added line break after previous child`);
+            
+            richTextElements.push(...childRichText);
+            imageBlocks.push(...childImages);
+          }
+        } else {
+          // Handle element node
+          const $child = $(child);
+          const childTag = child.tagName?.toLowerCase();
+          const childHtml = $child.html() || '';
+          
+          console.log(`🔍   Child ${i}: <${childTag}> class="${$child.attr('class')}" content="${childHtml.substring(0, 60)}..."`);
+          
+          // Parse this child's HTML to rich text
+          const { richText: childRichText, imageBlocks: childImages } = await parseRichText(childHtml);
+          
+          // Add a line break between children (but not before the first one)
+          if (richTextElements.length > 0 && childRichText.length > 0) {
+            const lastIdx = richTextElements.length - 1;
+            richTextElements[lastIdx] = {
+              ...richTextElements[lastIdx],
+              text: { 
+                ...richTextElements[lastIdx].text, 
+                content: richTextElements[lastIdx].text.content + '\n' 
+              }
+            };
+            console.log(`🔍   Added line break after previous child`);
+          }
+          
+          richTextElements.push(...childRichText);
+          imageBlocks.push(...childImages);
         }
-        
-        // Add this child's rich text
-        richTextElements.push(...childRichText);
-        imageBlocks.push(...childImages);
       }
       
       // Debug: log the final rich text structure
-      console.log(`🔍 Prereq parsed into ${richTextElements.length} rich text elements (from ${$children.length} HTML children):`);
+      console.log(`🔍 Prereq parsed into ${richTextElements.length} rich text elements (from ${allChildren.length} children including text nodes):`);
       richTextElements.forEach((rt, idx) => {
         console.log(`   [${idx}] "${rt.text.content.substring(0, 80)}${rt.text.content.length > 80 ? '...' : ''}"`);
       });
@@ -2778,7 +2822,7 @@ async function extractContentFromHtml(html) {
       
       // Create callout block(s) from the section content
       if (richTextElements.length > 0 && richTextElements.some(rt => rt.text.content.trim())) {
-        // Line breaks are already added between HTML children, so we can use the rich text as-is
+        // Line breaks are already added between children, so we can use the rich text as-is
         const richTextChunks = splitRichTextArray(richTextElements);
         console.log(`🔍 Creating ${richTextChunks.length} prereq callout block(s)`);
         for (const chunk of richTextChunks) {
@@ -2803,7 +2847,9 @@ async function extractContentFromHtml(html) {
       const hasContent = children.some(child => {
         const $child = $(child);
         const text = cleanHtmlText($child.html() || '').trim();
-        return text.length > 20 || $child.find('h1, h2, h3, h4, h5, h6, ul, ol, p, a').length > 0;
+        // Also check for nav elements which might be in collapsed containers
+        const hasNavElements = $child.find('nav, [role="navigation"]').length > 0 || $child.is('nav, [role="navigation"]');
+        return text.length > 20 || $child.find('h1, h2, h3, h4, h5, h6, ul, ol, p, a').length > 0 || hasNavElements;
       });
       
       if (hasContent) {
@@ -3101,6 +3147,17 @@ async function extractContentFromHtml(html) {
           // Accumulate text nodes and non-table elements (like spans, links, etc.)
           // BUT: if it's a DIV element, recursively process it (could be callout, table container, etc.)
           if (isElementNode && nodeName === 'DIV') {
+            const $div = $(node);
+            const divClasses = $div.attr('class') || '';
+            
+            // Skip UI chrome elements (dropdown menus, filter buttons, export buttons, etc.)
+            const isUiChrome = /zDocsFilterTableDiv|zDocsFilterColumnsTableDiv|zDocsDropdownMenu|dropdown-menu|zDocsTopicPageTableExportButton|zDocsTopicPageTableExportMenu/.test(divClasses);
+            
+            if (isUiChrome) {
+              console.log(`🔍 Skipping UI chrome div with classes: ${divClasses}`);
+              continue; // Skip this element entirely
+            }
+            
             // Flush any accumulated text before processing the div
             if (currentTextHtml.trim()) {
               const { richText: textRichText } = await parseRichText(currentTextHtml.trim());
@@ -3120,8 +3177,13 @@ async function extractContentFromHtml(html) {
             // Recursively process ANY div (callouts, table containers, etc.)
             const divBlocks = await processElement(node);
             processedBlocks.push(...divBlocks);
+          } else if (isElementNode && nodeName === 'BUTTON') {
+            // Skip all button elements (export buttons, etc.)
+            const $button = $(node);
+            console.log(`🔍 Skipping button element with classes: ${$button.attr('class')}`);
+            continue;
           } else {
-            // Not a div - accumulate as text/HTML
+            // Not a div or button - accumulate as text/HTML
             currentTextHtml += isTextNode ? (node.data || node.nodeValue || '') : $(node).prop('outerHTML');
           }
         } else if (isTableElement) {
@@ -3647,8 +3709,21 @@ async function extractContentFromHtml(html) {
       const sectionParentChildren = sectionParent.children().toArray();
       console.log(`🔍 Section parent children: ${sectionParentChildren.map(c => `<${c.name} class="${$(c).attr('class') || ''}" id="${$(c).attr('id') || ''}">`).join(', ')}`);
       
-      // Use section parent's children as our content elements
-      contentElements = sectionParentChildren;
+      // ALSO include nav elements that are children of articles (e.g., #request-predictive-intelligence-for-im > nav)
+      // These should come AFTER sections but BEFORE contentPlaceholder
+      const articleNavs = $('.zDocsTopicPageBody article > nav, .zDocsTopicPageBody article[role="article"] > nav').toArray();
+      if (articleNavs.length > 0) {
+        console.log(`🔍 ✅ Found ${articleNavs.length} nav element(s) as children of articles, adding to contentElements`);
+      }
+      
+      // ALSO include contentPlaceholder siblings (Related Links, etc.) - these go at the END
+      const contentPlaceholders = topLevelChildren.filter(c => $(c).hasClass('contentPlaceholder'));
+      if (contentPlaceholders.length > 0) {
+        console.log(`🔍 ✅ Found ${contentPlaceholders.length} contentPlaceholder element(s), adding to contentElements`);
+      }
+      
+      // Use section parent's children + article navs + contentPlaceholder siblings (in correct order)
+      contentElements = [...sectionParentChildren, ...articleNavs, ...contentPlaceholders];
       console.log(`🔍 ✅ Using ${contentElements.length} elements from section parent as contentElements`);
     } else {
       // No sections found, use original top-level children

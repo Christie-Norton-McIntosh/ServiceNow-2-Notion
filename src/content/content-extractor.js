@@ -326,10 +326,20 @@ export async function extractContentWithIframes(contentElement) {
       "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer"
     );
     console.log(`📄 Found ${navElements.length} navigation elements in regular content`);
+    console.log(`📄 contentClone tagName: ${contentClone.tagName}, id: ${contentClone.id}, class: ${contentClone.className}`);
     
     let removedCount = 0;
-    navElements.forEach((el) => {
+    navElements.forEach((el, index) => {
+      const parentArticle = el.closest('article');
+      const parentSection = el.closest('section');
       const isInsideArticleOrSection = el.closest('article, section');
+      const elPreview = el.outerHTML?.substring(0, 200) || '';
+      
+      console.log(`📄 Nav ${index + 1}: tagName=${el.tagName}, role=${el.getAttribute('role')}, class=${el.className}`);
+      console.log(`   - parentArticle: ${parentArticle ? parentArticle.tagName + '#' + (parentArticle.id || 'no-id') : 'none'}`);
+      console.log(`   - parentSection: ${parentSection ? parentSection.tagName + '#' + (parentSection.id || 'no-id') : 'none'}`);
+      console.log(`   - Preview: ${elPreview}`);
+      
       if (!isInsideArticleOrSection) {
         console.log(`   ❌ Removing nav: ${el.tagName} (not inside article/section)`);
         el.remove();
