@@ -234,6 +234,13 @@ function convertRichTextBlock(input, options = {}) {
     console.log(`🔗 [URL WRAP] HTML changed after URL wrapping`);
   }
   
+  // DEBUG: Check if HTML contains samp tags BEFORE handler runs
+  if (html.includes('<samp') || html.includes('&lt;samp')) {
+    console.log(`🔍 [SAMP PRE-HANDLER] HTML contains samp tag BEFORE handler:`);
+    const sampIndex = html.indexOf('<samp') >= 0 ? html.indexOf('<samp') : html.indexOf('&lt;samp');
+    console.log(`   Context: "${html.substring(Math.max(0, sampIndex - 50), sampIndex + 200)}"`);
+  }
+  
   // Handle inline code tags (<code> and <samp>)
   html = html.replace(/<code([^>]*)>([\s\S]*?)<\/code>/gi, (match, attrs, content) => {
     const result = `__CODE_START__${content}__CODE_END__`;
