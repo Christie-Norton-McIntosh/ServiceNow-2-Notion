@@ -295,6 +295,25 @@ async function extractContentFromHtml(html) {
 
     console.log(`🔍 [parseRichText] After kbd extraction (${kbdPlaceholders.length} kbd tags):`, text.substring(0, 300));
 
+    // CRITICAL: Protect technical placeholders like <plugin name>, <instance-name>, etc.
+    // These are NOT HTML tags and should be preserved in the output
+    const technicalPlaceholders = [];
+    text = text.replace(/<([^>]+)>/g, (match, content) => {
+      // Check if this looks like an HTML tag or a placeholder
+      // HTML tag: starts with tag name, optionally followed by end or attributes like: <div>, <span class="x">
+      // Placeholder: anything else like <plugin name>, <instance-name>, <Tool ID>, <file.txt>
+      const isHtmlTag = /^\/?\s*[a-z][a-z0-9]*\s*($|>|\/|[a-z]+=)/i.test(content.trim());
+      if (!isHtmlTag) {
+        const marker = `__TECH_PLACEHOLDER_${technicalPlaceholders.length}__`;
+        technicalPlaceholders.push(content);
+        console.log(`🔒 [parseRichText] Protected placeholder: "<${content}>"`);
+        return marker;
+      }
+      return match; // Leave HTML tags for normal processing
+    });
+
+    console.log(`🔍 [parseRichText] After placeholder protection (${technicalPlaceholders.length} placeholders):`, text.substring(0, 300));
+
     // Restore kbd placeholders with appropriate markers BEFORE HTML cleanup
     // Use shared utility for intelligent detection (technical → code, UI labels → bold)
     kbdPlaceholders.forEach((content, index) => {
@@ -717,6 +736,18 @@ async function extractContentFromHtml(html) {
         current.text.content += " ";
       }
     }
+
+    // CRITICAL: Restore protected technical placeholders at the very end
+    // Convert markers back to angle bracket format: __TECH_PLACEHOLDER_0__ -> <plugin name>
+    richText.forEach(element => {
+      if (element.text && element.text.content) {
+        element.text.content = element.text.content.replace(/__TECH_PLACEHOLDER_(\d+)__/g, (match, index) => {
+          const placeholder = technicalPlaceholders[parseInt(index)];
+          console.log(`🔓 [parseRichText] Restored placeholder: "__TECH_PLACEHOLDER_${index}__" -> "<${placeholder}>"`);
+          return `<${placeholder}>`;
+        });
+      }
+    });
 
     return { richText, imageBlocks, videoBlocks };
   }
