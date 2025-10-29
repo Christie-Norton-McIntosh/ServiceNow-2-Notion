@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.47
+// @version      9.2.48
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.47";
+    window.BUILD_VERSION = "9.2.48";
 (function () {
 
   // Configuration constants and default settings
@@ -3012,15 +3012,15 @@
           window.ServiceNowToNotion.autoExtractState
         ) {
           window.ServiceNowToNotion.autoExtractState.running = false;
-          showToast("⏹ Stopping AutoExtract immediately...", 3000);
+          showToast("⏹ Stopping AutoExtract after current operation...", 3000);
           
-          // Close any open progress overlay immediately
+          // Update overlay to show stopping message
           try {
-            if (window.W2NSavingProgress && window.W2NSavingProgress.close) {
-              window.W2NSavingProgress.close();
+            if (window.W2NSavingProgress && window.W2NSavingProgress.setMessage) {
+              window.W2NSavingProgress.setMessage("Stopping after current page...");
             }
           } catch (e) {
-            debug("Warning: Could not close overlay on stop:", e);
+            debug("Warning: Could not update overlay message:", e);
           }
         }
         // Restore buttons
@@ -7296,14 +7296,9 @@
                 }
               }, 1000);
             }
-          } else {
-            // AutoExtract mode: close overlay to let AutoExtract control the UI
-            try {
-              overlayModule.close && overlayModule.close();
-            } catch (err) {
-              debug("Warning: Failed to close overlay in AutoExtract mode:", err);
-            }
           }
+          // For AutoExtract: keep overlay open, just update message
+          // The AutoExtract loop manages the overlay lifecycle
         } else {
           throw new Error(result.error || "Proxy processing failed");
         }
