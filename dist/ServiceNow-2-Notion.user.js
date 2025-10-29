@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.52
+// @version      9.2.53
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.52";
+    window.BUILD_VERSION = "9.2.53";
 (function () {
 
   // Configuration constants and default settings
@@ -3614,6 +3614,7 @@
         let captureSuccess = false;
         let captureAttempts = 0;
         const maxCaptureAttempts = 3;
+        let isDuplicate = false; // Track if this is a duplicate skip (declared outside loop)
 
         while (captureAttempts < maxCaptureAttempts && !captureSuccess) {
           captureAttempts++;
@@ -3639,7 +3640,6 @@
         // STEP 1.5: Check for duplicate content
         const contentToHash = extractedData.content?.combinedHtml || "";
         const contentHash = simpleHash(contentToHash);
-        let isDuplicate = false; // Track if this is a duplicate skip
 
         debug(`🔍 Content to hash length: ${contentToHash.length} characters`);
         debug(`🔍 Calculated hash: ${contentHash}, Previous hash: ${autoExtractState.lastContentHash}`);          if (contentHash === autoExtractState.lastContentHash) {
