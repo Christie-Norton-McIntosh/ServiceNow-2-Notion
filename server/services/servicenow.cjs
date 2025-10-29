@@ -295,6 +295,18 @@ async function extractContentFromHtml(html) {
 
     console.log(`🔍 [parseRichText] After kbd extraction (${kbdPlaceholders.length} kbd tags):`, text.substring(0, 300));
 
+    // CRITICAL: Extract links FIRST (before placeholder protection)
+    // This prevents <a> tags from being misidentified as placeholders
+    const links = [];
+    text = text.replace(/<a[^>]*href=["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi, (match, href, content) => {
+      const linkIndex = links.length;
+      // Don't clean content yet - it will be cleaned later in the rich_text processing
+      links.push({ href, content });
+      return `__LINK_${linkIndex}__`;
+    });
+
+    console.log(`🔍 [parseRichText] After link extraction (${links.length} links):`, text.substring(0, 300));
+
     // CRITICAL: Protect technical placeholders like <plugin name>, <instance-name>, etc.
     // These are NOT HTML tags and should be preserved in the output
     const technicalPlaceholders = [];
@@ -513,14 +525,8 @@ async function extractContentFromHtml(html) {
       return `__CODE_START__${content}__CODE_END__`;
     });
 
-    // CRITICAL: Extract links FIRST, before identifier detection
-    // This prevents URLs like "integration.html" from being wrapped with code markers
-    const links = [];
-    text = text.replace(/<a[^>]*href=["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi, (match, href, content) => {
-      const linkIndex = links.length;
-      links.push({ href, content: cleanHtmlText(content) });
-      return `__LINK_${linkIndex}__`;
-    });
+    // NOTE: Link extraction already happened earlier (before placeholder protection)
+    // The links array was created and <a> tags converted to __LINK_n__ markers
 
     // Handle spans with technical identifier classes (keyword, parmname, codeph, etc.)
     // Note: Generic "ph" class removed - only specific technical classes get formatting
@@ -658,20 +664,30 @@ async function extractContentFromHtml(html) {
         const linkMatch = part.match(/^__LINK_(\d+)__$/);
         const linkIndex = parseInt(linkMatch[1]);
         const linkInfo = links[linkIndex];
-        if (linkInfo && linkInfo.content.trim()) {
-          let url = convertServiceNowUrl(linkInfo.href);
-          if (url && isValidNotionUrl(url)) {
-            richText.push({
-              type: "text",
-              text: { content: linkInfo.content.trim(), link: { url } },
-              annotations: normalizeAnnotations(currentAnnotations),
-            });
-          } else {
-            richText.push({
-              type: "text",
-              text: { content: linkInfo.content.trim() },
-              annotations: normalizeAnnotations(currentAnnotations),
-            });
+        if (linkInfo) {
+          // Clean the link content (strip HTML tags, restore placeholders)
+          let cleanedContent = cleanHtmlText(linkInfo.content);
+          // Restore technical placeholders in link text
+          cleanedContent = cleanedContent.replace(/__TECH_PLACEHOLDER_(\d+)__/g, (match, index) => {
+            const placeholder = technicalPlaceholders[parseInt(index)];
+            return `<${placeholder}>`;
+          });
+          
+          if (cleanedContent.trim()) {
+            let url = convertServiceNowUrl(linkInfo.href);
+            if (url && isValidNotionUrl(url)) {
+              richText.push({
+                type: "text",
+                text: { content: cleanedContent.trim(), link: { url } },
+                annotations: normalizeAnnotations(currentAnnotations),
+              });
+            } else {
+              richText.push({
+                type: "text",
+                text: { content: cleanedContent.trim() },
+                annotations: normalizeAnnotations(currentAnnotations),
+              });
+            }
           }
         }
       } else if (part) {
