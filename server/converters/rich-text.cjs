@@ -234,7 +234,7 @@ function convertRichTextBlock(input, options = {}) {
     console.log(`🔗 [URL WRAP] HTML changed after URL wrapping`);
   }
   
-  // Handle inline code tags
+  // Handle inline code tags (<code> and <samp>)
   html = html.replace(/<code([^>]*)>([\s\S]*?)<\/code>/gi, (match, attrs, content) => {
     const result = `__CODE_START__${content}__CODE_END__`;
     fs.appendFileSync('/Users/norton-mcintosh/GitHub/ServiceNow-2-Notion/debug-richtext.log', 
@@ -242,8 +242,17 @@ function convertRichTextBlock(input, options = {}) {
     return result;
   });
   
+  // Handle <samp> tags (sample output/system output) - treat same as inline code
+  html = html.replace(/<samp([^>]*)>([\s\S]*?)<\/samp>/gi, (match, attrs, content) => {
+    const result = `__CODE_START__${content}__CODE_END__`;
+    console.log(`💾 [SAMP TAG] Converting <samp> to inline code: "${content.substring(0, 100)}"`);
+    fs.appendFileSync('/Users/norton-mcintosh/GitHub/ServiceNow-2-Notion/debug-richtext.log', 
+      `SAMP TAG: "${content.substring(0, 100)}" → "${result.substring(0, 150)}"\n`);
+    return result;
+  });
+  
   fs.appendFileSync('/Users/norton-mcintosh/GitHub/ServiceNow-2-Notion/debug-richtext.log', 
-    `AFTER CODE TAGS: "${html.substring(0, 200)}"\n\n`);
+    `AFTER CODE/SAMP TAGS: "${html.substring(0, 200)}"\n\n`);
   
   // Handle span with uicontrol class as bold + blue
   html = html.replace(/<span[^>]*class=["'][^"']*\buicontrol\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
