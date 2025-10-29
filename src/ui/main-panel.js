@@ -392,7 +392,16 @@ export function setupMainPanel(panel) {
         window.ServiceNowToNotion.autoExtractState
       ) {
         window.ServiceNowToNotion.autoExtractState.running = false;
-        showToast("⏹ Stopping AutoExtract after current page...", 3000);
+        showToast("⏹ Stopping AutoExtract immediately...", 3000);
+        
+        // Close any open progress overlay immediately
+        try {
+          if (window.W2NSavingProgress && window.W2NSavingProgress.close) {
+            window.W2NSavingProgress.close();
+          }
+        } catch (e) {
+          debug("Warning: Could not close overlay on stop:", e);
+        }
       }
       // Restore buttons
       startAutoExtractBtn.style.display = "block";
@@ -769,6 +778,14 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
   const button = document.getElementById("w2n-start-autoextract");
 
   while (autoExtractState.running && !autoExtractState.paused) {
+    // Check running state at the very beginning of each iteration
+    if (!autoExtractState.running) {
+      debug(`⏹ AutoExtract stopped at beginning of loop iteration`);
+      stopAutoExtract(autoExtractState);
+      if (button) button.textContent = "Start AutoExtract";
+      return;
+    }
+    
     autoExtractState.currentPage++;
     const currentPageNum = autoExtractState.currentPage;
     debug(`📄 Processing page number: ${currentPageNum}`);
@@ -1025,6 +1042,18 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
             autoExtractState.duplicateCount = 0;
             autoExtractState.lastContentHash = contentHash;
             debug(`✅ Content is unique (hash: ${contentHash})`);
+          }
+
+          // Check if stop was requested before creating the page
+          if (!autoExtractState.running) {
+            debug(`⏹ AutoExtract stop requested before creating page ${currentPageNum}`);
+            showToast(
+              `⏹ AutoExtract stopped before page ${currentPageNum}. Processed ${autoExtractState.totalProcessed} pages.`,
+              4000
+            );
+            stopAutoExtract(autoExtractState);
+            if (button) button.textContent = "Start AutoExtract";
+            return;
           }
 
           // STEP 2: Create Notion page and wait for success
