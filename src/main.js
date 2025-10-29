@@ -740,14 +740,9 @@ class ServiceNowToNotionApp {
               }
             }, 1000);
           }
-        } else {
-          // AutoExtract mode: close overlay to let AutoExtract control the UI
-          try {
-            overlayModule.close && overlayModule.close();
-          } catch (err) {
-            debug("Warning: Failed to close overlay in AutoExtract mode:", err);
-          }
         }
+        // For AutoExtract: keep overlay open, just update message
+        // The AutoExtract loop manages the overlay lifecycle
       } else {
         throw new Error(result.error || "Proxy processing failed");
       }

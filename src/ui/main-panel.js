@@ -392,15 +392,15 @@ export function setupMainPanel(panel) {
         window.ServiceNowToNotion.autoExtractState
       ) {
         window.ServiceNowToNotion.autoExtractState.running = false;
-        showToast("⏹ Stopping AutoExtract immediately...", 3000);
+        showToast("⏹ Stopping AutoExtract after current operation...", 3000);
         
-        // Close any open progress overlay immediately
+        // Update overlay to show stopping message
         try {
-          if (window.W2NSavingProgress && window.W2NSavingProgress.close) {
-            window.W2NSavingProgress.close();
+          if (window.W2NSavingProgress && window.W2NSavingProgress.setMessage) {
+            window.W2NSavingProgress.setMessage("Stopping after current page...");
           }
         } catch (e) {
-          debug("Warning: Could not close overlay on stop:", e);
+          debug("Warning: Could not update overlay message:", e);
         }
       }
       // Restore buttons
