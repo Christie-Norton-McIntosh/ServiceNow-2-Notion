@@ -131,6 +131,35 @@ async function main() {
         if (prNumber) {
           log(`✅ PR #${prNumber} created successfully`, 'green');
           
+          // Create an issue for this build (for tracking/documentation)
+          log(`📋 Creating tracking issue...`, 'blue');
+          try {
+            // Get recent commits for this version
+            const recentCommits = exec('git log --oneline -5', { silent: true });
+            const commitLines = recentCommits.trim().split('\n').slice(0, 5);
+            const commitList = commitLines.map(line => `- ${line}`).join('\n');
+            
+            const issueTitle = `Build v${version} - Release Tracking`;
+            const issueBody = `## Build v${version}\n\n**Release Date:** ${new Date().toISOString().split('T')[0]}\n**PR:** #${prNumber}\n\n### Recent Changes\n${commitList}\n\n### Files Modified\n- dist/ServiceNow-2-Notion.user.js\n- package.json\n\n---\n*This issue was created automatically by the build system for tracking purposes.*`;
+            
+            const issueOutput = exec(`gh issue create --title "${issueTitle}" --body "${issueBody}" --label "build,automated" --assignee "@me"`, { silent: true });
+            const issueMatch = issueOutput.match(/https:\/\/github\.com\/[^\/]+\/[^\/]+\/issues\/(\d+)/);
+            const issueNumber = issueMatch ? issueMatch[1] : null;
+            
+            if (issueNumber) {
+              log(`✅ Issue #${issueNumber} created for build tracking`, 'green');
+              
+              // Link the PR to the issue by commenting
+              exec(`gh pr comment ${prNumber} --body "Tracked in issue #${issueNumber}"`, { silent: true, ignoreError: true });
+              
+              // Auto-close the issue since this is just for tracking
+              exec(`gh issue close ${issueNumber} --comment "Build completed and merged successfully."`, { silent: true, ignoreError: true });
+              log(`✅ Issue #${issueNumber} closed (build successful)`, 'green');
+            }
+          } catch (issueError) {
+            log(`⚠️  Could not create tracking issue: ${issueError.message}`, 'yellow');
+          }
+          
           // Auto-merge the PR
           log(`🤖 Auto-merging PR #${prNumber}...`, 'blue');
           exec(`gh pr merge ${prNumber} --auto --squash --delete-branch`);
