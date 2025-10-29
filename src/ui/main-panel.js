@@ -995,6 +995,7 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
       let captureSuccess = false;
       let captureAttempts = 0;
       const maxCaptureAttempts = 3;
+      let isDuplicate = false; // Track if this is a duplicate skip (declared outside loop)
 
       while (captureAttempts < maxCaptureAttempts && !captureSuccess) {
         captureAttempts++;
@@ -1020,7 +1021,6 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
       // STEP 1.5: Check for duplicate content
       const contentToHash = extractedData.content?.combinedHtml || "";
       const contentHash = simpleHash(contentToHash);
-      let isDuplicate = false; // Track if this is a duplicate skip
 
       debug(`🔍 Content to hash length: ${contentToHash.length} characters`);
       debug(`🔍 Calculated hash: ${contentHash}, Previous hash: ${autoExtractState.lastContentHash}`);          if (contentHash === autoExtractState.lastContentHash) {
