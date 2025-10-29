@@ -144,7 +144,9 @@ function cleanHtmlText(html) {
   const technicalPlaceholders = [];
   html = html.replace(/&lt;([^&]+)&gt;/g, (match, content) => {
     // Check if this looks like an HTML tag or a placeholder
-    const isHtmlTag = /^\/?\s*[a-z][a-z0-9]*(\s|$)/i.test(content.trim());
+    // HTML tag: starts with tag name, optionally followed by end or attributes like: <div>, <span class="x">
+    // Placeholder: anything else like <plugin name>, <instance-name>, <Tool ID>, <file.txt>
+    const isHtmlTag = /^\/?\s*[a-z][a-z0-9]*\s*($|\/|[a-z]+=)/i.test(content.trim());
     if (!isHtmlTag) {
       const marker = `__TECH_PLACEHOLDER_${technicalPlaceholders.length}__`;
       technicalPlaceholders.push(content);
@@ -155,7 +157,8 @@ function cleanHtmlText(html) {
   
   // Also protect already-decoded placeholders like <instance-name>
   html = html.replace(/<([^>]+)>/g, (match, content) => {
-    const isHtmlTag = /^\/?\s*[a-z][a-z0-9]*(\s|$|>)/i.test(content.trim());
+    // Same strict check: only tag names followed by end, slash, or attribute assignment
+    const isHtmlTag = /^\/?\s*[a-z][a-z0-9]*\s*($|>|\/|[a-z]+=)/i.test(content.trim());
     if (!isHtmlTag) {
       const marker = `__TECH_PLACEHOLDER_${technicalPlaceholders.length}__`;
       technicalPlaceholders.push(content);
