@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.46
+// @version      9.2.47
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.46";
+    window.BUILD_VERSION = "9.2.47";
 (function () {
 
   // Configuration constants and default settings
@@ -3444,6 +3444,13 @@
             );
             await showCountdownAndWait(5, `⏳ Reload failed. Retrying in...`);
           }
+        }
+
+        // If access-limited was detected and resolved, give the page extra time to stabilize
+        if (accessLimitedReloadAttempts > 0 && !isPageAccessLimited()) {
+          debug(`✅ Access-limited resolved after ${accessLimitedReloadAttempts} reload(s), stabilizing page...`);
+          overlayModule.setMessage(`Page access restored, stabilizing...`);
+          await new Promise((resolve) => setTimeout(resolve, 3000));
         }
 
         // If still access limited after reload attempts, skip this page and move to next
