@@ -519,6 +519,20 @@ async function extractContentFromHtml(html) {
       return `(__CODE_START__${identifier}__CODE_END__)`;
     });
 
+    // Handle role names after "Role required:" as inline code
+    // Matches "Role required: admin" or "Role required: admin, asset"
+    text = text.replace(/\b(Role required:)\s+([a-z_]+(?:,\s*[a-z_]+)*)/gi, (match, label, roles) => {
+      console.log(`🔍 [ROLE] Matched "Role required:" with roles: "${roles}"`);
+      const roleList = roles.split(/,\s*/).map(role => {
+        const trimmed = role.trim();
+        console.log(`🔍 [ROLE] Wrapping role: "${trimmed}"`);
+        return `__CODE_START__${trimmed}__CODE_END__`;
+      }).join(', ');
+      const result = `${label} ${roleList}`;
+      console.log(`🔍 [ROLE] Result: "${result}"`);
+      return result;
+    });
+
     // Handle standalone multi-word identifiers connected by _ or . (no spaces) as inline code
     // Examples: com.snc.incident.mim.ml_solution, sys_user_table, package.class.method
     // Must have at least 2 segments and no brackets/parentheses

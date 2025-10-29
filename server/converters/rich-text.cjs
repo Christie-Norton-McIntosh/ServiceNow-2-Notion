@@ -71,6 +71,12 @@ function convertRichTextBlock(input, options = {}) {
   let html = typeof input === "string" ? input : "";
   if (!html) return [];
   
+  // DEBUG: Check if input contains "Role required"
+  if (html && html.toLowerCase().includes('role required')) {
+    console.log(`🔍 [ROLE DEBUG] convertRichTextBlock received input with "Role required":`);
+    console.log(`   Input: "${html}"`);
+  }
+  
   // DEBUG: Log what we receive
   if (html && html.includes('__CODE_START__')) {
     fs.appendFileSync('/Users/norton-mcintosh/GitHub/ServiceNow-2-Notion/debug-url-extract.log',
