@@ -323,10 +323,17 @@ function convertRichTextBlock(input, options = {}) {
 
   // Handle "Role required:" followed by comma-separated single-word role names as inline code
   // Examples: "Role required: admin", "Role required: admin, asset", "Role required: sam"
-  html = html.replace(/\b(Role required:)\s+((?:[a-z_]+(?:,\s*)?)+)/gi, (match, label, roles) => {
+  html = html.replace(/\b(Role required:)\s+([a-z_]+(?:,\s*[a-z_]+)*)/gi, (match, label, roles) => {
+    console.log(`🔍 [ROLE] Matched "Role required:" with roles: "${roles}"`);
     // Split roles by comma, wrap each in code markers
-    const roleList = roles.split(/,\s*/).map(role => `__CODE_START__${role.trim()}__CODE_END__`).join(', ');
-    return `${label} ${roleList}`;
+    const roleList = roles.split(/,\s*/).map(role => {
+      const trimmed = role.trim();
+      console.log(`🔍 [ROLE] Wrapping role: "${trimmed}"`);
+      return `__CODE_START__${trimmed}__CODE_END__`;
+    }).join(', ');
+    const result = `${label} ${roleList}`;
+    console.log(`🔍 [ROLE] Result: "${result}"`);
+    return result;
   });
 
   // Standalone multi-word identifiers connected by _ or . (no spaces) as inline code
