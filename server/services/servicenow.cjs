@@ -4111,6 +4111,20 @@ async function extractContentFromHtml(html) {
     console.log(`⚠️ Remaining HTML structure (first 500 chars):`);
     console.log(remainingHtml.substring(0, 500));
     
+    // Save remaining HTML for analysis
+    if (process.env.SN2N_VERBOSE === '1' || process.env.SN2N_EXTRA_DEBUG === '1') {
+      const fs = require('fs');
+      const path = require('path');
+      const logDir = path.join(__dirname, 'logs');
+      const logFile = path.join(logDir, 'unprocessed-html.html');
+      try {
+        fs.writeFileSync(logFile, remainingHtml, 'utf8');
+        console.log(`📝 Saved unprocessed HTML to ${logFile}`);
+      } catch (err) {
+        console.log(`⚠️ Could not save unprocessed HTML: ${err.message}`);
+      }
+    }
+    
     // Collect warning for later logging (after page creation when we have pageId)
     warnings.push({
       type: 'UNPROCESSED_CONTENT',
