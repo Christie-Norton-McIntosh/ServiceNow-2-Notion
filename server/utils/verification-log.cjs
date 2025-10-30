@@ -233,40 +233,43 @@ function getVerificationSummary(days = 7) {
 }
 
 /**
- * Clear old log entries (older than specified days)
- * @param {number} [daysToKeep=30] - Number of days of logs to keep
+ * Clear old log entries (older than specified time)
+ * @param {number} [hoursToKeep=24] - Number of hours of logs to keep (default 24 hours)
  */
-function cleanOldEntries(daysToKeep = 30) {
+function cleanOldEntries(hoursToKeep = 24) {
   if (!fs.existsSync(LOG_FILE)) {
     return;
   }
   
-  const content = fs.readFileSync(LOG_FILE, 'utf8');
-  const lines = content.split('\n');
-  
-  const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
-  
-  const filteredLines = [];
-  let keepCurrentEntry = true;
-  
-  for (const line of lines) {
-    if (line.startsWith('[')) {
-      // Check if this entry is recent enough to keep
-      const timestampMatch = line.match(/\[([^\]]+)\]/);
-      if (timestampMatch) {
-        const timestamp = new Date(timestampMatch[1]);
-        keepCurrentEntry = timestamp >= cutoffDate;
-      }
+  try {
+    const content = fs.readFileSync(LOG_FILE, 'utf8');
+    if (!content.trim()) {
+      return; // Empty file, nothing to clean
     }
     
-    if (keepCurrentEntry) {
-      filteredLines.push(line);
+    // Split by separator and filter entries
+    const entries = content.split('\n================================================================================\n');
+    const cutoffTime = new Date(Date.now() - (hoursToKeep * 60 * 60 * 1000));
+    
+    const recentEntries = entries.filter(entry => {
+      const match = entry.match(/\[(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\]/);
+      if (!match) return false;
+      return new Date(match[1]) >= cutoffTime;
+    });
+    
+    if (recentEntries.length === 0) {
+      // No recent entries, clear the file
+      fs.writeFileSync(LOG_FILE, '', 'utf8');
+      console.log(`🧹 Cleaned verification log: no entries within last ${hoursToKeep} hours`);
+    } else if (recentEntries.length < entries.length) {
+      // Write back only recent entries
+      fs.writeFileSync(LOG_FILE, recentEntries.join('\n================================================================================\n'), 'utf8');
+      const removed = entries.length - recentEntries.length;
+      console.log(`🧹 Cleaned verification log: removed ${removed} old entries, kept ${recentEntries.length} from last ${hoursToKeep} hours`);
     }
+  } catch (err) {
+    console.error(`❌ Error cleaning verification log: ${err.message}`);
   }
-  
-  fs.writeFileSync(LOG_FILE, filteredLines.join('\n'), 'utf8');
-  console.log(`🧹 Cleaned verification log: kept entries from last ${daysToKeep} days`);
 }
 
 module.exports = {

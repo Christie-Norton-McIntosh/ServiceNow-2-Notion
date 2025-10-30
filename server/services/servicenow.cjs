@@ -221,6 +221,39 @@ async function extractContentFromHtml(html) {
   html = html.replace(/<div[^>]*class="(?![^\"]*code-toolbar)[^\"]*\btoolbar\b[^\"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
   html = html.replace(/<button[^>]*class="[^\"]*copy-to-clipboard-button[^\"]*"[^>]*>[\s\S]*?<\/button>/gi, "");
 
+  // DEDUPLICATE: Remove standalone articles that are also nested inside other articles
+  // ServiceNow pages sometimes include both standalone articles AND the same articles nested in a wrapper
+  // We need to keep only the properly nested structure to avoid duplicate content
+  const $dedupe = cheerio.load(html, { decodeEntities: false, xmlMode: false });
+  
+  // Find all article elements with IDs
+  const articlesWithIds = {};
+  $dedupe('article[id]').each((i, elem) => {
+    const id = $dedupe(elem).attr('id');
+    if (!articlesWithIds[id]) {
+      articlesWithIds[id] = [];
+    }
+    articlesWithIds[id].push(elem);
+  });
+  
+  // For each ID that appears multiple times, remove the standalone one (keep the nested one)
+  Object.keys(articlesWithIds).forEach(id => {
+    if (articlesWithIds[id].length > 1) {
+      console.log(`🔍 [DEDUPE] Found ${articlesWithIds[id].length} articles with id="${id}"`);
+      // Find which one is standalone (has no article ancestors) vs nested
+      articlesWithIds[id].forEach(elem => {
+        const $elem = $dedupe(elem);
+        const articleAncestors = $elem.parents('article').length;
+        if (articleAncestors === 0) {
+          console.log(`🗑️ [DEDUPE] Removing standalone article with id="${id}" (will use nested version)`);
+          $elem.remove();
+        }
+      });
+    }
+  });
+  
+  html = $dedupe.html();
+
   // DIAGNOSTIC: Check HTML length AFTER initial cleanup
   const sectionsAfterCleanup = (html.match(/<section[^>]*id="[^"]*"/g) || []).length;
   console.log(`🔥🔥🔥 AFTER INITIAL CLEANUP: HTML length: ${html.length} chars, sections: ${sectionsAfterCleanup}`);
@@ -338,6 +371,16 @@ async function extractContentFromHtml(html) {
       console.log(`🔍 [parseRichText] Restored <kbd>: "${content}" → ${formatted.includes('CODE') ? 'code' : 'bold'}`);
     });
 
+    // CRITICAL: Protect angle brackets inside CODE markers from being mistaken for HTML tags
+    // The span stripping regex uses [^>]* which stops at first >, breaking placeholders like <project_sys_id>
+    // Replace < and > with safe placeholders inside CODE blocks, then restore after span stripping
+    text = text.replace(/__CODE_START__([\s\S]*?)__CODE_END__/g, (match, codeContent) => {
+      const protectedContent = codeContent
+        .replace(/</g, '__LT__')
+        .replace(/>/g, '__GT__');
+      return `__CODE_START__${protectedContent}__CODE_END__`;
+    });
+
     // Handle span with uicontrol class as bold + blue
     text = text.replace(/<span[^>]*class=["'][^"']*uicontrol[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
       if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with uicontrol class: ${match.substring(0, 100)}`);
@@ -390,6 +433,15 @@ async function extractContentFromHtml(html) {
     
     // Clean up extra whitespace from tag removal
     text = text.replace(/\s+/g, ' ').trim();
+    
+    // CRITICAL: Restore protected angle brackets inside CODE markers
+    // These were temporarily replaced to prevent span stripping regex from breaking on them
+    text = text.replace(/__CODE_START__([\s\S]*?)__CODE_END__/g, (match, codeContent) => {
+      const restoredContent = codeContent
+        .replace(/__LT__/g, '<')
+        .replace(/__GT__/g, '>');
+      return `__CODE_START__${restoredContent}__CODE_END__`;
+    });
 
     console.log('🔍 [parseRichText] After HTML cleanup:', text.substring(0, 300));
     console.log('🔍 [parseRichText] Has newline after cleanup?', text.includes('\n'));
@@ -515,6 +567,7 @@ async function extractContentFromHtml(html) {
       if (content.includes('__CODE_START__')) {
         return content;
       }
+      console.log(`🔧 [CODE-TAG] Wrapping <code> tag content: "${content.substring(0, 50)}${content.length > 50 ? '...' : ''}"`);
       return `__CODE_START__${content}__CODE_END__`;
     });
 
@@ -534,10 +587,12 @@ async function extractContentFromHtml(html) {
     // Handle spans with technical identifier classes (keyword, parmname, codeph, etc.)
     // Note: Generic "ph" class removed - only specific technical classes get formatting
     text = text.replace(/<span[^>]*class=["'][^"']*(?:\bkeyword\b|\bparmname\b|\bcodeph\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
-      if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with technical class: ${match.substring(0, 100)}`);
+      console.log(`🏷️ [SPAN] Found span with technical class: class="${match.match(/class=["']([^"']*)["']/)?.[1]}", content="${content}"`);
       
       // Use shared processing utility (no activeBlocks needed in parseRichText context)
       const result = processTechnicalSpan(content);
+      
+      console.log(`🏷️ [SPAN] Result: ${result.includes('__CODE_START__') ? 'CODE' : 'PLAIN'}`);
       
       // If unchanged (returned as-is), return original match to preserve HTML
       if (result === content || result === content.trim()) {
@@ -548,35 +603,39 @@ async function extractContentFromHtml(html) {
     });
 
     // Handle raw technical identifiers in parentheses/brackets as inline code
-    text = text.replace(/([\(\[])[ \t\n\r]*([^\s()[\]]*[_.][^\s()[\]]*)[ \t\n\r]*([\)\]])/g, (match, open, code, close) => {
+    // Must contain at least one dot or underscore to be considered a technical identifier
+    // Remove the brackets/parentheses from the output (treat same as parentheses around code)
+    text = text.replace(/([\(\[])[ \t\n\r]*([a-zA-Z][-a-zA-Z0-9_]*(?:[_.][-a-zA-Z0-9_]+)+)[ \t\n\r]*([\)\]])/g, (match, open, code, close) => {
       return `__CODE_START__${code.trim()}__CODE_END__`;
     });
 
-    // Handle technical identifiers like (com.snc.software_asset_management) as inline code
-    text = text.replace(/\(([a-zA-Z][a-zA-Z0-9]*(?:\.[a-zA-Z][a-zA-Z0-9_]*)+)\)/g, (match, identifier) => {
-      return `(__CODE_START__${identifier}__CODE_END__)`;
-    });
-
     // Handle role names after "Role required:" as inline code
-    // Matches "Role required: admin" or "Role required: admin, asset"
-    text = text.replace(/\b(Role required:)\s+([a-z_]+(?:,\s*[a-z_]+)*)/gi, (match, label, roles) => {
+    // Examples: "Role required: admin", "Role required: sn_devops.admin, asset", "Role required: sn_devops.admin or sn_devops.tool_owner"
+    // Roles can contain underscores and dots (e.g., sn_devops.admin)
+    text = text.replace(/\b(Role required:)\s+([a-z_][a-z0-9_.]*(?:\s+or\s+[a-z_][a-z0-9_.]*)*(?:,\s*[a-z_][a-z0-9_.]*)*)/gi, (match, label, roles) => {
       console.log(`🔍 [ROLE] Matched "Role required:" with roles: "${roles}"`);
-      const roleList = roles.split(/,\s*/).map(role => {
+      // Split roles by comma or "or", wrap each in code markers
+      const roleList = roles.split(/(?:,\s*|\s+or\s+)/i).map(role => {
         const trimmed = role.trim();
         console.log(`🔍 [ROLE] Wrapping role: "${trimmed}"`);
         return `__CODE_START__${trimmed}__CODE_END__`;
-      }).join(', ');
+      }).join(' or ');
       const result = `${label} ${roleList}`;
       console.log(`🔍 [ROLE] Result: "${result}"`);
       return result;
     });
 
     // Handle standalone multi-word identifiers connected by _ or . (no spaces) as inline code
-    // Examples: com.snc.incident.mim.ml_solution, sys_user_table, package.class.method
-    // Must have at least 2 segments and no brackets/parentheses
-    text = text.replace(/\b([a-zA-Z][a-zA-Z0-9]*(?:[_.][a-zA-Z][a-zA-Z0-9]*)+)(?![_.a-zA-Z0-9])/g, (match, identifier, offset) => {
+    // Each segment can start with a letter, can contain letters, numbers, hyphens, and underscores
+    // Examples: com.snc.incident.mim.ml_solution, sys_user_table, sn_devops.admin, package.class.method, com.glide.service-portal
+    // Must have at least 2 segments separated by . or _ and no brackets/parentheses
+    text = text.replace(/\b([a-zA-Z][-a-zA-Z0-9_]*(?:[_.][a-zA-Z][-a-zA-Z0-9_]*)+)\b/g, (match, identifier, offset) => {
       // Skip if already wrapped or if it's part of a URL
       if (match.includes('__CODE_START__') || match.includes('http')) {
+        return match;
+      }
+      // Skip if this contains formatting markers (like __BOLD_END__, __BOLD_BLUE_END__)
+      if (match.includes('__BOLD') || match.includes('__ITALIC') || match.includes('__LINK') || match.includes('_START__') || match.includes('_END__')) {
         return match;
       }
       // Check if this identifier is inside a CODE_START...CODE_END block (URL)
@@ -587,6 +646,7 @@ async function extractContentFromHtml(html) {
         // We're inside a CODE block, don't wrap again
         return match;
       }
+      console.log(`🔧 [TECH-ID] Wrapping standalone identifier: "${identifier}"`);
       return `__CODE_START__${identifier}__CODE_END__`;
     });
 
@@ -1203,7 +1263,8 @@ async function extractContentFromHtml(html) {
       // For div.p with nested blocks: process the ENTIRE div.p as a child block (it will handle mixed content)
       
       // Find nested blocks that are direct children (excluding div.p which needs special handling)
-      const directNestedBlocks = $elem.find('> ul, > ol, > figure, > table, > pre, > div.table-wrap, > div.note, > div.itemgroup, > div.info');
+      // Include > img so standalone images inside callouts are processed as child blocks
+      const directNestedBlocks = $elem.find('> ul, > ol, > figure, > table, > pre, > div.table-wrap, > div.note, > div.itemgroup, > div.info, > img');
       
       // Check if any div.p elements contain nested blocks - if so, treat the entire div.p as a nested block
       const divPWithBlocks = $elem.find('> div.p').filter((i, divP) => {
@@ -1220,7 +1281,7 @@ async function extractContentFromHtml(html) {
         // Clone and remove nested blocks to get just the text content
         // Remove direct nested blocks AND any div.p that contains nested blocks
         const $clone = $elem.clone();
-        $clone.find('> ul, > ol, > figure, > table, > pre, > div.table-wrap, > div.note, > div.itemgroup, > div.info').remove();
+        $clone.find('> ul, > ol, > figure, > table, > pre, > div.table-wrap, > div.note, > div.itemgroup, > div.info, > img').remove();
         
         // Remove div.p elements that contain nested blocks (these are processed as child blocks)
         $clone.find('> div.p').each((i, divP) => {
@@ -1363,10 +1424,13 @@ async function extractContentFromHtml(html) {
     // Note: Exclude "itemgroup" divs - those are just ServiceNow content containers, not callouts
     } else if (tagName === 'aside' || (tagName === 'div' && !/\bitemgroup\b/.test($elem.attr('class') || '') && /\b(info|note|warning|important|tip|caution)\b/.test($elem.attr('class') || ''))) {
       const classAttr = $elem.attr('class') || '';
-  if (getExtraDebug && getExtraDebug()) log(`🔍 MATCHED CALLOUT CONTAINER (<${tagName}>) class="${classAttr}"`);
-      const { color: calloutColor, icon: calloutIcon } = getCalloutPropsFromClasses(classAttr);
+      console.log(`� [CALLOUT] Processing <${tagName}> with class="${classAttr}"`);
       const inner = $elem.html() || '';
+      console.log(`📋 [CALLOUT] Inner HTML (first 300 chars): ${inner.substring(0, 300)}`);
+      console.log(`📋 [CALLOUT] Contains <img> tags: ${inner.includes('<img') ? 'YES' : 'NO'}`);
+      const { color: calloutColor, icon: calloutIcon } = getCalloutPropsFromClasses(classAttr);
       const { richText: calloutRichText, imageBlocks: calloutImages } = await parseRichText(inner);
+      console.log(`📋 [CALLOUT] parseRichText returned ${calloutImages?.length || 0} image blocks`);
       
       // Add any image blocks found in the callout
       if (calloutImages && calloutImages.length > 0) {
@@ -1645,9 +1709,20 @@ async function extractContentFromHtml(html) {
     } else if (tagName === 'img') {
       // Image (standalone)
       const src = $elem.attr('src');
+      const imgId = $elem.attr('id');
+      const imgClass = $elem.attr('class');
+      console.log(`🖼️ [STANDALONE IMG] id="${imgId}", class="${imgClass}", src="${src?.substring(0, 80)}"`);
       if (src && isValidImageUrl(src)) {
+        console.log(`🖼️ [STANDALONE IMG] ✅ Valid image URL, creating block`);
         const imageBlock = await createImageBlock(src, $elem.attr('alt') || '');
-        if (imageBlock) processedBlocks.push(imageBlock);
+        if (imageBlock) {
+          console.log(`🖼️ [STANDALONE IMG] ✅ Image block created`);
+          processedBlocks.push(imageBlock);
+        } else {
+          console.log(`🖼️ [STANDALONE IMG] ❌ Image block creation failed`);
+        }
+      } else {
+        console.log(`🖼️ [STANDALONE IMG] ❌ Invalid or missing image URL`);
       }
       $elem.remove(); // Mark as processed
       
@@ -3047,7 +3122,8 @@ async function extractContentFromHtml(html) {
       
     } else if (tagName === 'div' && ($elem.hasClass('itemgroup') || $elem.hasClass('info') || $elem.hasClass('stepxmp'))) {
       // ServiceNow content container divs - check if they have block-level children
-      const blockChildren = $elem.find('> div, > p, > ul, > ol, > table, > pre, > figure').toArray();
+      // Include > img so standalone images are recognized as block children
+      const blockChildren = $elem.find('> div, > p, > ul, > ol, > table, > pre, > figure, > img').toArray();
       
       if (blockChildren.length > 0) {
         // Has block-level children - check for mixed content (text + blocks)
@@ -3757,6 +3833,10 @@ async function extractContentFromHtml(html) {
     console.log(`🔍 Processing from .zDocsTopicPageBody, found ${topLevelChildren.length} top-level children`);
     console.log(`🔍 Top-level children: ${topLevelChildren.map(c => `<${c.name} class="${$(c).attr('class') || ''}">`).join(', ')}`);
     
+    // Collect nav elements and contentPlaceholders early (used in multiple paths below)
+    const articleNavs = $('.zDocsTopicPageBody article > nav, .zDocsTopicPageBody article[role="article"] > nav').toArray();
+    const contentPlaceholders = topLevelChildren.filter(c => $(c).hasClass('contentPlaceholder'));
+    
     // CRITICAL FIX: Check if sections exist deeper in the tree (not just as direct children)
     // ServiceNow pages often have structure: .zDocsTopicPageBody > div.zDocsTopicPageBodyContent > article > main > article.dita > div.body.conbody
     // And sections can be either children of body.conbody OR siblings of it!
@@ -3819,20 +3899,13 @@ async function extractContentFromHtml(html) {
       const sectionParentChildren = sectionParent.children().toArray();
       console.log(`🔍 Section parent children: ${sectionParentChildren.map(c => `<${c.name} class="${$(c).attr('class') || ''}" id="${$(c).attr('id') || ''}">`).join(', ')}`);
       
-      // ALSO include nav elements that are children of articles (e.g., #request-predictive-intelligence-for-im > nav)
-      // These should come AFTER sections but BEFORE contentPlaceholder
-      const articleNavs = $('.zDocsTopicPageBody article > nav, .zDocsTopicPageBody article[role="article"] > nav').toArray();
+      // Use section parent's children + article navs + contentPlaceholder siblings (in correct order)
       if (articleNavs.length > 0) {
         console.log(`🔍 ✅ Found ${articleNavs.length} nav element(s) as children of articles, adding to contentElements`);
       }
-      
-      // ALSO include contentPlaceholder siblings (Related Links, etc.) - these go at the END
-      const contentPlaceholders = topLevelChildren.filter(c => $(c).hasClass('contentPlaceholder'));
       if (contentPlaceholders.length > 0) {
         console.log(`🔍 ✅ Found ${contentPlaceholders.length} contentPlaceholder element(s), adding to contentElements`);
       }
-      
-      // Use section parent's children + article navs + contentPlaceholder siblings (in correct order)
       contentElements = [...sectionParentChildren, ...articleNavs, ...contentPlaceholders];
       console.log(`🔍 ✅ Using ${contentElements.length} elements from section parent as contentElements`);
     } else {
@@ -3844,10 +3917,19 @@ async function extractContentFromHtml(html) {
     const nested1InBody = $('.zDocsTopicPageBody article.nested1').length;
     const nested0InBody = $('.zDocsTopicPageBody article.nested0').length;
     console.log(`🔍 DIAGNOSTIC: Found ${nested0InBody} article.nested0 and ${nested1InBody} article.nested1 inside .zDocsTopicPageBody`);
+    
+    // FIX: If article.nested0 exists with article.nested1 children, use those articles as contentElements
     if (nested0InBody > 0) {
       const nested0 = $('.zDocsTopicPageBody article.nested0').first();
-      const nested1Children = nested0.find('> article.nested1').length;
-      console.log(`🔍 DIAGNOSTIC: article.nested0 has ${nested1Children} direct article.nested1 children`);
+      const nested1Children = nested0.find('> article.nested1').toArray();
+      console.log(`🔍 DIAGNOSTIC: article.nested0 has ${nested1Children.length} direct article.nested1 children`);
+      
+      if (nested1Children.length > 0) {
+        console.log(`🔍 ✅ OVERRIDE: Using ${nested1Children.length} article.nested1 elements as contentElements (instead of section parent children)`);
+        // Also include the nested0's direct content (shortdesc, etc.) before the nested1 articles
+        const nested0DirectContent = nested0.children('div.body, p.shortdesc').toArray();
+        contentElements = [...nested0DirectContent, ...nested1Children, ...articleNavs, ...contentPlaceholders];
+      }
     }
     
     // FIX: Also collect any orphaned article.nested1 elements that are NOT inside .zDocsTopicPageBody
@@ -4007,8 +4089,10 @@ async function extractContentFromHtml(html) {
     
     // Skip known empty container classes that are expected after extraction
     const isKnownContainer = $el.hasClass('zDocsTopicPageBodyContent') || 
+                            $el.hasClass('zDocsTopicPageBody') ||
                             $el.hasClass('hascomments') ||
                             $el.attr('role') === 'main' ||
+                            $el.attr('dir') === 'ltr' ||
                             ($el.is('article') && $el.children().length === 0);
     
     if (isKnownContainer) {

@@ -101,6 +101,15 @@ try {
   // Orchestration will be undefined, triggering fallback to inline functions
 }
 
+// Verification log utility with fallback
+let verificationLog;
+try {
+  verificationLog = require('./utils/verification-log.cjs');
+} catch (e) {
+  console.log("⚠️ Verification log utility not available:", e.message);
+  verificationLog = null;
+}
+
 // Extract orchestration functions with fallback
 const { appendBlocksToBlockId, deepStripPrivateKeys } = blockChunking || {};
 const { 
@@ -1781,6 +1790,15 @@ try {
 }
 
 if (require.main === module) {
+  // Clean old verification log entries on startup (keep last 24 hours)
+  if (verificationLog && verificationLog.cleanOldEntries) {
+    try {
+      verificationLog.cleanOldEntries(24); // Keep last 24 hours
+    } catch (err) {
+      console.error("⚠️ Failed to clean verification log:", err.message);
+    }
+  }
+  
   app.listen(PORT, () => {
     // Always print a concise startup message; verbose logs use log()
     console.log(
