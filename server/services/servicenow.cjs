@@ -1098,21 +1098,11 @@ async function extractContentFromHtml(html) {
   
   // Use cheerio to parse HTML and process elements in document order
   let $;
-  let elementOrderMap = new Map();
   try {
     $ = cheerio.load(html, { 
       decodeEntities: false,
       _useHtmlParser2: true 
     });
-
-    // Build DOM order map so we can later sort collected elements by original document order
-    let orderCounter = 0;
-    $.root().find('*').each((_, el) => {
-      if (el && !elementOrderMap.has(el)) {
-        elementOrderMap.set(el, orderCounter++);
-      }
-    });
-    console.log(`🔥🔥🔥 DOM order map initialized with ${orderCounter} elements`);
     
     // CRITICAL DIAGNOSTIC: Count ALL structural elements AFTER Cheerio parsing
     const cheerioSections = $('section[id]');
@@ -3991,8 +3981,8 @@ async function extractContentFromHtml(html) {
     
     // FIX: Deduplicate contentElements array (orphan collection strategies may overlap)
     // Use a Map with element identity key (cheerio element reference won't work with Set)
-  const uniqueElements = [];
-  const seenElementKeys = new Set();
+    const uniqueElements = [];
+    const seenElementKeys = new Set();
     
     for (const el of contentElements) {
       // Create unique key: tag name + id + position in parent + text preview
@@ -4016,7 +4006,6 @@ async function extractContentFromHtml(html) {
       console.log(`🔍 FIX: Deduplicated contentElements: ${contentElements.length} → ${uniqueElements.length} (removed ${contentElements.length - uniqueElements.length} duplicates)`);
       contentElements = uniqueElements;
     }
-
   } else if ($('body').length > 0) {
     // Full HTML document with body tag
     contentElements = $('body').find('> *').toArray();
@@ -4065,16 +4054,6 @@ async function extractContentFromHtml(html) {
     console.log(`🔍 Root structure:\n      ${rootStructure}`);
   }
   
-  // Sort collected elements by original DOM order so orphan nodes stay near their source neighbors
-  if (contentElements.length > 1) {
-    contentElements.sort((a, b) => {
-      const orderA = elementOrderMap.has(a) ? elementOrderMap.get(a) : Number.MAX_SAFE_INTEGER;
-      const orderB = elementOrderMap.has(b) ? elementOrderMap.get(b) : Number.MAX_SAFE_INTEGER;
-      return orderA - orderB;
-    });
-    console.log('🔍 FIX: Sorted contentElements by DOM order to keep orphan elements in place');
-  }
-
   console.log(`🔍 Found ${contentElements.length} elements to process`);
   
   // CRITICAL DIAGNOSTIC: Check if article.nested0 exists in the DOM at all
