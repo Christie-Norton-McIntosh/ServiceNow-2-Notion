@@ -3950,27 +3950,39 @@ async function extractContentFromHtml(html) {
   console.log(`🔍 Fallback check - cleaned content length: ${content.trim().length}`);
   
   // Check if all content elements were successfully removed (processed)
+  // Count elements with actual text content, not just empty wrappers
   let unprocessedElements = 0;
+  let elementsToCheck = [];
+  
   if ($('body').length > 0) {
-    unprocessedElements = $('body').children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').length;
+    elementsToCheck = $('body').children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').toArray();
   } else if ($('.zDocsTopicPageBody').length > 0) {
-    unprocessedElements = $('.zDocsTopicPageBody').children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').length;
+    elementsToCheck = $('.zDocsTopicPageBody').children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').toArray();
   } else if ($('.dita, .refbody, article, main, [role="main"]').length > 0) {
     const mainArticle = $('article.dita, .refbody').first();
     if (mainArticle.length > 0) {
-      unprocessedElements = mainArticle.children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').length;
+      elementsToCheck = mainArticle.children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').toArray();
     } else {
-      unprocessedElements = $('.dita, .refbody, article, main, [role="main"]').first().children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').length;
+      elementsToCheck = $('.dita, .refbody, article, main, [role="main"]').first().children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').toArray();
     }
   }
   
-  console.log(`🔍 Unprocessed elements remaining: ${unprocessedElements}`);
+  // Only count elements that have meaningful text content (not just whitespace/structure)
+  unprocessedElements = elementsToCheck.filter(el => {
+    const text = $(el).text().trim();
+    // Count as unprocessed if it has substantial text (>10 chars) or contains content-rich children
+    return text.length > 10 || $(el).find('p, ul, ol, table, pre').length > 0;
+  }).length;
+  
+  console.log(`🔍 Unprocessed elements remaining: ${unprocessedElements} (with meaningful content)`);
   
   if (unprocessedElements > 0) {
     console.log(`⚠️ Warning: ${unprocessedElements} content elements were not processed!`);
     console.log(`⚠️ This indicates a bug in the element processing logic.`);
     console.log(`⚠️ Remaining HTML structure (first 500 chars):`);
     console.log(remainingHtml.substring(0, 500));
+  } else if (elementsToCheck.length > 0) {
+    console.log(`✅ All ${elementsToCheck.length} remaining elements are empty wrappers (no meaningful content)`);
   }
   
   if (content.trim().length > 100 && unprocessedElements === 0) {
