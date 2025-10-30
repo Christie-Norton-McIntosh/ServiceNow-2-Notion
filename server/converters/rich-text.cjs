@@ -28,6 +28,33 @@ const {
 
 const { normalizeAnnotations, VALID_RICH_TEXT_COLORS } = require('../utils/notion-format.cjs');
 
+// Module-level storage for placeholder warnings
+// These will be logged with page context in w2n.cjs after page creation
+let placeholderWarnings = [];
+
+/**
+ * Get and clear any accumulated placeholder warnings
+ * @returns {Array} Array of warning objects with context
+ */
+function getAndClearPlaceholderWarnings() {
+  const warnings = placeholderWarnings;
+  placeholderWarnings = [];
+  return warnings;
+}
+
+/**
+ * Add a placeholder warning to be logged later with page context
+ * @param {Array} placeholders - Array of placeholder strings that would be stripped
+ * @param {string} context - First 200 chars of the HTML context
+ */
+function addPlaceholderWarning(placeholders, context) {
+  placeholderWarnings.push({
+    placeholders,
+    context,
+    timestamp: new Date().toISOString()
+  });
+}
+
 /**
  * Converts HTML or plain text content to Notion's rich_text block array format.
  * 
@@ -425,6 +452,31 @@ function convertRichTextBlock(input, options = {}) {
   // This handles span tags, divs, and other markup that doesn't need special formatting
   // CRITICAL: Only strip KNOWN HTML tags, preserve technical placeholders like <instance-name>
   const beforeStrip = html;
+  
+  // FIRST: Check for potential unprotected technical placeholders before stripping
+  // Match any remaining angle brackets that look like placeholders (not known HTML tags)
+  const potentialPlaceholders = html.match(/<([^>\/]+)>/g);
+  if (potentialPlaceholders) {
+    const knownHtmlTags = /^<\/?(?:div|span|p|a|img|br|hr|b|i|u|strong|em|code|samp|pre|ul|ol|li|table|tr|td|th|tbody|thead|tfoot|h[1-6]|font|center|small|big|sub|sup|abbr|cite|del|ins|mark|s|strike|blockquote|q|address|article|aside|footer|header|main|nav|section|details|summary|figure|figcaption|time|video|audio|source|canvas|svg|path|g|rect|circle|line|polyline|polygon)(?:\s+[^>]*)?>/i;
+    
+    const actualPlaceholders = potentialPlaceholders.filter(tag => !knownHtmlTags.test(tag));
+    
+    if (actualPlaceholders.length > 0) {
+      // Store warning for later logging with page context
+      addPlaceholderWarning(actualPlaceholders, html.substring(0, 200));
+      
+      // Also log immediately for debugging
+      console.warn(`⚠️ [PLACEHOLDER WARNING] Found ${actualPlaceholders.length} unprotected technical placeholder(s) that would be stripped:`);
+      actualPlaceholders.forEach(placeholder => {
+        console.warn(`   ❌ Would strip: "${placeholder}"`);
+      });
+      console.warn(`   📍 Context (first 200 chars): "${html.substring(0, 200)}"`);
+      console.warn(`   🔗 This content will be sent to Notion. Please verify the page manually after creation.`);
+      console.warn(`   💡 Tip: These placeholders should have been protected earlier in processing.`);
+    }
+  }
+  
+  // NOW: Strip known HTML tags
   html = html.replace(/<\/?(?:div|span|p|a|img|br|hr|b|i|u|strong|em|code|samp|pre|ul|ol|li|table|tr|td|th|tbody|thead|tfoot|h[1-6]|font|center|small|big|sub|sup|abbr|cite|del|ins|mark|s|strike|blockquote|q|address|article|aside|footer|header|main|nav|section|details|summary|figure|figcaption|time|video|audio|source|canvas|svg|path|g|rect|circle|line|polyline|polygon)(?:\s+[^>]*)?>/gi, ' ');
   
   // Debug: Log if we stripped any span tags
@@ -813,5 +865,9 @@ module.exports = {
   /** @type {string[]} Re-exported from utils/notion-format.cjs */
   VALID_RICH_TEXT_COLORS,
   /** @type {function(string): string} Re-exported from utils/notion-format.cjs */
-  cleanHtmlText
+  cleanHtmlText,
+  /** @type {function(): Array} Get accumulated placeholder warnings */
+  getAndClearPlaceholderWarnings,
+  /** @type {function(Array, string): void} Add a placeholder warning */
+  addPlaceholderWarning
 };

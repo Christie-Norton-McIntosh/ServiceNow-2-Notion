@@ -17,6 +17,7 @@ console.log('🔥🔥🔥 MODULE VERSION: 04:53:00 - TIMESTAMP FORCE RELOAD WITH
 const notionService = require('../services/notion.cjs');
 const servicenowService = require('../services/servicenow.cjs');
 const dedupeUtil = require('../utils/dedupe.cjs');
+const { getAndClearPlaceholderWarnings } = require('../converters/rich-text.cjs');
 
 /**
  * Returns runtime global context for Notion and ServiceNow operations.
@@ -495,6 +496,25 @@ router.post('/W2N', async (req, res) => {
     }
 
     log("✅ Page created successfully:", response.id);
+    
+    // Check for any placeholder warnings that occurred during conversion
+    const placeholderWarnings = getAndClearPlaceholderWarnings();
+    if (placeholderWarnings.length > 0) {
+      console.warn(`\n⚠️ ========== PLACEHOLDER WARNING FOR PAGE ==========`);
+      console.warn(`📄 Page ID: ${response.id}`);
+      console.warn(`🔗 Notion URL: https://notion.so/${response.id.replace(/-/g, '')}`);
+      console.warn(`\n${placeholderWarnings.length} unprotected technical placeholder(s) were stripped during conversion:`);
+      placeholderWarnings.forEach((warning, index) => {
+        console.warn(`\n--- Warning ${index + 1} ---`);
+        console.warn(`Placeholders stripped: ${warning.placeholders.join(', ')}`);
+        console.warn(`Context: "${warning.context}"`);
+        console.warn(`Timestamp: ${warning.timestamp}`);
+      });
+      console.warn(`\n⚠️ PLEASE VERIFY THIS PAGE MANUALLY IN NOTION`);
+      console.warn(`   The placeholders above were removed from inline code/text.`);
+      console.warn(`   They should have been protected earlier in processing.`);
+      console.warn(`⚠️ ================================================\n`);
+    }
 
     // Append remaining blocks in chunks if any
     if (remainingBlocks.length > 0) {
