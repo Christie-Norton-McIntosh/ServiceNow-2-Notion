@@ -172,9 +172,12 @@ async function extractContentFromHtml(html) {
   
   console.log('🚨🚨🚨 SERVICENOW.CJS FUNCTION START - MODULE LOADED 🚨🚨🚨');
   
+  // Array to collect warnings during extraction for later logging
+  const warnings = [];
+  
   // cleanHtmlText already imported at top of file
   if (!html || typeof html !== "string") {
-    return { blocks: [], hasVideos: false };
+    return { blocks: [], hasVideos: false, warnings: [] };
   }
 
   // Reset video detection flag for this conversion
@@ -848,6 +851,16 @@ async function extractContentFromHtml(html) {
       } else {
         // Fallback to external URL if upload fails
         log(`⚠️ Image upload failed, falling back to external URL: ${src.substring(0, 80)}...`);
+        
+        // Collect warning for later logging (after page creation when we have pageId)
+        warnings.push({
+          type: 'IMAGE_UPLOAD_FAILED',
+          data: {
+            imageUrl: src,
+            errorMessage: 'Upload returned null/undefined'
+          }
+        });
+        
         return {
           object: "block",
           type: "image",
@@ -860,6 +873,15 @@ async function extractContentFromHtml(html) {
       }
     } catch (error) {
       log(`❌ Error processing image ${src}: ${error.message}`);
+      
+      // Collect warning for later logging (after page creation when we have pageId)
+      warnings.push({
+        type: 'IMAGE_UPLOAD_FAILED',
+        data: {
+          imageUrl: src,
+          errorMessage: error.message
+        }
+      });
       return null;
     }
   }
@@ -1060,6 +1082,17 @@ async function extractContentFromHtml(html) {
       if (lostSectionIds.length > 0) {
         console.log(`🔥🔥🔥 Lost section IDs: ${lostSectionIds.join(', ')}`);
       }
+      
+      // Collect warning for later logging (after page creation when we have pageId)
+      warnings.push({
+        type: 'CHEERIO_PARSING_ISSUE',
+        data: {
+          lostSections,
+          lostArticles,
+          lostSectionIds,
+          lostArticleIds
+        }
+      });
       if (lostArticleIds.length > 0) {
         console.log(`🔥🔥🔥 Lost article IDs: ${lostArticleIds.join(', ')}`);
       }
@@ -3993,6 +4026,15 @@ async function extractContentFromHtml(html) {
     console.log(`⚠️ This indicates a bug in the element processing logic.`);
     console.log(`⚠️ Remaining HTML structure (first 500 chars):`);
     console.log(remainingHtml.substring(0, 500));
+    
+    // Collect warning for later logging (after page creation when we have pageId)
+    warnings.push({
+      type: 'UNPROCESSED_CONTENT',
+      data: {
+        count: unprocessedElements,
+        htmlPreview: remainingHtml.substring(0, 500)
+      }
+    });
   } else if (elementsToCheck.length > 0) {
     console.log(`✅ All ${elementsToCheck.length} remaining elements are empty wrappers (no meaningful content)`);
   }
@@ -4073,7 +4115,7 @@ async function extractContentFromHtml(html) {
   }
   restorePlaceholders(blocks);
   
-  return { blocks, hasVideos: hasDetectedVideos };
+  return { blocks, hasVideos: hasDetectedVideos, warnings };
 }
 
 /**

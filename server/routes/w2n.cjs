@@ -18,6 +18,7 @@ const notionService = require('../services/notion.cjs');
 const servicenowService = require('../services/servicenow.cjs');
 const dedupeUtil = require('../utils/dedupe.cjs');
 const { getAndClearPlaceholderWarnings } = require('../converters/rich-text.cjs');
+const { logPlaceholderStripped, logUnprocessedContent, logImageUploadFailed, logCheerioParsingIssue } = require('../utils/verification-log.cjs');
 
 /**
  * Returns runtime global context for Notion and ServiceNow operations.
@@ -108,14 +109,19 @@ router.post('/W2N', async (req, res) => {
         // Create children blocks from content so the caller can inspect conversion
         let children = [];
         let hasVideos = false;
+        let extractionWarnings = [];
         if (payload.contentHtml) {
           log("🔄 (dryRun) Converting HTML content to Notion blocks");
           const result = await htmlToNotionBlocks(payload.contentHtml);
           children = result.blocks;
           hasVideos = result.hasVideos;
+          extractionWarnings = result.warnings || [];
           log(`✅ (dryRun) Converted HTML to ${children.length} Notion blocks`);
           if (hasVideos) {
             log(`🎥 (dryRun) Video content detected`);
+          }
+          if (extractionWarnings.length > 0) {
+            log(`⚠️ (dryRun) ${extractionWarnings.length} warnings collected during extraction`);
           }
         } else if (payload.content) {
           children = [
@@ -185,15 +191,20 @@ router.post('/W2N', async (req, res) => {
     let hasVideos = false;
 
     // Prefer HTML content with conversion to Notion blocks
+    let extractionWarnings = [];
     if (payload.contentHtml) {
       log("🔄 Converting HTML content to Notion blocks");
       
       const result = await htmlToNotionBlocks(payload.contentHtml);
       children = result.blocks;
       hasVideos = result.hasVideos;
+      extractionWarnings = result.warnings || [];
       log(`✅ Converted HTML to ${children.length} Notion blocks`);
       if (hasVideos) {
         log(`🎥 Video content detected - will set hasVideos property`);
+      }
+      if (extractionWarnings.length > 0) {
+        log(`⚠️ ${extractionWarnings.length} warnings collected during extraction (will log after page creation)`);
       }
     } else if (payload.content) {
       log("📝 Using plain text content");
@@ -504,16 +515,90 @@ router.post('/W2N', async (req, res) => {
       console.warn(`📄 Page ID: ${response.id}`);
       console.warn(`🔗 Notion URL: https://notion.so/${response.id.replace(/-/g, '')}`);
       console.warn(`\n${placeholderWarnings.length} unprotected technical placeholder(s) were stripped during conversion:`);
+      
+      // Collect all unique placeholders for logging
+      const allPlaceholders = [];
+      let combinedContext = '';
+      
       placeholderWarnings.forEach((warning, index) => {
         console.warn(`\n--- Warning ${index + 1} ---`);
         console.warn(`Placeholders stripped: ${warning.placeholders.join(', ')}`);
         console.warn(`Context: "${warning.context}"`);
         console.warn(`Timestamp: ${warning.timestamp}`);
+        
+        allPlaceholders.push(...warning.placeholders);
+        combinedContext += warning.context + ' ... ';
       });
+      
       console.warn(`\n⚠️ PLEASE VERIFY THIS PAGE MANUALLY IN NOTION`);
       console.warn(`   The placeholders above were removed from inline code/text.`);
       console.warn(`   They should have been protected earlier in processing.`);
       console.warn(`⚠️ ================================================\n`);
+      
+      // Log to verification log file
+      logPlaceholderStripped(
+        response.id,
+        title || 'Untitled',
+        Array.from(new Set(allPlaceholders)), // Deduplicate
+        combinedContext
+      );
+    }
+    
+    // Log any extraction warnings that were collected during HTML conversion
+    if (extractionWarnings.length > 0) {
+      console.log(`\n⚠️ ========== EXTRACTION WARNINGS FOR PAGE ==========`);
+      console.log(`📄 Page: ${title || 'Untitled'}`);
+      console.log(`🔗 Notion URL: https://notion.so/${response.id.replace(/-/g, '')}`);
+      console.log(`\n${extractionWarnings.length} warning(s) occurred during extraction:\n`);
+      
+      extractionWarnings.forEach((warning, index) => {
+        console.log(`--- Warning ${index + 1}: ${warning.type} ---`);
+        
+        switch (warning.type) {
+          case 'UNPROCESSED_CONTENT':
+            console.log(`  ${warning.data.count} elements were not processed`);
+            console.log(`  HTML preview: ${warning.data.htmlPreview.substring(0, 100)}...`);
+            logUnprocessedContent(
+              response.id,
+              title || 'Untitled',
+              warning.data.count,
+              warning.data.htmlPreview
+            );
+            break;
+            
+          case 'IMAGE_UPLOAD_FAILED':
+            console.log(`  Image URL: ${warning.data.imageUrl.substring(0, 80)}...`);
+            console.log(`  Error: ${warning.data.errorMessage}`);
+            logImageUploadFailed(
+              response.id,
+              title || 'Untitled',
+              warning.data.imageUrl,
+              warning.data.errorMessage
+            );
+            break;
+            
+          case 'CHEERIO_PARSING_ISSUE':
+            console.log(`  Lost ${warning.data.lostSections} sections, ${warning.data.lostArticles} articles`);
+            if (warning.data.lostSectionIds?.length > 0) {
+              console.log(`  Lost section IDs: ${warning.data.lostSectionIds.join(', ')}`);
+            }
+            if (warning.data.lostArticleIds?.length > 0) {
+              console.log(`  Lost article IDs: ${warning.data.lostArticleIds.join(', ')}`);
+            }
+            logCheerioParsingIssue(
+              response.id,
+              title || 'Untitled',
+              warning.data.lostSections,
+              warning.data.lostArticles
+            );
+            break;
+            
+          default:
+            console.log(`  Unknown warning type: ${warning.type}`);
+        }
+      });
+      
+      console.log(`⚠️ ================================================\n`);
     }
 
     // Append remaining blocks in chunks if any
