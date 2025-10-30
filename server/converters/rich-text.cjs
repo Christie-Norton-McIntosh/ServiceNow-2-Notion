@@ -393,6 +393,12 @@ function convertRichTextBlock(input, options = {}) {
   // Use a function to check context to avoid matching inside already-wrapped code
   const beforeTech = html;
   html = html.replace(/\b([a-zA-Z][-a-zA-Z0-9_]*(?:[_.][a-zA-Z][-a-zA-Z0-9_]*)+)\b/g, (match, identifier, offset, string) => {
+    // Skip if match contains END markers (indicates it spans across formatting boundaries)
+    if (match.includes('_END__') || match.includes('__END')) {
+      console.log(`🚫 [TECH ID] Skipping "${match}" - contains END marker (spans formatting boundary)`);
+      return match;
+    }
+    
     // Skip internal markers (placeholder, link, code markers, URL markers)
     if (match.startsWith('__PLACEHOLDER_') || match.startsWith('__LINK_') || match.startsWith('__CODE_') || match.startsWith('__URL_')) {
       return match;
