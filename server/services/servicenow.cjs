@@ -3970,6 +3970,18 @@ async function extractContentFromHtml(html) {
   // Only count elements that have meaningful text content (not just whitespace/structure)
   unprocessedElements = elementsToCheck.filter(el => {
     const text = $(el).text().trim();
+    const $el = $(el);
+    
+    // Skip known empty container classes that are expected after extraction
+    const isKnownContainer = $el.hasClass('zDocsTopicPageBodyContent') || 
+                            $el.hasClass('hascomments') ||
+                            $el.attr('role') === 'main' ||
+                            ($el.is('article') && $el.children().length === 0);
+    
+    if (isKnownContainer) {
+      return false; // Don't count known empty containers
+    }
+    
     // Count as unprocessed if it has substantial text (>10 chars) or contains content-rich children
     return text.length > 10 || $(el).find('p, ul, ol, table, pre').length > 0;
   }).length;
