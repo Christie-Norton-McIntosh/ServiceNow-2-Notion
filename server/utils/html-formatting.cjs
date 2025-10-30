@@ -20,8 +20,9 @@ const TECHNICAL_PATTERNS = {
   // Domain extensions
   domain: /\.(com|net|org|io|dev|gov|edu|mil|info|biz|tech|app|co|us|uk)/i,
   
-  // Dotted identifiers (e.g., table.field.value, my.package.Class)
-  dottedIdentifier: /^[\w\-]+\.[\w\-]+\./,
+  // Dotted identifiers (e.g., table.field, sn_devops.admin, my.package.Class)
+  // Matches identifiers with at least one dot (word.word or word.word.word)
+  dottedIdentifier: /^[\w\-]+\.[\w\-]+/,
   
   // ALL_CAPS constants (4+ characters, allowing underscores)
   constant: /^[A-Z_]{4,}$/,
@@ -52,17 +53,39 @@ function isTechnicalContent(content) {
   
   // Check each technical pattern
   // Note: URL detection removed - URLs are handled by <kbd> tag processing
-  if (TECHNICAL_PATTERNS.path.test(trimmed)) return true;
-  if (TECHNICAL_PATTERNS.placeholder.test(trimmed)) return true;
-  if (TECHNICAL_PATTERNS.domain.test(trimmed)) return true;
-  if (TECHNICAL_PATTERNS.dottedIdentifier.test(trimmed)) return true;
-  if (TECHNICAL_PATTERNS.constant.test(trimmed)) return true;
-  if (TECHNICAL_PATTERNS.codeChars.test(trimmed)) return true;
+  if (TECHNICAL_PATTERNS.path.test(trimmed)) {
+    console.log(`🔍 [TECH-CHECK] "${trimmed}" matched: PATH`);
+    return true;
+  }
+  if (TECHNICAL_PATTERNS.placeholder.test(trimmed)) {
+    console.log(`🔍 [TECH-CHECK] "${trimmed}" matched: PLACEHOLDER`);
+    return true;
+  }
+  if (TECHNICAL_PATTERNS.domain.test(trimmed)) {
+    console.log(`🔍 [TECH-CHECK] "${trimmed}" matched: DOMAIN`);
+    return true;
+  }
+  if (TECHNICAL_PATTERNS.dottedIdentifier.test(trimmed)) {
+    console.log(`🔍 [TECH-CHECK] "${trimmed}" matched: DOTTED-ID`);
+    return true;
+  }
+  if (TECHNICAL_PATTERNS.constant.test(trimmed)) {
+    console.log(`🔍 [TECH-CHECK] "${trimmed}" matched: CONSTANT (ALL-CAPS)`);
+    return true;
+  }
+  if (TECHNICAL_PATTERNS.codeChars.test(trimmed)) {
+    console.log(`🔍 [TECH-CHECK] "${trimmed}" matched: CODE-CHARS`);
+    return true;
+  }
   
   // Programming identifier check (must have underscore or camelCase)
   if (TECHNICAL_PATTERNS.programmingId.test(trimmed)) {
-    return TECHNICAL_PATTERNS.hasUnderscore.test(trimmed) || 
+    const hasUnderscoreOrCamel = TECHNICAL_PATTERNS.hasUnderscore.test(trimmed) || 
            TECHNICAL_PATTERNS.isCamelCase.test(trimmed);
+    if (hasUnderscoreOrCamel) {
+      console.log(`🔍 [TECH-CHECK] "${trimmed}" matched: PROGRAMMING-ID`);
+      return true;
+    }
   }
   
   return false;
@@ -134,14 +157,17 @@ function processTechnicalSpan(content, options = {}) {
   
   // Check if in CODE block context - if so, treat as technical
   if (isInCodeBlock(options)) {
+    console.log(`🔍 [TECH-SPAN] "${cleanContent}" wrapped as CODE (in code block context)`);
     return `__CODE_START__${cleanContent}__CODE_END__`;
   }
   
   // Use simplified technical detection
   if (isTechnicalContent(cleanContent)) {
+    console.log(`🔍 [TECH-SPAN] "${cleanContent}" wrapped as CODE (matched technical pattern)`);
     return `__CODE_START__${cleanContent}__CODE_END__`;
   }
   
+  console.log(`🔍 [TECH-SPAN] "${cleanContent}" kept as PLAIN (no technical pattern match)`);
   // Not technical - return plain content (let parent formatting apply)
   return cleanContent;
 }

@@ -368,30 +368,31 @@ function convertRichTextBlock(input, options = {}) {
   // Handle raw technical identifiers in parentheses/brackets as inline code
   // Must contain at least one dot or underscore to be considered a technical identifier
   // Remove the brackets/parentheses from the output (treat same as parentheses around code)
-  html = html.replace(/([\(\[])[ \t\n\r]*([a-zA-Z][-a-zA-Z0-9]*(?:[_.][-a-zA-Z0-9]+)+)[ \t\n\r]*([\)\]])/g, (match, open, code, close) => `__CODE_START__${code.trim()}__CODE_END__`);
+  html = html.replace(/([\(\[])[ \t\n\r]*([a-zA-Z][-a-zA-Z0-9_]*(?:[_.][-a-zA-Z0-9_]+)+)[ \t\n\r]*([\)\]])/g, (match, open, code, close) => `__CODE_START__${code.trim()}__CODE_END__`);
 
-  // Handle "Role required:" followed by comma-separated single-word role names as inline code
-  // Examples: "Role required: admin", "Role required: admin, asset", "Role required: sam"
-  html = html.replace(/\b(Role required:)\s+([a-z_]+(?:,\s*[a-z_]+)*)/gi, (match, label, roles) => {
+  // Handle "Role required:" followed by comma-separated role names as inline code
+  // Examples: "Role required: admin", "Role required: sn_devops.admin, asset", "Role required: sam"
+  // Roles can contain underscores and dots (e.g., sn_devops.admin)
+  html = html.replace(/\b(Role required:)\s+([a-z_][a-z0-9_.]*(?:\s+or\s+[a-z_][a-z0-9_.]*)*(?:,\s*[a-z_][a-z0-9_.]*)*)/gi, (match, label, roles) => {
     console.log(`🔍 [ROLE] Matched "Role required:" with roles: "${roles}"`);
-    // Split roles by comma, wrap each in code markers
-    const roleList = roles.split(/,\s*/).map(role => {
+    // Split roles by comma or "or", wrap each in code markers
+    const roleList = roles.split(/(?:,\s*|\s+or\s+)/i).map(role => {
       const trimmed = role.trim();
       console.log(`🔍 [ROLE] Wrapping role: "${trimmed}"`);
       return `__CODE_START__${trimmed}__CODE_END__`;
-    }).join(', ');
+    }).join(' or ');
     const result = `${label} ${roleList}`;
     console.log(`🔍 [ROLE] Result: "${result}"`);
     return result;
   });
 
   // Standalone multi-word identifiers connected by _ or . (no spaces) as inline code
-  // Each segment must start with a letter, can contain letters, numbers, and hyphens
-  // Examples: com.snc.incident.mim.ml_solution, sys_user_table, package.class.method, com.glide.service-portal
+  // Each segment can start with a letter, can contain letters, numbers, hyphens, and underscores
+  // Examples: com.snc.incident.mim.ml_solution, sys_user_table, sn_devops.admin, package.class.method, com.glide.service-portal
   // Must have at least 2 segments separated by . or _ and no brackets/parentheses
   // Use a function to check context to avoid matching inside already-wrapped code
   const beforeTech = html;
-  html = html.replace(/\b([a-zA-Z][-a-zA-Z0-9]*(?:[_.][a-zA-Z][-a-zA-Z0-9]*)+)\b/g, (match, identifier, offset, string) => {
+  html = html.replace(/\b([a-zA-Z][-a-zA-Z0-9_]*(?:[_.][a-zA-Z][-a-zA-Z0-9_]*)+)\b/g, (match, identifier, offset, string) => {
     // Skip internal markers (placeholder, link, code markers, URL markers)
     if (match.startsWith('__PLACEHOLDER_') || match.startsWith('__LINK_') || match.startsWith('__CODE_') || match.startsWith('__URL_')) {
       return match;
@@ -454,30 +455,62 @@ function convertRichTextBlock(input, options = {}) {
   const beforeStrip = html;
   
   // FIRST: Check for potential unprotected technical placeholders before stripping
-  // Match any remaining angle brackets that look like placeholders (not known HTML tags)
-  const potentialPlaceholders = html.match(/<([^>\/]+)>/g);
-  if (potentialPlaceholders) {
-    const knownHtmlTags = /^<\/?(?:div|span|p|a|img|br|hr|b|i|u|strong|em|code|samp|pre|ul|ol|li|table|tr|td|th|tbody|thead|tfoot|h[1-6]|font|center|small|big|sub|sup|abbr|cite|del|ins|mark|s|strike|blockquote|q|address|article|aside|footer|header|main|nav|section|details|summary|figure|figcaption|time|video|audio|source|canvas|svg|path|g|rect|circle|line|polyline|polygon)(?:\s+[^>]*)?>/i;
-    
-    const actualPlaceholders = potentialPlaceholders.filter(tag => !knownHtmlTags.test(tag));
-    
-    if (actualPlaceholders.length > 0) {
-      // Store warning for later logging with page context
-      addPlaceholderWarning(actualPlaceholders, html.substring(0, 200));
-      
-      // Also log immediately for debugging
-      console.warn(`⚠️ [PLACEHOLDER WARNING] Found ${actualPlaceholders.length} unprotected technical placeholder(s) that would be stripped:`);
-      actualPlaceholders.forEach(placeholder => {
-        console.warn(`   ❌ Would strip: "${placeholder}"`);
-      });
-      console.warn(`   📍 Context (first 200 chars): "${html.substring(0, 200)}"`);
-      console.warn(`   🔗 This content will be sent to Notion. Please verify the page manually after creation.`);
-      console.warn(`   💡 Tip: These placeholders should have been protected earlier in processing.`);
+  // BUT: Only check content OUTSIDE of __CODE_START__...__CODE_END__ markers
+  // Split by code markers to skip checking protected code content
+  const checkParts = html.split(/(__CODE_START__|__CODE_END__)/);
+  let inCodeCheck = false;
+  const unprotectedPlaceholders = [];
+  
+  checkParts.forEach(part => {
+    if (part === '__CODE_START__') {
+      inCodeCheck = true;
+    } else if (part === '__CODE_END__') {
+      inCodeCheck = false;
+    } else if (!inCodeCheck) {
+      // Only check content OUTSIDE code blocks
+      const potentialPlaceholders = part.match(/<([^>\/]+)>/g);
+      if (potentialPlaceholders) {
+        const knownHtmlTags = /^<\/?(?:div|span|p|a|img|br|hr|b|i|u|strong|em|code|samp|pre|ul|ol|li|table|tr|td|th|tbody|thead|tfoot|h[1-6]|font|center|small|big|sub|sup|abbr|cite|del|ins|mark|s|strike|blockquote|q|address|article|aside|footer|header|main|nav|section|details|summary|figure|figcaption|time|video|audio|source|canvas|svg|path|g|rect|circle|line|polyline|polygon)(?:\s+[^>]*)?>/i;
+        
+        const actualPlaceholders = potentialPlaceholders.filter(tag => !knownHtmlTags.test(tag));
+        unprotectedPlaceholders.push(...actualPlaceholders);
+      }
     }
+  });
+  
+  if (unprotectedPlaceholders.length > 0) {
+    // Store warning for later logging with page context
+    addPlaceholderWarning(unprotectedPlaceholders, html.substring(0, 200));
+    
+    // Also log immediately for debugging
+    console.warn(`⚠️ [PLACEHOLDER WARNING] Found ${unprotectedPlaceholders.length} unprotected technical placeholder(s) OUTSIDE code blocks:`);
+    unprotectedPlaceholders.forEach(placeholder => {
+      console.warn(`   ❌ Would strip: "${placeholder}"`);
+    });
+    console.warn(`   📍 Context (first 200 chars): "${html.substring(0, 200)}"`);
+    console.warn(`   🔗 This content will be sent to Notion. Please verify the page manually after creation.`);
+    console.warn(`   💡 Tip: These placeholders should have been protected earlier in processing.`);
   }
   
-  // NOW: Strip known HTML tags
-  html = html.replace(/<\/?(?:div|span|p|a|img|br|hr|b|i|u|strong|em|code|samp|pre|ul|ol|li|table|tr|td|th|tbody|thead|tfoot|h[1-6]|font|center|small|big|sub|sup|abbr|cite|del|ins|mark|s|strike|blockquote|q|address|article|aside|footer|header|main|nav|section|details|summary|figure|figcaption|time|video|audio|source|canvas|svg|path|g|rect|circle|line|polyline|polygon)(?:\s+[^>]*)?>/gi, ' ');
+  // NOW: Strip known HTML tags, BUT preserve content inside __CODE_START__...__CODE_END__ markers
+  // Split by code markers to protect code content from HTML stripping
+  const codeParts = html.split(/(__CODE_START__|__CODE_END__)/);
+  let inCode = false;
+  html = codeParts.map(part => {
+    if (part === '__CODE_START__') {
+      inCode = true;
+      return part;
+    } else if (part === '__CODE_END__') {
+      inCode = false;
+      return part;
+    } else if (inCode) {
+      // Inside code block - preserve ALL content including angle brackets
+      return part;
+    } else {
+      // Outside code block - strip known HTML tags
+      return part.replace(/<\/?(?:div|span|p|a|img|br|hr|b|i|u|strong|em|code|samp|pre|ul|ol|li|table|tr|td|th|tbody|thead|tfoot|h[1-6]|font|center|small|big|sub|sup|abbr|cite|del|ins|mark|s|strike|blockquote|q|address|article|aside|footer|header|main|nav|section|details|summary|figure|figcaption|time|video|audio|source|canvas|svg|path|g|rect|circle|line|polyline|polygon)(?:\s+[^>]*)?>/gi, ' ');
+    }
+  }).join('');
   
   // Debug: Log if we stripped any span tags
   if (beforeStrip !== html && beforeStrip.includes('<span')) {

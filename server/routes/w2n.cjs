@@ -538,7 +538,7 @@ router.post('/W2N', async (req, res) => {
       // Log to verification log file
       logPlaceholderStripped(
         response.id,
-        title || 'Untitled',
+        payload.title || 'Untitled',
         Array.from(new Set(allPlaceholders)), // Deduplicate
         combinedContext
       );
@@ -547,7 +547,7 @@ router.post('/W2N', async (req, res) => {
     // Log any extraction warnings that were collected during HTML conversion
     if (extractionWarnings.length > 0) {
       console.log(`\n⚠️ ========== EXTRACTION WARNINGS FOR PAGE ==========`);
-      console.log(`📄 Page: ${title || 'Untitled'}`);
+      console.log(`📄 Page: ${payload.title || 'Untitled'}`);
       console.log(`🔗 Notion URL: https://notion.so/${response.id.replace(/-/g, '')}`);
       console.log(`\n${extractionWarnings.length} warning(s) occurred during extraction:\n`);
       
@@ -560,7 +560,7 @@ router.post('/W2N', async (req, res) => {
             console.log(`  HTML preview: ${warning.data.htmlPreview.substring(0, 100)}...`);
             logUnprocessedContent(
               response.id,
-              title || 'Untitled',
+              payload.title || 'Untitled',
               warning.data.count,
               warning.data.htmlPreview
             );
@@ -571,7 +571,7 @@ router.post('/W2N', async (req, res) => {
             console.log(`  Error: ${warning.data.errorMessage}`);
             logImageUploadFailed(
               response.id,
-              title || 'Untitled',
+              payload.title || 'Untitled',
               warning.data.imageUrl,
               warning.data.errorMessage
             );
@@ -587,7 +587,7 @@ router.post('/W2N', async (req, res) => {
             }
             logCheerioParsingIssue(
               response.id,
-              title || 'Untitled',
+              payload.title || 'Untitled',
               warning.data.lostSections,
               warning.data.lostArticles
             );
