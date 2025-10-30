@@ -386,21 +386,34 @@ export function setupMainPanel(panel) {
 
   if (stopAutoExtractBtn) {
     stopAutoExtractBtn.onclick = () => {
+      debug("🛑 Stop button clicked - initiating immediate stop");
+      
       // Stop the extraction by setting running to false
       if (
         window.ServiceNowToNotion &&
         window.ServiceNowToNotion.autoExtractState
       ) {
         window.ServiceNowToNotion.autoExtractState.running = false;
-        showToast("⏹ Stopping AutoExtract after current operation...", 3000);
+        
+        // Clear saved state to prevent resume on page reload
+        GM_setValue("w2n_autoExtractState", null);
+        debug("🗑️ Cleared saved autoExtractState");
+        
+        showToast("⏹ Stopping AutoExtract immediately...", 3000);
         
         // Update overlay to show stopping message
         try {
           if (window.W2NSavingProgress && window.W2NSavingProgress.setMessage) {
-            window.W2NSavingProgress.setMessage("Stopping after current page...");
+            window.W2NSavingProgress.setMessage("⏹ Stopping...");
           }
         } catch (e) {
           debug("Warning: Could not update overlay message:", e);
+        }
+        
+        // Update button text to show it's stopping
+        if (startAutoExtractBtn) {
+          startAutoExtractBtn.textContent = "⏹ Stopping...";
+          startAutoExtractBtn.style.background = "#dc2626"; // Red color
         }
       }
       // Restore buttons
@@ -1002,6 +1015,18 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
 
         try {
           if (captureAttempts > 1) {
+            // Check if stop was requested before retry delay
+            if (!autoExtractState.running) {
+              debug(`⏹ AutoExtract stopped before retry delay for page ${currentPageNum}`);
+              showToast(
+                `⏹ AutoExtract stopped. Processed ${autoExtractState.totalProcessed} pages.`,
+                4000
+              );
+              stopAutoExtract(autoExtractState);
+              if (button) button.textContent = "Start AutoExtract";
+              return;
+            }
+            
             showToast(
               `Retry ${
                 captureAttempts - 1
@@ -1014,6 +1039,18 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
               }/2: Extracting page ${currentPageNum}...`;
             }
             await new Promise((resolve) => setTimeout(resolve, 2000));
+            
+            // Check again after delay
+            if (!autoExtractState.running) {
+              debug(`⏹ AutoExtract stopped after retry delay for page ${currentPageNum}`);
+              showToast(
+                `⏹ AutoExtract stopped. Processed ${autoExtractState.totalProcessed} pages.`,
+                4000
+              );
+              stopAutoExtract(autoExtractState);
+              if (button) button.textContent = "Start AutoExtract";
+              return;
+            }
           }
 
       const extractedData = await app.extractCurrentPageData();
@@ -1087,6 +1124,37 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
             `❌ Capture attempt ${captureAttempts} failed for page ${currentPageNum}:`,
             error
           );
+          
+          // Check if stop was requested during error handling
+          if (!autoExtractState.running) {
+            debug(`⏹ AutoExtract stopped during error handling for page ${currentPageNum}`);
+            showToast(
+              `⏹ AutoExtract stopped. Processed ${autoExtractState.totalProcessed} pages.`,
+              4000
+            );
+            stopAutoExtract(autoExtractState);
+            if (button) button.textContent = "Start AutoExtract";
+            return;
+          }
+          
+          // Check if this is a server offline error (connection refused, network error, etc.)
+          const isServerOffline = error.message && (
+            error.message.includes('Proxy server is not available') ||
+            error.message.includes('fetch failed') ||
+            error.message.includes('Failed to fetch') ||
+            error.message.includes('Network request failed') ||
+            error.message.includes('ECONNREFUSED') ||
+            error.message.toLowerCase().includes('connection')
+          );
+          
+          if (isServerOffline) {
+            const errorMessage = `❌ AutoExtract STOPPED: Server appears to be offline.\n\nError: ${error.message}\n\nPlease check that the proxy server is running and try again.\n\nTotal pages processed: ${autoExtractState.totalProcessed}`;
+            alert(errorMessage);
+            stopAutoExtract(autoExtractState);
+            if (button) button.textContent = "❌ Stopped: Server offline";
+            return;
+          }
+          
           if (captureAttempts < maxCaptureAttempts) {
             showToast(
               `⚠️ Page capture failed (attempt ${captureAttempts}/${maxCaptureAttempts}). Retrying...`,
@@ -1094,6 +1162,18 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
             );
           }
         }
+      }
+
+      // Check if stop was requested after capture attempts
+      if (!autoExtractState.running) {
+        debug(`⏹ AutoExtract stopped after capture attempts for page ${currentPageNum}`);
+        showToast(
+          `⏹ AutoExtract stopped. Processed ${autoExtractState.totalProcessed} pages.`,
+          4000
+        );
+        stopAutoExtract(autoExtractState);
+        if (button) button.textContent = "Start AutoExtract";
+        return;
       }
 
       // Check if capture failed (but allow duplicate skip to proceed to navigation)
@@ -1550,6 +1630,8 @@ function getCurrentPageId() {
 }
 
 function stopAutoExtract(autoExtractState) {
+  debug("🛑 stopAutoExtract called - cleaning up");
+  
   autoExtractState.running = false;
   overlayModule.setProgress(100);
   overlayModule.done({
@@ -1557,11 +1639,22 @@ function stopAutoExtract(autoExtractState) {
     autoCloseMs: 5000,
   });
 
-  // Restore button visibility
+  // Restore button visibility and appearance
   const startBtn = document.getElementById("w2n-start-autoextract");
   const stopBtn = document.getElementById("w2n-stop-autoextract");
-  if (startBtn) startBtn.style.display = "block";
-  if (stopBtn) stopBtn.style.display = "none";
+  
+  if (startBtn) {
+    startBtn.style.display = "block";
+    startBtn.textContent = "Start AutoExtract";
+    startBtn.style.background = "#f59e0b"; // Restore orange color
+  }
+  if (stopBtn) {
+    stopBtn.style.display = "none";
+  }
+
+  // Clear saved state to prevent resume on page reload
+  GM_setValue("w2n_autoExtractState", null);
+  debug("🗑️ Cleared saved autoExtractState in stopAutoExtract");
 
   // Clean up global state
   if (window.ServiceNowToNotion && window.ServiceNowToNotion.autoExtractState) {
