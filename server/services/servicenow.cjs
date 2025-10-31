@@ -3854,11 +3854,11 @@ async function extractContentFromHtml(html) {
     // And sections can be either children of body.conbody OR siblings of it!
     const allSectionsInPage = $('section[id]').toArray();
     const allSectionsInBody = $('.zDocsTopicPageBody section[id]').toArray();
-    const allArticles = $('.zDocsTopicPageBody article').toArray();
+    const allArticlesInBody = $('.zDocsTopicPageBody article').toArray();
     
     console.log(`🔍 CRITICAL: Found ${allSectionsInPage.length} sections in ENTIRE PAGE`);
     console.log(`🔍 CRITICAL: Found ${allSectionsInBody.length} sections inside .zDocsTopicPageBody`);
-    console.log(`🔍 CRITICAL: Found ${allArticles.length} articles inside .zDocsTopicPageBody`);
+    console.log(`🔍 CRITICAL: Found ${allArticlesInBody.length} articles inside .zDocsTopicPageBody`);
     
     // Check where the missing sections are
     const sectionsOutsideBody = allSectionsInPage.filter(s => {
@@ -3978,39 +3978,111 @@ async function extractContentFromHtml(html) {
     // 2. As siblings of .zDocsTopicPageBody (orphaned articles like OAuth page)
     // 3. Inside article.nested0 containers (nested structure)
     //
-    // Instead of complex container detection, we collect ALL article.nested1 elements
-    // from the entire page since they represent the primary content units.
+    // 🎯 UNIVERSAL ARTICLE COLLECTION STRATEGY:
+    // ServiceNow uses different article patterns across different page types:
+    // 1. article.nested1 (newer pages) - nested articles with procedures
+    // 2. article[role="article"].dita (OAuth pages) - DITA-based articles
+    // 3. article.nested0 (wrapper) - contains shared intro content
+    //
+    // We need to detect and collect articles using BOTH patterns.
     
+    // Pattern 1: article.nested1 (e.g., Predictive Intelligence pages)
     const allNested1 = $('article.nested1').toArray();
-    console.log(`🎯 UNIVERSAL: Found ${allNested1.length} article.nested1 elements in entire page`);
+    console.log(`🎯 UNIVERSAL: Found ${allNested1.length} article.nested1 elements`);
+    
+    // Pattern 2: article[role="article"] (e.g., OAuth JWT pages)
+    // Exclude article.nested0 (wrapper) and article.hascomments (outer wrapper)
+    const allDitaArticles = $('article[role="article"]:not(.nested0):not(.hascomments)').toArray();
+    console.log(`🎯 UNIVERSAL: Found ${allDitaArticles.length} article[role="article"] elements`);
+    
+    // Combine both patterns, preferring whichever has results
+    let allArticles = [];
+    if (allNested1.length > 0) {
+      allArticles = allNested1;
+      console.log(`🎯 Using article.nested1 pattern (${allArticles.length} articles)`);
+    } else if (allDitaArticles.length > 0) {
+      allArticles = allDitaArticles;
+      console.log(`🎯 Using article[role="article"] pattern (${allArticles.length} articles)`);
+    }
     
     // Diagnostic: Show details about each article
-    allNested1.forEach((article, idx) => {
+    allArticles.forEach((article, idx) => {
       const $article = $(article);
       const articleId = $article.attr('id') || 'NO-ID';
-      const title = $article.find('h2').first().text().trim() || 'NO-TITLE';
+      const title = $article.find('h2, .title').first().text().trim() || 'NO-TITLE';
       const inBody = $article.closest('.zDocsTopicPageBody').length > 0;
       const parentTag = $article.parent().prop('tagName');
       const parentClass = $article.parent().attr('class') || 'no-class';
       console.log(`🎯   Article ${idx + 1}: "${articleId}" title="${title.substring(0, 60)}" inBody=${inBody} parent=<${parentTag} class="${parentClass}">`);
     });
     
-    // If we found article.nested1 elements, use them as the primary content source
-    if (allNested1.length > 0) {
-      console.log(`🎯 ✅ UNIVERSAL OVERRIDE: Using all ${allNested1.length} article.nested1 elements as contentElements`);
+    // If we found articles, use them as the primary content source
+    if (allArticles.length > 0) {
+      console.log(`🎯 ✅ UNIVERSAL OVERRIDE: Using all ${allArticles.length} articles as contentElements`);
       console.log(`🎯    This replaces container-based detection and captures ALL articles regardless of location`);
       
-      // Note: We do NOT extract article.nested0 intro content separately because:
-      // 1. The intro content (shortdesc, "Before you begin", etc.) is typically duplicated
-      //    in the first article.nested1 element
-      // 2. Extracting it separately causes duplication in the Notion output
-      // 3. The nested1 articles already contain all necessary introductory content
-      
-      contentElements = [...allNested1, ...articleNavs, ...contentPlaceholders];
-      console.log(`🎯 ✅ Total contentElements: ${contentElements.length} (${allNested1.length} articles + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
+      // Check for article.nested0 wrapper with intro content
+      const nested0 = $('article.nested0').first();
+      if (nested0.length > 0) {
+        console.log(`🎯 📝 Found article.nested0 wrapper - checking for intro content`);
+        
+        // Extract direct children that are intro content (shortdesc, before you begin, etc.)
+        // We want ONLY the intro paragraphs/sections, NOT the nested articles
+        const introElements = nested0.children('p.shortdesc, section.prereq, section.context, div.body.conbody > p').toArray();
+        
+        if (introElements.length > 0) {
+          console.log(`🎯 ✅ Found ${introElements.length} intro elements in nested0`);
+          introElements.forEach((el, idx) => {
+            const $el = $(el);
+            const text = $el.text().trim().substring(0, 80);
+            console.log(`🎯    Intro ${idx + 1}: <${el.name} class="${$el.attr('class') || ''}"> "${text}..."`);
+          });
+          
+          // Prepend intro content before articles
+          contentElements = [...introElements, ...allArticles, ...articleNavs, ...contentPlaceholders];
+          console.log(`🎯 ✅ Total contentElements: ${contentElements.length} (${introElements.length} intro + ${allArticles.length} articles + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
+        } else {
+          console.log(`🎯 ℹ️  No intro elements found in nested0`);
+          contentElements = [...allArticles, ...articleNavs, ...contentPlaceholders];
+          console.log(`🎯 ✅ Total contentElements: ${contentElements.length} (${allArticles.length} articles + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
+        }
+      } else {
+        // No nested0 wrapper, just use articles
+        contentElements = [...allArticles, ...articleNavs, ...contentPlaceholders];
+        console.log(`🎯 ✅ Total contentElements: ${contentElements.length} (${allArticles.length} articles + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
+      }
     } else {
-      // Fallback: No article.nested1 found, keep the container-based contentElements
-      console.log(`🎯 ℹ️  No article.nested1 elements found, keeping ${contentElements.length} container-based contentElements`);
+      // Fallback: No articles found using universal patterns, keep container-based contentElements
+      console.log(`🎯 ⚠️  WARNING: No articles found using known universal patterns!`);
+      console.log(`🎯 ⚠️  This may indicate a new ServiceNow page structure that needs analysis.`);
+      console.log(`🎯 ⚠️  Falling back to container-based detection (${contentElements.length} elements)`);
+      
+      // Diagnostic: Show what article elements exist on the page (if any)
+      const allArticlesOnPage = $('article').toArray();
+      if (allArticlesOnPage.length > 0) {
+        console.log(`🎯 📊 DIAGNOSTIC: Found ${allArticlesOnPage.length} <article> elements on page with these patterns:`);
+        const articlePatterns = new Map();
+        allArticlesOnPage.forEach(article => {
+          const $article = $(article);
+          const classes = $article.attr('class') || 'no-class';
+          const role = $article.attr('role') || 'no-role';
+          const id = $article.attr('id') || 'no-id';
+          const key = `<article class="${classes}" role="${role}">`;
+          const existing = articlePatterns.get(key) || { count: 0, ids: [] };
+          existing.count++;
+          existing.ids.push(id);
+          articlePatterns.set(key, existing);
+        });
+        
+        articlePatterns.forEach((info, pattern) => {
+          console.log(`🎯 📊   ${info.count}x ${pattern}`);
+          console.log(`🎯 📊      IDs: ${info.ids.slice(0, 3).join(', ')}${info.ids.length > 3 ? '...' : ''}`);
+        });
+        
+        console.log(`🎯 💡 Consider updating universal article collection to support these patterns.`);
+      } else {
+        console.log(`🎯 📊 DIAGNOSTIC: No <article> elements found on page (unusual structure)`);
+      }
     }
     
     // FIX: Collect orphaned <li> elements that are NOT inside any ol/ul
