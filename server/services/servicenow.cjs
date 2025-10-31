@@ -3039,19 +3039,47 @@ async function extractContentFromHtml(html) {
       
     } else if (tagName === 'div' && $elem.hasClass('contentPlaceholder')) {
       // contentPlaceholder divs can contain actual content like "Related Content" sections
-      // Check if it has meaningful content before skipping
-      const children = $elem.find('> *').toArray();
+      // Need to drill down through contentContainer > contentWrapper to find actual content
+      console.log(`🔍 🎯 contentPlaceholder FOUND - drilling into structure`);
+      const contentWrapper = $elem.find('.contentWrapper').first();
+      console.log(`🔍 🎯 contentWrapper found: ${contentWrapper.length > 0}`);
+      const children = contentWrapper.length > 0 ? contentWrapper.children().toArray() : $elem.find('> *').toArray();
+      console.log(`🔍 🎯 contentPlaceholder children count: ${children.length}`);
+      children.forEach((child, idx) => {
+        const $child = $(child);
+        const tagName = child.name || 'unknown';
+        const classes = $child.attr('class') || 'none';
+        const hasH5 = $child.find('h5').length;
+        console.log(`🔍 🎯   Child ${idx}: <${tagName} class="${classes}"> hasH5=${hasH5}`);
+      });
+      
       const hasContent = children.some(child => {
         const $child = $(child);
+        // Skip miniTOC (table of contents navigation) and buttons
+        if ($child.hasClass('miniTOC')) return false;
+        if ($child.is('button')) return false;
+        
         const text = cleanHtmlText($child.html() || '').trim();
-        // Also check for nav elements which might be in collapsed containers
         const hasNavElements = $child.find('nav, [role="navigation"]').length > 0 || $child.is('nav, [role="navigation"]');
         return text.length > 20 || $child.find('h1, h2, h3, h4, h5, h6, ul, ol, p, a').length > 0 || hasNavElements;
       });
       
+      console.log(`🔍 🎯 contentPlaceholder hasContent: ${hasContent}`);
+      
       if (hasContent) {
         console.log(`🔍 contentPlaceholder has meaningful content (${children.length} children) - processing`);
         for (const child of children) {
+          const $child = $(child);
+          // Skip miniTOC div (On this page navigation) and buttons
+          if ($child.hasClass('miniTOC')) {
+            console.log(`🔍   Skipping miniTOC (On this page navigation)`);
+            continue;
+          }
+          if ($child.is('button')) {
+            console.log(`🔍   Skipping button element`);
+            continue;
+          }
+          
           const childBlocks = await processElement(child);
           processedBlocks.push(...childBlocks);
         }
@@ -3847,7 +3875,12 @@ async function extractContentFromHtml(html) {
     
     // Collect nav elements and contentPlaceholders early (used in multiple paths below)
     const articleNavs = $('.zDocsTopicPageBody article > nav, .zDocsTopicPageBody article[role="article"] > nav').toArray();
-    const contentPlaceholders = topLevelChildren.filter(c => $(c).hasClass('contentPlaceholder'));
+    
+    // CRITICAL FIX: contentPlaceholder divs are often SIBLINGS of .zDocsTopicPageBody, not children!
+    // Search for them in the entire page, just like we do for orphaned sections
+    const allContentPlaceholders = $('.contentPlaceholder').toArray();
+    console.log(`🔍 🎯 Found ${allContentPlaceholders.length} contentPlaceholder divs on entire page`);
+    const contentPlaceholders = allContentPlaceholders;
     
     // CRITICAL FIX: Check if sections exist deeper in the tree (not just as direct children)
     // ServiceNow pages often have structure: .zDocsTopicPageBody > div.zDocsTopicPageBodyContent > article > main > article.dita > div.body.conbody
@@ -4021,6 +4054,37 @@ async function extractContentFromHtml(html) {
       console.log(`🎯 ✅ UNIVERSAL OVERRIDE: Using all ${allArticles.length} articles as contentElements`);
       console.log(`🎯    This replaces container-based detection and captures ALL articles regardless of location`);
       
+      // CRITICAL FIX: Also collect any top-level sections that are SIBLINGS of articles (NOT inside them)
+      // Some pages have sections in multiple locations:
+      // 1. Inside .zDocsTopicPageBodyContent but outside articles (Properties, User roles, etc.)
+      // 2. Direct children of .zDocsTopicPageBody (Script includes)
+      // 3. OUTSIDE .zDocsTopicPageBody entirely - SIBLINGS of it! (Client scripts, UI policies, etc.)
+      // Strategy: Find ALL section.section elements in the entire page, then filter out those inside articles
+      const allSectionsOnPage = $('section.section').toArray();
+      console.log(`🎯 🔍 Found ${allSectionsOnPage.length} total sections on entire page`);
+      
+      const topLevelSections = allSectionsOnPage.filter(section => {
+        // Check if this section is inside any article element
+        const $section = $(section);
+        const isInsideArticle = $section.closest('article').length > 0;
+        return !isInsideArticle; // Only keep sections NOT inside articles
+      });
+      
+      if (topLevelSections.length > 0) {
+        console.log(`🎯 🔍 SIBLING SECTIONS: Found ${topLevelSections.length} sections OUTSIDE articles (from ${allSectionsOnPage.length} total)`);
+        topLevelSections.forEach((section, idx) => {
+          const $section = $(section);
+          const sectionId = $section.attr('id') || 'no-id';
+          const title = $section.find('> h2, > .title').first().text().trim() || 'NO-TITLE';
+          const parent = $section.parent();
+          const parentTag = parent.prop('tagName') || 'unknown';
+          const parentClass = parent.attr('class') || 'no-class';
+          console.log(`🎯    Section ${idx + 1}: id="${sectionId}" title="${title.substring(0, 60)}" parent=<${parentTag} class="${parentClass}">`);
+        });
+      } else {
+        console.log(`🎯 ℹ️  No sections found outside articles`);
+      }
+      
       // Check for article.nested0 wrapper with intro content
       const nested0 = $('article.nested0').first();
       if (nested0.length > 0) {
@@ -4038,18 +4102,18 @@ async function extractContentFromHtml(html) {
             console.log(`🎯    Intro ${idx + 1}: <${el.name} class="${$el.attr('class') || ''}"> "${text}..."`);
           });
           
-          // Prepend intro content before articles
-          contentElements = [...introElements, ...allArticles, ...articleNavs, ...contentPlaceholders];
-          console.log(`🎯 ✅ Total contentElements: ${contentElements.length} (${introElements.length} intro + ${allArticles.length} articles + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
+          // Prepend intro content before articles, append sibling sections after
+          contentElements = [...introElements, ...allArticles, ...topLevelSections, ...articleNavs, ...contentPlaceholders];
+          console.log(`🎯 ✅ Total contentElements: ${contentElements.length} (${introElements.length} intro + ${allArticles.length} articles + ${topLevelSections.length} sections + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
         } else {
           console.log(`🎯 ℹ️  No intro elements found in nested0`);
-          contentElements = [...allArticles, ...articleNavs, ...contentPlaceholders];
-          console.log(`🎯 ✅ Total contentElements: ${contentElements.length} (${allArticles.length} articles + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
+          contentElements = [...allArticles, ...topLevelSections, ...articleNavs, ...contentPlaceholders];
+          console.log(`🎯 ✅ Total contentElements: ${contentElements.length} (${allArticles.length} articles + ${topLevelSections.length} sections + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
         }
       } else {
-        // No nested0 wrapper, just use articles
-        contentElements = [...allArticles, ...articleNavs, ...contentPlaceholders];
-        console.log(`🎯 ✅ Total contentElements: ${contentElements.length} (${allArticles.length} articles + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
+        // No nested0 wrapper, use articles + sibling sections
+        contentElements = [...allArticles, ...topLevelSections, ...articleNavs, ...contentPlaceholders];
+        console.log(`🎯 ✅ Total contentElements: ${contentElements.length} (${allArticles.length} articles + ${topLevelSections.length} sections + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
       }
     } else {
       // Fallback: No articles found using universal patterns, keep container-based contentElements
