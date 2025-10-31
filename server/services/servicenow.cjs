@@ -4268,15 +4268,15 @@ async function extractContentFromHtml(html) {
   let elementsToCheck = [];
   
   if ($('body').length > 0) {
-    elementsToCheck = $('body').children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').toArray();
+    elementsToCheck = $('body').children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6, article').toArray();
   } else if ($('.zDocsTopicPageBody').length > 0) {
-    elementsToCheck = $('.zDocsTopicPageBody').children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').toArray();
+    elementsToCheck = $('.zDocsTopicPageBody').children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6, article').toArray();
   } else if ($('.dita, .refbody, article, main, [role="main"]').length > 0) {
     const mainArticle = $('article.dita, .refbody').first();
     if (mainArticle.length > 0) {
-      elementsToCheck = mainArticle.children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').toArray();
+      elementsToCheck = mainArticle.children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6, article').toArray();
     } else {
-      elementsToCheck = $('.dita, .refbody, article, main, [role="main"]').first().children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').toArray();
+      elementsToCheck = $('.dita, .refbody, article, main, [role="main"]').first().children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6, article').toArray();
     }
   }
   
@@ -4286,12 +4286,15 @@ async function extractContentFromHtml(html) {
     const $el = $(el);
     
     // Skip known empty container classes that are expected after extraction
+    // NOTE: After universal article collection, wrapper divs may remain but are empty of meaningful content
     const isKnownContainer = $el.hasClass('zDocsTopicPageBodyContent') || 
                             $el.hasClass('zDocsTopicPageBody') ||
                             $el.hasClass('hascomments') ||
                             $el.attr('role') === 'main' ||
+                            $el.attr('role') === 'article' || // Skip article wrappers (processed via universal collection)
                             $el.attr('dir') === 'ltr' ||
-                            ($el.is('article') && $el.children().length === 0);
+                            ($el.is('article') && $el.children().length === 0) ||
+                            ($el.is('div') && $el.children().length === 0 && text.length === 0); // Skip empty divs
     
     if (isKnownContainer) {
       return false; // Don't count known empty containers
