@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.68
+// @version      9.2.69
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.68";
+    window.BUILD_VERSION = "9.2.69";
 (function () {
 
   // Configuration constants and default settings
@@ -3968,9 +3968,6 @@
     const stopBtn = document.querySelector("#w2n-stop-autoextract");
     if (startBtn) startBtn.style.display = "none";
     if (stopBtn) stopBtn.style.display = "block";
-
-    // Show overlay/spinner - CRITICAL: Must show overlay when resuming after reload
-    overlayModule.start(`Resuming auto-extraction (page ${autoExtractState.currentPage + 1})...`);
 
     showToast(
       `🔄 Resumed auto-extraction after page reload (page ${autoExtractState.currentPage + 1})`,
