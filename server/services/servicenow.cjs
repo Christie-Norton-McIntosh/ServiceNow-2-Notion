@@ -4353,15 +4353,34 @@ async function extractContentFromHtml(html) {
     // NOTE: After universal article collection, wrapper divs may remain but are empty of meaningful content
     const isKnownContainer = $el.hasClass('zDocsTopicPageBodyContent') || 
                             $el.hasClass('zDocsTopicPageBody') ||
-                            $el.hasClass('hascomments') ||
+                            $el.hasClass('hascomments') || // Skip article.hascomments wrappers (outer container)
                             $el.attr('role') === 'main' ||
                             $el.attr('role') === 'article' || // Skip article wrappers (processed via universal collection)
                             $el.attr('dir') === 'ltr' ||
-                            ($el.is('article') && $el.children().length === 0) ||
+                            ($el.is('article') && $el.children().length === 0) || // Skip empty articles
+                            ($el.is('div') && $el.hasClass('zDocsTopicPageBodyContent')) || // Skip main content wrapper
                             ($el.is('div') && $el.children().length === 0 && text.length === 0); // Skip empty divs
     
     if (isKnownContainer) {
+      console.log(`🔍 Skipping known container: <${el.name} class="${$el.attr('class') || 'none'}" role="${$el.attr('role') || 'none'}">`);
       return false; // Don't count known empty containers
+    }
+    
+    // CRITICAL: Skip anonymous wrapper divs that only contain known empty containers
+    // Pattern: <div><article class="hascomments">...</article></div>
+    // After extraction, the article.hascomments is empty, and the wrapper div should be ignored too
+    if ($el.is('div') && !$el.attr('class') && $el.children().length > 0) {
+      const allChildrenAreKnownContainers = $el.children().toArray().every(child => {
+        const $child = $(child);
+        return $child.hasClass('hascomments') || 
+               $child.attr('role') === 'article' ||
+               $child.hasClass('zDocsTopicPageBodyContent') ||
+               ($child.is('article') && $child.children().length === 0);
+      });
+      if (allChildrenAreKnownContainers) {
+        console.log(`🔍 Skipping anonymous wrapper div containing only known containers (${$el.children().length} children)`);
+        return false;
+      }
     }
     
     // Count as unprocessed if it has substantial text (>10 chars) or contains content-rich children
