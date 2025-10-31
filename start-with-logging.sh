@@ -8,5 +8,6 @@ echo "Starting SN2N server with logging to: $LOG_FILE"
 echo "Press Ctrl+C to stop the server"
 echo ""
 
-# Start server and log everything
-npm start 2>&1 | tee "$LOG_FILE"
+# Start server with unbuffered output and log everything
+# Use stdbuf to disable buffering for immediate log writes
+cd server && stdbuf -oL -eL npm start 2>&1 | tee "$LOG_FILE"

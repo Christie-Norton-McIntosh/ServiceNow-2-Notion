@@ -3970,21 +3970,29 @@ async function extractContentFromHtml(html) {
       contentElements = topLevelChildren;
     }
     
-    // ========================================
-    // 🎯 UNIVERSAL APPROACH: Use article.nested1 as primary content source
-    // ========================================
-    // ServiceNow pages can have article.nested1 elements in different locations:
-    // 1. Inside .zDocsTopicPageBody (most common)
-    // 2. As siblings of .zDocsTopicPageBody (orphaned articles like OAuth page)
-    // 3. Inside article.nested0 containers (nested structure)
-    //
-    // Instead of complex container detection, we collect ALL article.nested1 elements
-    // from the entire page since they represent the primary content units.
+    // DIAGNOSTIC: Check nested structure
+    const nested1InBody = $('.zDocsTopicPageBody article.nested1').length;
+    const nested0InBody = $('.zDocsTopicPageBody article.nested0').length;
+    console.log(`🔍 DIAGNOSTIC: Found ${nested0InBody} article.nested0 and ${nested1InBody} article.nested1 inside .zDocsTopicPageBody`);
     
+    // FIX: If article.nested0 exists with article.nested1 children, use those articles as contentElements
+    if (nested0InBody > 0) {
+      const nested0 = $('.zDocsTopicPageBody article.nested0').first();
+      const nested1Children = nested0.find('> article.nested1').toArray();
+      console.log(`🔍 DIAGNOSTIC: article.nested0 has ${nested1Children.length} direct article.nested1 children`);
+      
+      if (nested1Children.length > 0) {
+        console.log(`🔍 ✅ OVERRIDE: Using ${nested1Children.length} article.nested1 elements as contentElements (instead of section parent children)`);
+        // Also include the nested0's direct content (shortdesc, etc.) before the nested1 articles
+        const nested0DirectContent = nested0.children('div.body, p.shortdesc').toArray();
+        contentElements = [...nested0DirectContent, ...nested1Children, ...articleNavs, ...contentPlaceholders];
+      }
+    }
+    
+    // FIX: Also collect any orphaned article.nested1 elements that are NOT inside .zDocsTopicPageBody
+    // These can occur when Cheerio parsing leaves some articles as top-level elements
     const allNested1 = $('article.nested1').toArray();
-    console.log(`🎯 UNIVERSAL: Found ${allNested1.length} article.nested1 elements in entire page`);
-    
-    // Diagnostic: Show details about each article
+    console.log(`🔍🔍🔍 DIAGNOSTIC: Found ${allNested1.length} total article.nested1 elements in page`);
     allNested1.forEach((article, idx) => {
       const $article = $(article);
       const articleId = $article.attr('id') || 'NO-ID';
@@ -3992,48 +4000,53 @@ async function extractContentFromHtml(html) {
       const inBody = $article.closest('.zDocsTopicPageBody').length > 0;
       const parentTag = $article.parent().prop('tagName');
       const parentClass = $article.parent().attr('class') || 'no-class';
-      console.log(`🎯   Article ${idx + 1}: "${articleId}" title="${title.substring(0, 60)}" inBody=${inBody} parent=<${parentTag} class="${parentClass}">`);
+      console.log(`🔍🔍🔍   Article ${idx + 1}: "${articleId}" title="${title.substring(0, 60)}" inBody=${inBody} parent=<${parentTag} class="${parentClass}">`);
     });
     
-    // If we found article.nested1 elements, use them as the primary content source
-    if (allNested1.length > 0) {
-      console.log(`🎯 ✅ UNIVERSAL OVERRIDE: Using all ${allNested1.length} article.nested1 elements as contentElements`);
-      console.log(`🎯    This replaces container-based detection and captures ALL articles regardless of location`);
-      
-      // Note: We do NOT extract article.nested0 intro content separately because:
-      // 1. The intro content (shortdesc, "Before you begin", etc.) is typically duplicated
-      //    in the first article.nested1 element
-      // 2. Extracting it separately causes duplication in the Notion output
-      // 3. The nested1 articles already contain all necessary introductory content
-      
-      contentElements = [...allNested1, ...articleNavs, ...contentPlaceholders];
-      console.log(`🎯 ✅ Total contentElements: ${contentElements.length} (${allNested1.length} articles + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
+    const orphanedNested1 = allNested1.filter(article => {
+      const $article = $(article);
+      // Check if this article is NOT a descendant of .zDocsTopicPageBody
+      return $article.closest('.zDocsTopicPageBody').length === 0;
+    });
+    
+    if (orphanedNested1.length > 0) {
+      console.log(`🔍 FIX: Found ${orphanedNested1.length} orphaned article.nested1 elements outside .zDocsTopicPageBody`);
+      console.log(`🔍 FIX: Orphaned article IDs: ${orphanedNested1.map(a => $(a).attr('id') || 'NO-ID').join(', ')}`);
+      // Add orphaned articles to the contentElements array
+      contentElements.push(...orphanedNested1);
     } else {
-      // Fallback: No article.nested1 found, keep the container-based contentElements
-      console.log(`🎯 ℹ️  No article.nested1 elements found, keeping ${contentElements.length} container-based contentElements`);
+      console.log(`🔍 FIX: No orphaned article.nested1 elements found (all ${allNested1.length} are inside .zDocsTopicPageBody)`);
     }
     
-    // FIX: Collect orphaned <li> elements that are NOT inside any ol/ul
-    // These can appear anywhere in the page body due to malformed ServiceNow HTML
-    const allLis = $('.zDocsTopicPageBody li').toArray();
-    const orphanedLis = allLis.filter(li => {
-      const $li = $(li);
-      // Check if this <li> has an <ol> or <ul> as a parent
-      const hasListParent = $li.closest('ol, ul').length > 0;
-      return !hasListParent;
-    });
-    
+    // FIX: Collect orphaned <li> elements that are direct children of .zDocsTopicPageBodyContent but NOT inside any ol/ul
+    const orphanedLis = $('.zDocsTopicPageBodyContent > li').toArray();
     if (orphanedLis.length > 0) {
-      console.log(`🔍 FIX: Found ${orphanedLis.length} orphaned <li> elements (not inside ol/ul)`);
+      console.log(`🔍 FIX: Found ${orphanedLis.length} orphaned <li> elements in .zDocsTopicPageBodyContent`);
       orphanedLis.forEach((li, idx) => {
         const $li = $(li);
         const text = $li.text().trim().substring(0, 80);
-        const parentTag = $li.parent().prop('tagName');
-        const parentClass = $li.parent().attr('class') || 'no-class';
-        console.log(`🔍 FIX:   Orphan LI ${idx + 1}: "${text}..." parent=<${parentTag} class="${parentClass}">`);
+        console.log(`🔍 FIX:   Orphan LI ${idx + 1}: "${text}..."`);
       });
       contentElements.push(...orphanedLis);
-      console.log(`🔍 FIX: Added ${orphanedLis.length} orphaned <li> to contentElements (now ${contentElements.length} total)`);
+    }
+    
+    // FIX: Collect any nested1 articles that are siblings of the main content (inside zDocsTopicPageBody but after main article)
+    const bodyContentDiv = $('.zDocsTopicPageBody .zDocsTopicPageBodyContent > div').first();
+    if (bodyContentDiv.length > 0) {
+      // Get all siblings after the main div
+      const siblingsAfterMain = bodyContentDiv.nextAll().toArray();
+      const articleSiblings = siblingsAfterMain.filter(el => el.name === 'article' || el.name === 'li');
+      if (articleSiblings.length > 0) {
+        console.log(`🔍 FIX: Found ${articleSiblings.length} article/li siblings after main content div`);
+        articleSiblings.forEach(el => {
+          const $el = $(el);
+          const tag = el.name;
+          const id = $el.attr('id') || 'no-id';
+          const text = $el.text().trim().substring(0, 60);
+          console.log(`🔍 FIX:   Sibling: <${tag}> id="${id}" text="${text}..."`);
+        });
+        contentElements.push(...articleSiblings);
+      }
     }
     
     // FIX: Deduplicate contentElements array (orphan collection strategies may overlap)
