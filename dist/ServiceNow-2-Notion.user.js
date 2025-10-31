@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.67
+// @version      9.2.68
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.67";
+    window.BUILD_VERSION = "9.2.68";
 (function () {
 
   // Configuration constants and default settings
@@ -3969,6 +3969,9 @@
     if (startBtn) startBtn.style.display = "none";
     if (stopBtn) stopBtn.style.display = "block";
 
+    // Show overlay/spinner - CRITICAL: Must show overlay when resuming after reload
+    overlayModule.start(`Resuming auto-extraction (page ${autoExtractState.currentPage + 1})...`);
+
     showToast(
       `🔄 Resumed auto-extraction after page reload (page ${autoExtractState.currentPage + 1})`,
       5000
@@ -4015,9 +4018,7 @@
     while (autoExtractState.running && !autoExtractState.paused) {
       debug(`\n🔄 Loop iteration: currentPage=${autoExtractState.currentPage}`);
 
-      // IMPORTANT: Do NOT increment currentPage here when resuming after reload!
-      // The page has already been navigated to, so we should extract the CURRENT page.
-      // currentPage will be incremented after successful extraction and navigation.
+      autoExtractState.currentPage++;
       const currentPageNum = autoExtractState.currentPage;
       debug(`📄 Processing page number: ${currentPageNum}`);
 
@@ -4090,15 +4091,11 @@
         debug(`⏳ Step 5: Stabilizing page ${currentPageNum + 1}...`);
         await new Promise((resolve) => setTimeout(resolve, 1000));
 
-        // NOW increment currentPage after successful navigation
-        autoExtractState.currentPage++;
-        debug(`✅ Successfully navigated to page ${autoExtractState.currentPage}`);
-
         debug(
-          `✅ Page ${autoExtractState.currentPage} fully loaded and ready for capture!`
+          `✅ Page ${currentPageNum + 1} fully loaded and ready for capture!`
         );
         debug(`\n========================================`);
-        debug(`🔄 Looping back to capture page ${autoExtractState.currentPage}...`);
+        debug(`🔄 Looping back to capture page ${currentPageNum + 1}...`);
         debug(`========================================\n`);
       } catch (error) {
         debug(`❌ Error in AutoExtract loop:`, error);
