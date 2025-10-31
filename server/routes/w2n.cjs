@@ -469,6 +469,14 @@ router.post('/W2N', async (req, res) => {
       }
     });
 
+    // Check the "Error" checkbox if extraction warnings were detected
+    if (extractionWarnings.length > 0) {
+      log(`⚠️ Setting Error checkbox due to ${extractionWarnings.length} extraction warning(s)`);
+      properties["Error"] = {
+        checkbox: true
+      };
+    }
+
     // Create the page with initial blocks (with retry for network errors)
     let response;
     let retryCount = 0;
