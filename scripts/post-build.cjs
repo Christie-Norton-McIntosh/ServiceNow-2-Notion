@@ -160,19 +160,42 @@ async function main() {
             log(`⚠️  Could not create tracking issue: ${issueError.message}`, 'yellow');
           }
           
-          // Auto-merge the PR
+          // Try to auto-merge the PR
           log(`🤖 Auto-merging PR #${prNumber}...`, 'blue');
-          exec(`gh pr merge ${prNumber} --auto --squash --delete-branch`);
-          log(`✅ PR #${prNumber} merged and branch deleted`, 'green');
-          
-          // Switch back to main and sync
-          log(`🔙 Switching back to main...`, 'blue');
-          exec('git checkout main');
-          
-          // Pull with rebase to handle squashed commit
-          log(`🔄 Syncing with remote main...`, 'blue');
-          exec('git pull --rebase origin main', { ignoreError: true });
-          log(`✅ Synced with remote main`, 'green');
+          try {
+            exec(`gh pr merge ${prNumber} --auto --squash --delete-branch`);
+            log(`✅ PR #${prNumber} set to auto-merge and will merge when checks pass`, 'green');
+            
+            // Switch back to main and sync
+            log(`🔙 Switching back to main...`, 'blue');
+            exec('git checkout main');
+            
+            // Pull with rebase to handle squashed commit
+            log(`🔄 Syncing with remote main...`, 'blue');
+            exec('git pull --rebase origin main', { ignoreError: true });
+            log(`✅ Synced with remote main`, 'green');
+          } catch (mergeError) {
+            // Auto-merge not enabled, try direct merge
+            log(`⚠️  Auto-merge not available, attempting direct merge...`, 'yellow');
+            try {
+              exec(`gh pr merge ${prNumber} --squash --delete-branch`);
+              log(`✅ PR #${prNumber} merged directly and branch deleted`, 'green');
+              
+              // Switch back to main and sync
+              log(`🔙 Switching back to main...`, 'blue');
+              exec('git checkout main');
+              
+              // Pull with rebase to handle squashed commit
+              log(`🔄 Syncing with remote main...`, 'blue');
+              exec('git pull --rebase origin main', { ignoreError: true });
+              log(`✅ Synced with remote main`, 'green');
+            } catch (directMergeError) {
+              log(`⚠️  Could not merge automatically`, 'yellow');
+              log(`   PR #${prNumber} created but requires manual merge`, 'yellow');
+              log(`   View PR at: https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion/pull/${prNumber}`, 'cyan');
+              log(`   After merging manually, run: git checkout main && git pull`, 'yellow');
+            }
+          }
         } else {
           log(`⚠️  Could not determine PR number from output:`, 'yellow');
           log(prOutput.trim(), 'yellow');
