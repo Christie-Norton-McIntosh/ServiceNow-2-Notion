@@ -3021,7 +3021,30 @@ async function extractContentFromHtml(html) {
           // Handle element node
           const $child = $(child);
           const childTag = child.tagName?.toLowerCase();
-          const childHtml = $child.html() || '';
+          
+          // CRITICAL FIX: Use outerHTML then extract inner content properly
+          // This prevents attribute values from bleeding into content
+          // Issue: $child.html() sometimes returns malformed content with class names
+          let childHtml = '';
+          
+          // Get the full outer HTML first
+          const outerHtml = $.html($child);
+          
+          // Extract ONLY the inner content by removing the opening and closing tags
+          // This ensures we don't accidentally include attribute values
+          const openingTagMatch = outerHtml.match(/^<[^>]+>/);
+          const closingTagMatch = outerHtml.match(/<\/[^>]+>$/);
+          
+          if (openingTagMatch && closingTagMatch) {
+            // Strip the opening and closing tags to get pure inner HTML
+            childHtml = outerHtml.substring(
+              openingTagMatch[0].length,
+              outerHtml.length - closingTagMatch[0].length
+            );
+          } else {
+            // Fallback to original method if regex doesn't match
+            childHtml = $child.html() || '';
+          }
           
           console.log(`🔍   Child ${i}: <${childTag}> class="${$child.attr('class')}" content="${childHtml.substring(0, 60)}..."`);
           
