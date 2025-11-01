@@ -2001,17 +2001,34 @@ async function extractContentFromHtml(html) {
             // also mark the immediateChildren so everything goes through orchestration
             // and maintains correct source order. Otherwise, immediateChildren get added
             // to the list item first, then markedBlocks get appended, reversing the order.
+            // EXCEPTION: Do NOT defer list items (bulleted_list_item, numbered_list_item) - they should remain as immediate children
+            // even when there are container blocks, otherwise they get flattened incorrectly.
             const hasContainerBlocks = markedBlocks.some(b => 
               b && (b.type === 'callout' || b.type === 'table' || b.type === 'heading_3')
             );
             
             let allChildren;
             if (hasContainerBlocks && immediateChildren.length > 0) {
-              console.log(`🔄 Deferring ${immediateChildren.length} immediate children for orchestration to maintain correct order with container blocks`);
-              // Move immediate children to marked blocks - they'll all be orchestrated together
-              // Use push() to add AFTER container blocks, maintaining source order
-              markedBlocks.push(...immediateChildren);
-              allChildren = [];
+              // Separate list items from other immediate children
+              const listItems = immediateChildren.filter(b => 
+                b && (b.type === 'bulleted_list_item' || b.type === 'numbered_list_item')
+              );
+              const nonListChildren = immediateChildren.filter(b => 
+                !b || (b.type !== 'bulleted_list_item' && b.type !== 'numbered_list_item')
+              );
+              
+              if (nonListChildren.length > 0) {
+                console.log(`🔄 Deferring ${nonListChildren.length} non-list immediate children for orchestration to maintain correct order with container blocks`);
+                // Move non-list immediate children to marked blocks - they'll be orchestrated together
+                markedBlocks.push(...nonListChildren);
+              }
+              
+              // Keep list items as immediate children - they maintain correct nesting
+              if (listItems.length > 0) {
+                console.log(`✅ Keeping ${listItems.length} list items as immediate children (proper nesting)`);
+              }
+              
+              allChildren = [...listItems];
             } else {
               // Use only immediateChildren - images are now handled separately with markers
               allChildren = [...immediateChildren];
@@ -2028,8 +2045,11 @@ async function extractContentFromHtml(html) {
                   const marker = generateMarker();
                   markerToken = `(sn2n:${marker})`;
                   // Tag each marked block with the marker for orchestration
+                  // CRITICAL: Don't overwrite existing markers (blocks may already have markers from nested processing)
                   markedBlocks.forEach(block => {
-                    block._sn2n_marker = marker;
+                    if (!block._sn2n_marker) {
+                      block._sn2n_marker = marker;
+                    }
                   });
                   // Add marker token to end of rich text (will be found by orchestrator)
                   chunk.push({
@@ -2414,17 +2434,34 @@ async function extractContentFromHtml(html) {
             // also mark the immediateChildren so everything goes through orchestration
             // and maintains correct source order. Otherwise, immediateChildren get added
             // to the list item first, then markedBlocks get appended, reversing the order.
+            // EXCEPTION: Do NOT defer list items (bulleted_list_item, numbered_list_item) - they should remain as immediate children
+            // even when there are container blocks, otherwise they get flattened incorrectly.
             const hasContainerBlocks = markedBlocks.some(b => 
               b && (b.type === 'callout' || b.type === 'table' || b.type === 'heading_3')
             );
             
             let allChildren;
             if (hasContainerBlocks && immediateChildren.length > 0) {
-              console.log(`🔄 Deferring ${immediateChildren.length} immediate children for orchestration to maintain correct order with container blocks`);
-              // Move immediate children to marked blocks - they'll all be orchestrated together
-              // Use push() to add AFTER container blocks, maintaining source order
-              markedBlocks.push(...immediateChildren);
-              allChildren = [];
+              // Separate list items from other immediate children
+              const listItems = immediateChildren.filter(b => 
+                b && (b.type === 'bulleted_list_item' || b.type === 'numbered_list_item')
+              );
+              const nonListChildren = immediateChildren.filter(b => 
+                !b || (b.type !== 'bulleted_list_item' && b.type !== 'numbered_list_item')
+              );
+              
+              if (nonListChildren.length > 0) {
+                console.log(`🔄 Deferring ${nonListChildren.length} non-list immediate children for orchestration to maintain correct order with container blocks`);
+                // Move non-list immediate children to marked blocks - they'll be orchestrated together
+                markedBlocks.push(...nonListChildren);
+              }
+              
+              // Keep list items as immediate children - they maintain correct nesting
+              if (listItems.length > 0) {
+                console.log(`✅ Keeping ${listItems.length} list items as immediate children (proper nesting)`);
+              }
+              
+              allChildren = [...listItems];
             } else {
               // Use only immediateChildren - images are now handled separately with markers
               allChildren = [...immediateChildren];
@@ -2443,8 +2480,11 @@ async function extractContentFromHtml(html) {
                   const marker = generateMarker();
                   markerToken = `(sn2n:${marker})`;
                   // Tag each marked block with the marker for orchestration
+                  // CRITICAL: Don't overwrite existing markers (blocks may already have markers from nested processing)
                   markedBlocks.forEach(block => {
-                    block._sn2n_marker = marker;
+                    if (!block._sn2n_marker) {
+                      block._sn2n_marker = marker;
+                    }
                   });
                   // Add marker token to end of rich text (will be found by orchestrator)
                   chunk.push({
@@ -4085,6 +4125,46 @@ async function extractContentFromHtml(html) {
         console.log(`🎯 ℹ️  No sections found outside articles`);
       }
       
+      // CRITICAL FIX: Also collect SIBLING TABLES that are NOT inside articles
+      // Some ServiceNow pages (e.g., "Accept an improvement") have tables as siblings of articles
+      // Structure: <article></article> <div class="table-wrap"><table>...</table></div> <table>...</table>
+      const allTablesOnPage = $('table').toArray();
+      console.log(`🎯 🔍 Found ${allTablesOnPage.length} total tables on entire page`);
+      
+      const allTableWrapsOnPage = $('div.table-wrap').toArray();
+      console.log(`🎯 🔍 Found ${allTableWrapsOnPage.length} total table-wrap divs on entire page`);
+      
+      const topLevelTables = allTablesOnPage.filter(table => {
+        const $table = $(table);
+        const isInsideArticle = $table.closest('article').length > 0;
+        return !isInsideArticle; // Only keep tables NOT inside articles
+      });
+      
+      const topLevelTableWraps = allTableWrapsOnPage.filter(wrap => {
+        const $wrap = $(wrap);
+        const isInsideArticle = $wrap.closest('article').length > 0;
+        return !isInsideArticle; // Only keep table-wraps NOT inside articles
+      });
+      
+      if (topLevelTables.length > 0 || topLevelTableWraps.length > 0) {
+        console.log(`🎯 🔍 SIBLING TABLES: Found ${topLevelTables.length} tables + ${topLevelTableWraps.length} table-wraps OUTSIDE articles`);
+        topLevelTables.forEach((table, idx) => {
+          const $table = $(table);
+          const tableId = $table.attr('id') || 'no-id';
+          const caption = $table.find('caption .title').first().text().trim() || 'NO-CAPTION';
+          console.log(`🎯    Table ${idx + 1}: id="${tableId}" caption="${caption}"`);
+        });
+        topLevelTableWraps.forEach((wrap, idx) => {
+          const $wrap = $(wrap);
+          const table = $wrap.find('table').first();
+          const tableId = table.attr('id') || 'no-id';
+          const caption = table.find('caption .title').first().text().trim() || 'NO-CAPTION';
+          console.log(`🎯    TableWrap ${idx + 1}: contains table id="${tableId}" caption="${caption}"`);
+        });
+      } else {
+        console.log(`🎯 ℹ️  No tables found outside articles`);
+      }
+      
       // Check for article.nested0 wrapper with intro content
       const nested0 = $('article.nested0').first();
       if (nested0.length > 0) {
@@ -4102,18 +4182,18 @@ async function extractContentFromHtml(html) {
             console.log(`🎯    Intro ${idx + 1}: <${el.name} class="${$el.attr('class') || ''}"> "${text}..."`);
           });
           
-          // Prepend intro content before articles, append sibling sections after
-          contentElements = [...introElements, ...allArticles, ...topLevelSections, ...articleNavs, ...contentPlaceholders];
-          console.log(`🎯 ✅ Total contentElements: ${contentElements.length} (${introElements.length} intro + ${allArticles.length} articles + ${topLevelSections.length} sections + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
+          // Prepend intro content before articles, append sibling sections + tables after
+          contentElements = [...introElements, ...allArticles, ...topLevelSections, ...topLevelTableWraps, ...topLevelTables, ...articleNavs, ...contentPlaceholders];
+          console.log(`🎯 ✅ Total contentElements: ${contentElements.length} (${introElements.length} intro + ${allArticles.length} articles + ${topLevelSections.length} sections + ${topLevelTableWraps.length} table-wraps + ${topLevelTables.length} tables + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
         } else {
           console.log(`🎯 ℹ️  No intro elements found in nested0`);
-          contentElements = [...allArticles, ...topLevelSections, ...articleNavs, ...contentPlaceholders];
-          console.log(`🎯 ✅ Total contentElements: ${contentElements.length} (${allArticles.length} articles + ${topLevelSections.length} sections + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
+          contentElements = [...allArticles, ...topLevelSections, ...topLevelTableWraps, ...topLevelTables, ...articleNavs, ...contentPlaceholders];
+          console.log(`🎯 ✅ Total contentElements: ${contentElements.length} (${allArticles.length} articles + ${topLevelSections.length} sections + ${topLevelTableWraps.length} table-wraps + ${topLevelTables.length} tables + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
         }
       } else {
-        // No nested0 wrapper, use articles + sibling sections
-        contentElements = [...allArticles, ...topLevelSections, ...articleNavs, ...contentPlaceholders];
-        console.log(`🎯 ✅ Total contentElements: ${contentElements.length} (${allArticles.length} articles + ${topLevelSections.length} sections + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
+        // No nested0 wrapper, use articles + sibling sections + sibling tables
+        contentElements = [...allArticles, ...topLevelSections, ...topLevelTableWraps, ...topLevelTables, ...articleNavs, ...contentPlaceholders];
+        console.log(`🎯 ✅ Total contentElements: ${contentElements.length} (${allArticles.length} articles + ${topLevelSections.length} sections + ${topLevelTableWraps.length} table-wraps + ${topLevelTables.length} tables + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
       }
     } else {
       // Fallback: No articles found using universal patterns, keep container-based contentElements
