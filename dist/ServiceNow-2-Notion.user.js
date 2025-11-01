@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.77
+// @version      9.2.78
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.77";
+    window.BUILD_VERSION = "9.2.78";
 (function () {
 
   // Configuration constants and default settings
@@ -3465,7 +3465,7 @@
 
         // If access-limited was detected and resolved, give the page extra time to stabilize
         if (accessLimitedReloadAttempts > 0 && !isPageAccessLimited()) {
-          debug(`✅ Access-limited resolved after ${accessLimitedReloadAttempts} reload(s), stabilizing page...`);
+          debug(`[ACCESS-LIMITED] ✅ Access-limited resolved after ${accessLimitedReloadAttempts} reload(s), stabilizing page...`);
           overlayModule.setMessage(`Page access restored, stabilizing...`);
           await new Promise((resolve) => setTimeout(resolve, 3000));
         }
@@ -3473,7 +3473,7 @@
         // If still access limited after reload attempts, skip this page and move to next
         if (isPageAccessLimited()) {
           debug(
-            `🔒 Access limited persists after ${maxAccessLimitedReloadAttempts} reload attempts, skipping page ${currentPageNum}...`
+            `[ACCESS-LIMITED] 🔒 Access limited persists after ${maxAccessLimitedReloadAttempts} reload attempts, skipping page ${currentPageNum}...`
           );
           showToast(
             `⊘ Skipped page ${currentPageNum}: Access limited (after ${maxAccessLimitedReloadAttempts} reloads)`,
@@ -3664,7 +3664,7 @@
               
               // Check again after delay
               if (!autoExtractState.running) {
-                debug(`⏹ AutoExtract stopped after retry delay for page ${currentPageNum}`);
+                debug(`[AUTO-EXTRACT] ⏹ AutoExtract stopped after retry delay for page ${currentPageNum}`);
                 showToast(
                   `⏹ AutoExtract stopped. Processed ${autoExtractState.totalProcessed} pages.`,
                   4000
@@ -3788,7 +3788,7 @@
 
         // Check if stop was requested after capture attempts
         if (!autoExtractState.running) {
-          debug(`⏹ AutoExtract stopped after capture attempts for page ${currentPageNum}`);
+          debug(`[AUTO-EXTRACT] ⏹ AutoExtract stopped after capture attempts for page ${currentPageNum}`);
           showToast(
             `⏹ AutoExtract stopped. Processed ${autoExtractState.totalProcessed} pages.`,
             4000
@@ -5944,17 +5944,17 @@
    * @returns {HTMLElement|null} The content element or null if not found
    */
   function findContentElement() {
-    console.log("🚀 ServiceNow-2-Notion v9.1.0 - Finding content element with NEW .zDocsTopicPageBody selector");
+    console.log("🚀 ServiceNow-2-Notion - Finding content element (prioritizing .zDocsTopicPageBody, excluding header)");
     debug("🔍 Searching for content element...");
 
     // Priority order of content selectors (most specific first)
     const contentSelectors = [
-      // ServiceNow docs specific - most specific first
-      // Changed to capture zDocsTopicPageBody (includes article.dita AND contentPlaceholder with Related Content)
-      ".zDocsTopicPageBody",
-      "#zDocsContent .zDocsTopicPageBody",
-      ".zDocsTopicPageBody .zDocsTopicPageBodyContent",
-
+      // ServiceNow docs specific - MOST SPECIFIC: capture only the body, not the header
+      // This selector targets the actual page content and excludes navigation breadcrumbs
+      "#zDocsContent > div.zDocsTopicPageBody",  // Direct child selector - most accurate
+      ".zDocsTopicPageBody",                      // Fallback class-only selector
+      "#zDocsContent .zDocsTopicPageBody",        // Fallback descendant selector
+      
       // Generic main content areas
       "main[role='main']",
       "main",
@@ -5993,6 +5993,21 @@
         ) {
           debug(`✅ Found content element using selector: ${selector}`);
           debug(`📏 Content length: ${element.innerHTML.length} characters`);
+          
+          // If we found a ServiceNow-specific selector, verify we're excluding the header
+          if (selector.includes('zDocsTopicPageBody')) {
+            // Verify this element doesn't contain the zDocsContent > header
+            const parentZDocs = element.closest('#zDocsContent');
+            if (parentZDocs) {
+              const header = parentZDocs.querySelector(':scope > header');
+              if (header && element.contains(header)) {
+                debug(`⚠️ Element contains header, this shouldn't happen with direct child selector`);
+              } else {
+                debug(`✅ Confirmed: Element excludes #zDocsContent > header (as expected)`);
+              }
+            }
+          }
+          
           return element;
         }
       } catch (e) {
