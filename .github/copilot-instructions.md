@@ -194,6 +194,7 @@ Note: If your edits change any client-side code (files under `src/` or the gener
 - Use `SN2N_VERBOSE=1` for server debug
 - Strip private `_sn2n_` keys before Notion API calls
 - Test HTML conversion edge cases (tables, lists, code blocks)
+- **Debug Logging Pattern**: When adding temporary debug logs for issue investigation, prefix ALL related logs with a shared keyword in brackets (e.g., `[DUPLICATE-DETECTION]`, `[NAV-VERIFICATION]`, `[MARKER-DEBUG]`). This allows easy console filtering (`/\[KEYWORD\]/`) and batch removal when issue is resolved. Apply to both client (`debug()`) and server (`console.log()`) logs.
 
 ## 📋 Code-Edit Checklist
 
@@ -206,6 +207,7 @@ Note: If your edits change any client-side code (files under `src/` or the gener
 6. Bump version with `npm version` for behavioral changes
 7. Strip private keys before Notion API calls
 8. Test HTML conversion edge cases
+9. For issue-specific debug logs, use bracketed keywords (e.g., `[ISSUE-NAME]`) for easy filtering/removal
 
 ## 🎯 Where to Start Reading
 
