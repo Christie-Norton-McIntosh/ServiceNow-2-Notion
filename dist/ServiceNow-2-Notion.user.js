@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.75
+// @version      9.2.76
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.75";
+    window.BUILD_VERSION = "9.2.76";
 (function () {
 
   // Configuration constants and default settings
@@ -4039,8 +4039,8 @@
         
         // Check for duplicate URL (same page being processed again)
         if (autoExtractState.processedUrls.has(currentUrl)) {
-          debug(`⚠️ DUPLICATE URL DETECTED: ${currentUrl}`);
-          debug(`❌ This URL was already processed in this session!`);
+          debug(`[DUPLICATE-DETECTION] ⚠️ DUPLICATE URL DETECTED: ${currentUrl}`);
+          debug(`[DUPLICATE-DETECTION] ❌ This URL was already processed in this session!`);
           
           // Increment duplicate counter
           autoExtractState.duplicateCount = (autoExtractState.duplicateCount || 0) + 1;
@@ -4054,7 +4054,7 @@
           }
           
           // Skip processing this duplicate and try to navigate
-          debug(`⏭️ Skipping duplicate page (count: ${autoExtractState.duplicateCount})...`);
+          debug(`[DUPLICATE-DETECTION] ⏭️ Skipping duplicate page (count: ${autoExtractState.duplicateCount})...`);
         } else {
           // Reset duplicate counter for new pages
           autoExtractState.duplicateCount = 0;
@@ -4071,15 +4071,15 @@
 
         // Skip processing if this is a duplicate URL
         if (autoExtractState.processedUrls.has(currentUrl)) {
-          debug(`⏭️ Skipping Notion processing for duplicate URL`);
+          debug(`[DUPLICATE-DETECTION] ⏭️ Skipping Notion processing for duplicate URL`);
         } else {
           // Add URL to processed set
           autoExtractState.processedUrls.add(currentUrl);
           autoExtractState.lastPageId = currentPageId;
           
-          debug(`✅ Added URL to processed set (total: ${autoExtractState.processedUrls.size} unique pages)`);
-          debug(`   URL: ${currentUrl}`);
-          debug(`   Page ID: ${currentPageId}`);
+          debug(`[DUPLICATE-DETECTION] ✅ Added URL to processed set (total: ${autoExtractState.processedUrls.size} unique pages)`);
+          debug(`[DUPLICATE-DETECTION]    URL: ${currentUrl}`);
+          debug(`[DUPLICATE-DETECTION]    Page ID: ${currentPageId}`);
           
           // Process and save to Notion
           debug(`📤 Saving page ${currentPageNum} to Notion...`);
@@ -4142,14 +4142,14 @@
         const afterNavPageId = getCurrentPageId();
         
         if (afterNavUrl === beforeNavUrl && afterNavPageId === beforeNavPageId) {
-          debug(`⚠️ WARNING: URL and Page ID did not change after clicking next button!`);
-          debug(`   Before: ${beforeNavUrl} | ${beforeNavPageId}`);
-          debug(`   After:  ${afterNavUrl} | ${afterNavPageId}`);
-          debug(`⚠️ Navigation may have failed - the same page will be detected as duplicate on next iteration`);
+          debug(`[NAV-VERIFICATION] ⚠️ WARNING: URL and Page ID did not change after clicking next button!`);
+          debug(`[NAV-VERIFICATION]    Before: ${beforeNavUrl} | ${beforeNavPageId}`);
+          debug(`[NAV-VERIFICATION]    After:  ${afterNavUrl} | ${afterNavPageId}`);
+          debug(`[NAV-VERIFICATION] ⚠️ Navigation may have failed - the same page will be detected as duplicate on next iteration`);
         } else {
-          debug(`✅ Navigation verified: Page changed successfully`);
-          debug(`   New URL: ${afterNavUrl}`);
-          debug(`   New Page ID: ${afterNavPageId}`);
+          debug(`[NAV-VERIFICATION] ✅ Navigation verified: Page changed successfully`);
+          debug(`[NAV-VERIFICATION]    New URL: ${afterNavUrl}`);
+          debug(`[NAV-VERIFICATION]    New Page ID: ${afterNavPageId}`);
         }
 
         debug(
