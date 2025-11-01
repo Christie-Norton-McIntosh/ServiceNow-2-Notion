@@ -846,7 +846,7 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
 
       // If access-limited was detected and resolved, give the page extra time to stabilize
       if (accessLimitedReloadAttempts > 0 && !isPageAccessLimited()) {
-        debug(`✅ Access-limited resolved after ${accessLimitedReloadAttempts} reload(s), stabilizing page...`);
+        debug(`[ACCESS-LIMITED] ✅ Access-limited resolved after ${accessLimitedReloadAttempts} reload(s), stabilizing page...`);
         overlayModule.setMessage(`Page access restored, stabilizing...`);
         await new Promise((resolve) => setTimeout(resolve, 3000));
       }
@@ -854,7 +854,7 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
       // If still access limited after reload attempts, skip this page and move to next
       if (isPageAccessLimited()) {
         debug(
-          `🔒 Access limited persists after ${maxAccessLimitedReloadAttempts} reload attempts, skipping page ${currentPageNum}...`
+          `[ACCESS-LIMITED] 🔒 Access limited persists after ${maxAccessLimitedReloadAttempts} reload attempts, skipping page ${currentPageNum}...`
         );
         showToast(
           `⊘ Skipped page ${currentPageNum}: Access limited (after ${maxAccessLimitedReloadAttempts} reloads)`,
@@ -1045,7 +1045,7 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
             
             // Check again after delay
             if (!autoExtractState.running) {
-              debug(`⏹ AutoExtract stopped after retry delay for page ${currentPageNum}`);
+              debug(`[AUTO-EXTRACT] ⏹ AutoExtract stopped after retry delay for page ${currentPageNum}`);
               showToast(
                 `⏹ AutoExtract stopped. Processed ${autoExtractState.totalProcessed} pages.`,
                 4000
@@ -1169,7 +1169,7 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
 
       // Check if stop was requested after capture attempts
       if (!autoExtractState.running) {
-        debug(`⏹ AutoExtract stopped after capture attempts for page ${currentPageNum}`);
+        debug(`[AUTO-EXTRACT] ⏹ AutoExtract stopped after capture attempts for page ${currentPageNum}`);
         showToast(
           `⏹ AutoExtract stopped. Processed ${autoExtractState.totalProcessed} pages.`,
           4000
