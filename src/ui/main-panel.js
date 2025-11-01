@@ -202,7 +202,7 @@ export function setupMainPanel(panel) {
         showSpinner();
         const databases = await getAllDatabases({ forceRefresh: true });
         populateDatabaseSelect(databaseSelect, databases);
-        debug(`✅ Refreshed ${databases.length} databases`);
+        debug(`[DATABASE] ✅ Refreshed ${databases.length} databases`);
       } catch (e) {
         debug("Failed to refresh databases:", e);
       } finally {
@@ -217,7 +217,7 @@ export function setupMainPanel(panel) {
         const searchTerm = prompt("Enter database name or ID to search:");
         if (!searchTerm || searchTerm.trim() === "") return;
 
-        debug(`🔍 Searching for database: ${searchTerm}`);
+        debug(`[DATABASE] 🔍 Searching for database: ${searchTerm}`);
         showSpinner();
 
         // Query all databases fresh (no cache)
@@ -244,7 +244,7 @@ export function setupMainPanel(panel) {
           const partialId = searchTermTrimmed.slice(-8);
           matchingDb = databases.find((db) => db.id.endsWith(partialId));
           if (matchingDb) {
-            debug(`✅ Found database by partial ID match: ${partialId}`);
+            debug(`[DATABASE] ✅ Found database by partial ID match: ${partialId}`);
           }
         }
 
@@ -271,7 +271,7 @@ export function setupMainPanel(panel) {
           );
         } else {
           alert(`Database "${searchTerm}" not found.`);
-          debug(`❌ Database "${searchTerm}" not found`);
+          debug(`[DATABASE] ❌ Database "${searchTerm}" not found`);
         }
       } catch (e) {
         debug("Failed to search database:", e);
@@ -289,7 +289,7 @@ export function setupMainPanel(panel) {
         if (!dbId || dbId.trim() === "") return;
 
         const cleanDbId = dbId.trim();
-        debug(`🔍 Getting database by ID: ${cleanDbId}`);
+        debug(`[DATABASE] 🔍 Getting database by ID: ${cleanDbId}`);
         showSpinner();
 
         // Fetch database details to validate and get name
@@ -324,16 +324,16 @@ export function setupMainPanel(panel) {
 
   // Check for saved autoExtractState from page reload and resume if found
   const savedAutoExtractState = GM_getValue("w2n_autoExtractState");
-  debug(`🔍 Checking for saved autoExtractState: ${savedAutoExtractState ? 'FOUND' : 'NOT FOUND'}`);
+  debug(`[STATE-MANAGEMENT] 🔍 Checking for saved autoExtractState: ${savedAutoExtractState ? 'FOUND' : 'NOT FOUND'}`);
   if (savedAutoExtractState) {
     try {
       const parsedState = JSON.parse(savedAutoExtractState);
-      debug(`🔄 Found saved autoExtractState from page reload:`, parsedState);
+      debug(`[STATE-MANAGEMENT] 🔄 Found saved autoExtractState from page reload:`, parsedState);
 
       // Check if we've exceeded max reload attempts
       const reloadAttempts = parsedState.reloadAttempts || 0;
       if (reloadAttempts > 3) {
-        debug(`❌ Maximum reload attempts (3) exceeded - not resuming`);
+        debug(`[STATE-MANAGEMENT] ❌ Maximum reload attempts (3) exceeded - not resuming`);
         alert(
           `❌ AutoExtract stopped: Maximum reload attempts (3) exceeded.\n\nThe page failed to load properly after 3 reload attempts.\n\nTotal pages processed: ${parsedState.totalProcessed || 0}`
         );
@@ -346,11 +346,11 @@ export function setupMainPanel(panel) {
 
       // Resume auto-extraction after a short delay to let page fully load
       setTimeout(async () => {
-        debug(`▶️ Resuming auto-extraction after page reload (attempt ${reloadAttempts}/3)...`);
+        debug(`[STATE-MANAGEMENT] ▶️ Resuming auto-extraction after page reload (attempt ${reloadAttempts}/3)...`);
         await resumeAutoExtraction(parsedState);
       }, 2000);
     } catch (e) {
-      debug(`❌ Error parsing saved autoExtractState:`, e);
+      debug(`[STATE-MANAGEMENT] ❌ Error parsing saved autoExtractState:`, e);
       GM_setValue("w2n_autoExtractState", null);
     }
   }
@@ -605,7 +605,7 @@ async function startAutoExtraction() {
   // Set up beforeunload handler to save state if page is reloaded manually
   const beforeUnloadHandler = (event) => {
     if (autoExtractState.running) {
-      debug(`⚠️ Page unloading during AutoExtract - saving state...`);
+      debug(`[STATE-MANAGEMENT] ⚠️ Page unloading during AutoExtract - saving state...`);
       const stateToSave = {
         ...autoExtractState,
         reloadAttempts: (autoExtractState.reloadAttempts || 0) + 1,
@@ -678,7 +678,7 @@ function isPageAccessLimited() {
   const limitedMessage = "Access to this content is limited to authorized users.";
 
   if (pageTitle === limitedMessage || pageTitle.includes(limitedMessage)) {
-    debug(`🔒 Detected access limited page: "${pageTitle}"`);
+    debug(`[ACCESS-LIMITED] 🔒 Detected access limited page: "${pageTitle}"`);
     return true;
   }
 
@@ -686,7 +686,7 @@ function isPageAccessLimited() {
   const h1Elements = document.querySelectorAll("h1");
   for (const h1 of h1Elements) {
     if (h1.textContent && h1.textContent.includes(limitedMessage)) {
-      debug(`🔒 Detected access limited message in h1: "${h1.textContent}"`);
+      debug(`[ACCESS-LIMITED] 🔒 Detected access limited message in h1: "${h1.textContent}"`);
       return true;
     }
   }
@@ -797,7 +797,7 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
   while (autoExtractState.running && !autoExtractState.paused) {
     // Check running state at the very beginning of each iteration
     if (!autoExtractState.running) {
-      debug(`⏹ AutoExtract stopped at beginning of loop iteration`);
+      debug(`[AUTO-EXTRACT] ⏹ AutoExtract stopped at beginning of loop iteration`);
       stopAutoExtract(autoExtractState);
       if (button) button.textContent = "Start AutoExtract";
       return;
@@ -805,7 +805,7 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
     
     autoExtractState.currentPage++;
     const currentPageNum = autoExtractState.currentPage;
-    debug(`📄 Processing page number: ${currentPageNum}`);
+    debug(`[AUTO-EXTRACT] 📄 Processing page number: ${currentPageNum}`);
 
     overlayModule.setMessage(
       `Extracting page ${currentPageNum}...`
@@ -893,7 +893,7 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
           // Check if stop was requested
           if (!autoExtractState.running) {
             debug(
-              `⏹ AutoExtract stopped by user after skipping page ${currentPageNum}`
+              `[AUTO-EXTRACT] ⏹ AutoExtract stopped by user after skipping page ${currentPageNum}`
             );
             showToast(
               `⏹ AutoExtract stopped. Processed ${autoExtractState.totalProcessed} pages.`,
@@ -960,14 +960,13 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
           debug(`⏳ Stabilizing page ${currentPageNum + 1}...`);
           await new Promise((resolve) => setTimeout(resolve, 1000));
 
-          debug(
-            `✅ Page ${currentPageNum + 1} fully loaded and ready for capture!`
-          );
-          debug(`\n========================================`);
-          debug(`🔄 Looping back to capture page ${currentPageNum + 1}...`);
-          debug(`========================================\n`);
-
-        // Continue to next iteration
+      
+      debug(
+        `[AUTO-EXTRACT] ✅ Page ${currentPageNum + 1} fully loaded and ready for capture!`
+      );
+      debug(`[AUTO-EXTRACT] \n========================================`);
+      debug(`[AUTO-EXTRACT] 🔄 Looping back to capture page ${currentPageNum + 1}...`);
+      debug(`[AUTO-EXTRACT] ========================================\n`);        // Continue to next iteration
         continue;
       }
 
@@ -1008,7 +1007,7 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
       }
 
       // STEP 1: Extract and capture current page
-      debug(`📄 Step 1: Extracting page ${currentPageNum}...`);
+      debug(`[AUTO-EXTRACT] 📄 Step 1: Extracting page ${currentPageNum}...`);
       let captureSuccess = false;
       let captureAttempts = 0;
       const maxCaptureAttempts = 3;
@@ -1021,7 +1020,7 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
           if (captureAttempts > 1) {
             // Check if stop was requested before retry delay
             if (!autoExtractState.running) {
-              debug(`⏹ AutoExtract stopped before retry delay for page ${currentPageNum}`);
+              debug(`[AUTO-EXTRACT] ⏹ AutoExtract stopped before retry delay for page ${currentPageNum}`);
               showToast(
                 `⏹ AutoExtract stopped. Processed ${autoExtractState.totalProcessed} pages.`,
                 4000
@@ -1063,13 +1062,13 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
       const contentToHash = extractedData.content?.combinedHtml || "";
       const contentHash = simpleHash(contentToHash);
 
-      debug(`🔍 Content to hash length: ${contentToHash.length} characters`);
-      debug(`🔍 Calculated hash: ${contentHash}, Previous hash: ${autoExtractState.lastContentHash}`);          if (contentHash === autoExtractState.lastContentHash) {
+      debug(`[CONTENT-HASH] 🔍 Content to hash length: ${contentToHash.length} characters`);
+      debug(`[CONTENT-HASH] 🔍 Calculated hash: ${contentHash}, Previous hash: ${autoExtractState.lastContentHash}`);          if (contentHash === autoExtractState.lastContentHash) {
             autoExtractState.duplicateCount++;
             debug(
-              `⚠️ DUPLICATE CONTENT DETECTED (${autoExtractState.duplicateCount} consecutive)!`
+              `[CONTENT-HASH] ⚠️ DUPLICATE CONTENT DETECTED (${autoExtractState.duplicateCount} consecutive)!`
             );
-            debug(`Hash: ${contentHash}, Last Hash: ${autoExtractState.lastContentHash}`);
+            debug(`[CONTENT-HASH] Hash: ${contentHash}, Last Hash: ${autoExtractState.lastContentHash}`);
             
             if (autoExtractState.duplicateCount >= 3) {
               const errorMessage = `❌ AutoExtract STOPPED: Same page content detected ${autoExtractState.duplicateCount} times in a row.\n\nThis usually means:\n- ServiceNow navigation isn't working\n- You've reached the end of the section\n- There's a navigation loop\n\nTotal pages processed: ${autoExtractState.totalProcessed}\nLast successful page: ${currentPageNum - autoExtractState.duplicateCount}`;
@@ -1080,7 +1079,7 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
             }
             
             // Skip this duplicate and go straight to navigation (don't create page)
-            debug(`⊘ Skipping duplicate content, will retry navigation without creating page...`);
+            debug(`[CONTENT-HASH] ⊘ Skipping duplicate content, will retry navigation without creating page...`);
             showToast(
               `⚠️ Duplicate content #${autoExtractState.duplicateCount}, skipping to navigation...`,
               3000
@@ -1091,12 +1090,12 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
             // Content is different, reset duplicate counter
             autoExtractState.duplicateCount = 0;
             autoExtractState.lastContentHash = contentHash;
-            debug(`✅ Content is unique (hash: ${contentHash})`);
+            debug(`[CONTENT-HASH] ✅ Content is unique (hash: ${contentHash})`);
           }
 
           // Check if stop was requested before creating the page
           if (!autoExtractState.running) {
-            debug(`⏹ AutoExtract stop requested before creating page ${currentPageNum}`);
+            debug(`[AUTO-EXTRACT] ⏹ AutoExtract stop requested before creating page ${currentPageNum}`);
             showToast(
               `⏹ AutoExtract stopped before page ${currentPageNum}. Processed ${autoExtractState.totalProcessed} pages.`,
               4000
@@ -1108,7 +1107,7 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
 
           // STEP 2: Create Notion page and wait for success
           debug(
-            `💾 Step 2: Creating Notion page for page ${currentPageNum}...`
+            `[AUTO-EXTRACT] 💾 Step 2: Creating Notion page for page ${currentPageNum}...`
           );
           overlayModule.setMessage(`Creating Notion page ${currentPageNum}...`);
           await app.processWithProxy(extractedData);
@@ -1131,7 +1130,7 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
           
           // Check if stop was requested during error handling
           if (!autoExtractState.running) {
-            debug(`⏹ AutoExtract stopped during error handling for page ${currentPageNum}`);
+            debug(`[AUTO-EXTRACT] ⏹ AutoExtract stopped during error handling for page ${currentPageNum}`);
             showToast(
               `⏹ AutoExtract stopped. Processed ${autoExtractState.totalProcessed} pages.`,
               4000
@@ -1335,7 +1334,7 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
  * Resume auto-extraction after page reload
  */
 async function resumeAutoExtraction(savedState) {
-  debug(`▶️ Resuming auto-extraction with saved state:`, savedState);
+  debug(`[AUTO-EXTRACT] ▶️ Resuming auto-extraction with saved state:`, savedState);
 
   // Restore the autoExtractState
   const autoExtractState = {
@@ -1365,7 +1364,7 @@ async function resumeAutoExtraction(savedState) {
     // Continue the extraction loop from where we left off
     await continueAutoExtractionLoop(autoExtractState);
   } catch (error) {
-    debug(`❌ Error resuming auto-extraction:`, error);
+    debug(`[AUTO-EXTRACT] ❌ Error resuming auto-extraction:`, error);
     const errorMessage = `❌ Resume AutoExtract ERROR: ${error.message}\n\nTotal pages processed: ${autoExtractState.totalProcessed}`;
     alert(errorMessage);
     stopAutoExtract(autoExtractState);
@@ -1376,9 +1375,9 @@ async function resumeAutoExtraction(savedState) {
  * Continue the auto-extraction loop from a specific state (used after page reload)
  */
 async function continueAutoExtractionLoop(autoExtractState) {
-  debug("🔄 Continuing AutoExtract loop from saved state");
+  debug("[AUTO-EXTRACT] 🔄 Continuing AutoExtract loop from saved state");
   debug(
-    `📊 Resumed state: currentPage=${autoExtractState.currentPage}, totalProcessed=${autoExtractState.totalProcessed}`
+    `[AUTO-EXTRACT] 📊 Resumed state: currentPage=${autoExtractState.currentPage}, totalProcessed=${autoExtractState.totalProcessed}`
   );
 
   // Get references
@@ -1400,11 +1399,11 @@ async function continueAutoExtractionLoop(autoExtractState) {
 
   // Continue the main loop
   while (autoExtractState.running && !autoExtractState.paused) {
-    debug(`\n🔄 Loop iteration: currentPage=${autoExtractState.currentPage}`);
+    debug(`[AUTO-EXTRACT] \n🔄 Loop iteration: currentPage=${autoExtractState.currentPage}`);
 
     autoExtractState.currentPage++;
     const currentPageNum = autoExtractState.currentPage;
-    debug(`📄 Processing page number: ${currentPageNum}`);
+    debug(`[AUTO-EXTRACT] 📄 Processing page number: ${currentPageNum}`);
 
     overlayModule.setMessage(`Extracting page ${currentPageNum}...`);
 
@@ -1442,7 +1441,7 @@ async function continueAutoExtractionLoop(autoExtractState) {
       }
       
       // Extract current page data using the app instance
-      debug(`📝 Step 1: Extracting content from page ${currentPageNum}...`);
+      debug(`[AUTO-EXTRACT] 📝 Step 1: Extracting content from page ${currentPageNum}...`);
       overlayModule.setMessage(`Extracting content from page ${currentPageNum}...`);
       const extractedData = await app.extractCurrentPageData();
 
@@ -1459,7 +1458,7 @@ async function continueAutoExtractionLoop(autoExtractState) {
         autoExtractState.lastPageId = currentPageId;
         
         // Process and save to Notion
-        debug(`📤 Saving page ${currentPageNum} to Notion...`);
+        debug(`[AUTO-EXTRACT] 📤 Saving page ${currentPageNum} to Notion...`);
         overlayModule.setMessage(`Processing page ${currentPageNum}...`);
       
         // Process the content using the app's processWithProxy method
@@ -1473,7 +1472,7 @@ async function continueAutoExtractionLoop(autoExtractState) {
         const result = { success: true };
 
         autoExtractState.totalProcessed++;
-        debug(`✅ Page ${currentPageNum} saved to Notion`);
+        debug(`[AUTO-EXTRACT] ✅ Page ${currentPageNum} saved to Notion`);
         overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
       }
 
@@ -1488,7 +1487,7 @@ async function continueAutoExtractionLoop(autoExtractState) {
       );
 
       if (!nextButton) {
-        debug(`❌ Could not find next page button after reload attempt`);
+        debug(`[NEXT-BUTTON] ❌ Could not find next page button after reload attempt`);
         overlayModule.done({
           success: false,
           pageUrl: null,
@@ -1504,14 +1503,14 @@ async function continueAutoExtractionLoop(autoExtractState) {
       }
 
       // Wait for page navigation
-      debug(`⏳ Step 4: Waiting for page navigation...`);
+      debug(`[AUTO-EXTRACT] ⏳ Step 4: Waiting for page navigation...`);
       if (button) {
         button.textContent = `Loading page ${currentPageNum + 1}...`;
       }
       await new Promise((resolve) => setTimeout(resolve, 3000));
 
       // Brief stabilization wait
-      debug(`⏳ Step 5: Stabilizing page ${currentPageNum + 1}...`);
+      debug(`[AUTO-EXTRACT] ⏳ Step 5: Stabilizing page ${currentPageNum + 1}...`);
       await new Promise((resolve) => setTimeout(resolve, 1000));
       
       // Verify that navigation actually occurred
@@ -1550,7 +1549,7 @@ async function continueAutoExtractionLoop(autoExtractState) {
   }
   
   // Loop completed successfully - show completion overlay
-  debug(`🎉 AutoExtract completed! Total pages processed: ${autoExtractState.totalProcessed}`);
+  debug(`[AUTO-EXTRACT] 🎉 AutoExtract completed! Total pages processed: ${autoExtractState.totalProcessed}`);
   overlayModule.done({
     success: true,
     pageUrl: null,
@@ -1588,7 +1587,7 @@ async function findAndClickNextButton(
     nextButton = findNextPageElement(nextPageSelector);
 
     if (!nextButton && findAttempts < maxFindAttempts) {
-      debug(`⚠️ Next page button not found, reloading and retrying...`);
+      debug(`[NEXT-BUTTON] ⚠️ Next page button not found, reloading and retrying...`);
 
       // Save autoExtractState to localStorage before reload
       if (autoExtractState) {
@@ -1597,7 +1596,7 @@ async function findAndClickNextButton(
         
         // Check if we've exceeded max reload attempts
         if (autoExtractState.reloadAttempts > 3) {
-          debug(`❌ Maximum reload attempts (3) exceeded`);
+          debug(`[STATE-MANAGEMENT] ❌ Maximum reload attempts (3) exceeded`);
           alert(
             `❌ AutoExtract stopped: Maximum reload attempts (3) exceeded.\n\nThe page failed to load properly after 3 reload attempts.\n\nTotal pages processed: ${autoExtractState.totalProcessed}`
           );
@@ -1605,7 +1604,7 @@ async function findAndClickNextButton(
           return null;
         }
 
-        debug(`💾 Saving autoExtractState before reload (attempt ${autoExtractState.reloadAttempts}/3):`, autoExtractState);
+        debug(`[STATE-MANAGEMENT] 💾 Saving autoExtractState before reload (attempt ${autoExtractState.reloadAttempts}/3):`, autoExtractState);
         const stateToSave = {
           ...autoExtractState,
           // Convert Set to Array for JSON serialization
@@ -1616,12 +1615,12 @@ async function findAndClickNextButton(
         
         // Verify save succeeded
         const verification = GM_getValue("w2n_autoExtractState");
-        debug(`✅ State save verified: ${verification === stateJson ? 'SUCCESS' : 'FAILED'}`);
+        debug(`[STATE-MANAGEMENT] ✅ State save verified: ${verification === stateJson ? 'SUCCESS' : 'FAILED'}`);
       }
 
       // Reload the page and wait for it to load
       debug(
-        `🔄 Reloading page to refresh DOM elements (reload attempt ${autoExtractState.reloadAttempts}/3)...`
+        `[STATE-MANAGEMENT] 🔄 Reloading page to refresh DOM elements (reload attempt ${autoExtractState.reloadAttempts}/3)...`
       );
       
       // Add small delay to ensure GM_setValue completes before reload
@@ -1695,7 +1694,7 @@ function getCurrentPageId() {
 }
 
 function stopAutoExtract(autoExtractState) {
-  debug("🛑 stopAutoExtract called - cleaning up");
+  debug("[AUTO-EXTRACT] 🛑 stopAutoExtract called - cleaning up");
   
   autoExtractState.running = false;
   overlayModule.setProgress(100);
@@ -1719,7 +1718,7 @@ function stopAutoExtract(autoExtractState) {
 
   // Clear saved state to prevent resume on page reload
   GM_setValue("w2n_autoExtractState", null);
-  debug("🗑️ Cleared saved autoExtractState in stopAutoExtract");
+  debug("[STATE-MANAGEMENT] 🗑️ Cleared saved autoExtractState in stopAutoExtract");
 
   // Clean up global state
   if (window.ServiceNowToNotion && window.ServiceNowToNotion.autoExtractState) {
@@ -1790,7 +1789,7 @@ async function waitForNavigationAdvanced(
 
       // Log detailed check every 3 seconds
       if (attempts % 3 === 0) {
-        debug(`🔍 Navigation check ${attempts}/${maxAttempts}:`, {
+        debug(`[NAV-VERIFICATION] 🔍 Navigation check ${attempts}/${maxAttempts}:`, {
           urlChanged,
           titleChanged,
           pageIdChanged,
@@ -1815,8 +1814,8 @@ async function waitForNavigationAdvanced(
       }
 
       if (attempts >= maxAttempts) {
-        debug(`❌ Navigation timeout after ${maxAttempts} seconds`);
-        debug(`Final state:`, {
+        debug(`[NAV-VERIFICATION] ❌ Navigation timeout after ${maxAttempts} seconds`);
+        debug(`[NAV-VERIFICATION] Final state:`, {
           "Original URL": originalUrl,
           "Current URL": currentUrl,
           "Original PageID": originalPageId.substring(0, 50),
@@ -1930,7 +1929,7 @@ async function clickNextPageButton(button) {
           current.getAttribute("href")
         ) {
           clickableElement = current;
-          debug(`✅ Found parent clickable: ${current.tagName}`);
+          debug(`[NEXT-BUTTON] ✅ Found parent clickable: ${current.tagName}`);
           break;
         }
         current = current.parentElement;
@@ -2201,7 +2200,7 @@ function findNextPageElement(savedSelector) {
         return element;
       }
     } catch (e) {
-      debug(`⚠️ Saved selector failed: ${savedSelector}`, e);
+      debug(`[NEXT-BUTTON] ⚠️ Saved selector failed: ${savedSelector}`, e);
     }
   }
 
@@ -2308,7 +2307,7 @@ function findNextPageElement(savedSelector) {
           !isCurrentPageElement(clickable) &&
           isElementVisible(clickable)
         ) {
-          debug(`🎯 Found next page element with SVG selector: ${selector}`);
+          debug(`[NEXT-BUTTON] 🎯 Found next page element with SVG selector: ${selector}`);
           return clickable;
         }
       }
@@ -2361,12 +2360,12 @@ function findNextPageElement(savedSelector) {
       for (const element of elements) {
         // Filter out current page indicators
         if (isCurrentPageElement(element)) {
-          debug(`⏭️ Skipping current page element: ${element.className}`);
+          debug(`[NEXT-BUTTON] ⏭️ Skipping current page element: ${element.className}`);
           continue;
         }
 
         if (isElementVisible(element)) {
-          debug(`🔍 Found next page element with pattern: ${pattern}`);
+          debug(`[NEXT-BUTTON] 🔍 Found next page element with pattern: ${pattern}`);
           return element;
         }
       }
@@ -2395,7 +2394,7 @@ function findNextPageElement(savedSelector) {
         useHref.toLowerCase().includes("next")
       ) {
         if (isElementVisible(element)) {
-          debug(`🎯 Found next page element with SVG child indicator`);
+          debug(`[NEXT-BUTTON] 🎯 Found next page element with SVG child indicator`);
           return element;
         }
       }
