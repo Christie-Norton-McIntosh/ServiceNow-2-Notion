@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.74
+// @version      9.2.75
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.74";
+    window.BUILD_VERSION = "9.2.75";
 (function () {
 
   // Configuration constants and default settings
@@ -4076,6 +4076,10 @@
           // Add URL to processed set
           autoExtractState.processedUrls.add(currentUrl);
           autoExtractState.lastPageId = currentPageId;
+          
+          debug(`✅ Added URL to processed set (total: ${autoExtractState.processedUrls.size} unique pages)`);
+          debug(`   URL: ${currentUrl}`);
+          debug(`   Page ID: ${currentPageId}`);
           
           // Process and save to Notion
           debug(`📤 Saving page ${currentPageNum} to Notion...`);
