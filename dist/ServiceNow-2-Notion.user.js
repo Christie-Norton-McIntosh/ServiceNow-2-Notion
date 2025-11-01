@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      9.2.73
+// @version      9.2.74
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "9.2.73";
+    window.BUILD_VERSION = "9.2.74";
 (function () {
 
   // Configuration constants and default settings
@@ -3218,6 +3218,8 @@
       reloadAttempts: 0, // Track page reload attempts (max 3)
       lastContentHash: null, // Track last page content hash to detect duplicates
       duplicateCount: 0, // Count consecutive duplicates
+      processedUrls: new Set(), // Track all processed URLs to prevent duplicates
+      lastPageId: null, // Track last page ID to verify navigation
     };
 
     // Set up beforeunload handler to save state if page is reloaded manually
@@ -3226,7 +3228,9 @@
         debug(`⚠️ Page unloading during AutoExtract - saving state...`);
         const stateToSave = {
           ...autoExtractState,
-          reloadAttempts: (autoExtractState.reloadAttempts || 0) + 1
+          reloadAttempts: (autoExtractState.reloadAttempts || 0) + 1,
+          // Convert Set to Array for JSON serialization
+          processedUrls: Array.from(autoExtractState.processedUrls || []),
         };
         GM_setValue("w2n_autoExtractState", JSON.stringify(stateToSave));
       }
@@ -3957,6 +3961,8 @@
       ...savedState,
       running: true,
       paused: false,
+      // Restore processedUrls Set from array (JSON doesn't support Set)
+      processedUrls: new Set(savedState.processedUrls || []),
     };
 
     // Store state globally
@@ -4027,6 +4033,33 @@
       }
 
       try {
+        // Get current page identifiers for duplicate detection
+        const currentUrl = window.location.href;
+        const currentPageId = getCurrentPageId();
+        
+        // Check for duplicate URL (same page being processed again)
+        if (autoExtractState.processedUrls.has(currentUrl)) {
+          debug(`⚠️ DUPLICATE URL DETECTED: ${currentUrl}`);
+          debug(`❌ This URL was already processed in this session!`);
+          
+          // Increment duplicate counter
+          autoExtractState.duplicateCount = (autoExtractState.duplicateCount || 0) + 1;
+          
+          if (autoExtractState.duplicateCount >= 3) {
+            const errorMsg = `AutoExtract stopped: Same page detected ${autoExtractState.duplicateCount} times in a row.\n\nURL: ${currentUrl}\n\nThis usually means the "Next Page" button is not working correctly or you've reached a loop in the navigation.\n\nTotal pages processed: ${autoExtractState.totalProcessed}`;
+            alert(errorMsg);
+            stopAutoExtract(autoExtractState);
+            if (button) button.textContent = "Start AutoExtract";
+            return;
+          }
+          
+          // Skip processing this duplicate and try to navigate
+          debug(`⏭️ Skipping duplicate page (count: ${autoExtractState.duplicateCount})...`);
+        } else {
+          // Reset duplicate counter for new pages
+          autoExtractState.duplicateCount = 0;
+        }
+        
         // Extract current page data using the app instance
         debug(`📝 Step 1: Extracting content from page ${currentPageNum}...`);
         overlayModule.setMessage(`Extracting content from page ${currentPageNum}...`);
@@ -4036,25 +4069,37 @@
           throw new Error("No content extracted from page");
         }
 
-        // Process and save to Notion
-        debug(`📤 Saving page ${currentPageNum} to Notion...`);
-        overlayModule.setMessage(`Processing page ${currentPageNum}...`);
+        // Skip processing if this is a duplicate URL
+        if (autoExtractState.processedUrls.has(currentUrl)) {
+          debug(`⏭️ Skipping Notion processing for duplicate URL`);
+        } else {
+          // Add URL to processed set
+          autoExtractState.processedUrls.add(currentUrl);
+          autoExtractState.lastPageId = currentPageId;
+          
+          // Process and save to Notion
+          debug(`📤 Saving page ${currentPageNum} to Notion...`);
+          overlayModule.setMessage(`Processing page ${currentPageNum}...`);
         
-        // Process the content using the app's processWithProxy method
-        // This will internally show more detailed messages like:
-        // - "Checking proxy connection..."
-        // - "Converting content to Notion blocks..."
-        // - "Page created successfully!"
-        await app.processWithProxy(extractedData);
-        
-        // If we get here without throwing, it succeeded
-        const result = { success: true };
+          // Process the content using the app's processWithProxy method
+          // This will internally show more detailed messages like:
+          // - "Checking proxy connection..."
+          // - "Converting content to Notion blocks..."
+          // - "Page created successfully!"
+          await app.processWithProxy(extractedData);
+          
+          // If we get here without throwing, it succeeded
+          const result = { success: true };
 
-        autoExtractState.totalProcessed++;
-        debug(`✅ Page ${currentPageNum} saved to Notion`);
-        overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
+          autoExtractState.totalProcessed++;
+          debug(`✅ Page ${currentPageNum} saved to Notion`);
+          overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
+        }
 
         // Navigate to next page
+        const beforeNavUrl = window.location.href;
+        const beforeNavPageId = currentPageId;
+        
         const nextButton = await findAndClickNextButton(
           nextPageSelector,
           autoExtractState,
@@ -4087,6 +4132,21 @@
         // Brief stabilization wait
         debug(`⏳ Step 5: Stabilizing page ${currentPageNum + 1}...`);
         await new Promise((resolve) => setTimeout(resolve, 1000));
+        
+        // Verify that navigation actually occurred
+        const afterNavUrl = window.location.href;
+        const afterNavPageId = getCurrentPageId();
+        
+        if (afterNavUrl === beforeNavUrl && afterNavPageId === beforeNavPageId) {
+          debug(`⚠️ WARNING: URL and Page ID did not change after clicking next button!`);
+          debug(`   Before: ${beforeNavUrl} | ${beforeNavPageId}`);
+          debug(`   After:  ${afterNavUrl} | ${afterNavPageId}`);
+          debug(`⚠️ Navigation may have failed - the same page will be detected as duplicate on next iteration`);
+        } else {
+          debug(`✅ Navigation verified: Page changed successfully`);
+          debug(`   New URL: ${afterNavUrl}`);
+          debug(`   New Page ID: ${afterNavPageId}`);
+        }
 
         debug(
           `✅ Page ${currentPageNum + 1} fully loaded and ready for capture!`
@@ -4165,7 +4225,12 @@
           }
 
           debug(`💾 Saving autoExtractState before reload (attempt ${autoExtractState.reloadAttempts}/3):`, autoExtractState);
-          const stateJson = JSON.stringify(autoExtractState);
+          const stateToSave = {
+            ...autoExtractState,
+            // Convert Set to Array for JSON serialization
+            processedUrls: Array.from(autoExtractState.processedUrls || []),
+          };
+          const stateJson = JSON.stringify(stateToSave);
           GM_setValue("w2n_autoExtractState", stateJson);
           
           // Verify save succeeded
