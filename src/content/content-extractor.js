@@ -507,17 +507,17 @@ export function extractContentFromIframes(containerElement) {
  * @returns {HTMLElement|null} The content element or null if not found
  */
 export function findContentElement() {
-  console.log("🚀 ServiceNow-2-Notion v9.1.0 - Finding content element with NEW .zDocsTopicPageBody selector");
+  console.log("🚀 ServiceNow-2-Notion - Finding content element (prioritizing .zDocsTopicPageBody, excluding header)");
   debug("🔍 Searching for content element...");
 
   // Priority order of content selectors (most specific first)
   const contentSelectors = [
-    // ServiceNow docs specific - most specific first
-    // Changed to capture zDocsTopicPageBody (includes article.dita AND contentPlaceholder with Related Content)
-    ".zDocsTopicPageBody",
-    "#zDocsContent .zDocsTopicPageBody",
-    ".zDocsTopicPageBody .zDocsTopicPageBodyContent",
-
+    // ServiceNow docs specific - MOST SPECIFIC: capture only the body, not the header
+    // This selector targets the actual page content and excludes navigation breadcrumbs
+    "#zDocsContent > div.zDocsTopicPageBody",  // Direct child selector - most accurate
+    ".zDocsTopicPageBody",                      // Fallback class-only selector
+    "#zDocsContent .zDocsTopicPageBody",        // Fallback descendant selector
+    
     // Generic main content areas
     "main[role='main']",
     "main",
@@ -556,6 +556,21 @@ export function findContentElement() {
       ) {
         debug(`✅ Found content element using selector: ${selector}`);
         debug(`📏 Content length: ${element.innerHTML.length} characters`);
+        
+        // If we found a ServiceNow-specific selector, verify we're excluding the header
+        if (selector.includes('zDocsTopicPageBody')) {
+          // Verify this element doesn't contain the zDocsContent > header
+          const parentZDocs = element.closest('#zDocsContent');
+          if (parentZDocs) {
+            const header = parentZDocs.querySelector(':scope > header');
+            if (header && element.contains(header)) {
+              debug(`⚠️ Element contains header, this shouldn't happen with direct child selector`);
+            } else {
+              debug(`✅ Confirmed: Element excludes #zDocsContent > header (as expected)`);
+            }
+          }
+        }
+        
         return element;
       }
     } catch (e) {
