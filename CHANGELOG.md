@@ -1,6 +1,59 @@
 # CHANGELOG — ServiceNow-2-Notion
 
-Version: 9.2.1
+## Version: 10.0.0
+Date: 2025-11-02
+
+### Summary
+
+**Major Release**: Complete overhaul of inline code formatting to ensure proper space handling in rich text elements. This is a breaking change that fundamentally improves how spaces are preserved around code-formatted text throughout Notion pages.
+
+### Highlights
+
+- **Global Code Block Space Cleanup**: All code-formatted text (role identifiers, multi-word identifiers, technical terms) now have leading and trailing spaces extracted as separate plain text elements
+- **Proper Space Preservation**: Spaces between code blocks are now preserved as plain text, not included inside code formatting
+- **Smart Space Detection**: Automatically detects and extracts spaces from code blocks, placing them BEFORE (leading) and AFTER (trailing) the code element as needed
+
+### Technical Details
+
+#### parseRichText Global Cleanup (`server/services/servicenow.cjs`)
+- Added comprehensive space extraction logic at the end of `parseRichText()` function (lines 886-927)
+- Iterates through all rich_text elements and identifies code-annotated text
+- Extracts leading spaces and trailing spaces (only if followed by another element)
+- Creates separate plain text rich_text elements for extracted spaces
+- Ensures spaces appear between code blocks rather than inside them
+
+#### Example Transformation
+**Before v10.0.0:**
+- `"admin "` (code) + `, ` (plain) + `" contract_manager"` (code) ❌
+
+**After v10.0.0:**
+- `"admin"` (code) + ` ` (plain) + `, ` (plain) + `"contract_manager"` (code) ✅
+
+### Breaking Changes
+
+- **Rich Text Structure**: Code blocks with spaces will now be split into multiple rich_text elements
+- **Formatting Impact**: Any code that assumes spaces are included inside code-annotated text will need updates
+- **Element Count**: More rich_text elements may be created per block (due to space extraction)
+
+### Bug Fixes
+
+- Fixed trailing spaces appearing inside inline code blocks throughout pages
+- Fixed comma placement in role identifier lists (commas now outside code blocks)
+- Fixed marker literal display (`__CODE_START__` appearing as text with spaces)
+- Fixed role identifier regex to prevent matching marker underscores
+
+### Files Changed
+
+- `server/services/servicenow.cjs`: Added global code block space cleanup (lines 886-927)
+- Multiple previous attempts at local cleanup (lines 3246-3395) now supplemented by global solution
+
+### Migration Guide
+
+No action required for most users. The change is transparent and improves formatting quality. If you have custom post-processing that assumes spaces inside code blocks, review the new rich_text structure.
+
+---
+
+## Version: 9.2.1
 Date: 2025-10-18
 
 ## Summary
