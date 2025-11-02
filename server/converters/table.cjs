@@ -76,6 +76,12 @@ async function convertTableBlock(tableHtml, options = {}) {
     /<div[^>]*class="[^\"]*smartTable[^\"]*"[^>]*>[\s\S]*?<\/div>/gi,
     ""
   );
+  
+  // Remove table export buttons (Export to Excel/CSV dropdowns)
+  cleanedTableHtml = cleanedTableHtml.replace(
+    /<button[^>]*class="[^\"]*(?:zDocsTopicPageTableExportButton|zDocsTopicPageTableExportMenu|dropdown-item)[^\"]*"[^>]*>[\s\S]*?<\/button>/gi,
+    ""
+  );
 
   // Images in tables will be extracted and placed as separate blocks after the table
   // (removed the global image-to-bullet replacement)
