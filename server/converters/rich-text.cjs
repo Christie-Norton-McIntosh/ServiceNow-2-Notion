@@ -193,6 +193,17 @@ function convertRichTextBlock(input, options = {}) {
       }
     );
     
+    // Also strip generic <span class="ph"> wrappers inside link text (unwrap, keep content)
+    // Do this iteratively to handle nested ph spans
+    let before;
+    do {
+      before = cleanedContent;
+      cleanedContent = cleanedContent.replace(
+        /<span[^>]*class=["'][^"']*\bph\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi,
+        '$1'
+      );
+    } while (cleanedContent !== before && /<span[^>]*\bph\b[^>]*>/i.test(cleanedContent));
+
     // Also strip uicontrol spans (these will be handled as bold+blue later)
     cleanedContent = cleanedContent.replace(
       /<span[^>]*class=["'][^"']*\buicontrol\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi,
