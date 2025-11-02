@@ -650,6 +650,50 @@ async function extractContentFromHtml(html) {
       return `__CODE_START__${identifier}__CODE_END__`;
     });
 
+    // Handle role identifiers that appear in comma-separated lists after a colon
+    // Common pattern: "For X: admin, contract_manager" or "Role required: admin"
+    // Match lowercase identifiers that START WITH A LETTER (with optional underscores)
+    text = text.replace(/:\s*([a-z][a-z_]*(?:\s*,\s*[a-z][a-z_]*)*)/g, (match, roleList, offset) => {
+      // Skip if already wrapped or inside a URL
+      if (match.includes('__CODE_START__') || match.includes('http')) {
+        return match;
+      }
+      // Check context - should be after words like "workspace", "required", "UI", etc.
+      const before = text.substring(Math.max(0, offset - 30), offset);
+      if (!/(?:workspace|required|ui)\s*$/i.test(before)) {
+        return match; // Not in role context
+      }
+      
+      // Wrap each role identifier in code markers, keeping spaces/commas completely outside
+      // Split on commas to process each identifier separately
+      const identifiers = roleList.split(/\s*,\s*/);
+      console.log(`🔧 [ROLE-ID] Split roleList into ${identifiers.length} identifiers:`, identifiers.map(r => `"${r}"`));
+      const wrappedRoles = identifiers.map((role, idx) => {
+        const originalRole = role;
+        role = role.trim(); // Remove any leading/trailing spaces from identifier
+        // Skip if already wrapped or if it's a common word
+        if (!role || role.includes('__CODE_START__') || ['and', 'or', 'the', 'a', 'an', 'for', 'to', 'of'].includes(role)) {
+          console.log(`🔧 [ROLE-ID] Skipping: "${originalRole}" (trimmed: "${role}")`);
+          return role;
+        }
+        console.log(`🔧 [ROLE-ID] Wrapping role identifier: "${role}" (original: "${originalRole}")`);
+        return `__CODE_START__${role}__CODE_END__`;
+      }).join(', '); // Rejoin with consistent comma-space separator
+      console.log(`🔧 [ROLE-ID] Final wrapped: "${wrappedRoles}"`);
+      return ': ' + wrappedRoles;
+    });
+
+    // CRITICAL: Move leading/trailing spaces outside of code blocks
+    // This ensures spaces and punctuation stay as plain text, not inside code formatting
+    text = text.replace(/__CODE_START__(\s*)(.*?)(\s*)__CODE_END__/g, (match, leadingSpaces, content, trailingSpaces) => {
+      const trimmedContent = content.trim();
+      if (!trimmedContent) {
+        // If content is only whitespace, don't wrap it
+        return leadingSpaces + content + trailingSpaces;
+      }
+      return `${leadingSpaces}__CODE_START__${trimmedContent}__CODE_END__${trailingSpaces}`;
+    });
+
     // Handle p/span with sectiontitle tasklabel class as bold
     text = text.replace(/<(p|span)[^>]*class=["'][^"']*sectiontitle[^"']*tasklabel[^"']*["'][^>]*>([\s\S]*?)<\/\1>/gi, (match, tag, content) => {
   if (getExtraDebug && getExtraDebug()) log(`🔍 Found sectiontitle tasklabel: "${content.substring(0, 50)}"`);
@@ -680,6 +724,17 @@ async function extractContentFromHtml(html) {
     text = text.replace(/(<\/a>)(\s*)(<p[^>]*>)/gi, (match, closingA, whitespace, openingP) => {
       return `${closingA}__SOFT_BREAK__${openingP}`;
     });
+
+    // Normalize any broken marker tokens (with spaces) BEFORE splitting
+    text = text
+      .replace(/__\s+CODE\s+START__/g, '__CODE_START__')
+      .replace(/__\s+CODE\s+END__/g, '__CODE_END__')
+      .replace(/__\s+BOLD\s+START__/g, '__BOLD_START__')
+      .replace(/__\s+BOLD\s+END__/g, '__BOLD_END__')
+      .replace(/__\s+BOLD\s+BLUE\s+START__/g, '__BOLD_BLUE_START__')
+      .replace(/__\s+BOLD\s+BLUE\s+END__/g, '__BOLD_BLUE_END__')
+      .replace(/__\s+ITALIC\s+START__/g, '__ITALIC_START__')
+      .replace(/__\s+ITALIC\s+END__/g, '__ITALIC_END__');
 
     // Split by markers and build rich text
     fs.appendFileSync('/Users/norton-mcintosh/GitHub/ServiceNow-2-Notion/debug-url-extract.log',
@@ -827,6 +882,53 @@ async function extractContentFromHtml(html) {
         });
       }
     });
+
+    // CRITICAL: Global cleanup for code-annotated elements
+    // Trim leading/trailing spaces from code blocks and ensure spaces appear as plain text between elements
+    const cleanedRichText = [];
+    for (let i = 0; i < richText.length; i++) {
+      const rt = richText[i];
+      
+      if (rt.annotations?.code && rt.text?.content) {
+        const originalContent = rt.text.content;
+        const leadingSpaces = originalContent.match(/^(\s*)/)[1];
+        const trailingSpaces = originalContent.match(/(\s*)$/)[1];
+        const trimmedContent = originalContent.trim();
+        
+        // Add leading spaces as plain text if they exist
+        if (leadingSpaces && cleanedRichText.length > 0) {
+          cleanedRichText.push({
+            type: "text",
+            text: { content: leadingSpaces },
+            annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: "default" }
+          });
+        }
+        
+        // Add the trimmed code block (only if there's actual content)
+        if (trimmedContent) {
+          cleanedRichText.push({
+            ...rt,
+            text: { ...rt.text, content: trimmedContent }
+          });
+        }
+        
+        // Add trailing spaces as plain text if they exist AND there's a next element
+        if (trailingSpaces && i < richText.length - 1) {
+          cleanedRichText.push({
+            type: "text",
+            text: { content: trailingSpaces },
+            annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: "default" }
+          });
+        }
+      } else {
+        // Not a code block, keep as-is
+        cleanedRichText.push(rt);
+      }
+    }
+    
+    // Replace richText array contents with cleaned version
+    richText.length = 0;
+    richText.push(...cleanedRichText);
 
     return { richText, imageBlocks, videoBlocks };
   }
@@ -1198,6 +1300,13 @@ async function extractContentFromHtml(html) {
   const elemClass = $elem.attr('class') || 'none';
   if (getExtraDebug && getExtraDebug()) log(`🔍 Processing element: <${tagName}>, class="${elemClass}"`);
     
+    // DEBUG: Check if this element contains "Role required"
+    const elemHtml = $elem.html() || '';
+    if (elemHtml.includes('Role required')) {
+      console.log(`🔍 [ELEMENT-ROLE-DEBUG] Found "Role required" in <${tagName} class="${elemClass}">`);
+      console.log(`🔍 [ELEMENT-ROLE-DEBUG] Full HTML: ${elemHtml.substring(0, 300)}...`);
+    }
+    
     // SKIP UI CHROME ELEMENTS (dropdown menus, export buttons, filter divs, etc.)
     // Check this FIRST before any other processing
     if (tagName === 'button') {
@@ -1265,6 +1374,12 @@ async function extractContentFromHtml(html) {
       console.log(`🔍 ✅ MATCHED CALLOUT! class="${$elem.attr('class')}"`);
       console.log(`🔍 Callout HTML preview (first 500 chars): ${($elem.html() || '').substring(0, 500)}`);
 
+      // Check if this callout contains "Role required"
+      if (($elem.html() || '').includes('Role required')) {
+        console.log(`🔍 [CALLOUT-ROLE-DEBUG] Found "Role required" in callout element!`);
+        console.log(`🔍 [CALLOUT-ROLE-DEBUG] Full callout HTML: ${$elem.html()}`);
+      }
+
       // Callout/Note
       const classAttr = $elem.attr('class') || '';
       const { color: calloutColor, icon: calloutIcon } = getCalloutPropsFromClasses(classAttr);
@@ -1305,7 +1420,20 @@ async function extractContentFromHtml(html) {
           }
         });
         
-        let textOnlyHtml = $clone.html() || '';
+        // CRITICAL FIX: Use outerHTML then extract inner content properly
+        let textOnlyHtml = '';
+        const cloneOuterHtml = $.html($clone);
+        const cloneOpeningTagMatch = cloneOuterHtml.match(/^<[^>]+>/);
+        const cloneClosingTagMatch = cloneOuterHtml.match(/<\/[^>]+>$/);
+        
+        if (cloneOpeningTagMatch && cloneClosingTagMatch) {
+          textOnlyHtml = cloneOuterHtml.substring(
+            cloneOpeningTagMatch[0].length,
+            cloneOuterHtml.length - cloneClosingTagMatch[0].length
+          );
+        } else {
+          textOnlyHtml = $clone.html() || '';
+        }
         
         console.log(`🔍 Callout textOnlyHtml (before title removal): "${textOnlyHtml.substring(0, 200)}${textOnlyHtml.length > 200 ? '...' : ''}"`);
         
@@ -1403,8 +1531,26 @@ async function extractContentFromHtml(html) {
         }
       } else {
         // No nested blocks - process as simple callout with just rich_text
-        let cleanedContent = $elem.html() || '';
+        // CRITICAL FIX: Use outerHTML then extract inner content properly
+        console.log(`🔍 [CALLOUT-FIX-DEBUG] Processing simple callout, original $elem.html() length: ${($elem.html() || '').length}`);
+        let cleanedContent = '';
+        const outerHtml = $.html($elem);
+        const openingTagMatch = outerHtml.match(/^<[^>]+>/);
+        const closingTagMatch = outerHtml.match(/<\/[^>]+>$/);
+        
+        if (openingTagMatch && closingTagMatch) {
+          cleanedContent = outerHtml.substring(
+            openingTagMatch[0].length,
+            outerHtml.length - closingTagMatch[0].length
+          );
+          console.log(`🔍 [CALLOUT-FIX-DEBUG] Successfully extracted inner HTML, length: ${cleanedContent.length}`);
+        } else {
+          cleanedContent = $elem.html() || '';
+          console.log(`🔍 [CALLOUT-FIX-DEBUG] Fallback to original method, length: ${cleanedContent.length}`);
+        }
+        
         // Remove note title span (it already has a colon like "Note:")
+        cleanedContent = cleanedContent.replace(/<span[^>]*class=["'][^"']*note__title[^"']*["'][^>]*>([^<]*)<\/span>/gi, '$1 ');
         cleanedContent = cleanedContent.replace(/<span[^>]*class=["'][^"']*note__title[^"']*["'][^>]*>([^<]*)<\/span>/gi, '$1 ');
         
         const { richText: calloutRichText, imageBlocks: calloutImages } = await parseRichText(cleanedContent);
@@ -1437,7 +1583,25 @@ async function extractContentFromHtml(html) {
     } else if (tagName === 'aside' || (tagName === 'div' && !/\bitemgroup\b/.test($elem.attr('class') || '') && /\b(info|note|warning|important|tip|caution)\b/.test($elem.attr('class') || ''))) {
       const classAttr = $elem.attr('class') || '';
       console.log(`� [CALLOUT] Processing <${tagName}> with class="${classAttr}"`);
-      const inner = $elem.html() || '';
+      
+      // CRITICAL FIX: Use outerHTML then extract inner content properly
+      // This prevents attribute values from bleeding into content
+      let inner = '';
+      const outerHtml = $.html($elem);
+      const openingTagMatch = outerHtml.match(/^<[^>]+>/);
+      const closingTagMatch = outerHtml.match(/<\/[^>]+>$/);
+      
+      if (openingTagMatch && closingTagMatch) {
+        inner = outerHtml.substring(
+          openingTagMatch[0].length,
+          outerHtml.length - closingTagMatch[0].length
+        );
+        console.log(`🔍 [CALLOUT-FIX-DEBUG] Successfully extracted callout HTML, length: ${inner.length}`);
+      } else {
+        inner = $elem.html() || '';
+        console.log(`🔍 [CALLOUT-FIX-DEBUG] Fallback to original method, length: ${inner.length}`);
+      }
+      
       console.log(`📋 [CALLOUT] Inner HTML (first 300 chars): ${inner.substring(0, 300)}`);
       console.log(`📋 [CALLOUT] Contains <img> tags: ${inner.includes('<img') ? 'YES' : 'NO'}`);
       const { color: calloutColor, icon: calloutIcon } = getCalloutPropsFromClasses(classAttr);
@@ -2229,7 +2393,24 @@ async function extractContentFromHtml(html) {
           }
         } else {
           // Simple list item with no nested blocks
-          let liHtml = $li.html() || '';
+          // CRITICAL FIX: Use outerHTML then extract inner content properly
+          console.log(`🔍 [LIST-FIX-DEBUG] Processing list item, original $li.html() length: ${($li.html() || '').length}`);
+          let liHtml = '';
+          const liOuterHtml = $.html($li);
+          const liOpeningTagMatch = liOuterHtml.match(/^<[^>]+>/);
+          const liClosingTagMatch = liOuterHtml.match(/<\/[^>]+>$/);
+          
+          if (liOpeningTagMatch && liClosingTagMatch) {
+            liHtml = liOuterHtml.substring(
+              liOpeningTagMatch[0].length,
+              liOuterHtml.length - liClosingTagMatch[0].length
+            );
+            console.log(`🔍 [LIST-FIX-DEBUG] Successfully extracted list item HTML, length: ${liHtml.length}`);
+          } else {
+            liHtml = $li.html() || '';
+            console.log(`🔍 [LIST-FIX-DEBUG] Fallback to original method, length: ${liHtml.length}`);
+          }
+          
           // Strip SVG icon elements (decorative only, no content value)
           liHtml = liHtml.replace(/<svg[\s\S]*?<\/svg>/gi, '');
           console.log(`🔍 List item HTML: "${liHtml.substring(0, 100)}"`);
@@ -2664,7 +2845,21 @@ async function extractContentFromHtml(html) {
           }
         } else {
           // Simple list item with no nested blocks
-          let liHtml = $li.html() || '';
+          // CRITICAL FIX: Use outerHTML then extract inner content properly
+          let liHtml = '';
+          const liOuterHtml = $.html($li);
+          const liOpeningTagMatch = liOuterHtml.match(/^<[^>]+>/);
+          const liClosingTagMatch = liOuterHtml.match(/<\/[^>]+>$/);
+          
+          if (liOpeningTagMatch && liClosingTagMatch) {
+            liHtml = liOuterHtml.substring(
+              liOpeningTagMatch[0].length,
+              liOuterHtml.length - liClosingTagMatch[0].length
+            );
+          } else {
+            liHtml = $li.html() || '';
+          }
+          
           // Strip SVG icon elements (decorative only, no content value)
           liHtml = liHtml.replace(/<svg[\s\S]*?<\/svg>/gi, '');
           console.log(`🔍 Ordered list item HTML: "${liHtml.substring(0, 100)}"`);
@@ -2983,6 +3178,7 @@ async function extractContentFromHtml(html) {
       // Parse each child (including text nodes) separately to preserve paragraph boundaries
       const richTextElements = [];
       const imageBlocks = [];
+      const deferredBlocks = []; // Collect blocks to add AFTER the callout
       
       // Get all direct children INCLUDING text nodes (use .contents() not .children())
       const allChildren = $elem.contents();
@@ -3022,50 +3218,286 @@ async function extractContentFromHtml(html) {
           const $child = $(child);
           const childTag = child.tagName?.toLowerCase();
           
-          // CRITICAL FIX: Use outerHTML then extract inner content properly
-          // This prevents attribute values from bleeding into content
-          // Issue: $child.html() sometimes returns malformed content with class names
-          let childHtml = '';
+          // Check if this child contains block-level children (not just if it IS a block element)
+          const blockChildren = $child.find('> ul, > ol, > table, > pre, > blockquote');
+          const hasBlockChildren = blockChildren.length > 0;
           
-          // Get the full outer HTML first
-          const outerHtml = $.html($child);
-          
-          // Extract ONLY the inner content by removing the opening and closing tags
-          // This ensures we don't accidentally include attribute values
-          const openingTagMatch = outerHtml.match(/^<[^>]+>/);
-          const closingTagMatch = outerHtml.match(/<\/[^>]+>$/);
-          
-          if (openingTagMatch && closingTagMatch) {
-            // Strip the opening and closing tags to get pure inner HTML
-            childHtml = outerHtml.substring(
-              openingTagMatch[0].length,
-              outerHtml.length - closingTagMatch[0].length
-            );
-          } else {
-            // Fallback to original method if regex doesn't match
-            childHtml = $child.html() || '';
-          }
-          
-          console.log(`🔍   Child ${i}: <${childTag}> class="${$child.attr('class')}" content="${childHtml.substring(0, 60)}..."`);
-          
-          // Parse this child's HTML to rich text
-          const { richText: childRichText, imageBlocks: childImages } = await parseRichText(childHtml);
-          
-          // Add a line break between children (but not before the first one)
-          if (richTextElements.length > 0 && childRichText.length > 0) {
-            const lastIdx = richTextElements.length - 1;
-            richTextElements[lastIdx] = {
-              ...richTextElements[lastIdx],
-              text: { 
-                ...richTextElements[lastIdx].text, 
-                content: richTextElements[lastIdx].text.content + '\n' 
+          // Special handling for <div> with mixed content (text + block elements)
+          if (childTag === 'div' && hasBlockChildren) {
+            console.log(`🔍   Child ${i}: <div> contains ${blockChildren.length} block children - extracting mixed content`);
+            
+            // Extract direct text nodes and inline elements, but process block children separately
+            const $tempDiv = $('<div></div>');
+            const blockProcessingPromises = [];
+            
+            // Process each child of the div
+            const divChildren = Array.from($child.get(0).childNodes);
+            for (const node of divChildren) {
+              const nodeTag = node.tagName?.toLowerCase();
+              
+              if (node.type === 'text') {
+                // Keep text nodes in the callout
+                $tempDiv.append(node.cloneNode(true));
+              } else if (['ul', 'ol', 'table', 'pre', 'blockquote'].includes(nodeTag)) {
+                // Process block elements separately (await these later)
+                console.log(`🔍     Queuing block child <${nodeTag}> for separate processing`);
+                blockProcessingPromises.push(processElement(node));
+              } else {
+                // Keep inline elements in the callout
+                $tempDiv.append(node.cloneNode(true));
               }
-            };
-            console.log(`🔍   Added line break after previous child`);
+            }
+            
+            // Parse the inline content for the callout
+            const inlineHtml = $tempDiv.html();
+            if (inlineHtml && inlineHtml.trim()) {
+              console.log(`🔍     Inline content for callout: "${inlineHtml.substring(0, 60)}..."`);
+              const { richText: childRichText, imageBlocks: childImages } = await parseRichText(inlineHtml);
+              
+              if (richTextElements.length > 0 && childRichText.length > 0) {
+                const lastIdx = richTextElements.length - 1;
+                richTextElements[lastIdx] = {
+                  ...richTextElements[lastIdx],
+                  text: { 
+                    ...richTextElements[lastIdx].text, 
+                    content: richTextElements[lastIdx].text.content + '\n' 
+                  }
+                };
+              }
+              
+              richTextElements.push(...childRichText);
+              imageBlocks.push(...childImages);
+            }
+            
+            // Now await all block processing and convert to inline text for callout
+            if (blockProcessingPromises.length > 0) {
+              console.log(`🔍     Awaiting ${blockProcessingPromises.length} block children...`);
+              const blockResults = await Promise.all(blockProcessingPromises);
+              for (const blocks of blockResults) {
+                if (blocks && blocks.length > 0) {
+                  console.log(`🔍     Converting ${blocks.length} blocks to inline text for callout`);
+                  // Convert block elements (lists) to plain text with bullet characters
+                  for (const block of blocks) {
+                    if (block.type === 'bulleted_list_item' && block.bulleted_list_item?.rich_text) {
+                      // Extract text from list item and add bullet
+                      const itemText = block.bulleted_list_item.rich_text
+                        .map(rt => rt.text?.content || '')
+                        .join('');
+                      
+                      if (itemText.trim()) {
+                        // Add newline before bullet if there's existing content
+                        if (richTextElements.length > 0) {
+                          const lastIdx = richTextElements.length - 1;
+                          richTextElements[lastIdx] = {
+                            ...richTextElements[lastIdx],
+                            text: { 
+                              ...richTextElements[lastIdx].text, 
+                              content: richTextElements[lastIdx].text.content + '\n' 
+                            }
+                          };
+                        }
+                        // Add the list item text with formatting preserved
+                        // Add bullet as a separate rich text element to preserve formatting
+                        richTextElements.push({
+                          type: "text",
+                          text: { content: "• " },
+                          annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: "default" }
+                        });
+                        // Then add all the original rich text elements, but trim trailing spaces from code blocks
+                        const cleanedRichText = block.bulleted_list_item.rich_text.map(rt => {
+                          if (rt.annotations?.code && rt.text?.content) {
+                            // Trim trailing (and leading) spaces from code-formatted text
+                            return {
+                              ...rt,
+                              text: {
+                                ...rt.text,
+                                content: rt.text.content.trim()
+                              }
+                            };
+                          }
+                          return rt;
+                        });
+                        richTextElements.push(...cleanedRichText);
+                        console.log(`🔍       Added list item to callout: "• ${itemText.substring(0, 50)}..."`);
+                      }
+                    } else if (block.type === 'numbered_list_item' && block.numbered_list_item?.rich_text) {
+                      // For numbered lists, we'll use numbers
+                      const itemText = block.numbered_list_item.rich_text
+                        .map(rt => rt.text?.content || '')
+                        .join('');
+                      
+                      if (itemText.trim()) {
+                        if (richTextElements.length > 0) {
+                          const lastIdx = richTextElements.length - 1;
+                          richTextElements[lastIdx] = {
+                            ...richTextElements[lastIdx],
+                            text: { 
+                              ...richTextElements[lastIdx].text, 
+                              content: richTextElements[lastIdx].text.content + '\n' 
+                            }
+                          };
+                        }
+                        // Clean up trailing spaces from code blocks, then add number prefix
+                        const cleanedAndNumbered = block.numbered_list_item.rich_text.map((rt, idx) => {
+                          let content = rt.text.content;
+                          // Trim spaces from code-formatted text
+                          if (rt.annotations?.code) {
+                            content = content.trim();
+                          }
+                          return {
+                            ...rt,
+                            text: {
+                              ...rt.text,
+                              content: (idx === 0 ? '1. ' : '') + content
+                            }
+                          };
+                        });
+                        richTextElements.push(...cleanedAndNumbered);
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          } else if (['ul', 'ol'].includes(childTag)) {
+            // Lists should be converted to inline text for the callout
+            console.log(`🔍   Child ${i}: <${childTag}> is a list - converting to inline text for callout`);
+            
+            const childBlocks = await processElement(child);
+            if (childBlocks.length > 0) {
+              console.log(`🔍     Converting ${childBlocks.length} list items to inline text`);
+              for (const block of childBlocks) {
+                if (block.type === 'bulleted_list_item' && block.bulleted_list_item?.rich_text) {
+                  const itemText = block.bulleted_list_item.rich_text
+                    .map(rt => rt.text?.content || '')
+                    .join('');
+                  
+                  if (itemText.trim()) {
+                    if (richTextElements.length > 0) {
+                      const lastIdx = richTextElements.length - 1;
+                      richTextElements[lastIdx] = {
+                        ...richTextElements[lastIdx],
+                        text: { 
+                          ...richTextElements[lastIdx].text, 
+                          content: richTextElements[lastIdx].text.content + '\n' 
+                        }
+                      };
+                    }
+                    // Preserve formatting from the original rich text
+                    // Add bullet as separate element to preserve formatting
+                    richTextElements.push({
+                      type: "text",
+                      text: { content: "• " },
+                      annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: "default" }
+                    });
+                    // Then add all the original rich text elements, but trim trailing spaces from code blocks
+                    const cleanedRichText = block.bulleted_list_item.rich_text.map(rt => {
+                      if (rt.annotations?.code && rt.text?.content) {
+                        // Trim trailing (and leading) spaces from code-formatted text
+                        return {
+                          ...rt,
+                          text: {
+                            ...rt.text,
+                            content: rt.text.content.trim()
+                          }
+                        };
+                      }
+                      return rt;
+                    });
+                    richTextElements.push(...cleanedRichText);
+                    console.log(`🔍       Added list item: "• ${itemText.substring(0, 50)}..."`);
+                  }
+                } else if (block.type === 'numbered_list_item' && block.numbered_list_item?.rich_text) {
+                  const itemText = block.numbered_list_item.rich_text
+                    .map(rt => rt.text?.content || '')
+                    .join('');
+                  
+                  if (itemText.trim()) {
+                    if (richTextElements.length > 0) {
+                      const lastIdx = richTextElements.length - 1;
+                      richTextElements[lastIdx] = {
+                        ...richTextElements[lastIdx],
+                        text: { 
+                          ...richTextElements[lastIdx].text, 
+                          content: richTextElements[lastIdx].text.content + '\n' 
+                        }
+                      };
+                    }
+                    // Clean up trailing spaces from code blocks, then add number prefix
+                    const numberAdded = block.numbered_list_item.rich_text.map((rt, idx) => {
+                      let content = rt.text.content;
+                      // Trim spaces from code-formatted text
+                      if (rt.annotations?.code) {
+                        content = content.trim();
+                      }
+                      return {
+                        ...rt,
+                        text: {
+                          ...rt.text,
+                          content: (idx === 0 ? '1. ' : '') + content
+                        }
+                      };
+                    });
+                    richTextElements.push(...numberAdded);
+                  }
+                }
+              }
+            }
+          } else if (['table', 'pre', 'blockquote'].includes(childTag)) {
+            // Tables, code blocks, and blockquotes should be processed as separate blocks
+            console.log(`🔍   Child ${i}: <${childTag}> is a block element - processing separately`);
+            
+            const childBlocks = await processElement(child);
+            if (childBlocks.length > 0) {
+              console.log(`🔍     Adding ${childBlocks.length} blocks from <${childTag}> to deferredBlocks`);
+              deferredBlocks.push(...childBlocks);
+            }
+          } else {
+            // No block children - process as inline HTML
+            // CRITICAL FIX: Use outerHTML then extract inner content properly
+            // This prevents attribute values from bleeding into content
+            let childHtml = '';
+            
+            // Get the full outer HTML first
+            const outerHtml = $.html($child);
+            
+            // Extract ONLY the inner content by removing the opening and closing tags
+            // This ensures we don't accidentally include attribute values
+            const openingTagMatch = outerHtml.match(/^<[^>]+>/);
+            const closingTagMatch = outerHtml.match(/<\/[^>]+>$/);
+            
+            if (openingTagMatch && closingTagMatch) {
+              // Strip the opening and closing tags to get pure inner HTML
+              childHtml = outerHtml.substring(
+                openingTagMatch[0].length,
+                outerHtml.length - closingTagMatch[0].length
+              );
+            } else {
+              // Fallback to original method if regex doesn't match
+              childHtml = $child.html() || '';
+            }
+            
+            console.log(`🔍   Child ${i}: <${childTag}> class="${$child.attr('class')}" content="${childHtml.substring(0, 60)}..."`);
+            
+            // Parse this child's HTML to rich text
+            const { richText: childRichText, imageBlocks: childImages } = await parseRichText(childHtml);
+            
+            // Add a line break between children (but not before the first one)
+            if (richTextElements.length > 0 && childRichText.length > 0) {
+              const lastIdx = richTextElements.length - 1;
+              richTextElements[lastIdx] = {
+                ...richTextElements[lastIdx],
+                text: { 
+                  ...richTextElements[lastIdx].text, 
+                  content: richTextElements[lastIdx].text.content + '\n' 
+                }
+              };
+              console.log(`🔍   Added line break after previous child`);
+            }
+            
+            richTextElements.push(...childRichText);
+            imageBlocks.push(...childImages);
           }
-          
-          richTextElements.push(...childRichText);
-          imageBlocks.push(...childImages);
         }
       }
       
@@ -3096,6 +3528,12 @@ async function extractContentFromHtml(html) {
             }
           });
         }
+      }
+      
+      // Now add the deferred blocks (lists, tables, etc.) AFTER the callout
+      if (deferredBlocks.length > 0) {
+        console.log(`🔍 Adding ${deferredBlocks.length} deferred blocks after callout`);
+        processedBlocks.push(...deferredBlocks);
       }
       
       $elem.remove(); // Mark as processed

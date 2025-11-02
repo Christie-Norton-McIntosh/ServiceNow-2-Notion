@@ -195,6 +195,31 @@ router.post('/W2N', async (req, res) => {
     if (payload.contentHtml) {
       log("🔄 Converting HTML content to Notion blocks");
       
+      // DEBUG: Check for "Role required" callout in raw HTML
+      if (payload.contentHtml.includes('Role required')) {
+        console.log('\n🔍 [CALLOUT-DEBUG] Found "Role required" in raw HTML from userscript');
+        const roleIndex = payload.contentHtml.indexOf('Role required');
+        const roleContext = payload.contentHtml.substring(roleIndex - 200, roleIndex + 500);
+        console.log('🔍 [CALLOUT-DEBUG] Raw HTML context around "Role required":');
+        console.log(roleContext);
+        console.log('🔍 [CALLOUT-DEBUG] ========================================\n');
+      }
+      
+      // DEBUG: Check for CSS class corruption in raw HTML
+      if (payload.contentHtml.includes('t_CreateAContract__ul_s5w_qvm_m1c')) {
+        console.log('\n🔍 [CORRUPTION-DEBUG] Found corrupted CSS class in raw HTML from userscript!');
+        const corruptionIndex = payload.contentHtml.indexOf('t_CreateAContract__ul_s5w_qvm_m1c');
+        const corruptionContext = payload.contentHtml.substring(corruptionIndex - 100, corruptionIndex + 200);
+        console.log('🔍 [CORRUPTION-DEBUG] Raw HTML context around corruption:');
+        console.log(corruptionContext);
+        console.log('🔍 [CORRUPTION-DEBUG] ========================================');
+        
+        // Log the entire HTML structure to see what element types contain this
+        console.log('🔍 [CORRUPTION-DEBUG] Full HTML structure:');
+        console.log(payload.contentHtml);
+        console.log('🔍 [CORRUPTION-DEBUG] ========================================\n');
+      }
+      
       const result = await htmlToNotionBlocks(payload.contentHtml);
       children = result.blocks;
       hasVideos = result.hasVideos;

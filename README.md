@@ -1,10 +1,10 @@
 # ServiceNow-2-Notion — Modular Project Overview, Cleanup & Changelog
 
-## ✅ Cleanup Completed - October 13, 2025
+## ✅ Latest Release
 
-__Current release: 9.2.3 (2025-10-19)__
+__Current release: 10.0.1 (2025-11-02)__
 
-The ServiceNow-2-Notion project has been successfully cleaned up after the modularization refactoring.
+**Major Update**: Complete overhaul of inline code formatting with global space cleanup. All code-formatted text now has spaces properly preserved as plain text between code blocks.
 
 ## 📁 Current Clean Project Structure
 
