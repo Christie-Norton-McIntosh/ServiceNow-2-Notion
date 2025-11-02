@@ -861,12 +861,16 @@ async function extractContentFromHtml(html) {
     }
 
     // Ensure proper spacing between rich text elements
+    // Avoid inserting spaces before explicit newline elements ("\n") to prevent malformed lists
     for (let i = 0; i < richText.length - 1; i++) {
       const current = richText[i];
       const next = richText[i + 1];
 
+      if (!current?.text?.content || !next?.text?.content) continue;
+      // Skip if the next element is a newline token
+      if (next.text.content === "\n") continue;
       // If current text doesn't end with space and next text doesn't start with space
-      if (current.text.content && next.text.content && !current.text.content.endsWith(" ") && !next.text.content.startsWith(" ")) {
+      if (!current.text.content.endsWith(" ") && !next.text.content.startsWith(" ")) {
         current.text.content += " ";
       }
     }

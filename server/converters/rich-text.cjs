@@ -764,7 +764,48 @@ function convertRichTextBlock(input, options = {}) {
     console.log(`✅ [POST-PROCESS] Merged ${mergeCount} segments: ${richText.length} → ${fixedRichText.length}`);
   }
   
-  return fixedRichText;
+  // Final pass: normalize spacing around inline code segments
+  // Move any leading/trailing spaces out of code-annotated elements into plain text segments
+  const finalRichText = [];
+  for (let i = 0; i < fixedRichText.length; i++) {
+    const rt = fixedRichText[i];
+    if (rt?.type === 'text' && rt.annotations?.code && typeof rt.text?.content === 'string') {
+      const original = rt.text.content;
+      const leading = (original.match(/^(\s*)/) || ['',''])[1];
+      const trailing = (original.match(/(\s*)$/) || ['',''])[1];
+      const trimmed = original.trim();
+
+      // Leading spaces: append as plain text if they exist and there is prior content
+      if (leading && finalRichText.length > 0) {
+        finalRichText.push({
+          type: 'text',
+          text: { content: leading },
+          annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' }
+        });
+      }
+
+      // Trimmed code content
+      if (trimmed) {
+        finalRichText.push({
+          ...rt,
+          text: { ...rt.text, content: trimmed }
+        });
+      }
+
+      // Trailing spaces: only add if there is a following element
+      if (trailing && i < fixedRichText.length - 1) {
+        finalRichText.push({
+          type: 'text',
+          text: { content: trailing },
+          annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' }
+        });
+      }
+    } else {
+      finalRichText.push(rt);
+    }
+  }
+
+  return finalRichText;
 }
 
 
