@@ -18,6 +18,7 @@ const notionService = require('../services/notion.cjs');
 const servicenowService = require('../services/servicenow.cjs');
 const dedupeUtil = require('../utils/dedupe.cjs');
 const { getAndClearPlaceholderWarnings } = require('../converters/rich-text.cjs');
+const { deduplicateTableBlocks } = require('../converters/table.cjs');
 const { logPlaceholderStripped, logUnprocessedContent, logImageUploadFailed, logCheerioParsingIssue } = require('../utils/verification-log.cjs');
 
 /**
@@ -225,6 +226,14 @@ router.post('/W2N', async (req, res) => {
       hasVideos = result.hasVideos;
       extractionWarnings = result.warnings || [];
       log(`✅ Converted HTML to ${children.length} Notion blocks`);
+      
+      // Deduplicate consecutive identical tables
+      const beforeDedupe = children.length;
+      children = deduplicateTableBlocks(children);
+      if (children.length < beforeDedupe) {
+        log(`🧹 Removed ${beforeDedupe - children.length} duplicate table(s)`);
+      }
+      
       if (hasVideos) {
         log(`🎥 Video content detected - will set hasVideos property`);
       }
