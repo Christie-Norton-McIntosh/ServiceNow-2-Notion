@@ -18,4 +18,11 @@ echo "Press Ctrl+C to stop the server"
 echo ""
 
 # Start server with unbuffered output and log everything
-cd "$SCRIPT_DIR/server" && npm start 2>&1 | tee "$LOG_FILE"
+cd "$SCRIPT_DIR/server" && npm start 2>&1 | tee "$LOG_FILE" &
+SERVER_PID=$!
+
+echo "Server PID: $SERVER_PID"
+echo ""
+
+# Wait for the background process
+wait $SERVER_PID
