@@ -4641,23 +4641,72 @@ async function extractContentFromHtml(html) {
       if (nested0.length > 0) {
         console.log(`🎯 📝 Found article.nested0 wrapper - checking for intro content`);
         
-        // Extract direct children that are intro content (shortdesc, before you begin, etc.)
-        // We want ONLY the intro paragraphs/sections, NOT the nested articles
-        const introElements = nested0.children('p.shortdesc, section.prereq, section.context, div.body.conbody > p').toArray();
+        // Extract the body container AND any orphaned content after nested0
+        // Structure: article.nested0 > div.body.conbody (contains shortdesc + sections)
+        // After article.nested0 closes, there may be orphaned notes/paragraphs/lists
+        const bodyConbody = nested0.find('> div.body.conbody').first();
+        const introElements = [];
+        
+        if (bodyConbody.length > 0) {
+          console.log(`🎯 ✅ Found div.body.conbody in nested0`);
+          introElements.push(bodyConbody.get(0));
+          
+          const shortdesc = bodyConbody.find('> p.shortdesc');
+          const sections = bodyConbody.find('> section');
+          console.log(`🎯    Contains: ${shortdesc.length} shortdesc + ${sections.length} sections`);
+        }
+        
+        // Also collect any orphaned content AFTER article.nested0 closes
+        // This content appears as siblings of article.nested0, before the next article
+        const nested0Parent = nested0.parent();
+        const nested0Index = nested0Parent.children().index(nested0.get(0));
+        const siblingsAfterNested0 = nested0Parent.children().toArray().slice(nested0Index + 1);
+        
+        // Filter to only elements that appear BEFORE the first article.nested1 (if any)
+        const firstNested1Index = siblingsAfterNested0.findIndex(el => 
+          $(el).is('article.nested1') || $(el).find('article.nested1').length > 0
+        );
+        
+        const orphanedContent = firstNested1Index === -1 
+          ? siblingsAfterNested0 
+          : siblingsAfterNested0.slice(0, firstNested1Index);
+        
+        if (orphanedContent.length > 0) {
+          // Filter to only meaningful elements (notes, paragraphs, lists)
+          const meaningfulOrphans = orphanedContent.filter(el => {
+            const $el = $(el);
+            const tag = el.name;
+            const text = $el.text().trim();
+            
+            // Keep elements with text content and semantic tags
+            return text.length > 0 && (
+              tag === 'div' && ($el.hasClass('note') || $el.hasClass('p')) ||
+              tag === 'p' ||
+              tag === 'ul' ||
+              tag === 'ol' ||
+              tag === 'section'
+            );
+          });
+          
+          if (meaningfulOrphans.length > 0) {
+            console.log(`🎯 ✅ Found ${meaningfulOrphans.length} orphaned content elements after nested0`);
+            meaningfulOrphans.forEach((el, idx) => {
+              const $el = $(el);
+              const text = $el.text().trim().substring(0, 60);
+              console.log(`🎯    Orphan ${idx + 1}: <${el.name} class="${$el.attr('class') || ''}"> "${text}..."`);
+            });
+            introElements.push(...meaningfulOrphans);
+          }
+        }
         
         if (introElements.length > 0) {
-          console.log(`🎯 ✅ Found ${introElements.length} intro elements in nested0`);
-          introElements.forEach((el, idx) => {
-            const $el = $(el);
-            const text = $el.text().trim().substring(0, 80);
-            console.log(`🎯    Intro ${idx + 1}: <${el.name} class="${$el.attr('class') || ''}"> "${text}..."`);
-          });
+          console.log(`🎯 ✅ Total intro/orphaned elements: ${introElements.length}`);
           
           // Prepend intro content before articles, append sibling sections + tables after
           contentElements = [...introElements, ...allArticles, ...topLevelSections, ...topLevelTableWraps, ...topLevelTables, ...articleNavs, ...contentPlaceholders];
-          console.log(`🎯 ✅ Total contentElements: ${contentElements.length} (${introElements.length} intro + ${allArticles.length} articles + ${topLevelSections.length} sections + ${topLevelTableWraps.length} table-wraps + ${topLevelTables.length} tables + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
+          console.log(`🎯 ✅ Total contentElements: ${contentElements.length} (${introElements.length} intro+orphaned + ${allArticles.length} articles + ${topLevelSections.length} sections + ${topLevelTableWraps.length} table-wraps + ${topLevelTables.length} tables + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
         } else {
-          console.log(`🎯 ℹ️  No intro elements found in nested0`);
+          console.log(`🎯 ℹ️  No intro or orphaned elements found in/after nested0`);
           contentElements = [...allArticles, ...topLevelSections, ...topLevelTableWraps, ...topLevelTables, ...articleNavs, ...contentPlaceholders];
           console.log(`🎯 ✅ Total contentElements: ${contentElements.length} (${allArticles.length} articles + ${topLevelSections.length} sections + ${topLevelTableWraps.length} table-wraps + ${topLevelTables.length} tables + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
         }
