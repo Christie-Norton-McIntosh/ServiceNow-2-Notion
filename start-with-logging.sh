@@ -1,6 +1,9 @@
 #!/bin/bash
 # Start the SN2N server with full logging to file
 
+# Clear require cache and suppress warnings
+export NODE_OPTIONS="--no-warnings"
+
 # Get absolute path to script directory
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 LOG_DIR="$SCRIPT_DIR/server/logs"
@@ -10,6 +13,7 @@ LOG_FILE="$LOG_DIR/server-terminal-$(date +%Y%m%d-%H%M%S).log"
 mkdir -p "$LOG_DIR"
 
 echo "Starting SN2N server with logging to: $LOG_FILE"
+echo "NODE_OPTIONS: $NODE_OPTIONS"
 echo "Press Ctrl+C to stop the server"
 echo ""
 
