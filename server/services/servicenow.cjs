@@ -4657,46 +4657,62 @@ async function extractContentFromHtml(html) {
         }
         
         // Also collect any orphaned content AFTER article.nested0 closes
-        // This content appears as siblings of article.nested0, before the next article
-        const nested0Parent = nested0.parent();
-        const nested0Index = nested0Parent.children().index(nested0.get(0));
-        const siblingsAfterNested0 = nested0Parent.children().toArray().slice(nested0Index + 1);
+        // CRITICAL: Orphaned content can appear at multiple DOM levels:
+        // 1. As siblings of nested0's parent wrappers
+        // 2. As direct children of .zDocsTopicPageBody
+        // 3. Scattered between wrapper divs
+        // Strategy: Find ALL meaningful content in .zDocsTopicPageBody that's NOT inside article.nested1
         
-        // Filter to only elements that appear BEFORE the first article.nested1 (if any)
-        const firstNested1Index = siblingsAfterNested0.findIndex(el => 
-          $(el).is('article.nested1') || $(el).find('article.nested1').length > 0
-        );
+        const allOrphanCandidates = $('.zDocsTopicPageBody')
+          .find('div.note, div.p, p:not([class*="shortdesc"]), ul, ol')
+          .toArray();
         
-        const orphanedContent = firstNested1Index === -1 
-          ? siblingsAfterNested0 
-          : siblingsAfterNested0.slice(0, firstNested1Index);
+        console.log(`🎯 🔍 Found ${allOrphanCandidates.length} potential orphan candidates in zDocsTopicPageBody`);
         
-        if (orphanedContent.length > 0) {
-          // Filter to only meaningful elements (notes, paragraphs, lists)
-          const meaningfulOrphans = orphanedContent.filter(el => {
-            const $el = $(el);
-            const tag = el.name;
-            const text = $el.text().trim();
-            
-            // Keep elements with text content and semantic tags
-            return text.length > 0 && (
-              tag === 'div' && ($el.hasClass('note') || $el.hasClass('p')) ||
-              tag === 'p' ||
-              tag === 'ul' ||
-              tag === 'ol' ||
-              tag === 'section'
-            );
-          });
+        // Filter to only elements that are:
+        // 1. NOT inside article.nested1 (those are already processed)
+        // 2. NOT inside article.nested0's body.conbody (already collected above)
+        // 3. Have meaningful text content
+        const meaningfulOrphans = allOrphanCandidates.filter(el => {
+          const $el = $(el);
           
-          if (meaningfulOrphans.length > 0) {
-            console.log(`🎯 ✅ Found ${meaningfulOrphans.length} orphaned content elements after nested0`);
-            meaningfulOrphans.forEach((el, idx) => {
-              const $el = $(el);
-              const text = $el.text().trim().substring(0, 60);
-              console.log(`🎯    Orphan ${idx + 1}: <${el.name} class="${$el.attr('class') || ''}"> "${text}..."`);
-            });
-            introElements.push(...meaningfulOrphans);
+          // Skip if inside any article.nested1
+          if ($el.closest('article.nested1').length > 0) {
+            return false;
           }
+          
+          // Skip if inside article.nested0's body.conbody (already collected)
+          if ($el.closest('article.nested0 div.body.conbody').length > 0) {
+            return false;
+          }
+          
+          // Skip empty elements
+          const text = $el.text().trim();
+          if (text.length === 0) {
+            return false;
+          }
+          
+          // Keep meaningful semantic elements
+          const tag = el.name;
+          return (
+            tag === 'div' && ($el.hasClass('note') || $el.hasClass('p')) ||
+            tag === 'p' ||
+            tag === 'ul' ||
+            tag === 'ol'
+          );
+        });
+        
+        if (meaningfulOrphans.length > 0) {
+          console.log(`🎯 ✅ Found ${meaningfulOrphans.length} orphaned content elements (notes, paragraphs, lists)`);
+          meaningfulOrphans.forEach((el, idx) => {
+            const $el = $(el);
+            const text = $el.text().trim().substring(0, 80);
+            const classes = $el.attr('class') || 'no-class';
+            console.log(`🎯    Orphan ${idx + 1}: <${el.name} class="${classes}"> "${text}..."`);
+          });
+          introElements.push(...meaningfulOrphans);
+        } else {
+          console.log(`🎯 ℹ️  No orphaned content found outside articles`);
         }
         
         if (introElements.length > 0) {
