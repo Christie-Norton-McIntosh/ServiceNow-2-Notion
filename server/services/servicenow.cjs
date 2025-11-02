@@ -4675,31 +4675,46 @@ async function extractContentFromHtml(html) {
         // 3. Have meaningful text content
         const meaningfulOrphans = allOrphanCandidates.filter(el => {
           const $el = $(el);
+          const tag = el.name;
+          const text = $el.text().trim();
+          const classes = $el.attr('class') || 'no-class';
+          const textPreview = text.substring(0, 80);
+          
+          console.log(`🎯 🔍 Candidate: <${tag} class="${classes}"> "${textPreview}..."`);
           
           // Skip if inside any article.nested1
           if ($el.closest('article.nested1').length > 0) {
+            console.log(`🎯   ❌ Filtered: inside article.nested1`);
             return false;
           }
           
           // Skip if inside article.nested0's body.conbody (already collected)
           if ($el.closest('article.nested0 div.body.conbody').length > 0) {
+            console.log(`🎯   ❌ Filtered: inside article.nested0 body.conbody`);
             return false;
           }
           
           // Skip empty elements
-          const text = $el.text().trim();
           if (text.length === 0) {
+            console.log(`🎯   ❌ Filtered: empty`);
             return false;
           }
           
           // Keep meaningful semantic elements
-          const tag = el.name;
-          return (
+          const isValid = (
             tag === 'div' && ($el.hasClass('note') || $el.hasClass('p')) ||
             tag === 'p' ||
             tag === 'ul' ||
             tag === 'ol'
           );
+          
+          if (isValid) {
+            console.log(`🎯   ✅ KEEPING orphan`);
+          } else {
+            console.log(`🎯   ❌ Filtered: not a meaningful semantic element`);
+          }
+          
+          return isValid;
         });
         
         if (meaningfulOrphans.length > 0) {
