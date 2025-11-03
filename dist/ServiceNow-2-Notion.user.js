@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      10.0.4
+// @version      10.0.5
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "10.0.4";
+    window.BUILD_VERSION = "10.0.5";
 (function () {
 
   // Configuration constants and default settings
@@ -7413,6 +7413,21 @@
 
         overlayModule.setMessage("Saving to Notion...");
 
+        // DEBUG: Save full HTML to window for inspection
+        if (pageData.contentHtml && pageData.contentHtml.includes('Software Quality Sub Categories')) {
+          window.DEBUG_LAST_EXPORT_HTML = pageData.contentHtml;
+          console.log('💾 [CLIENT-DEBUG] Saved full export HTML to window.DEBUG_LAST_EXPORT_HTML');
+          console.log('💾 [CLIENT-DEBUG] You can inspect with: window.DEBUG_LAST_EXPORT_HTML');
+          
+          // Extract and log the specific OL
+          const olMatch = pageData.contentHtml.match(/<ol[^>]*id="devops-software-quality-sub-category__ol_bpk_gfk_xpb"[^>]*>[\s\S]*?<\/ol>/);
+          if (olMatch) {
+            window.DEBUG_TARGET_OL = olMatch[0];
+            console.log('💾 [CLIENT-DEBUG] Extracted target OL to window.DEBUG_TARGET_OL');
+            console.log('💾 [CLIENT-DEBUG] OL length:', window.DEBUG_TARGET_OL.length);
+          }
+        }
+        
         // DEBUG: Log payload structure before sending to proxy
         debug("🔍 DEBUG: pageData structure being sent to proxy:", {
           title: pageData.title,
