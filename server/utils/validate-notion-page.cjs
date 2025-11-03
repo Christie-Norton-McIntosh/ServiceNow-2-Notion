@@ -139,11 +139,11 @@ function parseSourceHtmlCounts(html) {
     const cheerio = require('cheerio');
     const $ = cheerio.load(html);
     
-    // Count ordered list items
-    const orderedListItems = $('ol > li').length;
+    // Count ALL ordered list items (including nested) - this matches Notion's flattened structure
+    const orderedListItems = $('ol li').length;
     
-    // Count unordered list items
-    const unorderedListItems = $('ul > li').length;
+    // Count ALL unordered list items (including nested) - this matches Notion's flattened structure
+    const unorderedListItems = $('ul li').length;
     
     // Count total list items
     const totalListItems = orderedListItems + unorderedListItems;

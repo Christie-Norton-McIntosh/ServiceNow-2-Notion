@@ -1310,6 +1310,28 @@ async function extractContentFromHtml(html) {
   const elemClass = $elem.attr('class') || 'none';
   if (getExtraDebug && getExtraDebug()) log(`🔍 Processing element: <${tagName}>, class="${elemClass}"`);
     
+    // DEBUG: Log ALL paragraphs to trace missing text
+    if ((tagName === 'p' || (tagName === 'div' && elemClass.includes('p')))) {
+      const elemTextPreview = $elem.text().trim().substring(0, 80).replace(/\s+/g, ' ');
+      console.log(`🔎 [ELEMENT-TRACE] Processing <${tagName}${elemClass !== 'none' ? ` class="${elemClass}"` : ''}>`);
+      console.log(`🔎 [ELEMENT-TRACE]   Text preview: "${elemTextPreview}..."`);
+      
+      // Check if this paragraph contains nested <ol>
+      const hasNestedOl = $elem.find('> ol').length > 0;
+      if (hasNestedOl) {
+        console.log(`🔎 [ELEMENT-TRACE]   ⚠️ This paragraph contains nested <ol> - should trigger mixed content processing`);
+        
+        // DEBUG: Check if this is the "Software Quality Sub Categories" paragraph
+        const paraHtml = $elem.html();
+        if (paraHtml && (paraHtml.includes('Software Quality Sub Categories') || paraHtml.includes('Integrations'))) {
+          console.log(`🚨 [PARA-WITH-OL] Found target paragraph with <ol>!`);
+          console.log(`🚨 [PARA-WITH-OL] HTML contains "Click Submit": ${paraHtml.includes('Click Submit')}`);
+          console.log(`🚨 [PARA-WITH-OL] HTML contains "successfully created": ${paraHtml.includes('successfully created')}`);
+          console.log(`🚨 [PARA-WITH-OL] Number of <li> tags in HTML: ${(paraHtml.match(/<li/g) || []).length}`);
+        }
+      }
+    }
+    
     // DEBUG: Check if this element contains "Role required"
     const elemHtml = $elem.html() || '';
     if (elemHtml.includes('Role required')) {
@@ -2479,8 +2501,25 @@ async function extractContentFromHtml(html) {
       
     } else if (tagName === 'ol') {
       // Ordered list
+      // CRITICAL: Snapshot list items BEFORE processing to prevent DOM corruption
+      // When nested elements call $elem.remove(), they can affect the parent's childNodes
+      
+      // DEBUG: Log raw HTML before Cheerio queries
+      const rawOlHtml = $elem.html();
+      const firstChars = rawOlHtml.substring(0, 200).replace(/\s+/g, ' ');
+      console.log(`🔍 [OL-DEBUG] Raw <ol> HTML (first 200 chars): "${firstChars}..."`);
+      console.log(`🔍 [OL-DEBUG] Raw HTML contains "Click Submit": ${rawOlHtml.includes('Click Submit')}`);
+      console.log(`🔍 [OL-DEBUG] Raw HTML contains "successfully created": ${rawOlHtml.includes('successfully created')}`);
+      
       const listItems = $elem.find('> li').toArray();
       console.log(`🔍 Processing <ol> with ${listItems.length} list items`);
+      
+      // Debug: Log each list item's text preview to verify we have them all
+      listItems.forEach((li, idx) => {
+        const $li = $(li);
+        const preview = $li.text().trim().substring(0, 60).replace(/\s+/g, ' ');
+        console.log(`🔍   [${idx + 1}/${listItems.length}] "${preview}..."`);
+      });
       
       for (let li of listItems) {
         const $li = $(li);
@@ -2517,9 +2556,35 @@ async function extractContentFromHtml(html) {
             nestedChildren.push(...childBlocks);
           }
           
+          // CRITICAL: If the first nested block is a paragraph, promote its text to be the list item's text
+          // This handles cases like: <li><div class="p">Text here<ul>...</ul></div></li>
+          // where the text should be the list item's text, not a separate paragraph child
+          let promotedText = null;
+          let remainingNestedChildren = nestedChildren;
+          
+          if (nestedChildren.length > 0 && nestedChildren[0]?.type === 'paragraph') {
+            const firstParagraph = nestedChildren[0];
+            if (firstParagraph.paragraph?.rich_text?.length > 0) {
+              promotedText = firstParagraph.paragraph.rich_text;
+              remainingNestedChildren = nestedChildren.slice(1);
+              console.log(`🔄 [LIST-ITEM-TEXT-PROMOTION] Promoting first paragraph to list item text: "${promotedText.map(rt => rt.text.content).join('').substring(0, 80)}..."`);
+              console.log(`🔄 [LIST-ITEM-TEXT-PROMOTION] Remaining ${remainingNestedChildren.length} nested children will be processed as children/markers`);
+            }
+          }
+          
           // Create the list item with text content AND nested blocks as children
-          if (textOnlyHtml && cleanHtmlText(textOnlyHtml).trim()) {
-            const { richText: liRichText, imageBlocks: liImages } = await parseRichText(textOnlyHtml);
+          if ((textOnlyHtml && cleanHtmlText(textOnlyHtml).trim()) || promotedText) {
+            // Use promoted text if available (from first paragraph), otherwise use extracted text
+            let liRichText, liImages;
+            if (promotedText) {
+              liRichText = promotedText;
+              liImages = [];
+              console.log(`🔄 [LIST-ITEM-TEXT-PROMOTION] Using promoted text as list item text`);
+            } else {
+              const parsed = await parseRichText(textOnlyHtml);
+              liRichText = parsed.richText;
+              liImages = parsed.imageBlocks;
+            }
             
             // Filter nested blocks: Notion list items can only have certain block types as children
             // Supported: bulleted_list_item, numbered_list_item, to_do, toggle, image
@@ -2533,7 +2598,8 @@ async function extractContentFromHtml(html) {
             // Separate immediate children (list items, images) from deferred blocks (paragraphs, tables, etc.)
             const immediateChildren = [];
             
-            nestedChildren.forEach(block => {
+            // IMPORTANT: Use remainingNestedChildren (after promoting first paragraph to text)
+            remainingNestedChildren.forEach(block => {
               // Check if block already has a marker from nested processing
               // IMPORTANT: Callouts with markers have their own nested content that should be orchestrated to them, not to the list item
               // Only add the callout itself, not its children (which share the same marker)
@@ -2944,35 +3010,57 @@ async function extractContentFromHtml(html) {
       // that likely continues the list (e.g., a 4th step rendered outside the <ol> by ServiceNow).
       // If found, convert it into an extra numbered_list_item so it stays contiguous with this list.
       try {
-        console.log(`🔎 [LIST-CONTINUATION-TRACE] Starting sibling scan after <ol>; will look ahead up to 5 siblings`);
+        const $olParent = $elem.parent();
+        const olClasses = $elem.attr('class') || '';
+        const parentClasses = $olParent.attr('class') || '';
+        console.log(`🔎 [LIST-CONTINUATION-TRACE] Starting sibling scan after <ol class="${olClasses}"> (parent: <${$olParent.get(0)?.tagName?.toLowerCase() || 'unknown'} class="${parentClasses}">)`);
+        console.log(`🔎 [LIST-CONTINUATION-TRACE] Will look ahead up to 5 siblings`);
         let foundContinuation = false;
 
         // First, check raw DOM siblings for TEXT nodes immediately after the <ol>
         try {
           let raw = $elem.get(0)?.nextSibling || null;
           let textChecked = 0;
+          console.log(`🔎 [LIST-CONTINUATION-TRACE] Checking for TEXT NODE siblings (raw DOM traversal)`);
           while (raw && textChecked < 2) {
             const isText = raw.type === 'text' || raw.nodeType === 3;
+            console.log(`🔎 [LIST-CONTINUATION-TRACE] Raw sibling ${textChecked}: type=${raw.type || raw.nodeType}, isText=${isText}`);
             if (isText) {
               const rawText = (raw.data || raw.nodeValue || '').trim();
+              console.log(`🔎 [LIST-CONTINUATION-TRACE] Text node content length: ${rawText.length}, preview: "${rawText.substring(0, 50)}..."`);
               if (rawText && rawText.length > 10) {
-                console.log(`🔧 [LIST-CONTINUATION-FIX] Found TEXT NODE after <ol> – converting to numbered_list_item: "${rawText.substring(0, 80)}..."`);
-                const { richText: liRichText } = await parseRichText(rawText);
-                processedBlocks.push({
-                  object: "block",
-                  type: "numbered_list_item",
-                  numbered_list_item: {
-                    rich_text: (liRichText && liRichText.length > 0) ? liRichText : [{
-                      type: "text",
-                      text: { content: rawText },
-                      annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: "default" }
-                    }]
-                  }
-                });
-                // Remove the text content to avoid double processing later
-                if (typeof raw.data === 'string') raw.data = '';
-                foundContinuation = true;
-                break;
+                // CRITICAL: Only treat as continuation if it looks like an action step
+                // Check for step indicators or action verbs at the start
+                const hasStepIndicator = /^(\d+[\.)]\s*|Step \d+|[a-z][\.)]\s*)/i.test(rawText);
+                const startsWithAction = /^(Click|Select|Navigate|Choose|Enter|Specify|Open|Close|Save|Delete|Create|Update|View|Set|Configure|Enable|Disable|Add|Remove)\s+/i.test(rawText);
+                
+                const shouldConvert = hasStepIndicator || startsWithAction;
+                
+                console.log(`🔧 [LIST-CONTINUATION-FIX] Found TEXT NODE after <ol> – "${rawText.substring(0, 80)}..."`);
+                console.log(`🔍 [LIST-CONTINUATION-ANALYSIS] hasStepIndicator=${hasStepIndicator}, startsWithAction=${startsWithAction}, shouldConvert=${shouldConvert}`);
+                
+                if (shouldConvert) {
+                  console.log(`🔧 [LIST-CONTINUATION-FIX] Converting to numbered_list_item`);
+                  
+                  const { richText: liRichText } = await parseRichText(rawText);
+                  processedBlocks.push({
+                    object: "block",
+                    type: "numbered_list_item",
+                    numbered_list_item: {
+                      rich_text: (liRichText && liRichText.length > 0) ? liRichText : [{
+                        type: "text",
+                        text: { content: rawText },
+                        annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: "default" }
+                      }]
+                    }
+                  });
+                  // Remove the text content to avoid double processing later
+                  if (typeof raw.data === 'string') raw.data = '';
+                  foundContinuation = true;
+                  break;
+                } else {
+                  console.log(`🔎 [LIST-CONTINUATION-TRACE] Text node doesn't look like a step continuation - leaving for normal processing`);
+                }
               }
             }
             // Stop if next raw sibling is an element; otherwise skip whitespace/comments
@@ -2983,11 +3071,13 @@ async function extractContentFromHtml(html) {
         } catch (e) {
           console.log(`⚠️ [LIST-CONTINUATION-FIX] Error while scanning raw TEXT siblings: ${e?.message || e}`);
         }
+        console.log(`🔎 [LIST-CONTINUATION-TRACE] Checking for ELEMENT siblings (Cheerio traversal)`);
         let $sib = $elem.next();
         let checked = 0;
   while ($sib && $sib.length && checked < 5) { // broaden lookahead to catch wrapped content
           const sibTag = ($sib.get(0).tagName || '').toLowerCase();
           const sibClasses = $sib.attr('class') || '';
+          console.log(`🔎 [LIST-CONTINUATION-TRACE] Element sibling ${checked}: <${sibTag} class="${sibClasses}">, text preview: "${$sib.text().trim().substring(0, 50)}..."`);
           const isUiChrome = /(miniTOC|linkList|zDocsFilterTableDiv|zDocsFilterColumnsTableDiv|zDocsDropdownMenu|dropdown-menu|zDocsTopicPageTableExportButton|zDocsTopicPageTableExportMenu)/.test(sibClasses);
           if (isUiChrome) {
             console.log(`🔎 [LIST-CONTINUATION-TRACE] Skipping UI chrome sibling <${sibTag} class="${sibClasses}">`);
@@ -3038,28 +3128,40 @@ async function extractContentFromHtml(html) {
             const sibHtml = $candidate.html() || $candidate.text() || '';
             const sibText = cleanHtmlText(sibHtml).trim();
             if (sibText.length > 10) {
-              console.log(`🔧 [LIST-CONTINUATION-FIX] Found sibling after <ol> – converting to numbered_list_item: "${sibText.substring(0, 80)}..."`);
-              const { richText: liRichText, imageBlocks: liImages } = await parseRichText(sibHtml);
-              const listItem = {
-                object: "block",
-                type: "numbered_list_item",
-                numbered_list_item: {
-                  rich_text: (liRichText && liRichText.length > 0) ? liRichText : [{
-                    type: "text",
-                    text: { content: sibText },
-                    annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: "default" }
-                  }]
+              // Check if this looks like a step continuation
+              const hasStepIndicator = /^(\d+[\.)]\s*|Step \d+|[a-z][\.)]\s*)/i.test(sibText);
+              const startsWithAction = /^(Click|Select|Navigate|Choose|Enter|Specify|Open|Close|Save|Delete|Create|Update|View|Set|Configure|Enable|Disable|Add|Remove)\s+/i.test(sibText);
+              const shouldConvert = hasStepIndicator || startsWithAction;
+              
+              console.log(`🔧 [LIST-CONTINUATION-FIX] Found sibling after <ol> – "${sibText.substring(0, 80)}..."`);
+              console.log(`🔍 [LIST-CONTINUATION-ANALYSIS] hasStepIndicator=${hasStepIndicator}, startsWithAction=${startsWithAction}, shouldConvert=${shouldConvert}`);
+              
+              if (shouldConvert) {
+                console.log(`🔧 [LIST-CONTINUATION-FIX] Converting to numbered_list_item`);
+                const { richText: liRichText, imageBlocks: liImages } = await parseRichText(sibHtml);
+                const listItem = {
+                  object: "block",
+                  type: "numbered_list_item",
+                  numbered_list_item: {
+                    rich_text: (liRichText && liRichText.length > 0) ? liRichText : [{
+                      type: "text",
+                      text: { content: sibText },
+                      annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: "default" }
+                    }]
+                  }
+                };
+                if (liImages && liImages.length > 0) {
+                  listItem.numbered_list_item.children = liImages;
                 }
-              };
-              if (liImages && liImages.length > 0) {
-                listItem.numbered_list_item.children = liImages;
-              }
-              processedBlocks.push(listItem);
+                processedBlocks.push(listItem);
 
-              // Remove the candidate so it is not processed again later, only if it's attached to DOM
-              try { if ($candidate && $candidate.remove) $candidate.remove(); } catch {}
-              foundContinuation = true;
-              break; // only add one continuation item
+                // Remove the candidate so it is not processed again later, only if it's attached to DOM
+                try { if ($candidate && $candidate.remove) $candidate.remove(); } catch {}
+                foundContinuation = true;
+                break; // only add one continuation item
+              } else {
+                console.log(`🔎 [LIST-CONTINUATION-TRACE] Sibling doesn't look like a step continuation - leaving for normal processing`);
+              }
             }
           }
 
@@ -3102,7 +3204,7 @@ async function extractContentFromHtml(html) {
                   console.log(`🔎 [LIST-CONTINUATION-TRACE] Parent-level: using paragraph-like child inside <div class="${pClasses}"> as candidate`);
                   $candidate = $pChild;
                 } else {
-                  // fallback to direct text-only content from this div
+                  // fallback to direct text-only contentm this div
                   const $clone = $psib.clone();
                   $clone.children().remove();
                   const directHtml = $clone.html() || '';
@@ -3123,6 +3225,10 @@ async function extractContentFromHtml(html) {
                 // Direct <li> as a parent-level sibling: treat as a numbered list item continuation
                 const liHtml = $psib.html() || $psib.text() || '';
                 const liText = cleanHtmlText(liHtml).trim();
+                console.log(`🚨 [ORPHAN-LI] Found standalone <li> as sibling after <ol>!`);
+                console.log(`🚨 [ORPHAN-LI] Text preview: "${liText.substring(0, 100)}..."`);
+                console.log(`🚨 [ORPHAN-LI] Contains "Click Submit": ${liText.includes('Click Submit')}`);
+                console.log(`🚨 [ORPHAN-LI] Contains "successfully created": ${liText.includes('successfully created')}`);
                 if (liText.length > 5) {
                   console.log(`🔧 [LIST-CONTINUATION-FIX] Parent-level: found <li> sibling after <ol> – converting to numbered_list_item: "${liText.substring(0, 80)}..."`);
                   const { richText: liRichText, imageBlocks: liImages } = await parseRichText(liHtml);
@@ -3248,13 +3354,26 @@ async function extractContentFromHtml(html) {
         return processedBlocks;
       }
       
+      // Get class attribute early for logging
+      const classAttr = $elem.attr('class') || '';
+      
       // Check if this paragraph contains nested block-level elements
       // (ul, ol, dl, div.note, figure, iframe) - if so, handle mixed content
       // NOTE: Search for DIRECT CHILDREN ONLY (>) to avoid finding elements already nested in lists
       // This prevents duplicate processing of figures inside <ol>/<ul> elements
+      
+      // DEBUG: Log ALL paragraphs being checked for nested blocks
+      const paraTextPreview = $elem.text().trim().substring(0, 80).replace(/\s+/g, ' ');
+      console.log(`🔎 [PARA-CHECK] Checking <${tagName} class="${classAttr}"> for nested blocks`);
+      console.log(`🔎 [PARA-CHECK]   Text preview: "${paraTextPreview}..."`);
+      
   const directBlocks = $elem.find('> ul, > ol, > dl').toArray();
   const inlineBlocks = $elem.find('> div.note, > figure, > iframe').toArray();
   const nestedBlocks = [...directBlocks, ...inlineBlocks];
+      
+      console.log(`🔎 [PARA-CHECK]   Found ${directBlocks.length} direct blocks: ${directBlocks.map(b => b.name).join(', ')}`);
+      console.log(`🔎 [PARA-CHECK]   Found ${inlineBlocks.length} inline blocks: ${inlineBlocks.map(b => b.name).join(', ')}`);
+      console.log(`🔎 [PARA-CHECK]   Total nested blocks: ${nestedBlocks.length}`);
   // Detect if this paragraph directly contains an ordered list (<ol>) so we can
   // treat any trailing text as a continuation step rather than a plain paragraph
   const hasDirectOlInParagraph = directBlocks.some(db => (db.name || '').toLowerCase() === 'ol');
@@ -3265,15 +3384,22 @@ async function extractContentFromHtml(html) {
         // Use childNodes iteration to separate text before/after nested blocks
         // This prevents text concatenation and preserves proper ordering
         const childNodes = Array.from($elem.get(0).childNodes);
+        console.log(`🔎 [MIXED-CONTENT] Paragraph has ${childNodes.length} childNodes to process`);
         const blockElementSet = new Set(nestedBlocks);
         let currentTextHtml = '';
         
         for (let i = 0; i < childNodes.length; i++) {
           const node = childNodes[i];
+          const nodeType = node.nodeType;
+          const nodeName = node.nodeType === 1 ? (node.name || node.nodeName || '').toLowerCase() : 'TEXT';
+          const isInBlockSet = blockElementSet.has(node);
+          console.log(`🔎 [MIXED-CONTENT] Child ${i}: nodeType=${nodeType} (${nodeName}), isInBlockSet=${isInBlockSet}`);
           
           // Text nodes and inline elements accumulate into currentTextHtml
           if (node.nodeType === 3 || (node.nodeType === 1 && !blockElementSet.has(node))) {
             const nodeHtml = node.nodeType === 3 ? node.nodeValue : $.html(node, { decodeEntities: false });
+            const preview = nodeHtml.trim().substring(0, 50);
+            console.log(`🔎 [MIXED-CONTENT] Accumulating ${node.nodeType === 3 ? 'TEXT' : 'ELEMENT'}: "${preview}..."`);
             currentTextHtml += nodeHtml;
           } 
           // Block-level elements: flush accumulated text, then process block
@@ -3305,6 +3431,11 @@ async function extractContentFromHtml(html) {
             console.log(`🔍 Processing nested block: <${blockName}>`);
             const childBlocks = await processElement(node);
             processedBlocks.push(...childBlocks);
+            
+            // CRITICAL: Don't let nested elements remove themselves - we'll remove the parent after processing all children
+            // This prevents DOM corruption during childNodes iteration
+            // Reset currentTextHtml to start accumulating text after this block
+            currentTextHtml = '';
           }
         }
         
@@ -3319,18 +3450,43 @@ async function extractContentFromHtml(html) {
           const { richText: textRichText, imageBlocks: textImageBlocks } = await parseRichText(textHtml);
           const hasRealText = textRichText.length > 0 && textRichText.some(rt => rt.text.content.trim());
           if (hasDirectOlInParagraph && hasRealText) {
-            // Treat trailing text within the same paragraph as continuation of the preceding <ol>
+            // CRITICAL: Only treat trailing text as list continuation if it looks like a step
+            // Use the same criteria as the raw DOM sibling scan (hasStepIndicator OR startsWithAction)
             const plain = cleanHtmlText(textHtml).trim();
-            console.log(`🔧 [LIST-CONTINUATION-TRACE] Paragraph contained <ol>; converting trailing text to numbered_list_item: "${plain.substring(0, 80)}..."`);
-            const listItem = {
-              object: "block",
-              type: "numbered_list_item",
-              numbered_list_item: { rich_text: textRichText }
-            };
-            if (textImageBlocks && textImageBlocks.length > 0) {
-              listItem.numbered_list_item.children = textImageBlocks;
+            const hasStepIndicator = /^(\d+[\.)]\s*|Step \d+|[a-z][\.)]\s*)/i.test(plain);
+            const startsWithAction = /^(Click|Select|Navigate|Choose|Enter|Specify|Open|Close|Save|Delete|Create|Update|View|Set|Configure|Enable|Disable|Add|Remove)\s+/i.test(plain);
+            const shouldConvert = hasStepIndicator || startsWithAction;
+            
+            console.log(`🔧 [LIST-CONTINUATION-TRACE] Paragraph contained <ol>; trailing text: "${plain.substring(0, 80)}..."`);
+            console.log(`🔍 [LIST-CONTINUATION-ANALYSIS] hasStepIndicator=${hasStepIndicator}, startsWithAction=${startsWithAction}, shouldConvert=${shouldConvert}`);
+            
+            if (shouldConvert) {
+              console.log(`🔧 [LIST-CONTINUATION-FIX] Converting trailing text to numbered_list_item`);
+              const listItem = {
+                object: "block",
+                type: "numbered_list_item",
+                numbered_list_item: { rich_text: textRichText }
+              };
+              if (textImageBlocks && textImageBlocks.length > 0) {
+                listItem.numbered_list_item.children = textImageBlocks;
+              }
+              processedBlocks.push(listItem);
+            } else {
+              console.log(`🔎 [LIST-CONTINUATION-TRACE] Trailing text doesn't look like a step - creating normal paragraph`);
+              const textChunks = splitRichTextArray(textRichText);
+              for (const chunk of textChunks) {
+                processedBlocks.push({
+                  object: "block",
+                  type: "paragraph",
+                  paragraph: {
+                    rich_text: chunk
+                  }
+                });
+              }
+              if (textImageBlocks && textImageBlocks.length > 0) {
+                processedBlocks.push(...textImageBlocks);
+              }
             }
-            processedBlocks.push(listItem);
           } else if (hasRealText) {
             const textChunks = splitRichTextArray(textRichText);
             for (const chunk of textChunks) {
@@ -3421,7 +3577,6 @@ async function extractContentFromHtml(html) {
         return processedBlocks;
       }
       
-      const classAttr = $elem.attr('class') || '';
       console.log(`🔍 Paragraph <${tagName}${classAttr ? ` class="${classAttr}"` : ''}> innerHtml length: ${innerHtml.length}, cleaned: ${cleanedText.length}`);
       
       // Check if this paragraph should be bold (sectiontitle tasklabel class)
