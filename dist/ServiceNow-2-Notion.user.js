@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      10.0.8
+// @version      10.0.9
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "10.0.8";
+    window.BUILD_VERSION = "10.0.9";
 (function () {
 
   // Configuration constants and default settings
@@ -7438,6 +7438,26 @@
             // Count <li> tags
             const liCount = (window.DEBUG_TARGET_OL.match(/<li/g) || []).length;
             console.log('💾 [CLIENT-DEBUG] Total <li> tags in OL:', liCount);
+            
+            // Parse and extract the 4th LI to show in logs
+            try {
+              const tempDiv = document.createElement('div');
+              tempDiv.innerHTML = window.DEBUG_TARGET_OL;
+              const ol = tempDiv.querySelector('ol');
+              if (ol) {
+                const lis = Array.from(ol.children).filter(el => el.tagName === 'LI');
+                console.log('💾 [CLIENT-DEBUG] Parsed', lis.length, 'direct <li> children from OL');
+                if (lis.length >= 4) {
+                  const fourthLi = lis[3];
+                  console.log('💾 [CLIENT-DEBUG] 4th LI text:', fourthLi.textContent.substring(0, 100).trim());
+                  console.log('💾 [CLIENT-DEBUG] 4th LI HTML:', fourthLi.outerHTML.substring(0, 300));
+                } else {
+                  console.log('⚠️ [CLIENT-DEBUG] Only found', lis.length, 'direct LI children (expected 4)');
+                }
+              }
+            } catch (e) {
+              console.log('⚠️ [CLIENT-DEBUG] Failed to parse OL:', e.message);
+            }
           } else {
             console.log('⚠️ [CLIENT-DEBUG] Target OL not found in extracted HTML');
             // Show what OL IDs we do have
