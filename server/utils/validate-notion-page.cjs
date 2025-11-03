@@ -128,6 +128,62 @@ function checkBlockForMarkers(block) {
 }
 
 /**
+ * Parse source HTML to count expected elements
+ * @param {string} html - Source HTML content
+ * @returns {Object} Counts of expected elements
+ */
+function parseSourceHtmlCounts(html) {
+  if (!html) return null;
+  
+  try {
+    const cheerio = require('cheerio');
+    const $ = cheerio.load(html);
+    
+    // Count ordered list items
+    const orderedListItems = $('ol > li').length;
+    
+    // Count unordered list items
+    const unorderedListItems = $('ul > li').length;
+    
+    // Count total list items
+    const totalListItems = orderedListItems + unorderedListItems;
+    
+    // Count paragraphs (p tags and div.p)
+    const paragraphs = $('p, div.p').length;
+    
+    // Count headings
+    const headings = $('h1, h2, h3, h4, h5, h6').length;
+    
+    // Count tables
+    const tables = $('table').length;
+    
+    // Count images
+    const images = $('img').length;
+    
+    // Count callouts/notes (div.note, div.info, aside)
+    const callouts = $('div.note, div.info, div.warning, div.important, div.tip, div.caution, aside').length;
+    
+    // Count code blocks
+    const codeBlocks = $('pre').length;
+    
+    return {
+      orderedListItems,
+      unorderedListItems,
+      totalListItems,
+      paragraphs,
+      headings,
+      tables,
+      images,
+      callouts,
+      codeBlocks
+    };
+  } catch (error) {
+    console.error('Error parsing source HTML:', error.message);
+    return null;
+  }
+}
+
+/**
  * Validate a created Notion page
  * @param {Object} notion - Notion client instance
  * @param {string} pageId - Page ID to validate
@@ -135,6 +191,7 @@ function checkBlockForMarkers(block) {
  * @param {number} options.expectedMinBlocks - Minimum expected block count
  * @param {number} options.expectedMaxBlocks - Maximum expected block count
  * @param {Array<string>} options.expectedHeadings - Array of expected heading text (case-insensitive)
+ * @param {string} options.sourceHtml - Original HTML content for comparison
  * @param {Object} log - Logger function (optional)
  * @returns {Promise<Object>} Validation result
  */
@@ -256,6 +313,114 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
       log(`⚠️ [VALIDATION] No paragraphs or list items found in ${allBlocks.length} blocks`);
     }
 
+    // VALIDATION 5: Source HTML content comparison
+    if (options.sourceHtml) {
+      log(`🔍 [VALIDATION] Comparing with source HTML...`);
+      const sourceCounts = parseSourceHtmlCounts(options.sourceHtml);
+      
+      if (sourceCounts) {
+        log(`📊 [VALIDATION] Source HTML counts:`, JSON.stringify(sourceCounts, null, 2));
+        result.sourceCounts = sourceCounts;
+        const notionCounts = {
+          orderedListItems: blockTypes.numbered_list_item || 0,
+          unorderedListItems: blockTypes.bulleted_list_item || 0,
+          totalListItems: (blockTypes.numbered_list_item || 0) + (blockTypes.bulleted_list_item || 0),
+          paragraphs: blockTypes.paragraph || 0,
+          headings: (blockTypes.heading_1 || 0) + (blockTypes.heading_2 || 0) + (blockTypes.heading_3 || 0),
+          tables: blockTypes.table || 0,
+          images: blockTypes.image || 0,
+          callouts: blockTypes.callout || 0,
+          codeBlocks: blockTypes.code || 0
+        };
+        log(`📊 [VALIDATION] Notion block counts:`, JSON.stringify(notionCounts, null, 2));
+        result.notionCounts = notionCounts;
+
+        // Compare list items (critical - often indicates missing content)
+        if (sourceCounts.orderedListItems > 0) {
+          if (notionCounts.orderedListItems < sourceCounts.orderedListItems) {
+            const missing = sourceCounts.orderedListItems - notionCounts.orderedListItems;
+            result.hasErrors = true;
+            result.issues.push(`Missing ordered list items: expected ${sourceCounts.orderedListItems}, got ${notionCounts.orderedListItems} (${missing} missing)`);
+            log(`❌ [VALIDATION] Missing ${missing} ordered list item(s)`);
+          } else if (notionCounts.orderedListItems > sourceCounts.orderedListItems) {
+            const extra = notionCounts.orderedListItems - sourceCounts.orderedListItems;
+            result.warnings.push(`Extra ordered list items: expected ${sourceCounts.orderedListItems}, got ${notionCounts.orderedListItems} (${extra} extra - may indicate duplicate conversion)`);
+            log(`⚠️ [VALIDATION] ${extra} extra ordered list item(s) - possible duplicate conversion`);
+          } else {
+            log(`✅ [VALIDATION] Ordered list items match: ${notionCounts.orderedListItems}/${sourceCounts.orderedListItems}`);
+          }
+        }
+
+        if (sourceCounts.unorderedListItems > 0) {
+          if (notionCounts.unorderedListItems < sourceCounts.unorderedListItems) {
+            const missing = sourceCounts.unorderedListItems - notionCounts.unorderedListItems;
+            result.hasErrors = true;
+            result.issues.push(`Missing unordered list items: expected ${sourceCounts.unorderedListItems}, got ${notionCounts.unorderedListItems} (${missing} missing)`);
+            log(`❌ [VALIDATION] Missing ${missing} unordered list item(s)`);
+          } else if (notionCounts.unorderedListItems > sourceCounts.unorderedListItems) {
+            const extra = notionCounts.unorderedListItems - sourceCounts.unorderedListItems;
+            result.warnings.push(`Extra unordered list items: expected ${sourceCounts.unorderedListItems}, got ${notionCounts.unorderedListItems} (${extra} extra - may indicate duplicate conversion)`);
+            log(`⚠️ [VALIDATION] ${extra} extra unordered list item(s) - possible duplicate conversion`);
+          } else {
+            log(`✅ [VALIDATION] Unordered list items match: ${notionCounts.unorderedListItems}/${sourceCounts.unorderedListItems}`);
+          }
+        }
+
+        // Compare paragraphs (with tolerance for splitting/merging)
+        if (sourceCounts.paragraphs > 0) {
+          const tolerance = Math.ceil(sourceCounts.paragraphs * 0.3); // 30% tolerance
+          const minExpected = sourceCounts.paragraphs - tolerance;
+          const maxExpected = sourceCounts.paragraphs + tolerance;
+          
+          if (notionCounts.paragraphs < minExpected) {
+            result.warnings.push(`Fewer paragraphs than expected: expected ~${sourceCounts.paragraphs}, got ${notionCounts.paragraphs}`);
+            log(`⚠️ [VALIDATION] Paragraph count low: ${notionCounts.paragraphs} < ${minExpected} (source: ${sourceCounts.paragraphs})`);
+          } else if (notionCounts.paragraphs > maxExpected) {
+            result.warnings.push(`More paragraphs than expected: expected ~${sourceCounts.paragraphs}, got ${notionCounts.paragraphs} (may be split)`);
+            log(`⚠️ [VALIDATION] Paragraph count high: ${notionCounts.paragraphs} > ${maxExpected} (source: ${sourceCounts.paragraphs})`);
+          } else {
+            log(`✅ [VALIDATION] Paragraph count within range: ${notionCounts.paragraphs} (source: ${sourceCounts.paragraphs})`);
+          }
+        }
+
+        // Compare headings
+        if (sourceCounts.headings > 0 && notionCounts.headings < sourceCounts.headings) {
+          result.warnings.push(`Missing headings: expected ${sourceCounts.headings}, got ${notionCounts.headings}`);
+          log(`⚠️ [VALIDATION] Missing ${sourceCounts.headings - notionCounts.headings} heading(s)`);
+        } else if (sourceCounts.headings > 0) {
+          log(`✅ [VALIDATION] Heading count matches: ${notionCounts.headings}/${sourceCounts.headings}`);
+        }
+
+        // Compare tables
+        if (sourceCounts.tables > 0 && notionCounts.tables < sourceCounts.tables) {
+          result.warnings.push(`Missing tables: expected ${sourceCounts.tables}, got ${notionCounts.tables}`);
+          log(`⚠️ [VALIDATION] Missing ${sourceCounts.tables - notionCounts.tables} table(s)`);
+        } else if (sourceCounts.tables > 0) {
+          log(`✅ [VALIDATION] Table count matches: ${notionCounts.tables}/${sourceCounts.tables}`);
+        }
+
+        // Compare images (with tolerance - some may fail to upload)
+        if (sourceCounts.images > 0 && notionCounts.images < sourceCounts.images * 0.8) {
+          result.warnings.push(`Significantly fewer images: expected ${sourceCounts.images}, got ${notionCounts.images}`);
+          log(`⚠️ [VALIDATION] Image count low: ${notionCounts.images}/${sourceCounts.images}`);
+        } else if (sourceCounts.images > 0) {
+          log(`✅ [VALIDATION] Image count acceptable: ${notionCounts.images}/${sourceCounts.images}`);
+        }
+
+        // Compare callouts (with tolerance - may be converted to paragraphs)
+        if (sourceCounts.callouts > 0 && notionCounts.callouts < sourceCounts.callouts * 0.5) {
+          result.warnings.push(`Fewer callouts than expected: expected ${sourceCounts.callouts}, got ${notionCounts.callouts} (some may be paragraphs)`);
+          log(`⚠️ [VALIDATION] Callout count low: ${notionCounts.callouts}/${sourceCounts.callouts}`);
+        } else if (sourceCounts.callouts > 0) {
+          log(`✅ [VALIDATION] Callout count acceptable: ${notionCounts.callouts}/${sourceCounts.callouts}`);
+        }
+
+        log(`🔍 [VALIDATION] Source comparison complete`);
+      } else {
+        log(`⚠️ [VALIDATION] Could not parse source HTML for comparison`);
+      }
+    }
+
     // Generate summary
     if (result.hasErrors) {
       result.success = false;
@@ -264,10 +429,25 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
         result.summary += `, ${result.warnings.length} warning(s)`;
       }
       result.summary += `\n\nErrors:\n${result.issues.map((e, i) => `${i + 1}. ${e}`).join('\n')}`;
+      if (result.warnings.length > 0) {
+        result.summary += `\n\nWarnings:\n${result.warnings.map((w, i) => `${i + 1}. ${w}`).join('\n')}`;
+      }
     } else if (result.warnings.length > 0) {
       result.summary = `⚠️ Validation passed with warnings: ${result.warnings.length} warning(s)\n\nWarnings:\n${result.warnings.map((w, i) => `${i + 1}. ${w}`).join('\n')}`;
     } else {
       result.summary = `✅ Validation passed: ${allBlocks.length} blocks, ${headings.length} headings, no issues`;
+    }
+
+    // Add source comparison to summary if available
+    if (result.sourceCounts && result.notionCounts) {
+      result.summary += `\n\n📊 Content Comparison (Source → Notion):`;
+      result.summary += `\n• Ordered list items: ${result.sourceCounts.orderedListItems} → ${result.notionCounts.orderedListItems}`;
+      result.summary += `\n• Unordered list items: ${result.sourceCounts.unorderedListItems} → ${result.notionCounts.unorderedListItems}`;
+      result.summary += `\n• Paragraphs: ${result.sourceCounts.paragraphs} → ${result.notionCounts.paragraphs}`;
+      result.summary += `\n• Headings: ${result.sourceCounts.headings} → ${result.notionCounts.headings}`;
+      result.summary += `\n• Tables: ${result.sourceCounts.tables} → ${result.notionCounts.tables}`;
+      result.summary += `\n• Images: ${result.sourceCounts.images} → ${result.notionCounts.images}`;
+      result.summary += `\n• Callouts: ${result.sourceCounts.callouts} → ${result.notionCounts.callouts}`;
     }
 
     result.summary += `\n\nStats: ${JSON.stringify(result.stats, null, 2)}`;
@@ -289,5 +469,6 @@ module.exports = {
   validateNotionPage,
   fetchAllBlocks,
   checkBlockForMarkers,
-  extractText
+  extractText,
+  parseSourceHtmlCounts
 };

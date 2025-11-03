@@ -713,7 +713,8 @@ router.post('/W2N', async (req, res) => {
           response.id,
           {
             expectedMinBlocks: minBlocks,
-            expectedMaxBlocks: maxBlocks
+            expectedMaxBlocks: maxBlocks,
+            sourceHtml: payload.contentHtml // Pass original HTML for content comparison
           },
           log
         );
