@@ -699,6 +699,25 @@ class ServiceNowToNotionApp {
         console.log("   pageData.contentHtml length:", pageData.contentHtml.length);
         console.log("   pageData.content length:", pageData.content ? pageData.content.length : 0);
         console.log("   Are they the same?", pageData.contentHtml === pageData.content);
+        
+        // DEBUG: Check for missing 4th list item
+        console.log("🔍 [CLIENT-DEBUG] Checking for 4th list item in contentHtml:");
+        console.log("   Contains 'Click Submit':", pageData.contentHtml.includes('Click Submit'));
+        console.log("   Contains 'successfully created':", pageData.contentHtml.includes('successfully created'));
+        console.log("   Number of <li tags:", (pageData.contentHtml.match(/<li/g) || []).length);
+        
+        // Find the specific OL if it exists
+        if (pageData.contentHtml.includes('Software Quality Sub Categories')) {
+          const olMatch = pageData.contentHtml.match(/<ol[^>]*id="devops-software-quality-sub-category__ol_bpk_gfk_xpb"[^>]*>[\s\S]*?<\/ol>/);
+          if (olMatch) {
+            const olHtml = olMatch[0];
+            const liCount = (olHtml.match(/<li/g) || []).length;
+            console.log("   Found target <ol>, contains", liCount, "<li> tags");
+            console.log("   OL contains 'Click Submit':", olHtml.includes('Click Submit'));
+          } else {
+            console.log("   ❌ Target <ol> not found in contentHtml!");
+          }
+        }
       }
 
       // DEBUG: Log full HTML content being sent to proxy
