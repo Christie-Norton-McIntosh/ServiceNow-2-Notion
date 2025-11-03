@@ -20,6 +20,7 @@ const dedupeUtil = require('../utils/dedupe.cjs');
 const { getAndClearPlaceholderWarnings } = require('../converters/rich-text.cjs');
 const { deduplicateTableBlocks } = require('../converters/table.cjs');
 const { logPlaceholderStripped, logUnprocessedContent, logImageUploadFailed, logCheerioParsingIssue } = require('../utils/verification-log.cjs');
+const { validateNotionPage } = require('../utils/validate-notion-page.cjs');
 
 /**
  * Returns runtime global context for Notion and ServiceNow operations.
@@ -694,16 +695,99 @@ router.post('/W2N', async (req, res) => {
       log("⚠️ Orchestrator failed:", e && e.message);
     }
 
+    // Run post-creation validation if enabled
+    let validationResult = null;
+    const shouldValidate = process.env.SN2N_VALIDATE_OUTPUT === '1' || process.env.SN2N_VALIDATE_OUTPUT === 'true';
+    
+    if (shouldValidate) {
+      try {
+        log("� Running post-creation validation...");
+        
+        // Estimate expected block count range (±30% tolerance)
+        const expectedBlocks = children.length;
+        const minBlocks = Math.floor(expectedBlocks * 0.7);
+        const maxBlocks = Math.ceil(expectedBlocks * 1.5);
+        
+        validationResult = await validateNotionPage(
+          notion,
+          response.id,
+          {
+            expectedMinBlocks: minBlocks,
+            expectedMaxBlocks: maxBlocks
+          },
+          log
+        );
+        
+        // Update page properties with validation results
+        const propertyUpdates = {};
+        
+        // Set Error checkbox if validation failed
+        if (validationResult.hasErrors) {
+          propertyUpdates["Error"] = { checkbox: true };
+          log(`⚠️ Validation failed - setting Error checkbox`);
+        }
+        
+        // Set Validation property with results summary
+        // Using rich_text property type (multi-line text)
+        propertyUpdates["Validation"] = {
+          rich_text: [
+            {
+              type: "text",
+              text: { content: validationResult.summary }
+            }
+          ]
+        };
+        
+        // Update the page properties
+        await notion.pages.update({
+          page_id: response.id,
+          properties: propertyUpdates
+        });
+        
+        log(`✅ Validation complete and properties updated`);
+        
+        if (validationResult.hasErrors) {
+          log(`❌ Validation found ${validationResult.issues.length} error(s):`);
+          validationResult.issues.forEach((issue, idx) => {
+            log(`   ${idx + 1}. ${issue}`);
+          });
+        }
+        if (validationResult.warnings.length > 0) {
+          log(`⚠️ Validation found ${validationResult.warnings.length} warning(s):`);
+          validationResult.warnings.forEach((warning, idx) => {
+            log(`   ${idx + 1}. ${warning}`);
+          });
+        }
+        
+      } catch (validationError) {
+        log(`⚠️ Validation failed with error: ${validationError.message}`);
+        // Don't fail the entire request if validation fails
+      }
+    }
+
     log("🔗 Page URL:", response.url);
 
-    return sendSuccess(res, {
+    const responseData = {
       pageUrl: response.url,
       page: {
         id: response.id,
         url: response.url,
         title: payload.title,
       },
-    });
+    };
+    
+    // Include validation results in response if available
+    if (validationResult) {
+      responseData.validation = {
+        success: validationResult.success,
+        hasErrors: validationResult.hasErrors,
+        issueCount: validationResult.issues.length,
+        warningCount: validationResult.warnings.length,
+        stats: validationResult.stats
+      };
+    }
+
+    return sendSuccess(res, responseData);
   } catch (error) {
     const { log, sendError } = getGlobals();
     log("❌ Error creating Notion page:", error.message);
