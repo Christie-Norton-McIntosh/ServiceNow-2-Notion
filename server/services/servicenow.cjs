@@ -2508,11 +2508,16 @@ async function extractContentFromHtml(html) {
       const rawOlHtml = $elem.html();
       const firstChars = rawOlHtml.substring(0, 200).replace(/\s+/g, ' ');
       console.log(`🔍 [OL-DEBUG] Raw <ol> HTML (first 200 chars): "${firstChars}..."`);
-      console.log(`🔍 [OL-DEBUG] Raw HTML contains "Click Submit": ${rawOlHtml.includes('Click Submit')}`);
+      console.log(`🔍 [OL-DEBUG] Raw HTML contains '<span class="ph uicontrol">Submit</span>': ${rawOlHtml.includes('<span class="ph uicontrol">Submit</span>')}`);
       console.log(`🔍 [OL-DEBUG] Raw HTML contains "successfully created": ${rawOlHtml.includes('successfully created')}`);
+      console.log(`🔍 [OL-DEBUG] Raw HTML length: ${rawOlHtml.length} characters`);
+      
+      // Count total <li> tags (including nested)
+      const totalLiTags = (rawOlHtml.match(/<li/g) || []).length;
+      console.log(`🔍 [OL-DEBUG] Total <li> tags in raw HTML: ${totalLiTags}`);
       
       const listItems = $elem.find('> li').toArray();
-      console.log(`🔍 Processing <ol> with ${listItems.length} list items`);
+      console.log(`🔍 [OL-DEBUG] Cheerio found ${listItems.length} DIRECT <li> children`);
       
       // Debug: Log each list item's text preview to verify we have them all
       listItems.forEach((li, idx) => {

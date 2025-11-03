@@ -675,6 +675,43 @@ class ServiceNowToNotionApp {
 
       overlayModule.setMessage("Saving to Notion...");
 
+      // DEBUG: ALWAYS save HTML and log for diagnostic purposes
+      console.log('🔍 [CLIENT-DEBUG] pageData.contentHtml exists?', !!pageData.contentHtml);
+      console.log('🔍 [CLIENT-DEBUG] pageData.contentHtml length:', pageData.contentHtml ? pageData.contentHtml.length : 0);
+      
+      // Check for target OL by ID
+      const hasTargetOl = pageData.contentHtml && pageData.contentHtml.includes('devops-software-quality-sub-category__ol_bpk_gfk_xpb');
+      console.log('🔍 [CLIENT-DEBUG] Has target OL ID?', hasTargetOl);
+      
+      // ALWAYS save for inspection (not just when condition matches)
+      if (pageData.contentHtml) {
+        window.DEBUG_LAST_EXPORT_HTML = pageData.contentHtml;
+        console.log('💾 [CLIENT-DEBUG] Saved full export HTML to window.DEBUG_LAST_EXPORT_HTML');
+        console.log('💾 [CLIENT-DEBUG] HTML length:', pageData.contentHtml.length);
+        
+        // Try to extract target OL if it exists
+        const olMatch = pageData.contentHtml.match(/<ol[^>]*id="devops-software-quality-sub-category__ol_bpk_gfk_xpb"[^>]*>[\s\S]*?<\/ol>/);
+        if (olMatch) {
+          window.DEBUG_TARGET_OL = olMatch[0];
+          console.log('💾 [CLIENT-DEBUG] ✅ Extracted target OL to window.DEBUG_TARGET_OL');
+          console.log('💾 [CLIENT-DEBUG] OL length:', window.DEBUG_TARGET_OL.length);
+          console.log('💾 [CLIENT-DEBUG] Contains Submit span:', window.DEBUG_TARGET_OL.includes('<span class="ph uicontrol">Submit</span>'));
+          
+          // Count <li> tags
+          const liCount = (window.DEBUG_TARGET_OL.match(/<li/g) || []).length;
+          console.log('💾 [CLIENT-DEBUG] Total <li> tags in OL:', liCount);
+        } else {
+          console.log('⚠️ [CLIENT-DEBUG] Target OL not found in extracted HTML');
+          // Show what OL IDs we do have
+          const allOlIds = pageData.contentHtml.match(/<ol[^>]*id="([^"]*)"[^>]*>/g);
+          if (allOlIds) {
+            console.log('⚠️ [CLIENT-DEBUG] Found these OL IDs:', allOlIds.map(m => m.match(/id="([^"]*)"/)[1]).join(', '));
+          }
+        }
+      } else {
+        console.log('❌ [CLIENT-DEBUG] pageData.contentHtml is empty or undefined!');
+      }
+      
       // DEBUG: Log payload structure before sending to proxy
       debug("🔍 DEBUG: pageData structure being sent to proxy:", {
         title: pageData.title,
