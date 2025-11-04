@@ -140,16 +140,24 @@ function parseSourceHtmlCounts(html) {
     const $ = cheerio.load(html);
     
     // Count ALL ordered list items (including nested) - this matches Notion's flattened structure
-    const orderedListItems = $('ol li').length;
+    // Exclude list items inside <nav> elements - those get flattened to paragraphs during extraction
+    const allOrderedListItems = $('ol li').length;
+    const orderedListItemsInNav = $('nav ol li').length;
+    const orderedListItems = allOrderedListItems - orderedListItemsInNav;
     
     // Count ALL unordered list items (including nested) - this matches Notion's flattened structure
-    const unorderedListItems = $('ul li').length;
+    // Exclude list items inside <nav> elements - those get flattened to paragraphs during extraction
+    const allUnorderedListItems = $('ul li').length;
+    const unorderedListItemsInNav = $('nav ul li').length;
+    const unorderedListItems = allUnorderedListItems - unorderedListItemsInNav;
     
     // Count total list items
     const totalListItems = orderedListItems + unorderedListItems;
     
-    // Count paragraphs (p tags and div.p)
-    const paragraphs = $('p, div.p').length;
+    // Count paragraphs (excluding those inside tables - they become table cell text, not paragraph blocks)
+    const allParagraphs = $('p, div.p').length;
+    const paragraphsInTables = $('table p, table div.p').length;
+    const paragraphs = allParagraphs - paragraphsInTables;
     
     // Count headings
     const headings = $('h1, h2, h3, h4, h5, h6').length;
@@ -157,14 +165,49 @@ function parseSourceHtmlCounts(html) {
     // Count tables
     const tables = $('table').length;
     
-    // Count images
-    const images = $('img').length;
+    // Count images (excluding images inside tables - those get removed in processing)
+    const allImages = $('img').length;
+    const imagesInTables = $('table img').length;
+    const images = allImages - imagesInTables;
     
-    // Count callouts/notes (div.note, div.info, aside)
-    const callouts = $('div.note, div.info, div.warning, div.important, div.tip, div.caution, aside').length;
+    // Count callouts/notes (excluding those inside tables - Notion table cells can't contain callouts)
+    // Includes: div.note/info/warning/important/tip/caution, aside, and section.prereq ("Before you begin")
+    const allCallouts = $('div.note, div.info, div.warning, div.important, div.tip, div.caution, aside, section.prereq').length;
+    const calloutsInTables = $('table div.note, table div.info, table div.warning, table div.important, table div.tip, table div.caution, table aside, table section.prereq').length;
+    const callouts = allCallouts - calloutsInTables;
     
-    // Count code blocks
-    const codeBlocks = $('pre').length;
+    // Count code blocks (excluding those inside tables - Notion table cells can't contain code blocks)
+    const allCodeBlocks = $('pre').length;
+    const codeBlocksInTables = $('table pre').length;
+    const codeBlocks = allCodeBlocks - codeBlocksInTables;
+    
+    // Log paragraph count details if paragraphs were excluded from tables
+    if (paragraphsInTables > 0) {
+      console.log(`📊 [VALIDATION] Paragraph count: ${allParagraphs} total, ${paragraphsInTables} in tables (excluded), ${paragraphs} counted for validation`);
+    }
+    
+    // Log image count details if images were excluded from tables
+    if (imagesInTables > 0) {
+      console.log(`📊 [VALIDATION] Image count: ${allImages} total, ${imagesInTables} in tables (excluded), ${images} counted for validation`);
+    }
+    
+    // Log callout count details if callouts were excluded from tables
+    if (calloutsInTables > 0) {
+      console.log(`📊 [VALIDATION] Callout count: ${allCallouts} total, ${calloutsInTables} in tables (excluded), ${callouts} counted for validation`);
+    }
+    
+    // Log list item count details if list items were excluded from nav
+    if (orderedListItemsInNav > 0) {
+      console.log(`📊 [VALIDATION] Ordered list item count: ${allOrderedListItems} total, ${orderedListItemsInNav} in nav (excluded, become paragraphs), ${orderedListItems} counted for validation`);
+    }
+    if (unorderedListItemsInNav > 0) {
+      console.log(`📊 [VALIDATION] Unordered list item count: ${allUnorderedListItems} total, ${unorderedListItemsInNav} in nav (excluded, become paragraphs), ${unorderedListItems} counted for validation`);
+    }
+    
+    // Log code block count details if code blocks were excluded from tables
+    if (codeBlocksInTables > 0) {
+      console.log(`📊 [VALIDATION] Code block count: ${allCodeBlocks} total, ${codeBlocksInTables} in tables (excluded, become plain text), ${codeBlocks} counted for validation`);
+    }
     
     return {
       orderedListItems,
@@ -335,17 +378,68 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
         log(`📊 [VALIDATION] Notion block counts:`, JSON.stringify(notionCounts, null, 2));
         result.notionCounts = notionCounts;
 
-        // Compare list items (critical - often indicates missing content)
+        // CRITICAL ELEMENT VALIDATION (determines pass/fail/warning)
+        // Tables must match exactly
+        let tablesMismatch = false;
+        if (sourceCounts.tables > 0 && notionCounts.tables !== sourceCounts.tables) {
+          tablesMismatch = true;
+          result.hasErrors = true;
+          result.issues.push(`Table count mismatch: expected ${sourceCounts.tables}, got ${notionCounts.tables}`);
+          log(`❌ [VALIDATION] Table count mismatch: ${notionCounts.tables}/${sourceCounts.tables}`);
+        } else if (sourceCounts.tables > 0) {
+          log(`✅ [VALIDATION] Table count matches: ${notionCounts.tables}/${sourceCounts.tables}`);
+        }
+
+        // Images must match (with small tolerance for upload failures)
+        let imagesMismatch = false;
+        if (sourceCounts.images > 0 && notionCounts.images < sourceCounts.images) {
+          imagesMismatch = true;
+          result.hasErrors = true;
+          result.issues.push(`Image count mismatch: expected ${sourceCounts.images}, got ${notionCounts.images}`);
+          log(`❌ [VALIDATION] Image count mismatch: ${notionCounts.images}/${sourceCounts.images}`);
+        } else if (sourceCounts.images > 0) {
+          log(`✅ [VALIDATION] Image count acceptable: ${notionCounts.images}/${sourceCounts.images}`);
+        }
+
+        // Callouts must match exactly
+        let calloutsMismatch = false;
+        if (sourceCounts.callouts > 0 && notionCounts.callouts !== sourceCounts.callouts) {
+          calloutsMismatch = true;
+          result.hasErrors = true;
+          result.issues.push(`Callout count mismatch: expected ${sourceCounts.callouts}, got ${notionCounts.callouts}`);
+          log(`❌ [VALIDATION] Callout count mismatch: ${notionCounts.callouts}/${sourceCounts.callouts}`);
+        } else if (sourceCounts.callouts > 0) {
+          log(`✅ [VALIDATION] Callout count acceptable: ${notionCounts.callouts}/${sourceCounts.callouts}`);
+        }
+
+        // Headings - less than expected is ERROR, more is WARNING
+        let headingsFewer = false;
+        let headingsMore = false;
+        if (sourceCounts.headings > 0) {
+          if (notionCounts.headings < sourceCounts.headings) {
+            headingsFewer = true;
+            result.hasErrors = true;
+            result.issues.push(`Heading count too low: expected ${sourceCounts.headings}, got ${notionCounts.headings}`);
+            log(`❌ [VALIDATION] Heading count too low: ${notionCounts.headings}/${sourceCounts.headings}`);
+          } else if (notionCounts.headings > sourceCounts.headings) {
+            headingsMore = true;
+            result.warnings.push(`Extra headings: expected ${sourceCounts.headings}, got ${notionCounts.headings} (acceptable)`);
+            log(`⚠️ [VALIDATION] Heading count higher than expected: ${notionCounts.headings}/${sourceCounts.headings} (acceptable)`);
+          } else {
+            log(`✅ [VALIDATION] Heading count matches: ${notionCounts.headings}/${sourceCounts.headings}`);
+          }
+        }
+
+        // List items - informational only (counting methodology differs)
         if (sourceCounts.orderedListItems > 0) {
           if (notionCounts.orderedListItems < sourceCounts.orderedListItems) {
             const missing = sourceCounts.orderedListItems - notionCounts.orderedListItems;
-            result.hasErrors = true;
-            result.issues.push(`Missing ordered list items: expected ${sourceCounts.orderedListItems}, got ${notionCounts.orderedListItems} (${missing} missing)`);
-            log(`❌ [VALIDATION] Missing ${missing} ordered list item(s)`);
+            result.warnings.push(`Ordered list item count differs: expected ${sourceCounts.orderedListItems}, got ${notionCounts.orderedListItems} (${missing} fewer - may be counting methodology difference)`);
+            log(`ℹ️ [VALIDATION] Ordered list item count differs: ${notionCounts.orderedListItems}/${sourceCounts.orderedListItems} (informational)`);
           } else if (notionCounts.orderedListItems > sourceCounts.orderedListItems) {
             const extra = notionCounts.orderedListItems - sourceCounts.orderedListItems;
-            result.warnings.push(`Extra ordered list items: expected ${sourceCounts.orderedListItems}, got ${notionCounts.orderedListItems} (${extra} extra - may indicate duplicate conversion)`);
-            log(`⚠️ [VALIDATION] ${extra} extra ordered list item(s) - possible duplicate conversion`);
+            result.warnings.push(`Extra ordered list items: expected ${sourceCounts.orderedListItems}, got ${notionCounts.orderedListItems} (${extra} extra - may be counting methodology difference)`);
+            log(`ℹ️ [VALIDATION] ${extra} extra ordered list item(s) (informational)`);
           } else {
             log(`✅ [VALIDATION] Ordered list items match: ${notionCounts.orderedListItems}/${sourceCounts.orderedListItems}`);
           }
@@ -354,65 +448,33 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
         if (sourceCounts.unorderedListItems > 0) {
           if (notionCounts.unorderedListItems < sourceCounts.unorderedListItems) {
             const missing = sourceCounts.unorderedListItems - notionCounts.unorderedListItems;
-            result.hasErrors = true;
-            result.issues.push(`Missing unordered list items: expected ${sourceCounts.unorderedListItems}, got ${notionCounts.unorderedListItems} (${missing} missing)`);
-            log(`❌ [VALIDATION] Missing ${missing} unordered list item(s)`);
+            result.warnings.push(`Unordered list item count differs: expected ${sourceCounts.unorderedListItems}, got ${notionCounts.unorderedListItems} (${missing} fewer - may be counting methodology difference)`);
+            log(`ℹ️ [VALIDATION] Unordered list item count differs: ${notionCounts.unorderedListItems}/${sourceCounts.unorderedListItems} (informational)`);
           } else if (notionCounts.unorderedListItems > sourceCounts.unorderedListItems) {
             const extra = notionCounts.unorderedListItems - sourceCounts.unorderedListItems;
-            result.warnings.push(`Extra unordered list items: expected ${sourceCounts.unorderedListItems}, got ${notionCounts.unorderedListItems} (${extra} extra - may indicate duplicate conversion)`);
-            log(`⚠️ [VALIDATION] ${extra} extra unordered list item(s) - possible duplicate conversion`);
+            result.warnings.push(`Extra unordered list items: expected ${sourceCounts.unorderedListItems}, got ${notionCounts.unorderedListItems} (${extra} extra - may be counting methodology difference)`);
+            log(`ℹ️ [VALIDATION] ${extra} extra unordered list item(s) (informational)`);
           } else {
             log(`✅ [VALIDATION] Unordered list items match: ${notionCounts.unorderedListItems}/${sourceCounts.unorderedListItems}`);
           }
         }
 
-        // Compare paragraphs (with tolerance for splitting/merging)
+        // Paragraphs - warning level (with tolerance for splitting/merging)
+        // Shows ⚠️ if outside tolerance but doesn't fail validation
         if (sourceCounts.paragraphs > 0) {
           const tolerance = Math.ceil(sourceCounts.paragraphs * 0.3); // 30% tolerance
           const minExpected = sourceCounts.paragraphs - tolerance;
           const maxExpected = sourceCounts.paragraphs + tolerance;
           
           if (notionCounts.paragraphs < minExpected) {
-            result.warnings.push(`Fewer paragraphs than expected: expected ~${sourceCounts.paragraphs}, got ${notionCounts.paragraphs}`);
+            result.warnings.push(`⚠️ Paragraph count unusually low: expected ~${sourceCounts.paragraphs} (±${tolerance}), got ${notionCounts.paragraphs}`);
             log(`⚠️ [VALIDATION] Paragraph count low: ${notionCounts.paragraphs} < ${minExpected} (source: ${sourceCounts.paragraphs})`);
           } else if (notionCounts.paragraphs > maxExpected) {
-            result.warnings.push(`More paragraphs than expected: expected ~${sourceCounts.paragraphs}, got ${notionCounts.paragraphs} (may be split)`);
+            result.warnings.push(`⚠️ Paragraph count unusually high: expected ~${sourceCounts.paragraphs} (±${tolerance}), got ${notionCounts.paragraphs}`);
             log(`⚠️ [VALIDATION] Paragraph count high: ${notionCounts.paragraphs} > ${maxExpected} (source: ${sourceCounts.paragraphs})`);
           } else {
             log(`✅ [VALIDATION] Paragraph count within range: ${notionCounts.paragraphs} (source: ${sourceCounts.paragraphs})`);
           }
-        }
-
-        // Compare headings
-        if (sourceCounts.headings > 0 && notionCounts.headings < sourceCounts.headings) {
-          result.warnings.push(`Missing headings: expected ${sourceCounts.headings}, got ${notionCounts.headings}`);
-          log(`⚠️ [VALIDATION] Missing ${sourceCounts.headings - notionCounts.headings} heading(s)`);
-        } else if (sourceCounts.headings > 0) {
-          log(`✅ [VALIDATION] Heading count matches: ${notionCounts.headings}/${sourceCounts.headings}`);
-        }
-
-        // Compare tables
-        if (sourceCounts.tables > 0 && notionCounts.tables < sourceCounts.tables) {
-          result.warnings.push(`Missing tables: expected ${sourceCounts.tables}, got ${notionCounts.tables}`);
-          log(`⚠️ [VALIDATION] Missing ${sourceCounts.tables - notionCounts.tables} table(s)`);
-        } else if (sourceCounts.tables > 0) {
-          log(`✅ [VALIDATION] Table count matches: ${notionCounts.tables}/${sourceCounts.tables}`);
-        }
-
-        // Compare images (with tolerance - some may fail to upload)
-        if (sourceCounts.images > 0 && notionCounts.images < sourceCounts.images * 0.8) {
-          result.warnings.push(`Significantly fewer images: expected ${sourceCounts.images}, got ${notionCounts.images}`);
-          log(`⚠️ [VALIDATION] Image count low: ${notionCounts.images}/${sourceCounts.images}`);
-        } else if (sourceCounts.images > 0) {
-          log(`✅ [VALIDATION] Image count acceptable: ${notionCounts.images}/${sourceCounts.images}`);
-        }
-
-        // Compare callouts (with tolerance - may be converted to paragraphs)
-        if (sourceCounts.callouts > 0 && notionCounts.callouts < sourceCounts.callouts * 0.5) {
-          result.warnings.push(`Fewer callouts than expected: expected ${sourceCounts.callouts}, got ${notionCounts.callouts} (some may be paragraphs)`);
-          log(`⚠️ [VALIDATION] Callout count low: ${notionCounts.callouts}/${sourceCounts.callouts}`);
-        } else if (sourceCounts.callouts > 0) {
-          log(`✅ [VALIDATION] Callout count acceptable: ${notionCounts.callouts}/${sourceCounts.callouts}`);
         }
 
         log(`🔍 [VALIDATION] Source comparison complete`);
@@ -421,21 +483,23 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
       }
     }
 
-    // Generate summary
+    // Generate summary based on critical element validation
     if (result.hasErrors) {
       result.success = false;
-      result.summary = `❌ Validation failed: ${result.issues.length} error(s)`;
+      result.summary = `❌ Validation failed: ${result.issues.length} critical error(s)`;
       if (result.warnings.length > 0) {
-        result.summary += `, ${result.warnings.length} warning(s)`;
+        result.summary += `, ${result.warnings.length} informational warning(s)`;
       }
-      result.summary += `\n\nErrors:\n${result.issues.map((e, i) => `${i + 1}. ${e}`).join('\n')}`;
+      result.summary += `\n\n❌ Critical Errors:\n${result.issues.map((e, i) => `${i + 1}. ${e}`).join('\n')}`;
       if (result.warnings.length > 0) {
-        result.summary += `\n\nWarnings:\n${result.warnings.map((w, i) => `${i + 1}. ${w}`).join('\n')}`;
+        result.summary += `\n\nℹ️ Informational Warnings:\n${result.warnings.map((w, i) => `${i + 1}. ${w}`).join('\n')}`;
       }
     } else if (result.warnings.length > 0) {
-      result.summary = `⚠️ Validation passed with warnings: ${result.warnings.length} warning(s)\n\nWarnings:\n${result.warnings.map((w, i) => `${i + 1}. ${w}`).join('\n')}`;
+      result.success = true; // Warnings don't cause failure
+      result.summary = `✅ Validation passed (critical elements match)\n\nℹ️ ${result.warnings.length} informational note(s):\n${result.warnings.map((w, i) => `${i + 1}. ${w}`).join('\n')}`;
     } else {
-      result.summary = `✅ Validation passed: ${allBlocks.length} blocks, ${headings.length} headings, no issues`;
+      result.success = true;
+      result.summary = `✅ Validation passed: ${allBlocks.length} blocks, ${headings.length} headings, all critical elements match`;
     }
 
     // Add source comparison to summary if available

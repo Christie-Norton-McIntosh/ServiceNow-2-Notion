@@ -69,10 +69,41 @@ router.post('/W2N', async (req, res) => {
       log(`🚨 payload.content length: ${payload.content.length}`);
     }
 
-    // DEBUG: Check if HTML contains pre tags and nav tags at the API entry point
-    if (payload.contentHtml) {
-      const hasPreTags = payload.contentHtml.includes("<pre");
-      const hasClosingPreTags = payload.contentHtml.includes("</pre>");
+    // DEBUG: Check target OL at server entry point
+    if (payload.contentHtml || payload.content) {
+      const html = payload.contentHtml || payload.content;
+      const hasTargetOl = html.includes('devops-software-quality-sub-category__ol_bpk_gfk_xpb');
+      console.log(`🔍 [SERVER-ENTRY] Has target OL ID: ${hasTargetOl}`);
+      console.log(`🔍 [SERVER-ENTRY] Total HTML length: ${html.length} characters`);
+      
+      if (hasTargetOl) {
+        // Extract the OL and count its <li> tags
+        const olMatch = html.match(/<ol[^>]*id="devops-software-quality-sub-category__ol_bpk_gfk_xpb"[^>]*>[\s\S]*?<\/ol>/);
+        if (olMatch) {
+          const olHtml = olMatch[0];
+          const liCount = (olHtml.match(/<li/g) || []).length;
+          console.log(`🔍 [SERVER-ENTRY] Target OL found, length: ${olHtml.length} characters`);
+          console.log(`🔍 [SERVER-ENTRY] Contains ${liCount} <li> tags`);
+          console.log(`🔍 [SERVER-ENTRY] Contains Submit span: ${olHtml.includes('<span class="ph uicontrol">Submit</span>')}`);
+          console.log(`🔍 [SERVER-ENTRY] Contains "successfully created": ${olHtml.includes('successfully created')}`);
+          
+          // Save target OL to file for inspection
+          const fs = require('fs');
+          const path = require('path');
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          const logDir = path.join(__dirname, '../logs');
+          const logFile = path.join(logDir, `target-ol-${timestamp}.html`);
+          try {
+            fs.writeFileSync(logFile, olHtml, 'utf8');
+            console.log(`🔍 [SERVER-ENTRY] Saved target OL to: ${logFile}`);
+          } catch (err) {
+            console.log(`🔍 [SERVER-ENTRY] ⚠️ Could not save OL to file: ${err.message}`);
+          }
+        }
+      }
+      
+      const hasPreTags = html.includes("<pre");
+      const hasClosingPreTags = html.includes("</pre>");
       console.log(
         `🔍 DEBUG API: contentHtml has <pre>: ${hasPreTags}, has </pre>: ${hasClosingPreTags}`
       );

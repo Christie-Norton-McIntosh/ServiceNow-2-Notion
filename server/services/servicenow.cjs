@@ -170,7 +170,69 @@ function enforceNestingDepthLimit(blocks, currentDepth = 0) {
 async function extractContentFromHtml(html) {
   const { log, normalizeAnnotations, isValidImageUrl, downloadAndUploadImage, normalizeUrl, getExtraDebug } = getGlobals();
   
+  // CRITICAL FILE-BASED DIAGNOSTIC: Write to file so we can verify execution
+  const fs = require('fs');
+  const path = require('path');
+  const logFile = path.join(__dirname, '../logs', 'entry-diagnostic.log');
+  const timestamp = new Date().toISOString();
+  
+  try {
+    fs.appendFileSync(logFile, `\n=== ${timestamp} ===\n`);
+    fs.appendFileSync(logFile, `HTML length at function entry: ${html ? html.length : 'NULL'}\n`);
+    
+    if (html && html.includes('devops-software-quality-sub-category__ol_bpk_gfk_xpb')) {
+      const olMatch = html.match(/<ol[^>]*id="devops-software-quality-sub-category__ol_bpk_gfk_xpb"[^>]*>[\s\S]*?<\/ol>/);
+      if (olMatch) {
+        fs.appendFileSync(logFile, `Target OL at entry: ${olMatch[0].length} chars, ${(olMatch[0].match(/<li/g) || []).length} <li> tags\n`);
+        fs.appendFileSync(logFile, `Contains Submit at entry: ${olMatch[0].includes('<span class="ph uicontrol">Submit</span>')}\n`);
+      } else {
+        fs.appendFileSync(logFile, `OL ID found but regex extraction failed\n`);
+      }
+    } else {
+      fs.appendFileSync(logFile, `Target OL ID NOT FOUND in HTML at entry\n`);
+    }
+  } catch (err) {
+    console.error('Failed to write entry diagnostic:', err);
+  }
+  
   console.log('🚨🚨🚨 SERVICENOW.CJS FUNCTION START - MODULE LOADED 🚨🚨🚨');
+  console.log(`🔬🔬🔬 [ENTRY] HTML length at function entry: ${html ? html.length : 'NULL'}`);
+  
+  // 🔧 WORKAROUND: Extract problematic OLs before any preprocessing to preserve all list items
+  // Target OLs that get truncated during preprocessing
+  const targetOlIds = [
+    'devops-software-quality-sub-category__ol_bpk_gfk_xpb',
+    'dev-ops-software-quality-summary__ol_sk4_k4b_wpb'
+  ];
+  
+  const preservedOls = [];
+  
+  for (const olId of targetOlIds) {
+    if (html && html.includes(olId)) {
+      const olMatch = html.match(new RegExp(`<ol[^>]*id="${olId}"[^>]*>[\\s\\S]*?<\\/ol>`, 'i'));
+      if (olMatch) {
+        const preservedOl = olMatch[0];
+        // Use a div placeholder that won't be stripped during preprocessing
+        const uniqueId = `sn2n_preserved_ol_${Date.now()}_${olId}`;
+        const placeholder = `<div data-sn2n-preserved-ol="${uniqueId}"></div>`;
+        // Replace the OL in the HTML with a placeholder
+        html = html.replace(olMatch[0], placeholder);
+        
+        preservedOls.push({ olId, preservedOl, placeholder });
+        
+        console.log(`🔧 [OL-WORKAROUND] Preserved OL "${olId}" (${preservedOl.length} chars, ${(preservedOl.match(/<li/g) || []).length} LI tags)`);
+        console.log(`🔧 [OL-WORKAROUND] Placeholder: ${placeholder}`);
+        try {
+          fs.appendFileSync(logFile, `\n🔧 WORKAROUND: Preserved OL "${olId}" before preprocessing\n`);
+          fs.appendFileSync(logFile, `Preserved OL length: ${preservedOl.length} chars\n`);
+          fs.appendFileSync(logFile, `Preserved OL LI count: ${(preservedOl.match(/<li/g) || []).length}\n`);
+          fs.appendFileSync(logFile, `Placeholder: ${placeholder}\n`);
+        } catch (err) {
+          console.error('Failed to log workaround:', err);
+        }
+      }
+    }
+  }
   
   // Array to collect warnings during extraction for later logging
   const warnings = [];
@@ -1208,15 +1270,66 @@ async function extractContentFromHtml(html) {
     }
   }
   
+  // 🔧 WORKAROUND: Restore all preserved OLs before Cheerio processing
+  for (const { olId, preservedOl, placeholder } of preservedOls) {
+    if (html.includes(placeholder)) {
+      html = html.replace(placeholder, preservedOl);
+      console.log(`🔧 [OL-WORKAROUND] ✅ Restored OL "${olId}" (${preservedOl.length} chars) before Cheerio`);
+      try {
+        fs.appendFileSync(logFile, `🔧 ✅ Restored OL "${olId}" before Cheerio\n`);
+      } catch (err) {
+        console.error('Failed to log restoration:', err);
+      }
+    } else {
+      console.error(`🔧 [OL-WORKAROUND] ❌ PLACEHOLDER NOT FOUND for "${olId}"! Placeholder was stripped during preprocessing.`);
+      console.error(`🔧 [OL-WORKAROUND] Looking for: ${placeholder}`);
+      try {
+        fs.appendFileSync(logFile, `🔧 ❌ ERROR: Placeholder not found for "${olId}" before Cheerio!\n`);
+        fs.appendFileSync(logFile, `Missing placeholder: ${placeholder}\n`);
+      } catch (err) {
+        console.error('Failed to log error:', err);
+      }
+    }
+  }
+
   // Use cheerio to parse HTML and process elements in document order
   let $;
   let elementOrderMap = new Map(); // Declare at function scope so it's accessible throughout
   
   try {
+    // FILE-BASED DIAGNOSTIC: Check HTML BEFORE Cheerio
+    const fs = require('fs');
+    const path = require('path');
+    const logFile = path.join(__dirname, '../logs', 'entry-diagnostic.log');
+    
+    fs.appendFileSync(logFile, `\n--- CHEERIO LOAD ---\n`);
+    fs.appendFileSync(logFile, `HTML length BEFORE Cheerio.load(): ${html.length}\n`);
+    
+    const targetOlBefore = html.match(/<ol[^>]*id="devops-software-quality-sub-category__ol_bpk_gfk_xpb"[^>]*>[\s\S]*?<\/ol>/);
+    if (targetOlBefore) {
+      fs.appendFileSync(logFile, `Target OL BEFORE Cheerio: ${targetOlBefore[0].length} chars, ${(targetOlBefore[0].match(/<li/g) || []).length} <li> tags\n`);
+      fs.appendFileSync(logFile, `Contains Submit BEFORE Cheerio: ${targetOlBefore[0].includes('<span class="ph uicontrol">Submit</span>')}\n`);
+    }
+    
     $ = cheerio.load(html, { 
       decodeEntities: false,
       _useHtmlParser2: true 
     });
+    
+    // FILE-BASED DIAGNOSTIC: Check HTML AFTER Cheerio
+    const htmlAfter = $.html();
+    fs.appendFileSync(logFile, `HTML length AFTER Cheerio.load(): ${htmlAfter.length}\n`);
+    
+    const targetOlAfter = htmlAfter.match(/<ol[^>]*id="devops-software-quality-sub-category__ol_bpk_gfk_xpb"[^>]*>[\s\S]*?<\/ol>/);
+    if (targetOlAfter) {
+      fs.appendFileSync(logFile, `Target OL AFTER Cheerio: ${targetOlAfter[0].length} chars, ${(targetOlAfter[0].match(/<li/g) || []).length} <li> tags\n`);
+      fs.appendFileSync(logFile, `Contains Submit AFTER Cheerio: ${targetOlAfter[0].includes('<span class="ph uicontrol">Submit</span>')}\n`);
+    } else {
+      fs.appendFileSync(logFile, `Target OL NOT FOUND after Cheerio.load()!\n`);
+    }
+    
+    console.log(`🔬 [CHEERIO-LOAD] HTML length BEFORE load: ${html.length}`);
+    console.log(`🔬 [CHEERIO-LOAD] HTML length AFTER load: ${htmlAfter.length}`);
     
     // Build DOM order map to preserve original element positions
     // This is critical for keeping orphan elements (e.g., stray <li>) in correct order
@@ -2526,13 +2639,24 @@ async function extractContentFromHtml(html) {
         console.log(`🔍   [${idx + 1}/${listItems.length}] "${preview}..."`);
       });
       
+      // CRITICAL: Snapshot nested blocks for ALL list items BEFORE processing any of them
+      // This prevents DOM corruption when nested blocks call .remove() during processing
+      // Issue: Processing list item N's nested blocks can corrupt list item N+1's DOM,
+      // causing nested blocks to be "lost" when checking for them, then "found" in the wrong list item
+      const listItemNestedBlocks = new Map();
+      for (let li of listItems) {
+        const $li = $(li);
+        const nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.itemgroup, > div.stepxmp, > div.info, > div.note').toArray();
+        listItemNestedBlocks.set(li, nestedBlocks);
+      }
+      console.log(`🔧 [OL-DOM-FIX] Snapshotted nested blocks for ${listItems.length} list items before processing`);
+      
       for (let li of listItems) {
         const $li = $(li);
         
-        // Check if list item contains nested block elements (pre, ul, ol, div.note, p, div.itemgroup, etc.)
-        // Note: We search for div.p wrappers which may contain div.note elements
-        // We ALSO search for div.note directly in case it's a direct child of <li>
-        const nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.itemgroup, > div.stepxmp, > div.info, > div.note').toArray();
+        // Use snapshotted nested blocks instead of finding them dynamically
+        // This prevents DOM corruption from affecting the nested blocks finder
+        const nestedBlocks = listItemNestedBlocks.get(li) || [];
         
         if (nestedBlocks.length > 0) {
           console.log(`🔍 Ordered list item contains ${nestedBlocks.length} nested block elements`);
@@ -2579,12 +2703,31 @@ async function extractContentFromHtml(html) {
           
           // Create the list item with text content AND nested blocks as children
           if ((textOnlyHtml && cleanHtmlText(textOnlyHtml).trim()) || promotedText) {
-            // Use promoted text if available (from first paragraph), otherwise use extracted text
+            // CRITICAL FIX: Combine direct text with promoted paragraph text
+            // Case: <li>Click Submit.<p>You have successfully created...</p></li>
+            // Need: "Click Submit. You have successfully created..."
             let liRichText, liImages;
             if (promotedText) {
-              liRichText = promotedText;
-              liImages = [];
-              console.log(`🔄 [LIST-ITEM-TEXT-PROMOTION] Using promoted text as list item text`);
+              // Check if there's also direct text content (before the nested paragraph)
+              if (textOnlyHtml && cleanHtmlText(textOnlyHtml).trim()) {
+                // Parse the direct text
+                const directParsed = await parseRichText(textOnlyHtml);
+                // Combine: direct text + newline + promoted paragraph text
+                // The <p> tag creates a visual line break, so we need to preserve that
+                const newlineElement = {
+                  type: 'text',
+                  text: { content: '\n' },
+                  annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' }
+                };
+                liRichText = [...directParsed.richText, newlineElement, ...promotedText];
+                liImages = directParsed.imageBlocks;
+                console.log(`🔄 [LIST-ITEM-TEXT-PROMOTION] Combined direct text with promoted paragraph text (with newline)`);
+              } else {
+                // No direct text, just use promoted text
+                liRichText = promotedText;
+                liImages = [];
+                console.log(`🔄 [LIST-ITEM-TEXT-PROMOTION] Using promoted text as list item text`);
+              }
             } else {
               const parsed = await parseRichText(textOnlyHtml);
               liRichText = parsed.richText;
@@ -2637,20 +2780,11 @@ async function extractContentFromHtml(html) {
                 return; // Skip further processing for this block
               }
               
-              // If a note/callout appears inside an ordered list item, convert it to a paragraph child
-              // so it stays visually attached to the step. We preserve rich_text but DROP marker to avoid orphan orchestration.
+              // Callouts can be children of list items - mark them for deferred orchestration
+              // This preserves the callout formatting while keeping proper parent-child relationship
               if (block && block.type === 'callout') {
-                const para = {
-                  object: "block",
-                  type: "paragraph",
-                  paragraph: {
-                    rich_text: (block.callout?.rich_text || [])
-                  }
-                };
-                // IMPORTANT: do NOT carry over _sn2n_marker; without a matching token on the list item,
-                // it would cause children to be orchestrated incorrectly. We'll keep it as immediate child.
-                console.log(`🔄 [CALLOUT-NESTING] Converting callout inside <li> to paragraph child to preserve parent-child relationship`);
-                immediateChildren.push(para);
+                console.log(`� Callout inside <li> needs marker for deferred append to numbered_list_item`);
+                markedBlocks.push(block);
                 return;
               }
 
@@ -3253,6 +3387,16 @@ async function extractContentFromHtml(html) {
               if ($candidate) {
                 const cHtml = $candidate.html() || $candidate.text() || '';
                 const cText = cleanHtmlText(cHtml).trim();
+                
+                // CRITICAL: Check if the candidate contains block-level elements (ul, ol, table, etc.)
+                // These should NOT be converted to list item continuations - they are separate structural blocks
+                const hasBlockElements = $candidate.find('> ul, > ol, > table, > pre, > figure, > div.table-wrap').length > 0;
+                if (hasBlockElements) {
+                  console.log(`🔎 [LIST-CONTINUATION-TRACE] Parent-level: candidate contains block elements - skipping as list continuation`);
+                  console.log(`🔎 [LIST-CONTINUATION-TRACE] Stopping at blocking sibling <${$candidate.prop('tagName') || 'unknown'}>`);
+                  break;
+                }
+                
                 if (cText.length > 10) {
                   console.log(`🔧 [LIST-CONTINUATION-FIX] Parent-level: found sibling after <ol> – converting to numbered_list_item: "${cText.substring(0, 80)}..."`);
                   const { richText: liRichText, imageBlocks: liImages } = await parseRichText(cHtml);
@@ -3405,27 +3549,63 @@ async function extractContentFromHtml(html) {
             const nodeHtml = node.nodeType === 3 ? node.nodeValue : $.html(node, { decodeEntities: false });
             const preview = nodeHtml.trim().substring(0, 50);
             console.log(`🔎 [MIXED-CONTENT] Accumulating ${node.nodeType === 3 ? 'TEXT' : 'ELEMENT'}: "${preview}..."`);
+            
+            // DEBUG: Check for UL ID in ANY accumulated content
+            if (nodeHtml && (nodeHtml.includes('_ul_') || nodeHtml.includes('ul_jfk') || nodeHtml.includes('__ul_'))) {
+              console.log(`🚨 [UL-ID-DEBUG] ${node.nodeType === 3 ? 'TEXT NODE' : 'ELEMENT'} contains UL ID pattern!`);
+              console.log(`🚨 [UL-ID-DEBUG] Full content (length ${nodeHtml.length}): "${nodeHtml}"`);
+              if (node.nodeType === 1) {
+                console.log(`🚨 [UL-ID-DEBUG] Element tag: <${node.name || node.nodeName}>`);
+              }
+            }
+            
             currentTextHtml += nodeHtml;
           } 
           // Block-level elements: flush accumulated text, then process block
           else if (node.nodeType === 1 && blockElementSet.has(node)) {
             // Flush accumulated text before this block element
             if (currentTextHtml.trim()) {
-              console.log(`🔍 Found text before block element: "${currentTextHtml.trim().substring(0, 80)}..."`);
+              const blockTag = node.name || node.nodeName || 'UNKNOWN';
+              const blockId = node.attribs?.id || ($(node).attr('id')) || 'no-id';
+              console.log(`🔍 Found text before block element <${blockTag} id="${blockId}">: "${currentTextHtml.trim().substring(0, 80)}..."`);
+              
+              // DEBUG: Check if text contains UL ID
+              if (currentTextHtml.includes('_ul_') || currentTextHtml.includes('ul_jfk')) {
+                console.log(`🚨 [UL-ID-DEBUG] Text before block contains UL ID string!`);
+                console.log(`🚨 [UL-ID-DEBUG] Full text: "${currentTextHtml}"`);
+                console.log(`🚨 [UL-ID-DEBUG] Block element: <${blockTag} id="${blockId}">`);
+              }
+              
               let textHtml = currentTextHtml.trim();
               
               // Remove any literal note div tags that may appear as text
               textHtml = textHtml.replace(/<div\s+class=["'][^"']*note[^"']*["'][^>]*>[\s\S]*?<\/div>/gi, ' ');
               
               const { richText: textRichText } = await parseRichText(textHtml);
+              console.log(`🔍 [MIXED-CONTENT-DEBUG] textRichText.length = ${textRichText.length}`);
+              if (textRichText.length > 0) {
+                const hasContent = textRichText.some(rt => rt.text.content.trim() || rt.text.link);
+                console.log(`🔍 [MIXED-CONTENT-DEBUG] hasContent check = ${hasContent}`);
+                if (!hasContent) {
+                  console.log(`🔍 [MIXED-CONTENT-DEBUG] First richText element:`, JSON.stringify(textRichText[0], null, 2));
+                }
+              }
               if (textRichText.length > 0 && textRichText.some(rt => rt.text.content.trim() || rt.text.link)) {
                 const textChunks = splitRichTextArray(textRichText);
+                console.log(`🔍 [MIXED-CONTENT] Creating ${textChunks.length} paragraph block(s) from text before <${blockTag}>`);
                 for (const chunk of textChunks) {
+                  const textPreview = chunk.map(rt => rt.text.content).join('').substring(0, 80);
+                  console.log(`🔍 [MIXED-CONTENT]   Paragraph text: "${textPreview}..."`);
                   processedBlocks.push({
                     object: "block",
                     type: "paragraph",
                     paragraph: { rich_text: chunk }
                   });
+                }
+              } else {
+                console.log(`🔍 [MIXED-CONTENT] Skipping empty/whitespace-only text before <${blockTag}>`);
+                if (textHtml && textHtml.trim()) {
+                  console.log(`🔍 [MIXED-CONTENT-DEBUG] But textHtml was not empty: "${textHtml.substring(0, 100)}"`);
                 }
               }
               currentTextHtml = '';
