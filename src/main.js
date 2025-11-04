@@ -700,6 +700,26 @@ class ServiceNowToNotionApp {
           // Count <li> tags
           const liCount = (window.DEBUG_TARGET_OL.match(/<li/g) || []).length;
           console.log('💾 [CLIENT-DEBUG] Total <li> tags in OL:', liCount);
+          
+          // Parse and extract the 4th LI to show in logs
+          try {
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = window.DEBUG_TARGET_OL;
+            const ol = tempDiv.querySelector('ol');
+            if (ol) {
+              const lis = Array.from(ol.children).filter(el => el.tagName === 'LI');
+              console.log('💾 [CLIENT-DEBUG] Parsed', lis.length, 'direct <li> children from OL');
+              if (lis.length >= 4) {
+                const fourthLi = lis[3];
+                console.log('💾 [CLIENT-DEBUG] 4th LI text:', fourthLi.textContent.substring(0, 100).trim());
+                console.log('💾 [CLIENT-DEBUG] 4th LI HTML:', fourthLi.outerHTML.substring(0, 300));
+              } else {
+                console.log('⚠️ [CLIENT-DEBUG] Only found', lis.length, 'direct LI children (expected 4)');
+              }
+            }
+          } catch (e) {
+            console.log('⚠️ [CLIENT-DEBUG] Failed to parse OL:', e.message);
+          }
         } else {
           console.log('⚠️ [CLIENT-DEBUG] Target OL not found in extracted HTML');
           // Show what OL IDs we do have
