@@ -606,6 +606,33 @@ class ServiceNowToNotionApp {
       console.log('🔍🔍🔍 MAIN.JS - Sections in HTML:', sectionCount);
       console.log('🔍🔍🔍 MAIN.JS - First 500 chars:', htmlContent.substring(0, 500));
       console.log('🔍🔍🔍 MAIN.JS - Last 500 chars:', htmlContent.substring(htmlContent.length - 500));
+      
+      // DEBUG: Count OL and LI tags in htmlContent being sent to server
+      const olCountInHtml = (htmlContent.match(/<ol[^>]*>/g) || []).length;
+      const liCountInHtml = (htmlContent.match(/<li[^>]*>/g) || []).length;
+      const mainStepsOlMatch = htmlContent.match(/<ol[^>]*class="[^"]*ol steps[^"]*"[^>]*>/);
+      console.log(`🔍🔍🔍 MAIN.JS - About to send to server: ${olCountInHtml} OL tags, ${liCountInHtml} LI tags`);
+      if (mainStepsOlMatch) {
+        const olStartIdx = htmlContent.indexOf(mainStepsOlMatch[0]);
+        // Find matching closing tag by counting nested OLs
+        let openCount = 1;
+        let searchIdx = olStartIdx + mainStepsOlMatch[0].length;
+        while (openCount > 0 && searchIdx < htmlContent.length) {
+          const nextOpen = htmlContent.indexOf('<ol', searchIdx);
+          const nextClose = htmlContent.indexOf('</ol>', searchIdx);
+          if (nextClose === -1) break;
+          if (nextOpen !== -1 && nextOpen < nextClose) {
+            openCount++;
+            searchIdx = nextOpen + 3;
+          } else {
+            openCount--;
+            searchIdx = nextClose + 5;
+          }
+        }
+        const olHtml = htmlContent.substring(olStartIdx, searchIdx);
+        const directLiInHtml = (olHtml.match(/<li[^>]*class="[^"]*li step[^"]*"[^>]*>/g) || []).length;
+        console.log(`🔍🔍🔍 MAIN.JS - Main steps OL being sent has ${directLiInHtml} direct LI children (should be 6)`);
+      }
 
       const pageData = {
         title: extractedData.title || document.title || "Untitled Page",
