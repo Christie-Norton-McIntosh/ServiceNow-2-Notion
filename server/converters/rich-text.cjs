@@ -119,6 +119,16 @@ function convertRichTextBlock(input, options = {}) {
     // Decode any HTML entities first
   html = decodeEntities(html);
   
+  // Convert <br> and <br/> tags to special marker BEFORE HTML tag stripping
+  // Use marker to distinguish intentional breaks from HTML formatting whitespace
+  const beforeBrConversion = html;
+  html = html.replace(/<br\s*\/?>/gi, '__BR_NEWLINE__');
+  if (beforeBrConversion !== html) {
+    console.log(`🔍 [BR-CONVERSION] Converted <br> tags to __BR_NEWLINE__ markers`);
+    console.log(`   Before: "${beforeBrConversion.substring(0, 150)}"`);
+    console.log(`   After: "${html.substring(0, 150)}"`);
+  }
+  
   // Remove SVG elements entirely (including their content) FIRST - these are just decorative icons
   // This must happen before placeholder extraction to prevent SVG content from being protected
   // Prevents SVG markup like "<use xlink:href="#ico-related-link"></use>" from appearing as text
@@ -384,18 +394,36 @@ function convertRichTextBlock(input, options = {}) {
   // Handle "Role required:" followed by comma-separated role names as inline code
   // Examples: "Role required: admin", "Role required: sn_devops.admin, asset", "Role required: sam"
   // Roles can contain underscores and dots (e.g., sn_devops.admin)
-  html = html.replace(/\b(Role required:)\s+([a-z_][a-z0-9_.]*(?:\s+or\s+[a-z_][a-z0-9_.]*)*(?:,\s*[a-z_][a-z0-9_.]*)*)/gi, (match, label, roles) => {
-    console.log(`🔍 [ROLE] Matched "Role required:" with roles: "${roles}"`);
-    // Split roles by comma or "or", wrap each in code markers
-    const roleList = roles.split(/(?:,\s*|\s+or\s+)/i).map(role => {
-      const trimmed = role.trim();
-      console.log(`🔍 [ROLE] Wrapping role: "${trimmed}"`);
-      return `__CODE_START__${trimmed}__CODE_END__`;
-    }).join(' or ');
-    const result = `${label} ${roleList}`;
-    console.log(`🔍 [ROLE] Result: "${result}"`);
-    return result;
-  });
+  // CRITICAL: Process text in segments split by __BR_NEWLINE__ to avoid matching across line breaks
+  const beforeSplit = html;
+  const segments = html.split(/(__BR_NEWLINE__|__[A-Z_]+__)/);
+  if (beforeSplit.includes('Role required:')) {
+    console.log(`🔍 [ROLE-SPLIT] Split into ${segments.length} segments around markers`);
+    segments.forEach((seg, idx) => {
+      if (seg.includes('Role required:') || seg.includes('admin') || seg.includes('__BR_NEWLINE__')) {
+        console.log(`🔍 [ROLE-SPLIT]   [${idx}] "${seg.substring(0, 80)}"`);
+      }
+    });
+  }
+  html = segments.map((segment, idx) => {
+    // Skip markers - don't process them
+    if (segment.startsWith('__') && segment.endsWith('__')) {
+      return segment;
+    }
+    // Process this segment for role patterns
+    return segment.replace(/\b(Role required:)\s+([a-z_][a-z0-9_.]*(?:\s+or\s+[a-z_][a-z0-9_.]*)*(?:,\s*[a-z_][a-z0-9_.]*)*)/gi, (match, label, roles) => {
+      console.log(`🔍 [ROLE] Matched in segment [${idx}] "Role required:" with roles: "${roles}"`);
+      // Split roles by comma or "or", wrap each in code markers
+      const roleList = roles.split(/(?:,\s*|\s+or\s+)/i).map(role => {
+        const trimmed = role.trim();
+        console.log(`🔍 [ROLE] Wrapping role: "${trimmed}"`);
+        return `__CODE_START__${trimmed}__CODE_END__`;
+      }).join(' or ');
+      const result = `${label} ${roleList}`;
+      console.log(`🔍 [ROLE] Result: "${result}"`);
+      return result;
+    });
+  }).join('');
 
   // Standalone multi-word identifiers connected by _ or . (no spaces) as inline code
   // Each segment can start with a letter, can contain letters, numbers, hyphens, and underscores

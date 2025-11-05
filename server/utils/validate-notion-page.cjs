@@ -154,10 +154,22 @@ function parseSourceHtmlCounts(html) {
     // Count total list items
     const totalListItems = orderedListItems + unorderedListItems;
     
-    // Count paragraphs (excluding those inside tables - they become table cell text, not paragraph blocks)
+    // Count paragraphs (excluding those inside tables and those promoted to list item text)
+    // Paragraphs get promoted when they're the first child of a list item: <li><p>text</p>...</li>
     const allParagraphs = $('p, div.p').length;
     const paragraphsInTables = $('table p, table div.p').length;
-    const paragraphs = allParagraphs - paragraphsInTables;
+    
+    // Count paragraphs that are first children of list items (these get promoted to list item text)
+    let paragraphsPromotedToListText = 0;
+    $('li').each((i, li) => {
+      const $li = $(li);
+      const firstChild = $li.children().first();
+      if (firstChild.length && (firstChild.is('p') || (firstChild.is('div') && firstChild.hasClass('p')))) {
+        paragraphsPromotedToListText++;
+      }
+    });
+    
+    const paragraphs = allParagraphs - paragraphsInTables - paragraphsPromotedToListText;
     
     // Count headings
     const headings = $('h1, h2, h3, h4, h5, h6').length;
@@ -172,18 +184,54 @@ function parseSourceHtmlCounts(html) {
     
     // Count callouts/notes (excluding those inside tables - Notion table cells can't contain callouts)
     // Includes: div.note/info/warning/important/tip/caution, aside, and section.prereq ("Before you begin")
+    // Excludes: div.itemgroup (ServiceNow containers, not actual callouts even if they have info/note classes)
+    // Excludes: callouts nested inside other callouts (Notion can't nest callouts, so these get moved to markers)
     const allCallouts = $('div.note, div.info, div.warning, div.important, div.tip, div.caution, aside, section.prereq').length;
+    const itemgroupCallouts = $('div.itemgroup.note, div.itemgroup.info, div.itemgroup.warning, div.itemgroup.important, div.itemgroup.tip, div.itemgroup.caution').length;
     const calloutsInTables = $('table div.note, table div.info, table div.warning, table div.important, table div.tip, table div.caution, table aside, table section.prereq').length;
-    const callouts = allCallouts - calloutsInTables;
+    
+    // Count callouts that are nested inside other callouts (direct or via list items)
+    // These can't be rendered in Notion since callouts can't contain callouts, so they get moved to marker-based orchestration
+    // NOTE: Must check for nesting BEFORE excluding tables/itemgroups, otherwise we might count nested callouts inside tables
+    let nestedCallouts = 0;
+    $('div.note, div.info, div.warning, div.important, div.tip, div.caution, aside, section.prereq').each((i, callout) => {
+      const $callout = $(callout);
+      
+      // Skip if this is an itemgroup container (not a real callout)
+      if ($callout.hasClass('itemgroup')) {
+        return; // continue to next callout
+      }
+      
+      // Skip if this callout is inside a table (already excluded)
+      if ($callout.closest('table').length > 0) {
+        return; // continue to next callout
+      }
+      
+      // Check if this callout is inside another callout (directly or via list item)
+      // Use .parent().closest() instead of just .closest() to exclude the callout itself
+      // IMPORTANT: Exclude div.itemgroup from parent search - itemgroups are containers, not callouts
+      const parentCallout = $callout.parent().closest('div.note:not(.itemgroup), div.info:not(.itemgroup), div.warning:not(.itemgroup), div.important:not(.itemgroup), div.tip:not(.itemgroup), div.caution:not(.itemgroup), aside, section.prereq');
+      if (parentCallout.length > 0) {
+        // Double-check that parent is not an itemgroup (belt and suspenders)
+        if (!parentCallout.hasClass('itemgroup')) {
+          nestedCallouts++;
+        }
+      }
+    });
+    
+    const callouts = allCallouts - itemgroupCallouts - calloutsInTables - nestedCallouts;
     
     // Count code blocks (excluding those inside tables - Notion table cells can't contain code blocks)
     const allCodeBlocks = $('pre').length;
     const codeBlocksInTables = $('table pre').length;
     const codeBlocks = allCodeBlocks - codeBlocksInTables;
     
-    // Log paragraph count details if paragraphs were excluded from tables
-    if (paragraphsInTables > 0) {
-      console.log(`📊 [VALIDATION] Paragraph count: ${allParagraphs} total, ${paragraphsInTables} in tables (excluded), ${paragraphs} counted for validation`);
+    // Log paragraph count details if paragraphs were excluded
+    if (paragraphsInTables > 0 || paragraphsPromotedToListText > 0) {
+      const exclusions = [];
+      if (paragraphsInTables > 0) exclusions.push(`${paragraphsInTables} in tables`);
+      if (paragraphsPromotedToListText > 0) exclusions.push(`${paragraphsPromotedToListText} promoted to list item text`);
+      console.log(`📊 [VALIDATION] Paragraph count: ${allParagraphs} total, ${exclusions.join(', ')} (excluded), ${paragraphs} counted for validation`);
     }
     
     // Log image count details if images were excluded from tables
@@ -191,9 +239,13 @@ function parseSourceHtmlCounts(html) {
       console.log(`📊 [VALIDATION] Image count: ${allImages} total, ${imagesInTables} in tables (excluded), ${images} counted for validation`);
     }
     
-    // Log callout count details if callouts were excluded from tables
-    if (calloutsInTables > 0) {
-      console.log(`📊 [VALIDATION] Callout count: ${allCallouts} total, ${calloutsInTables} in tables (excluded), ${callouts} counted for validation`);
+    // Log callout count details if callouts were excluded from tables, itemgroups, or nested callouts
+    if (calloutsInTables > 0 || itemgroupCallouts > 0 || nestedCallouts > 0) {
+      const exclusions = [];
+      if (itemgroupCallouts > 0) exclusions.push(`${itemgroupCallouts} itemgroup containers`);
+      if (calloutsInTables > 0) exclusions.push(`${calloutsInTables} in tables`);
+      if (nestedCallouts > 0) exclusions.push(`${nestedCallouts} nested in other callouts`);
+      console.log(`📊 [VALIDATION] Callout count: ${allCallouts} total, ${exclusions.join(', ')} (excluded), ${callouts} counted for validation`);
     }
     
     // Log list item count details if list items were excluded from nav

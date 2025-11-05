@@ -371,6 +371,21 @@ async function extractContentFromHtml(html) {
         `=== AFTER normalization ===\n${JSON.stringify(text)}\n=== END ===\n`);
     }
     
+    // CRITICAL: Convert <br> and <br/> tags to markers BEFORE any other processing
+    // Use marker to distinguish intentional breaks from HTML formatting whitespace
+    const beforeBrConversion = text;
+    text = text.replace(/<br\s*\/?>/gi, '__BR_NEWLINE__');
+    if (beforeBrConversion !== text) {
+      console.log(`🔍 [BR-CONVERSION] Converted <br> tags to __BR_NEWLINE__ markers in parseRichText`);
+      const adminIndex = text.indexOf('admin');
+      if (adminIndex !== -1) {
+        const snippet = text.substring(adminIndex, adminIndex + 80);
+        console.log(`   Text around "admin": "${snippet}"`);
+      }
+      console.log(`   Before: "${beforeBrConversion.substring(0, 150)}"`);
+      console.log(`   After: "${text.substring(0, 150)}"`);
+    }
+    
     // CRITICAL: Extract and decode URLs from <kbd> tags FIRST
     // <kbd> tags contain user input URLs with &lt; &gt; entities that need special handling
     // This handles most URLs since ServiceNow wraps technical content in <kbd> tags
@@ -504,7 +519,13 @@ async function extractContentFromHtml(html) {
     text = text.replace(/^[^<]+?(?:class|id|style|href|src)=[^>]*>/gi, ' ');  // Incomplete tag at beginning
     
     // Clean up extra whitespace from tag removal
-    text = text.replace(/\s+/g, ' ').trim();
+    // CRITICAL: Preserve newlines while normalizing other whitespace
+    // Replace multiple non-newline whitespace with single space
+    text = text.replace(/[^\S\n]+/g, ' ');
+    // Clean up multiple consecutive newlines (keep max 1)
+    text = text.replace(/\n+/g, '\n');
+    // Trim spaces (not newlines) from start and end
+    text = text.replace(/^[ \t]+|[ \t]+$/g, '');
     
     // CRITICAL: Restore protected angle brackets inside CODE markers
     // These were temporarily replaced to prevent span stripping regex from breaking on them
@@ -684,18 +705,36 @@ async function extractContentFromHtml(html) {
     // Handle role names after "Role required:" as inline code
     // Examples: "Role required: admin", "Role required: sn_devops.admin, asset", "Role required: sn_devops.admin or sn_devops.tool_owner"
     // Roles can contain underscores and dots (e.g., sn_devops.admin)
-    text = text.replace(/\b(Role required:)\s+([a-z_][a-z0-9_.]*(?:\s+or\s+[a-z_][a-z0-9_.]*)*(?:,\s*[a-z_][a-z0-9_.]*)*)/gi, (match, label, roles) => {
-      console.log(`🔍 [ROLE] Matched "Role required:" with roles: "${roles}"`);
-      // Split roles by comma or "or", wrap each in code markers
-      const roleList = roles.split(/(?:,\s*|\s+or\s+)/i).map(role => {
-        const trimmed = role.trim();
-        console.log(`🔍 [ROLE] Wrapping role: "${trimmed}"`);
-        return `__CODE_START__${trimmed}__CODE_END__`;
-      }).join(' or ');
-      const result = `${label} ${roleList}`;
-      console.log(`🔍 [ROLE] Result: "${result}"`);
-      return result;
-    });
+    // CRITICAL: Process text in segments split by __BR_NEWLINE__ to avoid matching across line breaks
+    const textBeforeSplit = text;
+    const textSegments = text.split(/(__BR_NEWLINE__|__[A-Z_]+__)/);
+    if (textBeforeSplit.includes('Role required:')) {
+      console.log(`🔍 [ROLE-SPLIT-SN] Split into ${textSegments.length} segments around markers`);
+      textSegments.forEach((seg, idx) => {
+        if (seg.includes('Role required:') || seg.includes('admin') || seg.includes('__BR_NEWLINE__')) {
+          console.log(`🔍 [ROLE-SPLIT-SN]   [${idx}] "${seg.substring(0, 80)}"`);
+        }
+      });
+    }
+    text = textSegments.map((segment, idx) => {
+      // Skip markers - don't process them
+      if (segment.startsWith('__') && segment.endsWith('__')) {
+        return segment;
+      }
+      // Process this segment for role patterns
+      return segment.replace(/\b(Role required:)\s+([a-z_][a-z0-9_.]*(?:\s+or\s+[a-z_][a-z0-9_.]*)*(?:,\s*[a-z_][a-z0-9_.]*)*)/gi, (match, label, roles) => {
+        console.log(`🔍 [ROLE] Matched in segment [${idx}] "Role required:" with roles: "${roles}"`);
+        // Split roles by comma or "or", wrap each in code markers
+        const roleList = roles.split(/(?:,\s*|\s+or\s+)/i).map(role => {
+          const trimmed = role.trim();
+          console.log(`🔍 [ROLE] Wrapping role: "${trimmed}"`);
+          return `__CODE_START__${trimmed}__CODE_END__`;
+        }).join(' or ');
+        const result = `${label} ${roleList}`;
+        console.log(`🔍 [ROLE] Result: "${result}"`);
+        return result;
+      });
+    }).join('');
 
     // Handle standalone multi-word identifiers connected by _ or . (no spaces) as inline code
     // Each segment can start with a letter, can contain letters, numbers, hyphens, and underscores
@@ -932,13 +971,32 @@ async function extractContentFromHtml(html) {
       }
     }
 
+    // DEBUG: Log richText array before spacing logic
+    if (text.includes('Role required') && text.includes('admin')) {
+      console.log(`🔍 [PRE-SPACING] richText array has ${richText.length} elements:`);
+      richText.forEach((rt, idx) => {
+        console.log(`  [${idx}] content="${rt.text.content.substring(0, 50)}" code=${rt.annotations?.code} charCode=${rt.text.content.charCodeAt(0)}`);
+      });
+    }
+
     // Ensure proper spacing between rich text elements
     for (let i = 0; i < richText.length - 1; i++) {
       const current = richText[i];
       const next = richText[i + 1];
 
+      // DEBUG: Log spacing decisions for code blocks
+      if (current.annotations?.code || next.text.content === "\n") {
+        console.log(`🔍 [SPACING] Element ${i}: "${current.text.content}" (code=${current.annotations?.code}) -> Element ${i+1}: "${next.text.content}"`);
+      }
+
       // If current text doesn't end with space and next text doesn't start with space
-      if (current.text.content && next.text.content && !current.text.content.endsWith(" ") && !next.text.content.startsWith(" ")) {
+      // BUT: Don't add space if next element is a newline OR if current element is a newline (preserve line breaks)
+      if (current.text.content && next.text.content && 
+          !current.text.content.endsWith(" ") && 
+          !next.text.content.startsWith(" ") &&
+          current.text.content !== "\n" &&
+          next.text.content !== "\n") {
+        console.log(`🔍 [SPACING] Adding space after "${current.text.content}"`);
         current.text.content += " ";
       }
     }
@@ -1534,9 +1592,23 @@ async function extractContentFromHtml(html) {
       // IMPORTANT: div.p is a ServiceNow wrapper that often contains mixed content (text + blocks)
       // For div.p with nested blocks: process the ENTIRE div.p as a child block (it will handle mixed content)
       
+      // CRITICAL FIX: Unwrap itemgroup/info wrappers BEFORE finding nested blocks
+      // This allows nested callouts (div.note inside div.itemgroup) to be detected as direct children
+      const itemgroupWrappers = $elem.find('> div.itemgroup, > div.info');
+      if (itemgroupWrappers.length > 0) {
+        console.log(`🔍 [NESTED-CALLOUT] Unwrapping ${itemgroupWrappers.length} itemgroup/info wrappers in callout`);
+        itemgroupWrappers.each((i, wrapper) => {
+          const $wrapper = $(wrapper);
+          console.log(`🔍 [NESTED-CALLOUT] Unwrapping <div class="${$wrapper.attr('class')}"> - inner HTML: ${($wrapper.html() || '').substring(0, 100)}...`);
+          $wrapper.replaceWith($wrapper.html());
+        });
+      }
+      
       // Find nested blocks that are direct children (excluding div.p which needs special handling)
       // Include > img so standalone images inside callouts are processed as child blocks
-      const directNestedBlocks = $elem.find('> ul, > ol, > figure, > table, > pre, > div.table-wrap, > div.note, > div.itemgroup, > div.info, > img');
+      // Note: Now div.note will be found directly if it was inside an itemgroup wrapper
+      const directNestedBlocks = $elem.find('> ul, > ol, > figure, > table, > pre, > div.table-wrap, > div.note, > div.warning, > div.important, > div.tip, > div.caution, > img');
+      console.log(`🔍 [NESTED-CALLOUT] After unwrapping, found ${directNestedBlocks.length} direct nested blocks`);
       
       // Check if any div.p elements contain nested blocks - if so, treat the entire div.p as a nested block
       const divPWithBlocks = $elem.find('> div.p').filter((i, divP) => {
@@ -1552,8 +1624,9 @@ async function extractContentFromHtml(html) {
         
         // Clone and remove nested blocks to get just the text content
         // Remove direct nested blocks AND any div.p that contains nested blocks
+        // Note: itemgroup/info already unwrapped, so no need to remove them
         const $clone = $elem.clone();
-        $clone.find('> ul, > ol, > figure, > table, > pre, > div.table-wrap, > div.note, > div.itemgroup, > div.info, > img').remove();
+        $clone.find('> ul, > ol, > figure, > table, > pre, > div.table-wrap, > div.note, > div.warning, > div.important, > div.tip, > div.caution, > img').remove();
         
         // Remove div.p elements that contain nested blocks (these are processed as child blocks)
         $clone.find('> div.p').each((i, divP) => {
@@ -1597,19 +1670,58 @@ async function extractContentFromHtml(html) {
         const { richText: calloutRichText } = await parseRichText(textOnlyHtml);
         
         // Process nested blocks as children - these will be appended after page creation
+        // CRITICAL: Flatten nested callouts (Notion doesn't support nested callouts)
         const childBlocks = [];
+        const nestedCalloutTexts = []; // Collect text from nested callouts to add to parent
+        
         for (const nestedBlock of allNestedBlocks.toArray()) {
           const $nestedBlock = $(nestedBlock);
           const blockTag = nestedBlock.name;
           const blockClass = $nestedBlock.attr('class') || '';
-          console.log(`🔍 Processing callout nested block: <${blockTag}${blockClass ? ` class="${blockClass}"` : ''}>`);
-          const nestedProcessed = await processElement(nestedBlock);
-          console.log(`🔍   Returned ${nestedProcessed.length} blocks: ${nestedProcessed.map(b => b.type).join(', ')}`);
-          childBlocks.push(...nestedProcessed);
+          
+          // Check if this is a nested callout (div.note, div.info, div.warning, etc.)
+          const isNestedCallout = blockTag === 'div' && 
+            /\b(note|info|warning|important|tip|caution)\b/.test(blockClass) &&
+            !/\bitemgroup\b/.test(blockClass);
+          
+          console.log(`🔍 [NESTED-CALLOUT] Checking nested block: <${blockTag} class="${blockClass}"> - isNestedCallout: ${isNestedCallout}`);
+          
+          if (isNestedCallout) {
+            console.log(`🔍 [NESTED-CALLOUT] ✅ Flattening nested callout: <${blockTag} class="${blockClass}"> (Notion doesn't support nested callouts)`);
+            // Extract text from nested callout and add to parent callout's text
+            const nestedCalloutHtml = $nestedBlock.html() || '';
+            // Remove the title span from nested callout
+            const cleanedHtml = nestedCalloutHtml.replace(/<span[^>]*class=["'][^"']*note__title[^"']*["'][^>]*>([^<]*)<\/span>/gi, '$1');
+            const { richText: nestedText } = await parseRichText(cleanedHtml);
+            nestedCalloutTexts.push(nestedText);
+            console.log(`🔍   Extracted ${nestedText.length} rich_text elements from nested callout`);
+          } else {
+            console.log(`🔍 Processing callout nested block: <${blockTag}${blockClass ? ` class="${blockClass}"` : ''}>`);
+            const nestedProcessed = await processElement(nestedBlock);
+            console.log(`🔍   Returned ${nestedProcessed.length} blocks: ${nestedProcessed.map(b => b.type).join(', ')}`);
+            childBlocks.push(...nestedProcessed);
+          }
+        }
+        
+        // Combine parent callout text with flattened nested callout texts
+        let finalCalloutRichText = calloutRichText;
+        if (nestedCalloutTexts.length > 0) {
+          console.log(`🔍 Combining parent callout with ${nestedCalloutTexts.length} flattened nested callout(s)`);
+          // Add newlines between sections
+          for (const nestedText of nestedCalloutTexts) {
+            if (finalCalloutRichText.length > 0) {
+              finalCalloutRichText.push({
+                type: 'text',
+                text: { content: '\n' },
+                annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' }
+              });
+            }
+            finalCalloutRichText.push(...nestedText);
+          }
         }
         
         // Check if callout has actual content or is just empty/whitespace/title-only
-        const calloutContent = calloutRichText.map(rt => rt.text.content).join('').trim();
+        const calloutContent = finalCalloutRichText.map(rt => rt.text.content).join('').trim();
         const hasCalloutContent = calloutContent.length > 0;
         
         // Check if content is ONLY the note title (e.g., "Note:", "Important:", etc.)
@@ -1628,13 +1740,13 @@ async function extractContentFromHtml(html) {
           processedBlocks.push(...childBlocks);
         } else {
           // Create callout WITH content (even if it's just the title)
-          console.log(`🔍 Creating callout with ${calloutRichText.length} rich_text elements and ${childBlocks.length} deferred children`);
+          console.log(`🔍 Creating callout with ${finalCalloutRichText.length} rich_text elements and ${childBlocks.length} deferred children`);
           
           const calloutBlock = {
             object: "block",
             type: "callout",
             callout: {
-              rich_text: calloutRichText.length > 0 ? calloutRichText : [{ type: "text", text: { content: "" } }],
+              rich_text: finalCalloutRichText.length > 0 ? finalCalloutRichText : [{ type: "text", text: { content: "" } }],
               icon: { type: "emoji", emoji: calloutIcon },
               color: calloutColor
             }
@@ -2177,30 +2289,84 @@ async function extractContentFromHtml(html) {
         // Note: We search for div.p wrappers which may contain div.note elements
         // IMPORTANT: div.itemgroup and div.info are NOT block elements - they're just wrappers
         // We need to look INSIDE them for actual block elements (div.note, pre, ul, etc.)
-        // First, unwrap div.itemgroup and div.info so we can find nested blocks properly
-        $li.find('> div.itemgroup, > div.info').each((i, wrapper) => {
-          $(wrapper).replaceWith($(wrapper).html());
+        // CRITICAL FIX: Unwrap div.itemgroup and div.info to expose nested callouts
+        // Use jQuery's .unwrap() method which is more reliable than .replaceWith()
+        // IMPORTANT: Must unwrap from innermost to outermost to avoid DOM reference issues
+        
+        // First pass: find all wrappers and collect them
+        const wrappers = $li.find('> div.itemgroup, > div.info').toArray();
+        
+        // Unwrap each wrapper by replacing it with its children
+        wrappers.forEach((wrapper) => {
+          const $wrapper = $(wrapper);
+          const children = $wrapper.contents();
+          
+          // Replace wrapper with its children
+          $wrapper.replaceWith(children);
         });
         
-        const nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.stepxmp, > div.note').toArray();
+        // After unwrapping, re-query to find all nested blocks including newly-exposed callouts
+        const nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.stepxmp, > div.note, > div.warning, > div.important, > div.tip, > div.caution').toArray();
         
         if (nestedBlocks.length > 0) {
           console.log(`🔍 List item contains ${nestedBlocks.length} nested block elements`);
           
-          // Extract text content without nested blocks for the list item text
-          const $textOnly = $li.clone();
-          // Remove nested blocks (including div.p which may contain div.note, AND direct div.note children)
-          $textOnly.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.stepxmp, > div.note').remove();
-          const textOnlyHtml = $textOnly.html();
+          // CRITICAL FIX: Extract text BETWEEN and AFTER nested blocks, not just before them
+          // IMPORTANT: Use Cheerio's .contents() to get ALL nodes (elements + text) after unwrapping itemgroup/info
+          const allChildren = $li.contents().toArray();
+          const textSegments = []; // Collect all text segments
+          const nestedChildren = []; // Collect processed nested blocks
           
-          // Process nested blocks first to add as children
-          const nestedChildren = [];
-          for (let i = 0; i < nestedBlocks.length; i++) {
-            const nestedBlock = nestedBlocks[i];
-            console.log(`🔍 Processing nested block in list item: <${nestedBlock.name}>`);
-            const childBlocks = await processElement(nestedBlock);
-            nestedChildren.push(...childBlocks);
+          for (let i = 0; i < allChildren.length; i++) {
+            const child = allChildren[i];
+            
+            // Check if this child is a block element we need to process
+            // CRITICAL: Must match the exact selector used to find nestedBlocks above
+            const nodeName = child.nodeName || child.name || child.tagName || 'UNKNOWN';
+            const $child = $(child);
+            const classAttr = $child.attr('class') || '';
+            const classes = classAttr.split(/\s+/).filter(c => c.length > 0);
+            
+            // CRITICAL FIX: Cheerio nodes use .name property, not .nodeName
+            const elementTag = (child.name || child.nodeName || child.tagName || '').toUpperCase();
+            
+            const isBlockElement = child.nodeType === 1 && ( // Element node
+              ['PRE', 'UL', 'OL', 'FIGURE', 'TABLE', 'P'].includes(elementTag) ||
+              (elementTag === 'DIV' && (() => {
+                // Check if element has one of the specific block classes
+                // Use exact class matching, not word boundary regex (avoids matching note__title, etc.)
+                return classes.includes('table-wrap') || 
+                       classes.includes('p') || 
+                       classes.includes('stepxmp') ||
+                       classes.includes('note') ||
+                       classes.includes('info') ||
+                       classes.includes('warning') ||
+                       classes.includes('important') ||
+                       classes.includes('tip') ||
+                       classes.includes('caution');
+              })())
+            );
+            
+            if (isBlockElement) {
+              console.log(`🔍 Processing nested block in list item: <${(child.nodeName || 'unknown').toLowerCase()}>`);
+              const childBlocks = await processElement(child);
+              nestedChildren.push(...childBlocks);
+            } else {
+              // Text node or inline element - accumulate as text segment
+              if (child.nodeType === 3) { // Text node
+                const text = child.textContent || '';
+                if (text.trim()) {
+                  textSegments.push(text);
+                }
+              } else if (child.nodeType === 1) { // Inline element
+                textSegments.push($(child).prop('outerHTML'));
+              }
+            }
           }
+          
+          // Combine all text segments into one HTML string
+          const textOnlyHtml = textSegments.join('');
+          console.log(`🔍 [UL-TEXT-EXTRACTION] Extracted ${textSegments.length} text segments from list item with ${nestedBlocks.length} nested blocks`);
           
           // Create the list item with text content AND nested blocks as children
           if (textOnlyHtml && cleanHtmlText(textOnlyHtml).trim()) {
@@ -2654,15 +2820,36 @@ async function extractContentFromHtml(html) {
       for (let li of listItems) {
         const $li = $(li);
         
-        // Use snapshotted nested blocks instead of finding them dynamically
-        // This prevents DOM corruption from affecting the nested blocks finder
-        const nestedBlocks = listItemNestedBlocks.get(li) || [];
+        // CRITICAL FIX: Don't unwrap div.itemgroup and div.info - Cheerio's replaceWith loses text nodes
+        // Instead, find nested blocks INSIDE wrappers and treat wrappers as transparent containers
+        // This preserves text nodes that appear between block elements inside the wrapper
+        const nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.stepxmp, > div.note, > div.warning, > div.important, > div.tip, > div.caution, > div.itemgroup > *, > div.info > *').toArray();
         
-        if (nestedBlocks.length > 0) {
-          console.log(`🔍 Ordered list item contains ${nestedBlocks.length} nested block elements`);
+        // Filter to only actual block elements (remove inline spans, text wrappers, etc.)
+        const actualBlocks = nestedBlocks.filter(block => {
+          const $block = $(block);
+          const nodeName = (block.nodeName || block.name || '').toLowerCase();
+          const classes = ($block.attr('class') || '').split(/\s+/);
+          
+          // Allow block elements
+          if (['pre', 'ul', 'ol', 'figure', 'table', 'p', 'div'].includes(nodeName)) {
+            // For divs, check they have block classes
+            if (nodeName === 'div') {
+              return classes.includes('table-wrap') || classes.includes('p') || 
+                     classes.includes('stepxmp') || classes.includes('note') || 
+                     classes.includes('warning') || classes.includes('important') || 
+                     classes.includes('tip') || classes.includes('caution');
+            }
+            return true;
+          }
+          return false;
+        });
+        
+        if (actualBlocks.length > 0) {
+          console.log(`🔍 Ordered list item contains ${actualBlocks.length} nested block elements`);
           
           // Log what nested blocks we found
-          nestedBlocks.forEach((block, idx) => {
+          actualBlocks.forEach((block, idx) => {
             const $block = $(block);
             const blockTag = block.name;
             const blockClass = $block.attr('class') || '';
@@ -2670,19 +2857,124 @@ async function extractContentFromHtml(html) {
             console.log(`🔍   [${idx}] <${blockTag}${blockClass ? ` class="${blockClass}"` : ''}> - "${blockPreview}..."`);
           });
           
-          // Extract text content without nested blocks for the list item text
-          const $textOnly = $li.clone();
-          // Remove nested blocks (including div.p which may contain div.note, AND direct div.note children)
-          $textOnly.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.itemgroup, > div.stepxmp, > div.info, > div.note').remove();
-          const textOnlyHtml = $textOnly.html();
+          // CRITICAL FIX: Extract text BETWEEN and AFTER nested blocks, not just before them
+          // IMPORTANT: Since we're NOT unwrapping itemgroup/info (to preserve text nodes), 
+          // we need to flatten them during iteration to get their contents
+          const allChildren = [];
+          $li.contents().toArray().forEach(child => {
+            const $child = $(child);
+            const nodeName = (child.nodeName || child.name || '').toLowerCase();
+            const classes = ($child.attr('class') || '').split(/\s+/);
+            
+            // If this is an itemgroup or info wrapper, add its children instead
+            if (nodeName === 'div' && (classes.includes('itemgroup') || classes.includes('info'))) {
+              console.log(`🔍 [OL-FLATTEN] Flattening ${classes.join('.')} wrapper - adding ${$child.contents().length} children`);
+              $child.contents().toArray().forEach(wrapperChild => allChildren.push(wrapperChild));
+            } else {
+              allChildren.push(child);
+            }
+          });
+          console.log(`🔍 [OL-CHILDREN] After flattening wrappers, <li> has ${allChildren.length} direct children`);
+          allChildren.forEach((child, idx) => {
+            const nodeType = child.nodeType === 3 ? 'TEXT' : (child.nodeType === 1 ? 'ELEMENT' : `TYPE-${child.nodeType}`);
+            // For text nodes, show both .data and .textContent and their lengths
+            let preview = '';
+            if (child.nodeType === 3) {
+              const data = child.data || '';
+              const textContent = child.textContent || '';
+              preview = `data(${data.length})="${data.substring(0, 50)}" textContent(${textContent.length})="${textContent.substring(0, 50)}"`;
+            } else {
+              preview = `<${child.name || 'unknown'}>`;
+            }
+            console.log(`🔍 [OL-CHILDREN]   [${idx}] ${nodeType} = ${preview}`);
+          });
+          const textSegments = []; // Collect text segments BEFORE first block element
+          const nestedChildren = []; // Collect processed nested blocks
+          let foundFirstBlock = false; // Track when we encounter the first block element
+          const textAfterBlocks = []; // Collect text segments AFTER block elements
           
-          // Process nested blocks first to add as children
-          const nestedChildren = [];
-          for (let i = 0; i < nestedBlocks.length; i++) {
-            const nestedBlock = nestedBlocks[i];
-            console.log(`🔍 Processing nested block in ordered list item: <${nestedBlock.name}>`);
-            const childBlocks = await processElement(nestedBlock);
-            nestedChildren.push(...childBlocks);
+          for (let i = 0; i < allChildren.length; i++) {
+            const child = allChildren[i];
+            
+            // Check if this child is a block element we need to process
+            // CRITICAL: Must match the exact selector used to find nestedBlocks above
+            // NOTE: itemgroup and info are NOT block elements - they're wrappers that get unwrapped above
+            const elementTag = (child.name || child.nodeName || child.tagName || '').toUpperCase();
+            const isBlockElement = child.nodeType === 1 && ( // Element node
+              ['PRE', 'UL', 'OL', 'FIGURE', 'TABLE', 'P'].includes(elementTag) ||
+              (elementTag === 'DIV' && (() => {
+                const $child = $(child);
+                const classes = ($child.attr('class') || '').split(/\s+/);
+                // Check if element has one of the specific block classes
+                // Use exact class matching, not word boundary regex (avoids matching note__title, etc.)
+                return classes.includes('table-wrap') || 
+                       classes.includes('p') || 
+                       classes.includes('stepxmp') ||
+                       classes.includes('note') || 
+                       classes.includes('warning') || 
+                       classes.includes('important') || 
+                       classes.includes('tip') || 
+                       classes.includes('caution');
+              })())
+            );
+            
+            if (isBlockElement) {
+              foundFirstBlock = true; // Mark that we've encountered a block element
+              const $child = $(child);
+              const childClass = $child.attr('class') || '';
+              const nodeName = (child && child.nodeName) ? child.nodeName.toLowerCase() : 'unknown';
+              console.log(`🔍 [OL-BLOCK] Processing nested block in ordered list item: <${nodeName} class="${childClass}">`);
+              const childBlocks = await processElement(child);
+              nestedChildren.push(...childBlocks);
+            } else {
+              // Text node or inline element - accumulate as text segment
+              // IMPORTANT: Add to textAfterBlocks if we've already seen a block element
+              const targetArray = foundFirstBlock ? textAfterBlocks : textSegments;
+              
+              if (child.nodeType === 3) { // Text node
+                // CRITICAL: Use .data property for text nodes, not .textContent (which may be empty)
+                const text = child.data || child.textContent || '';
+                // Only add text nodes that have non-whitespace content
+                // This filters out indentation/formatting whitespace from the source HTML
+                const trimmed = text.trim();
+                if (trimmed) {
+                  const location = foundFirstBlock ? 'AFTER blocks' : 'BEFORE blocks';
+                  console.log(`🔍 [OL-TEXT] Adding text node (${location}) to segments: "${trimmed.substring(0, 50)}..."`);
+                  // Use the original text (not trimmed) to preserve intentional spaces
+                  targetArray.push(text);
+                }
+              } else if (child.nodeType === 1) { // Inline element
+                const $child = $(child);
+                const html = $child.prop('outerHTML');
+                const nodeName = (child && child.nodeName) ? child.nodeName.toLowerCase() : 'unknown';
+                const location = foundFirstBlock ? 'AFTER blocks' : 'BEFORE blocks';
+                console.log(`🔍 [OL-INLINE] Adding inline element (${location}) to segments: <${nodeName} class="${$child.attr('class') || ''}"> html length: ${html.length}`);
+                targetArray.push(html);
+              }
+            }
+          }          // Combine all text segments into one HTML string
+          // Add space between segments to prevent concatenation like "process.You"
+          const textOnlyHtml = textSegments.join(' ');
+          console.log(`🔍 [OL-TEXT-EXTRACTION] Extracted ${textSegments.length} text segments BEFORE blocks from ordered list item with ${actualBlocks.length} nested blocks`);
+          
+          // CRITICAL: If there are text segments AFTER block elements, create a paragraph block for them
+          if (textAfterBlocks.length > 0) {
+            const textAfterHtml = textAfterBlocks.join(' ');
+            console.log(`🔍 [OL-TEXT-AFTER] Found ${textAfterBlocks.length} text segments AFTER blocks, creating paragraph`);
+            const afterParsed = await parseRichText(textAfterHtml);
+            if (afterParsed.richText.length > 0) {
+              const afterParagraph = {
+                object: 'block',
+                type: 'paragraph',
+                paragraph: {
+                  rich_text: afterParsed.richText,
+                  color: 'default'
+                }
+              };
+              // Add this paragraph to nestedChildren (it will be processed as a child/marker)
+              nestedChildren.push(afterParagraph);
+              console.log(`✅ [OL-TEXT-AFTER] Created paragraph with ${afterParsed.richText.length} rich_text elements for text after blocks`);
+            }
           }
           
           // CRITICAL: If the first nested block is a paragraph, promote its text to be the list item's text
@@ -3097,6 +3389,15 @@ async function extractContentFromHtml(html) {
           console.log(`🔍 Ordered list item HTML: "${liHtml.substring(0, 100)}"`);
           const { richText: liRichText, imageBlocks: liImages } = await parseRichText(liHtml);
           console.log(`🔍 Ordered list item rich_text: ${liRichText.length} elements`);
+          
+          // Remove leading/trailing whitespace-only elements (including newlines)
+          // This prevents empty lines at the start/end of list items
+          while (liRichText.length > 0 && (!liRichText[0].text?.content || /^\s*$/.test(liRichText[0].text.content))) {
+            liRichText.shift();
+          }
+          while (liRichText.length > 0 && (!liRichText[liRichText.length - 1].text?.content || /^\s*$/.test(liRichText[liRichText.length - 1].text.content))) {
+            liRichText.pop();
+          }
           
           // Debug: Log the actual text content
           if (liRichText.length > 0) {
@@ -3847,6 +4148,12 @@ async function extractContentFromHtml(html) {
       // Convert entire section to a callout with pushpin emoji
       console.log(`🔍 Processing prereq section as callout`);
       
+      // CRITICAL FIX: Unwrap itemgroup/info wrappers and flatten nested callouts BEFORE processing
+      // This prevents nested callouts from being included as text in the parent callout
+      $elem.find('div.itemgroup, div.info').each((i, wrapper) => {
+        $(wrapper).replaceWith($(wrapper).html());
+      });
+      
       // Parse each child (including text nodes) separately to preserve paragraph boundaries
       const richTextElements = [];
       const imageBlocks = [];
@@ -3869,17 +4176,14 @@ async function extractContentFromHtml(html) {
             // Parse the text content to rich text
             const { richText: childRichText, imageBlocks: childImages } = await parseRichText(textContent);
             
-            // Add a line break between children (but not before the first one)
+            // Add a line break between children - but use a SEPARATE element to avoid carrying over annotations
             if (richTextElements.length > 0 && childRichText.length > 0) {
-              const lastIdx = richTextElements.length - 1;
-              richTextElements[lastIdx] = {
-                ...richTextElements[lastIdx],
-                text: { 
-                  ...richTextElements[lastIdx].text, 
-                  content: richTextElements[lastIdx].text.content + '\n' 
-                }
-              };
-              console.log(`🔍   Added line break after previous child`);
+              richTextElements.push({
+                type: 'text',
+                text: { content: '\n' },
+                annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' }
+              });
+              console.log(`🔍   Added line break as separate element (no annotation carryover)`);
             }
             
             richTextElements.push(...childRichText);
@@ -3891,8 +4195,13 @@ async function extractContentFromHtml(html) {
           const childTag = child.tagName?.toLowerCase();
           
           // Check if this child contains block-level children (not just if it IS a block element)
-          const blockChildren = $child.find('> ul, > ol, > table, > pre, > blockquote');
+          // IMPORTANT: Also check for nested callouts (div.note, div.info, etc.)
+          const blockChildren = $child.find('> ul, > ol, > table, > pre, > blockquote, > div.note, > div.info, > div.warning, > div.important, > div.tip, > div.caution');
           const hasBlockChildren = blockChildren.length > 0;
+          
+          if (hasBlockChildren) {
+            console.log(`🔍 [NESTED-CALLOUT-PREREQ] Child ${i} (<${childTag}>) contains ${blockChildren.length} block-level children including potential nested callouts`);
+          }
           
           // Special handling for <div> with mixed content (text + block elements)
           if (childTag === 'div' && hasBlockChildren) {
@@ -3906,6 +4215,12 @@ async function extractContentFromHtml(html) {
             const divChildren = Array.from($child.get(0).childNodes);
             for (const node of divChildren) {
               const nodeTag = node.tagName?.toLowerCase();
+              const $node = $(node);
+              const nodeClass = $node.attr('class') || '';
+              
+              // Check if this is a nested callout (div.note, div.info, etc.)
+              const isNestedCallout = nodeTag === 'div' && 
+                /\b(note|info|warning|important|tip|caution)\b/.test(nodeClass);
               
               if (node.type === 'text') {
                 // Keep text nodes in the callout
@@ -3914,6 +4229,19 @@ async function extractContentFromHtml(html) {
                 // Process block elements separately (await these later)
                 console.log(`🔍     Queuing block child <${nodeTag}> for separate processing`);
                 blockProcessingPromises.push(processElement(node));
+              } else if (isNestedCallout) {
+                // FLATTEN nested callout - extract its text and add to parent callout
+                console.log(`🔍 [NESTED-CALLOUT-PREREQ] Flattening nested callout in prereq: <${nodeTag} class="${nodeClass}">`);
+                const nestedCalloutHtml = $node.html() || '';
+                // Remove the title span from nested callout
+                const cleanedHtml = nestedCalloutHtml.replace(/<span[^>]*class=["'][^"']*note__title[^"']*["'][^>]*>([^<]*)<\/span>/gi, '$1');
+                // Add a newline before the nested callout content to separate it from previous content
+                // This prevents code-formatted text (like "admin") from bleeding into the next line ("Note")
+                const hasExistingContent = $tempDiv.text().trim().length > 0;
+                if (hasExistingContent) {
+                  $tempDiv.append('<br/>'); // Use <br/> so it becomes a newline during rich text parsing
+                }
+                $tempDiv.append(cleanedHtml); // Add nested callout text to parent callout
               } else {
                 // Keep inline elements in the callout
                 $tempDiv.append(node.cloneNode(true));
@@ -3926,15 +4254,14 @@ async function extractContentFromHtml(html) {
               console.log(`🔍     Inline content for callout: "${inlineHtml.substring(0, 60)}..."`);
               const { richText: childRichText, imageBlocks: childImages } = await parseRichText(inlineHtml);
               
+              // Add a line break between children - but use a SEPARATE element to avoid carrying over annotations
               if (richTextElements.length > 0 && childRichText.length > 0) {
-                const lastIdx = richTextElements.length - 1;
-                richTextElements[lastIdx] = {
-                  ...richTextElements[lastIdx],
-                  text: { 
-                    ...richTextElements[lastIdx].text, 
-                    content: richTextElements[lastIdx].text.content + '\n' 
-                  }
-                };
+                richTextElements.push({
+                  type: 'text',
+                  text: { content: '\n' },
+                  annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' }
+                });
+                console.log(`🔍   Added line break as separate element (no annotation carryover)`);
               }
               
               richTextElements.push(...childRichText);
@@ -3957,16 +4284,13 @@ async function extractContentFromHtml(html) {
                         .join('');
                       
                       if (itemText.trim()) {
-                        // Add newline before bullet if there's existing content
+                        // Add newline before bullet if there's existing content (as separate element to avoid annotation carryover)
                         if (richTextElements.length > 0) {
-                          const lastIdx = richTextElements.length - 1;
-                          richTextElements[lastIdx] = {
-                            ...richTextElements[lastIdx],
-                            text: { 
-                              ...richTextElements[lastIdx].text, 
-                              content: richTextElements[lastIdx].text.content + '\n' 
-                            }
-                          };
+                          richTextElements.push({
+                            type: 'text',
+                            text: { content: '\n' },
+                            annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' }
+                          });
                         }
                         // Add the list item text with formatting preserved
                         // Add bullet as a separate rich text element to preserve formatting
@@ -4000,14 +4324,12 @@ async function extractContentFromHtml(html) {
                       
                       if (itemText.trim()) {
                         if (richTextElements.length > 0) {
-                          const lastIdx = richTextElements.length - 1;
-                          richTextElements[lastIdx] = {
-                            ...richTextElements[lastIdx],
-                            text: { 
-                              ...richTextElements[lastIdx].text, 
-                              content: richTextElements[lastIdx].text.content + '\n' 
-                            }
-                          };
+                          // Add line break as separate element to avoid carrying over annotations
+                          richTextElements.push({
+                            type: 'text',
+                            text: { content: '\n' },
+                            annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' }
+                          });
                         }
                         // Clean up trailing spaces from code blocks, then add number prefix
                         const cleanedAndNumbered = block.numbered_list_item.rich_text.map((rt, idx) => {
@@ -4046,14 +4368,12 @@ async function extractContentFromHtml(html) {
                   
                   if (itemText.trim()) {
                     if (richTextElements.length > 0) {
-                      const lastIdx = richTextElements.length - 1;
-                      richTextElements[lastIdx] = {
-                        ...richTextElements[lastIdx],
-                        text: { 
-                          ...richTextElements[lastIdx].text, 
-                          content: richTextElements[lastIdx].text.content + '\n' 
-                        }
-                      };
+                      // Add line break as separate element to avoid carrying over annotations
+                      richTextElements.push({
+                        type: 'text',
+                        text: { content: '\n' },
+                        annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' }
+                      });
                     }
                     // Preserve formatting from the original rich text
                     // Add bullet as separate element to preserve formatting
@@ -4086,14 +4406,12 @@ async function extractContentFromHtml(html) {
                   
                   if (itemText.trim()) {
                     if (richTextElements.length > 0) {
-                      const lastIdx = richTextElements.length - 1;
-                      richTextElements[lastIdx] = {
-                        ...richTextElements[lastIdx],
-                        text: { 
-                          ...richTextElements[lastIdx].text, 
-                          content: richTextElements[lastIdx].text.content + '\n' 
-                        }
-                      };
+                      // Add line break as separate element to avoid carrying over annotations
+                      richTextElements.push({
+                        type: 'text',
+                        text: { content: '\n' },
+                        annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' }
+                      });
                     }
                     // Clean up trailing spaces from code blocks, then add number prefix
                     const numberAdded = block.numbered_list_item.rich_text.map((rt, idx) => {
@@ -4154,17 +4472,14 @@ async function extractContentFromHtml(html) {
             // Parse this child's HTML to rich text
             const { richText: childRichText, imageBlocks: childImages } = await parseRichText(childHtml);
             
-            // Add a line break between children (but not before the first one)
+            // Add a line break between children - but use a SEPARATE element to avoid carrying over annotations
             if (richTextElements.length > 0 && childRichText.length > 0) {
-              const lastIdx = richTextElements.length - 1;
-              richTextElements[lastIdx] = {
-                ...richTextElements[lastIdx],
-                text: { 
-                  ...richTextElements[lastIdx].text, 
-                  content: richTextElements[lastIdx].text.content + '\n' 
-                }
-              };
-              console.log(`🔍   Added line break after previous child`);
+              richTextElements.push({
+                type: 'text',
+                text: { content: '\n' },
+                annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' }
+              });
+              console.log(`🔍   Added line break as separate element (no annotation carryover)`);
             }
             
             richTextElements.push(...childRichText);
