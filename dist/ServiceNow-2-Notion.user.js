@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      10.0.10
+// @version      10.0.11
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "10.0.10";
+    window.BUILD_VERSION = "10.0.11";
 (function () {
 
   // Configuration constants and default settings
@@ -7174,7 +7174,20 @@
         
         // DEBUG: Check content right after extraction
         const navInCombined = (content.combinedHtml?.match(/<nav[^>]*>/g) || []).length;
+        const olCount = (content.combinedHtml?.match(/<ol[^>]*>/g) || []).length;
+        const liCount = (content.combinedHtml?.match(/<li[^>]*>/g) || []).length;
+        const olStepsMatch = content.combinedHtml?.match(/<ol[^>]*class="[^"]*ol steps[^"]*"[^>]*>/);
         console.log(`🔍 AFTER EXTRACTION: combinedHtml=${content.combinedHtml?.length} chars, ${navInCombined} nav tags`);
+        console.log(`🔍 EXTRACTION CONTENT CHECK: ${olCount} OL tags, ${liCount} LI tags`);
+        console.log(`🔍 Main steps OL found: ${!!olStepsMatch}`);
+        if (olStepsMatch) {
+          // Count LIs in the main steps OL
+          const olStartIdx = content.combinedHtml.indexOf(olStepsMatch[0]);
+          const olEndIdx = content.combinedHtml.indexOf('</ol>', olStartIdx);
+          const olHtml = content.combinedHtml.substring(olStartIdx, olEndIdx + 5);
+          const directLiCount = (olHtml.match(/<li[^>]*class="[^"]*li step[^"]*"[^>]*>/g) || []).length;
+          console.log(`🔍 Main steps OL: ${directLiCount} direct LI children (should be 6)`);
+        }
 
         // Analyze and process content (with null safety)
         overlayModule.setMessage("Analyzing content structure...");
