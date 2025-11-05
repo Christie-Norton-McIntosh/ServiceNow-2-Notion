@@ -436,7 +436,20 @@ class ServiceNowToNotionApp {
       
       // DEBUG: Check content right after extraction
       const navInCombined = (content.combinedHtml?.match(/<nav[^>]*>/g) || []).length;
+      const olCount = (content.combinedHtml?.match(/<ol[^>]*>/g) || []).length;
+      const liCount = (content.combinedHtml?.match(/<li[^>]*>/g) || []).length;
+      const olStepsMatch = content.combinedHtml?.match(/<ol[^>]*class="[^"]*ol steps[^"]*"[^>]*>/);
       console.log(`🔍 AFTER EXTRACTION: combinedHtml=${content.combinedHtml?.length} chars, ${navInCombined} nav tags`);
+      console.log(`🔍 EXTRACTION CONTENT CHECK: ${olCount} OL tags, ${liCount} LI tags`);
+      console.log(`🔍 Main steps OL found: ${!!olStepsMatch}`);
+      if (olStepsMatch) {
+        // Count LIs in the main steps OL
+        const olStartIdx = content.combinedHtml.indexOf(olStepsMatch[0]);
+        const olEndIdx = content.combinedHtml.indexOf('</ol>', olStartIdx);
+        const olHtml = content.combinedHtml.substring(olStartIdx, olEndIdx + 5);
+        const directLiCount = (olHtml.match(/<li[^>]*class="[^"]*li step[^"]*"[^>]*>/g) || []).length;
+        console.log(`🔍 Main steps OL: ${directLiCount} direct LI children (should be 6)`);
+      }
 
       // Analyze and process content (with null safety)
       overlayModule.setMessage("Analyzing content structure...");
