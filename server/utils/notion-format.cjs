@@ -222,8 +222,15 @@ function cleanHtmlText(html) {
   // REMOVED: Don't strip standalone < and > characters - they may be legitimate content like navigation arrows
   // text = text.replace(/</g, " ").replace(/>/g, " ");
 
-  // Clean up whitespace
-  text = text.replace(/\s+/g, " ").trim();
+  // Clean up whitespace - normalize ALL whitespace (including newlines from HTML formatting) to spaces
+  // Intentional newlines from <br> tags are marked with __BR_NEWLINE__ and will be restored after
+  // HTML formatting newlines (indentation) should become spaces
+  text = text.replace(/\s+/g, " ");
+  // Trim spaces from start and end
+  text = text.trim();
+  
+  // Restore intentional newlines from <br> tags
+  text = text.replace(/__BR_NEWLINE__/g, '\n');
 
   // Restore URL placeholders
   urlPlaceholders.forEach((url, index) => {
