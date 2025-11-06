@@ -72,13 +72,18 @@ function computeBlockKey(blk) {
 function dedupeAndFilterBlocks(blockArray, options = {}) {
   const { log = () => {} } = options;
   if (!Array.isArray(blockArray)) return blockArray;
-  const seen = new Set();
+  
+  // Use a sliding window approach: only dedupe if identical blocks appear within N positions
+  // This allows common phrases like "Submit the form." to appear in different sections
+  const PROXIMITY_WINDOW = 5; // Only dedupe if duplicates are within 5 blocks of each other
+  const recentBlocks = []; // Stores [key, index] pairs for the last N blocks
   const out = [];
   let removed = 0;
   let filteredCallouts = 0;
   let duplicates = 0;
 
-  for (const blk of blockArray) {
+  for (let i = 0; i < blockArray.length; i++) {
+    const blk = blockArray[i];
     try {
       // Never dedupe dividers - they're always unique by position
       if (blk && blk.type === 'divider') {
@@ -97,7 +102,7 @@ function dedupeAndFilterBlocks(blockArray, options = {}) {
       // (e.g., "Procedure", "About this task", "Before you begin")
       if (blk && blk.type === 'paragraph') {
         const txt = plainTextFromRich(blk.paragraph?.rich_text || []);
-        const isCommonHeading = /^(Procedure|About this task|Steps|Requirements?|Overview)$/i.test(txt.trim());
+        const isCommonHeading = /^(Procedure|About this task|Steps|Requirements?|Overview|Submit the form\.?)$/i.test(txt.trim());
         if (isCommonHeading) {
           out.push(blk);
           continue;
@@ -129,17 +134,20 @@ function dedupeAndFilterBlocks(blockArray, options = {}) {
         continue;
       }
 
-      // Special-case image dedupe by uploaded file id ONLY
+      // Special-case image dedupe by uploaded file id ONLY - use global dedupe for images
       if (blk && blk.type === 'image' && blk.image) {
         const fileId = blk.image.file_upload && blk.image.file_upload.id;
         if (fileId) {
           const imageKey = `image:file:${String(fileId)}`;
-          if (seen.has(imageKey)) {
+          // Check if this image was seen recently (in the whole document for images)
+          const foundInRecent = recentBlocks.find(entry => entry[0] === imageKey);
+          if (foundInRecent) {
+            log(`🚫 Deduping image: already seen at index ${foundInRecent[1]}`);
             removed++;
             duplicates++;
             continue;
           }
-          seen.add(imageKey);
+          recentBlocks.push([imageKey, i]);
         }
         // For external images without a file_upload id, do not dedupe here — keep both
         out.push(blk);
@@ -147,12 +155,28 @@ function dedupeAndFilterBlocks(blockArray, options = {}) {
       }
 
       const key = computeBlockKey(blk);
-      if (seen.has(key)) {
+      
+      // Check if this block appears in the recent window
+      const foundInWindow = recentBlocks.find(entry => {
+        const [entryKey, entryIndex] = entry;
+        return entryKey === key && (i - entryIndex) <= PROXIMITY_WINDOW;
+      });
+      
+      if (foundInWindow) {
+        log(`🚫 Deduping block at index ${i}: duplicate of block at ${foundInWindow[1]} (distance: ${i - foundInWindow[1]})`);
         removed++;
         duplicates++;
         continue;
       }
-      seen.add(key);
+      
+      // Add to recent blocks window
+      recentBlocks.push([key, i]);
+      
+      // Keep window size manageable - remove entries older than the window
+      while (recentBlocks.length > 0 && (i - recentBlocks[0][1]) > PROXIMITY_WINDOW) {
+        recentBlocks.shift();
+      }
+      
       out.push(blk);
     } catch (e) {
       out.push(blk);
