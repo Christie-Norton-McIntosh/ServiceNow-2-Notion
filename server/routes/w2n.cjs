@@ -485,10 +485,11 @@ router.post('/W2N', async (req, res) => {
       );
     }
 
-    // Split children into chunks of 100 (Notion's limit per request)
+    // Split children into chunks (Notion's limit is 100, but use smaller chunks for complex pages to avoid timeout)
     const MAX_BLOCKS_PER_REQUEST = 100;
-    const initialBlocks = children.slice(0, MAX_BLOCKS_PER_REQUEST);
-    const remainingBlocks = children.slice(MAX_BLOCKS_PER_REQUEST);
+    const INITIAL_BLOCKS_LIMIT = 50; // Use smaller initial chunk to avoid API timeout on complex pages
+    const initialBlocks = children.slice(0, INITIAL_BLOCKS_LIMIT);
+    const remainingBlocks = children.slice(INITIAL_BLOCKS_LIMIT);
 
     log(
       `   Initial blocks: ${initialBlocks.length}, Remaining blocks: ${remainingBlocks.length}`
