@@ -44,6 +44,9 @@ delete require.cache[tablePath];
 const { convertTableBlock } = require('../converters/table.cjs');
 
 const { generateMarker } = require('../orchestration/marker-management.cjs');
+const { repairListStructure } = require('../utils/orphan-list-repair.cjs');
+
+const ENABLE_ORPHAN_LIST_REPAIR = process.env.SN2N_ORPHAN_LIST_REPAIR === '1' || process.env.SN2N_ORPHAN_LIST_REPAIR === 'true';
 
 /** @private Global tracker for video detection (reset per conversion) */
 let hasDetectedVideos = false;
@@ -521,6 +524,11 @@ async function extractContentFromHtml(html) {
       console.log(`🔍 [ph span strip] AFTER ${iterations} iteration(s), text with com.snc.incident.ml:`);
       const snippet = text.substring(text.indexOf('com.snc.incident.ml') - 50, text.indexOf('com.snc.incident.ml') + 100);
       console.log(`   "${snippet}"`);
+    }
+
+    // Strip <var> wrappers that ServiceNow uses for keyword styling
+    if (/<var[\s>]/i.test(text)) {
+      text = text.replace(/<var[^>]*>([\s\S]*?)<\/var>/gi, '$1');
     }
 
     // DEBUG: Check if we have ">" characters
@@ -1387,6 +1395,7 @@ async function extractContentFromHtml(html) {
   // Use cheerio to parse HTML and process elements in document order
   let $;
   let elementOrderMap = new Map(); // Declare at function scope so it's accessible throughout
+  let orphanListRepairSummary = null;
   
   try {
     // FILE-BASED DIAGNOSTIC: Check HTML BEFORE Cheerio
@@ -1437,6 +1446,64 @@ async function extractContentFromHtml(html) {
     // FILE-BASED DIAGNOSTIC: Check HTML AFTER Cheerio
     const htmlAfter = $.html();
     fs.appendFileSync(logFile, `HTML length AFTER Cheerio.load(): ${htmlAfter.length}\n`);
+
+    if (ENABLE_ORPHAN_LIST_REPAIR) {
+      try {
+        const repairScope = $('.zDocsTopicPageBody').first();
+        const repairOptions = {
+          scope: repairScope && repairScope.length > 0 ? repairScope : undefined,
+          verbose: typeof getExtraDebug === 'function' && getExtraDebug(),
+        };
+
+        orphanListRepairSummary = repairListStructure($, repairOptions);
+
+        if (orphanListRepairSummary) {
+          const summaryParts = [
+            `scope=${orphanListRepairSummary.scope}`,
+            `total=${orphanListRepairSummary.totalListItems}`,
+            `orphans=${orphanListRepairSummary.orphanCount}`,
+            `misnested=${orphanListRepairSummary.misnestedCount}`,
+            `repaired=${orphanListRepairSummary.repairedCount}`,
+            `misnestedRepaired=${orphanListRepairSummary.misnestedRepairedCount}`,
+            `unresolved=${orphanListRepairSummary.unresolvedCount}`,
+            `misnestedUnresolved=${orphanListRepairSummary.misnestedUnresolvedCount}`,
+            `listsCreated=${orphanListRepairSummary.createdListCount}`,
+          ];
+          console.log(`[LIST-REPAIR] ${summaryParts.join(' ')}`);
+          try {
+            fs.appendFileSync(logFile, `[LIST-REPAIR] ${summaryParts.join(' ')}\n`);
+          } catch (fileError) {
+            console.log(`[LIST-REPAIR] Failed to append summary to log file: ${fileError?.message || fileError}`);
+          }
+
+          if (repairOptions.verbose && orphanListRepairSummary.unresolvedCount > 0) {
+            orphanListRepairSummary.unresolved.slice(0, 5).forEach((item, idx) => {
+              console.log(`[LIST-REPAIR] unresolved[${idx}] depth=${item.targetDepth || 'n/a'} hint=${item.depthHint || 'n/a'} type=${item.listType} preview="${item.textPreview}"`);
+              try {
+                fs.appendFileSync(logFile, `[LIST-REPAIR] unresolved[${idx}] depth=${item.targetDepth || 'n/a'} hint=${item.depthHint || 'n/a'} type=${item.listType} preview="${item.textPreview}"\n`);
+              } catch (fileError) {
+                console.log(`[LIST-REPAIR] Failed to append unresolved entry to log file: ${fileError?.message || fileError}`);
+              }
+            });
+            if (orphanListRepairSummary.unresolved.length > 5) {
+              console.log(`[LIST-REPAIR] ... ${orphanListRepairSummary.unresolved.length - 5} additional unresolved items`);
+              try {
+                fs.appendFileSync(logFile, `[LIST-REPAIR] ... ${orphanListRepairSummary.unresolved.length - 5} additional unresolved items\n`);
+              } catch (fileError) {
+                console.log(`[LIST-REPAIR] Failed to append unresolved summary to log file: ${fileError?.message || fileError}`);
+              }
+            }
+          }
+        }
+      } catch (repairError) {
+        console.log(`[LIST-REPAIR] Failed to repair list structure: ${repairError?.message || repairError}`);
+        try {
+          fs.appendFileSync(logFile, `[LIST-REPAIR] Failed to repair list structure: ${repairError?.message || repairError}\n`);
+        } catch (fileError) {
+          console.log(`[LIST-REPAIR] Failed to append repair error to log file: ${fileError?.message || fileError}`);
+        }
+      }
+    }
     
     // CRITICAL DIAGNOSTIC: Check if main steps OL has all LIs AFTER Cheerio
     const mainStepsOlRegex = /<ol[^>]*class="[^"]*ol steps[^"]*"[^>]*>/;
@@ -1892,9 +1959,8 @@ async function extractContentFromHtml(html) {
           console.log(`🔍 [CALLOUT-FIX-DEBUG] Fallback to original method, length: ${cleanedContent.length}`);
         }
         
-        // Remove note title span (it already has a colon like "Note:")
-        cleanedContent = cleanedContent.replace(/<span[^>]*class=["'][^"']*note__title[^"']*["'][^>]*>([^<]*)<\/span>/gi, '$1 ');
-        cleanedContent = cleanedContent.replace(/<span[^>]*class=["'][^"']*note__title[^"']*["'][^>]*>([^<]*)<\/span>/gi, '$1 ');
+  // Remove note title span (it already has a colon like "Note:")
+  cleanedContent = cleanedContent.replace(/<span[^>]*class=["'][^"']*note__title[^"']*["'][^>]*>([^<]*)<\/span>/gi, '$1 ');
         
         const { richText: calloutRichText, imageBlocks: calloutImages } = await parseRichText(cleanedContent);
         console.log(`🔍 Simple callout rich_text has ${calloutRichText.length} elements, content preview: "${calloutRichText.map(rt => rt.text.content).join('').substring(0, 100)}..."`);
@@ -2861,10 +2927,41 @@ async function extractContentFromHtml(html) {
         }
       }
       console.log(`✅ Created list blocks from <ul>`);
-      $elem.remove(); // Mark as processed
+      
+      // CRITICAL: Remove all <li> children FIRST before removing the <ul>
+      // This prevents orphaned <li> elements from being left in the DOM
+      try {
+        $elem.find('li').each((_, liNode) => {
+          try {
+            $(liNode).remove();
+          } catch (e) {
+            console.log(`⚠️ Failed to remove <li> node: ${e?.message || e}`);
+          }
+        });
+        console.log(`🧹 Removed all <li> children from <ul> to prevent orphaning`);
+      } catch (e) {
+        console.log(`⚠️ Failed to remove <li> children: ${e?.message || e}`);
+      }
+      
+      $elem.remove(); // Mark <ul> as processed
       
     } else if (tagName === 'ol') {
       // Ordered list
+      
+      // Helper function for normalizing text for duplicate detection
+      // Defined once at ordered list scope for reuse in duplicate pruning logic
+      const normalizeSentenceSpacing = (value) => {
+        if (!value) return "";
+        return value
+          .replace(/\s+([.,;:!?])/g, '$1')
+          .replace(/\(\s+/g, '(')
+          .replace(/\s+\)/g, ')')
+          .replace(/\[\s+/g, '[')
+          .replace(/\s+\]/g, ']')
+          .replace(/\s+/g, ' ')
+          .trim();
+      };
+      
       // CRITICAL: Snapshot list items BEFORE processing to prevent DOM corruption
       // When nested elements call $elem.remove(), they can affect the parent's childNodes
       
@@ -2879,6 +2976,116 @@ async function extractContentFromHtml(html) {
       // Count total <li> tags (including nested)
       const totalLiTags = (rawOlHtml.match(/<li/g) || []).length;
       console.log(`🔍 [OL-DEBUG] Total <li> tags in raw HTML: ${totalLiTags}`);
+
+      // ServiceNow sometimes renders substep <li> elements directly under the main steps <ol>
+      // (class="ol steps") instead of wrapping them in their own <ol class="substeps"> container.
+      // Detect this pattern and promote those substeps into an auto-created nested <ol> under the
+      // most recent primary step so they appear as level-2 list items in Notion.
+      const olClassAttr = $elem.attr('class') || '';
+      const olIdAttr = $elem.attr('id') || '';
+      const directSubstepLists = $elem.children('ol, ul').filter((_, listNode) => {
+        const listClass = $(listNode).attr('class') || '';
+        return /\bsubsteps\b/.test(listClass);
+      });
+      const hasLooseSubstepLis = $elem.children('li').filter((_, liNode) => /\bsubstep\b/.test($(liNode).attr('class') || '')).length > 0;
+      const hasPrimaryStepLis = $elem.children('li').filter((_, liNode) => /\bstep\b/.test($(liNode).attr('class') || '')).length > 0;
+
+      let autoNestReason = null;
+      if (/\bsteps\b/.test(olClassAttr) && !/\bsubsteps\b/.test(olClassAttr)) {
+        autoNestReason = 'class:steps';
+      } else if (hasPrimaryStepLis && directSubstepLists.length > 0) {
+        autoNestReason = 'loose-substeps-list';
+      } else if (hasPrimaryStepLis && hasLooseSubstepLis) {
+        autoNestReason = 'mixed-step-substep-lis';
+      }
+
+      const shouldAutoNestSubsteps = Boolean(autoNestReason);
+      if (shouldAutoNestSubsteps) {
+        console.log(`🔧 [OL-AUTO-SUBSTEPS] Triggered for <ol id="${olIdAttr || 'no-id'}" class="${olClassAttr}": reason=${autoNestReason}`);
+        const olId = $elem.attr('id') || 'no-id';
+        try {
+          const path = require('path');
+          const snapshotSafeId = olId.replace(/[^a-z0-9-_]+/gi, '_');
+          const snapshotName = `auto-substeps-${snapshotSafeId || 'anonymous'}-${Date.now()}.html`;
+          const snapshotPath = path.join(__dirname, '../logs', snapshotName);
+          fs.writeFileSync(snapshotPath, $elem.html() || '', 'utf8');
+          console.log(`🗂️ [OL-AUTO-SUBSTEPS] Captured snapshot ${snapshotName} for analysis.`);
+        } catch (snapshotError) {
+          console.log(`⚠️ [OL-AUTO-SUBSTEPS] Failed to capture snapshot for <ol id="${olId}">: ${snapshotError?.message || snapshotError}`);
+        }
+
+        const directChildren = Array.from($elem.contents())
+          .filter(node => node && node.type === 'tag');
+        let currentPrimaryLi = null;
+        let currentSubstepsOl = null;
+
+        directChildren.forEach(node => {
+          const $node = $(node);
+          const nodeName = node.name?.toLowerCase();
+
+          if (nodeName === 'li') {
+            const liClassAttr = $node.attr('class') || '';
+            const isSubstepLi = /\bsubstep\b/.test(liClassAttr);
+            const isPrimaryLi = /\bstep\b/.test(liClassAttr) && !isSubstepLi;
+
+            if (isPrimaryLi) {
+              currentPrimaryLi = $node;
+              currentSubstepsOl = null;
+              return;
+            }
+
+            if (isSubstepLi && currentPrimaryLi) {
+              if (!currentSubstepsOl || currentSubstepsOl.length === 0 || !currentSubstepsOl.parent().is(currentPrimaryLi)) {
+                const existingSubsteps = currentPrimaryLi.find('> ol.substeps, > ol.ol.substeps').first();
+                currentSubstepsOl = existingSubsteps.length > 0 ? existingSubsteps : null;
+              }
+
+              if (!currentSubstepsOl) {
+                currentSubstepsOl = $('<ol class="ol substeps sn2n-auto-substeps"></ol>');
+                currentPrimaryLi.append(currentSubstepsOl);
+                console.log(`🔧 [OL-AUTO-SUBSTEPS] Created nested <ol> for orphan substeps under primary step.`);
+              }
+
+              currentSubstepsOl.append($node);
+              console.log(`🔧 [OL-AUTO-SUBSTEPS] Moved "${$node.text().trim().substring(0, 60)}" under latest primary step.`);
+              return;
+            }
+
+            currentPrimaryLi = $node;
+            currentSubstepsOl = null;
+            return;
+          }
+
+          const isSubstepsOl = (nodeName === 'ol' || nodeName === 'ul') && /\bsubsteps\b/.test($node.attr('class') || '');
+          if (isSubstepsOl) {
+            if (!currentPrimaryLi) {
+              console.log(`⚠️ [OL-AUTO-SUBSTEPS] Found <${nodeName} class="${$node.attr('class') || ''}"> without a preceding primary <li>; skipping auto-nest.`);
+              currentSubstepsOl = null;
+              return;
+            }
+
+            let targetSubsteps = currentPrimaryLi.find('> ol.substeps, > ol.ol.substeps').first();
+            if (targetSubsteps.length === 0) {
+              targetSubsteps = $node;
+              currentPrimaryLi.append(targetSubsteps);
+              console.log(`🔧 [OL-AUTO-SUBSTEPS] Attached existing substeps list (#${targetSubsteps.attr('id') || 'no-id'}) to primary step.`);
+            } else if (targetSubsteps.get(0) !== node) {
+              const movedItemCount = $node.children('li').length;
+              targetSubsteps.append($node.children());
+              $node.remove();
+              console.log(`🔧 [OL-AUTO-SUBSTEPS] Merged ${movedItemCount} substep <li> entries into existing nested list.`);
+            }
+
+            targetSubsteps.addClass('sn2n-auto-substeps');
+            targetSubsteps.attr('data-sn2n-source', 'auto-nested');
+            currentSubstepsOl = targetSubsteps;
+            return;
+          }
+
+          // Reset tracking when encountering non-list structural nodes (e.g., new <section>)
+          currentSubstepsOl = null;
+        });
+      }
       
       const listItems = $elem.find('> li').toArray();
       console.log(`🔍 [OL-DEBUG] Cheerio found ${listItems.length} DIRECT <li> children`);
@@ -2904,6 +3111,20 @@ async function extractContentFromHtml(html) {
       
       for (let li of listItems) {
         const $li = $(li);
+        // Some inline wrappers (span, strong, etc.) improperly contain block-level elements like nested lists.
+        // Lift those blocks out so they become direct children of the list item before further processing.
+        const inlineWrapperSelector = 'span, strong, em, b, i, u, code, a';
+        $li.find(inlineWrapperSelector).each((_, wrapper) => {
+          const $wrapper = $(wrapper);
+          const blockChildren = $wrapper.children('ol, ul, pre, table, figure, div.table-wrap, div.p, div.stepxmp, div.note, div.warning, div.important, div.tip, div.caution, div.itemgroup, div.info, p');
+          if (blockChildren.length > 0) {
+            console.log(`🔍 [OL-BLOCK-LIFT] Lifting ${blockChildren.length} block descendant(s) out of <${wrapper.tagName?.toLowerCase() || wrapper.name || 'unknown'}> wrapper`);
+            blockChildren.toArray().forEach(block => {
+              const $block = $(block);
+              $block.insertAfter($wrapper);
+            });
+          }
+        });
         
         // CRITICAL FIX: Don't unwrap div.itemgroup and div.info - Cheerio's replaceWith loses text nodes
         // Instead, find nested blocks INSIDE wrappers and treat wrappers as transparent containers
@@ -2946,6 +3167,7 @@ async function extractContentFromHtml(html) {
           // IMPORTANT: Since we're NOT unwrapping itemgroup/info (to preserve text nodes), 
           // we need to flatten them during iteration to get their contents
           const allChildren = [];
+          const blockDescendantSelector = 'pre, ul, ol, figure, table, div.table-wrap, p, div.p, div.stepxmp, div.note, div.warning, div.important, div.tip, div.caution, div.itemgroup, div.info';
           $li.contents().toArray().forEach(child => {
             const $child = $(child);
             const nodeName = (child.nodeName || child.name || '').toLowerCase();
@@ -2955,9 +3177,21 @@ async function extractContentFromHtml(html) {
             if (nodeName === 'div' && (classes.includes('itemgroup') || classes.includes('info'))) {
               console.log(`🔍 [OL-FLATTEN] Flattening ${classes.join('.')} wrapper - adding ${$child.contents().length} children`);
               $child.contents().toArray().forEach(wrapperChild => allChildren.push(wrapperChild));
-            } else {
-              allChildren.push(child);
+              return;
             }
+
+            // Some ServiceNow authors wrap nested lists or tables inside span or other inline tags.
+            // Flatten any wrapper element that contains block-level descendants so the blocks are processed correctly.
+            if (child.nodeType === 1) {
+              const hasBlockDescendants = $child.children(blockDescendantSelector).length > 0;
+              if (hasBlockDescendants && nodeName !== 'div') {
+                console.log(`🔍 [OL-FLATTEN] Flattening <${nodeName}> wrapper with block descendants - adding ${$child.contents().length} children`);
+                $child.contents().toArray().forEach(wrapperChild => allChildren.push(wrapperChild));
+                return;
+              }
+            }
+
+            allChildren.push(child);
           });
           console.log(`🔍 [OL-CHILDREN] After flattening wrappers, <li> has ${allChildren.length} direct children`);
           allChildren.forEach((child, idx) => {
@@ -2977,6 +3211,7 @@ async function extractContentFromHtml(html) {
           const nestedChildren = []; // Collect processed nested blocks
           let foundFirstBlock = false; // Track when we encounter the first block element
           const textAfterBlocks = []; // Collect text segments AFTER block elements
+          let directNestedListTexts = null; // Snapshot of direct child list item texts before processing
           
           for (let i = 0; i < allChildren.length; i++) {
             const child = allChildren[i];
@@ -3007,7 +3242,14 @@ async function extractContentFromHtml(html) {
               foundFirstBlock = true; // Mark that we've encountered a block element
               const $child = $(child);
               const childClass = $child.attr('class') || '';
-              const nodeName = (child && child.nodeName) ? child.nodeName.toLowerCase() : 'unknown';
+              const nodeNameSource = child && (child.name || child.nodeName || child.tagName);
+              const nodeName = nodeNameSource ? nodeNameSource.toLowerCase() : 'unknown';
+              if (!directNestedListTexts && (nodeName === 'ol' || nodeName === 'ul')) {
+                directNestedListTexts = $child.find('> li').toArray().map(liNode => {
+                  const text = cleanHtmlText($(liNode).text()).replace(/\s+/g, ' ').trim();
+                  return text;
+                }).filter(Boolean);
+              }
               console.log(`🔍 [OL-BLOCK] Processing nested block in ordered list item: <${nodeName} class="${childClass}">`);
               const childBlocks = await processElement(child);
               nestedChildren.push(...childBlocks);
@@ -3039,8 +3281,91 @@ async function extractContentFromHtml(html) {
             }
           }          // Combine all text segments into one HTML string
           // Add space between segments to prevent concatenation like "process.You"
-          const textOnlyHtml = textSegments.join(' ');
+          let textOnlyHtml = textSegments.join(' ');
+
+          // Detect ServiceNow pattern where the parent list item's text is a verbatim dump of all child steps.
+          // When detected, trim the parent text down to the introductory sentence (if any) and drop the duplicate dump.
+          if (textOnlyHtml) {
+            const parentPlain = cleanHtmlText(textOnlyHtml).replace(/\s+/g, ' ').trim();
+            const parentForMatch = normalizeSentenceSpacing(parentPlain);
+            const fallbackNestedLis = $li.find('> ol > li, > ul > li');
+            const nestedCount = directNestedListTexts ? directNestedListTexts.length : fallbackNestedLis.length;
+            
+            console.log(`🔍 [OL-DUPE-CHECK] Parent text length: ${parentForMatch.length}, nested items: ${nestedCount}`);
+            if (parentForMatch.length > 20) {
+              console.log(`🔍 [OL-DUPE-CHECK] Parent text preview: "${parentForMatch.substring(0, 150)}..."`);
+            }
+            
+            // Check for duplicate pattern: parent text is verbatim dump of child steps
+            // Lower threshold to 50 chars (was 100) to catch shorter intros like "Complete the following steps..."
+            // Require at least 2 nested items (was 3) to catch lists with fewer steps
+            if (parentForMatch && parentForMatch.length > 50 && nestedCount >= 2) {
+              console.log(`🔍 [OL-DUPE-CHECK] ✅ Passed initial checks (length > 50, nested >= 2), analyzing children...`);
+              const rawChildTexts = directNestedListTexts || fallbackNestedLis.toArray().map(node => {
+                const childText = cleanHtmlText($(node).text()).replace(/\s+/g, ' ').trim();
+                return childText;
+              }).filter(Boolean);
+              const childMatchTexts = rawChildTexts.map(normalizeSentenceSpacing).filter(Boolean);
+              console.log(`🔍 [OL-DUPE-CHECK] Child match texts: ${childMatchTexts.length} items`);
+              if (childMatchTexts.length > 0) {
+                console.log(`🔍 [OL-DUPE-CHECK] First child: "${childMatchTexts[0].substring(0, 80)}..."`);
+              }
+              
+              if (childMatchTexts.length === nestedCount) {
+                const normalizedParent = parentForMatch.replace(/[^a-z0-9]/gi, '').toLowerCase();
+                const allChildrenPresent = childMatchTexts.every(childText => {
+                  const normalizedChild = childText.replace(/[^a-z0-9]/gi, '').toLowerCase();
+                  return normalizedChild && normalizedParent.includes(normalizedChild);
+                });
+                console.log(`🔍 [OL-DUPE-CHECK] All children present in parent: ${allChildrenPresent}`);
+                
+                if (allChildrenPresent) {
+                  // All child steps are present in parent text - this is a verbatim dump
+                  // Strategy: Look for common intro patterns and preserve ONLY the intro sentence
+                  // Common patterns: "Complete the following steps to...", "Follow these steps to..."
+                  const introPatterns = [
+                    /^(.*?(?:complete|follow|use|perform).*?(?:steps?|procedures?).*?(?:to|for).*?[.:])\s*/i,
+                    /^(.*?(?:to\s+\w+.*?[,:]))\s+/i,  // "To create X, do the following:"
+                    /^([^.!?]{20,120}[.!?])\s+/  // First sentence (20-120 chars ending with punctuation)
+                  ];
+                  
+                  let intro = null;
+                  for (const pattern of introPatterns) {
+                    const match = parentForMatch.match(pattern);
+                    if (match && match[1]) {
+                      intro = match[1].trim();
+                      // Verify the intro doesn't contain child steps
+                      const introHasChildSteps = childMatchTexts.some(child => intro.includes(child));
+                      if (!introHasChildSteps && intro.length < 200) {
+                        console.log(`🔍 [OL-DUPE-PRUNE] ✅ Found intro pattern: "${intro}"`);
+                        break;
+                      }
+                      intro = null; // Reset if intro contains child steps
+                    }
+                  }
+                  
+                  if (intro && intro.length > 15) {
+                    // Keep intro only
+                    console.log(`🔍 [OL-DUPE-PRUNE] ✅ Preserving intro sentence (${intro.length} chars), removing ${parentForMatch.length - intro.length} chars of duplicate child steps`);
+                    textSegments.length = 0;
+                    textSegments.push(intro);
+                    textOnlyHtml = intro;
+                  } else {
+                    // No clean intro found or intro too short - remove all parent text
+                    console.log(`🔍 [OL-DUPE-PRUNE] ✅ No intro pattern found; removing entire parent text (${parentForMatch.length} chars) to prevent duplication`);
+                    textSegments.length = 0;
+                    textOnlyHtml = '';
+                  }
+                }
+              }
+            }
+          }
+
           console.log(`🔍 [OL-TEXT-EXTRACTION] Extracted ${textSegments.length} text segments BEFORE blocks from ordered list item with ${actualBlocks.length} nested blocks`);
+          if (textSegments.length > 0) {
+            const previewText = textSegments.join(' ').substring(0, 200);
+            console.log(`🔍 [OL-TEXT-EXTRACTION] Text preview: "${previewText}..."`);
+          }
           
           // CRITICAL: If there are text segments AFTER block elements, create a paragraph block for them
           if (textAfterBlocks.length > 0) {
@@ -3740,6 +4065,17 @@ async function extractContentFromHtml(html) {
                 }
               } else if ($psib.is('li')) {
                 // Direct <li> as a parent-level sibling: treat as a numbered list item continuation
+                // CRITICAL: Check if this <li> contains nested lists - if so, it's likely a duplicate dump
+                const hasNestedList = $psib.find('> ol, > ul').length > 0;
+                
+                if (hasNestedList) {
+                  console.log(`🚨 [ORPHAN-LI] Found standalone <li> with nested list - likely duplicate dump, skipping!`);
+                  console.log(`🚨 [ORPHAN-LI] Text preview: "${cleanHtmlText($psib.html()).substring(0, 100)}..."`);
+                  // This <li> will be processed normally as an orphan element later
+                  // Don't create a list continuation for it here
+                  break;
+                }
+                
                 const liHtml = $psib.html() || $psib.text() || '';
                 const liText = cleanHtmlText(liHtml).trim();
                 console.log(`🚨 [ORPHAN-LI] Found standalone <li> as sibling after <ol>!`);
@@ -3806,7 +4142,24 @@ async function extractContentFromHtml(html) {
       }
 
       console.log(`✅ Created list blocks from <ol>`);
-      $elem.remove(); // Mark as processed
+      
+      // CRITICAL: Remove all <li> children FIRST before removing the <ol>
+      // This prevents orphaned <li> elements from being left in the DOM
+      // which would be picked up by orphan detection and processed twice
+      try {
+        $elem.find('li').each((_, liNode) => {
+          try {
+            $(liNode).remove();
+          } catch (e) {
+            console.log(`⚠️ Failed to remove <li> node: ${e?.message || e}`);
+          }
+        });
+        console.log(`🧹 Removed all <li> children from <ol> to prevent orphaning`);
+      } catch (e) {
+        console.log(`⚠️ Failed to remove <li> children: ${e?.message || e}`);
+      }
+      
+      $elem.remove(); // Mark <ol> as processed
       
     // 3) Paragraphs, including heuristic detection of inline callout labels ("Note:", "Warning:", etc.)
     } else if (tagName === 'p' || (tagName === 'div' && $elem.hasClass('p'))) {
@@ -5164,6 +5517,20 @@ async function extractContentFromHtml(html) {
   // Use find('> *') to get ALL direct children, more reliable than .children()
   const children = $elem.find('> *').toArray();
   const fullHtml = $elem.html() || '';
+  
+  // DEBUG: Check if we're getting orphaned <li> elements in children array
+  const liChildren = children.filter(c => c.name === 'li');
+  if (liChildren.length > 0 && (tagName === 'article' || tagName === 'div')) {
+    console.log(`🔍 [LI-DEBUG] <${tagName}> has ${liChildren.length} direct <li> children (suspicious!):`);
+    liChildren.forEach(li => {
+      const $li = $(li);
+      const classes = $li.attr('class') || '';
+      const text = cleanHtmlText($li.text()).substring(0, 60);
+      const hasOlParent = $li.parent('ol').length > 0;
+      const hasUlParent = $li.parent('ul').length > 0;
+      console.log(`🔍 [LI-DEBUG]   <li class="${classes}"> "${text}..." hasOL=${hasOlParent} hasUL=${hasUlParent}`);
+    });
+  }
       
       // Clone and remove all child elements to see if there's text content
       const $textOnly = $elem.clone();
@@ -5448,14 +5815,34 @@ async function extractContentFromHtml(html) {
           
           // Has children - process them
           let processedChildCount = 0;
+          let skippedChildCount = 0;
           for (const child of children) {
             processedChildCount++;
-            console.log(`🔍   Processing child ${processedChildCount}/${children.length}: <${child.name}>${$(child).attr('class') ? ` class="${$(child).attr('class')}"` : ''}`);
+            
+            // CRITICAL: Check if this child element has been removed from the DOM
+            // This prevents processing elements that were removed when their parents were processed
+            // The children array is a snapshot taken before processing, so removed elements are still in it
+            const $child = $(child);
+            const childTag = child.name || 'unknown';
+            const childClass = $child.attr('class') || '';
+            
+            // Check if element has been removed: no parent or parent changed
+            const hasParent = $child.parent().length > 0;
+            const parentIsExpectedParent = $child.parent().is($elem);
+            
+            if (!hasParent || !parentIsExpectedParent) {
+              const reason = !hasParent ? 'no parent' : 'parent changed';
+              console.log(`🔍   ⏭️  Skipping child ${processedChildCount}/${children.length} (${reason}): <${childTag}>${childClass ? ` class="${childClass}"` : ''}`);
+              skippedChildCount++;
+              continue;
+            }
+            
+            console.log(`🔍   Processing child ${processedChildCount}/${children.length}: <${child.name}>${$child.attr('class') ? ` class="${$child.attr('class')}"` : ''}`);
             const childBlocks = await processElement(child);
             console.log(`🔍   Child ${processedChildCount} produced ${childBlocks.length} blocks`);
             processedBlocks.push(...childBlocks);
           }
-          console.log(`🔍   Finished processing all ${processedChildCount}/${children.length} children`);
+          console.log(`🔍   Finished processing ${processedChildCount - skippedChildCount}/${children.length} children (skipped ${skippedChildCount} removed elements)`);
           
           // TRACK ARTICLE.NESTED1 COMPLETION
           if (tagName === 'article' && elemClass.includes('nested1')) {
@@ -5999,27 +6386,53 @@ async function extractContentFromHtml(html) {
       }
     }
     
-    // FIX: Collect orphaned <li> elements that are NOT inside any ol/ul
-    // These can appear anywhere in the page body due to malformed ServiceNow HTML
-    const allLis = $('.zDocsTopicPageBody li').toArray();
-    const orphanedLis = allLis.filter(li => {
-      const $li = $(li);
-      // Check if this <li> has an <ol> or <ul> as a parent
-      const hasListParent = $li.closest('ol, ul').length > 0;
-      return !hasListParent;
-    });
-    
-    if (orphanedLis.length > 0) {
-      console.log(`🔍 FIX: Found ${orphanedLis.length} orphaned <li> elements (not inside ol/ul)`);
-      orphanedLis.forEach((li, idx) => {
+    if (!ENABLE_ORPHAN_LIST_REPAIR) {
+      // FIX: Collect orphaned <li> elements that are NOT inside any ol/ul
+      // These can appear anywhere in the page body due to malformed ServiceNow HTML
+      // CRITICAL: Only add orphans that are NOT already inside existing contentElements
+      // This prevents duplicate processing of <li> elements that are inside articles/sections
+      const allLis = $('.zDocsTopicPageBody li').toArray();
+      const orphanedLis = allLis.filter(li => {
         const $li = $(li);
-        const text = $li.text().trim().substring(0, 80);
-        const parentTag = $li.parent().prop('tagName');
-        const parentClass = $li.parent().attr('class') || 'no-class';
-        console.log(`🔍 FIX:   Orphan LI ${idx + 1}: "${text}..." parent=<${parentTag} class="${parentClass}">`);
+        
+        // Check if this <li> has an <ol> or <ul> as a parent
+        const hasListParent = $li.closest('ol, ul').length > 0;
+        if (hasListParent) {
+          return false; // Has list parent, not an orphan
+        }
+        
+        // CRITICAL FIX: Check if this <li> is already inside any element in contentElements
+        // This prevents duplicate processing when <li> is inside an article/section that's already queued
+        const isInsideContentElement = contentElements.some(el => {
+          const $el = $(el);
+          // Check if this element contains the <li>
+          return $el.find(li).length > 0 || el === li;
+        });
+        
+        if (isInsideContentElement) {
+          console.log(`🔍 FIX: Skipping <li> already inside contentElement: "${$li.text().trim().substring(0, 60)}..."`);
+          return false;
+        }
+        
+        return true; // This is a true orphan
       });
-      contentElements.push(...orphanedLis);
-      console.log(`🔍 FIX: Added ${orphanedLis.length} orphaned <li> to contentElements (now ${contentElements.length} total)`);
+      
+      if (orphanedLis.length > 0) {
+        console.log(`🔍 FIX: Found ${orphanedLis.length} TRUE orphaned <li> elements (not inside ol/ul AND not in contentElements)`);
+        orphanedLis.forEach((li, idx) => {
+          const $li = $(li);
+          const text = $li.text().trim().substring(0, 80);
+          const parentTag = $li.parent().prop('tagName');
+          const parentClass = $li.parent().attr('class') || 'no-class';
+          console.log(`🔍 FIX:   Orphan LI ${idx + 1}: "${text}..." parent=<${parentTag} class="${parentClass}">`);
+        });
+        contentElements.push(...orphanedLis);
+        console.log(`🔍 FIX: Added ${orphanedLis.length} orphaned <li> to contentElements (now ${contentElements.length} total)`);
+      } else {
+        console.log(`🔍 FIX: No TRUE orphaned <li> elements found (all <li> elements are either in lists or already in contentElements)`);
+      }
+    } else if (orphanListRepairSummary && orphanListRepairSummary.unresolvedCount > 0) {
+      console.log(`[LIST-REPAIR] ${orphanListRepairSummary.unresolvedCount} list items remained unresolved after repair; consider fallback handling.`);
     }
     
     // FIX: Deduplicate contentElements array (orphan collection strategies may overlap)
@@ -6355,7 +6768,63 @@ async function extractContentFromHtml(html) {
   }
   restorePlaceholders(blocks);
   
-  return { blocks, hasVideos: hasDetectedVideos, warnings };
+  // Deduplicate identical tables and callouts (but NOT paragraphs/text)
+  // Tables and callouts should never appear twice identically on the same page
+  console.log(`🔍 [DEDUPE] Starting deduplication check on ${blocks.length} blocks...`);
+  const seenTables = new Set();
+  const seenCallouts = new Set();
+  let duplicatesRemoved = 0;
+  
+  const deduplicatedBlocks = blocks.filter((block, index) => {
+    if (!block || !block.type) return true;
+    
+    // Deduplicate tables by comparing cell content structure
+    if (block.type === 'table' && block.table && block.table.children) {
+      const tableKey = JSON.stringify(
+        block.table.children.map(row => 
+          row.table_row?.cells?.map(cell => 
+            cell.map(rt => rt.text?.content || '').join('')
+          )
+        )
+      );
+      
+      if (seenTables.has(tableKey)) {
+        console.log(`🔍 [DEDUPE] Removed duplicate table at index ${index}`);
+        duplicatesRemoved++;
+        return false;
+      }
+      seenTables.add(tableKey);
+      return true;
+    }
+    
+    // Deduplicate callouts by comparing rich text content and color
+    if (block.type === 'callout' && block.callout) {
+      const calloutKey = JSON.stringify({
+        color: block.callout.color,
+        icon: block.callout.icon?.emoji || block.callout.icon?.type || '',
+        text: block.callout.rich_text?.map(rt => rt.text?.content || '').join('') || ''
+      });
+      
+      if (seenCallouts.has(calloutKey)) {
+        console.log(`🔍 [DEDUPE] Removed duplicate callout at index ${index}: "${block.callout.rich_text?.map(rt => rt.text?.content || '').join('').substring(0, 60)}..."`);
+        duplicatesRemoved++;
+        return false;
+      }
+      seenCallouts.add(calloutKey);
+      return true;
+    }
+    
+    // Keep all other block types (paragraphs, headings, lists, etc.)
+    return true;
+  });
+  
+  if (duplicatesRemoved > 0) {
+    console.log(`🔍 [DEDUPE] ✅ Removed ${duplicatesRemoved} duplicate blocks (${blocks.length} → ${deduplicatedBlocks.length})`);
+  } else {
+    console.log(`🔍 [DEDUPE] ✅ No duplicates found`);
+  }
+  
+  return { blocks: deduplicatedBlocks, hasVideos: hasDetectedVideos, warnings };
 }
 
 /**

@@ -23,6 +23,7 @@
 
 const { cleanHtmlText } = require("../utils/notion-format.cjs");
 const { convertServiceNowUrl, isValidImageUrl } = require("../utils/url.cjs");
+const cheerio = require('cheerio');
 
 /**
  * Converts HTML table content to Notion table block array.
@@ -112,11 +113,6 @@ async function convertTableBlock(tableHtml, options = {}) {
   }
 
   // Extract thead and tbody sections separately
-  const theadRegex = /<thead[^>]*>([\s\S]*?)<\/thead>/gi;
-  const tbodyRegex = /<tbody[^>]*>([\s\S]*?)<\/tbody>/gi;
-  const theadMatch = theadRegex.exec(cleanedTableHtml);
-  const tbodyMatch = tbodyRegex.exec(cleanedTableHtml);
-
   // Helper to process table cell content
   async function processTableCellContent(html) {
     if (!html) return [{ type: "text", text: { content: "" } }];
@@ -127,7 +123,6 @@ async function convertTableBlock(tableHtml, options = {}) {
     }
     
     // Load HTML into Cheerio for better parsing
-    const cheerio = require('cheerio');
     const $ = cheerio.load(html, { decodeEntities: true });
     
     // Extract images - check both standalone img tags and figures with figcaption
@@ -410,49 +405,44 @@ async function convertTableBlock(tableHtml, options = {}) {
     return result;
   }
 
-  // Extract table rows from thead
-  const theadRows = [];
-  if (theadMatch) {
-    const theadContent = theadMatch[1];
-    const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-    let rowMatch;
-    while ((rowMatch = rowRegex.exec(theadContent)) !== null) {
-      const rowContent = rowMatch[1];
-      const cellRegex = /<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;
-      const cells = [];
-      let cellMatch;
-      while ((cellMatch = cellRegex.exec(rowContent)) !== null) {
-        const cellContent = cellMatch[1];
-        cells.push(await processTableCellContent(cellContent));
-      }
-      if (cells.length > 0) theadRows.push(cells);
-    }
-  }
+  // Extract rows using Cheerio to preserve DOM order (avoids regex misalignment)
+  const $tableDoc = cheerio.load(cleanedTableHtml, { decodeEntities: true });
+  const $tableElement = $tableDoc('table').first();
 
-  // Extract table rows from tbody
-  const tbodyRows = [];
-  if (tbodyMatch) {
-    const tbodyContent = tbodyMatch[1];
-    const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-    let rowMatch;
-    while ((rowMatch = rowRegex.exec(tbodyContent)) !== null) {
-      const rowContent = rowMatch[1];
-      const cellRegex = /<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;
-      const cells = [];
-      let cellMatch;
-      while ((cellMatch = cellRegex.exec(rowContent)) !== null) {
-        const cellContent = cellMatch[1];
-        cells.push(await processTableCellContent(cellContent));
+  const collectRows = async (rowElements) => {
+    const collected = [];
+    for (const rowElement of rowElements) {
+      const $row = $tableDoc(rowElement);
+      const cellElements = $row.children('th, td').toArray();
+      const rowCells = [];
+      for (const cellElement of cellElements) {
+        const cellHtml = $tableDoc(cellElement).html() || '';
+        rowCells.push(await processTableCellContent(cellHtml));
       }
-      if (cells.length > 0) tbodyRows.push(cells);
+      if (rowCells.length > 0) {
+        collected.push(rowCells);
+      }
     }
-  }
+    return collected;
+  };
 
-  // Fallback: process all <tr> if no thead/tbody
+  let theadRows = [];
+  let tbodyRows = [];
   let rows = [];
-  if (theadRows.length > 0 || tbodyRows.length > 0) {
-    rows = [...theadRows, ...tbodyRows];
-  } else {
+
+  if ($tableElement.length > 0) {
+    theadRows = await collectRows($tableElement.find('thead > tr').toArray());
+    tbodyRows = await collectRows($tableElement.find('tbody > tr').toArray());
+
+    if (theadRows.length > 0 || tbodyRows.length > 0) {
+      rows = [...theadRows, ...tbodyRows];
+    } else {
+      rows = await collectRows($tableElement.find('tr').toArray());
+    }
+  }
+
+  // Fallback to legacy regex parsing if Cheerio did not yield rows (defensive)
+  if (rows.length === 0) {
     const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
     let rowMatch;
     while ((rowMatch = rowRegex.exec(cleanedTableHtml)) !== null) {
@@ -461,9 +451,12 @@ async function convertTableBlock(tableHtml, options = {}) {
       const cells = [];
       let cellMatch;
       while ((cellMatch = cellRegex.exec(rowContent)) !== null) {
-        cells.push(await processTableCellContent(cellMatch[1]));
+        const cellContent = cellMatch[1];
+        cells.push(await processTableCellContent(cellContent));
       }
-      if (cells.length > 0) rows.push(cells);
+      if (cells.length > 0) {
+        rows.push(cells);
+      }
     }
   }
 

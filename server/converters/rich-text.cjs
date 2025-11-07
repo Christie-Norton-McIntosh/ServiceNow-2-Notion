@@ -305,6 +305,12 @@ function convertRichTextBlock(input, options = {}) {
       `SAMP TAG: "${content.substring(0, 100)}" → "${result.substring(0, 150)}"\n`);
     return result;
   });
+
+  // Handle <var> tags (variable/placeholder markup) - strip wrapper but keep inner content
+  if (/<var[\s>]/i.test(html)) {
+    console.log('🧪 [VAR TAG] Stripping <var> wrappers while preserving content');
+    html = html.replace(/<var[^>]*>([\s\S]*?)<\/var>/gi, '$1');
+  }
   
   fs.appendFileSync('/Users/norton-mcintosh/GitHub/ServiceNow-2-Notion/debug-richtext.log', 
     `AFTER CODE/SAMP TAGS: "${html.substring(0, 200)}"\n\n`);
@@ -481,6 +487,24 @@ function convertRichTextBlock(input, options = {}) {
       console.log(`🚫 [TECH ID] Skipping "${match}" - immediately after URL protocol`);
       return match; // This is the start of a URL hostname, don't wrap
     }
+
+    // Skip ServiceNow path segments ending in .do (should remain plain text)
+    if (/\.do$/i.test(match)) {
+      console.log(`🚫 [TECH ID] Skipping "${match}" - ServiceNow .do path segment`);
+      return match;
+    }
+
+    // Skip identifiers that are part of query strings or URL segments (adjacent to delimiters)
+    const beforeChar = offset > 0 ? string[offset - 1] : '';
+    const afterChar = string[offset + match.length];
+    if (beforeChar === '/' || beforeChar === '?') {
+      console.log(`🚫 [TECH ID] Skipping "${match}" - preceded by "${beforeChar}" (URL delimiter)`);
+      return match;
+    }
+    if (afterChar && '?=&'.includes(afterChar)) {
+      console.log(`🚫 [TECH ID] Skipping "${match}" - followed by "${afterChar}" (query delimiter)`);
+      return match;
+    }
     
     console.log(`� [TECH ID] Wrapping "${match}" as inline code`);
     return `__CODE_START__${identifier}__CODE_END__`;
@@ -515,7 +539,7 @@ function convertRichTextBlock(input, options = {}) {
       // Only check content OUTSIDE code blocks
       const potentialPlaceholders = part.match(/<([^>\/]+)>/g);
       if (potentialPlaceholders) {
-        const knownHtmlTags = /^<\/?(?:div|span|p|a|img|br|hr|b|i|u|strong|em|code|samp|pre|ul|ol|li|table|tr|td|th|tbody|thead|tfoot|h[1-6]|font|center|small|big|sub|sup|abbr|cite|del|ins|mark|s|strike|blockquote|q|address|article|aside|footer|header|main|nav|section|details|summary|figure|figcaption|time|video|audio|source|canvas|svg|path|g|rect|circle|line|polyline|polygon)(?:\s+[^>]*)?>/i;
+        const knownHtmlTags = /^<\/?(?:div|span|p|a|img|br|hr|b|i|u|strong|em|code|samp|var|pre|ul|ol|li|table|tr|td|th|tbody|thead|tfoot|h[1-6]|font|center|small|big|sub|sup|abbr|cite|del|ins|mark|s|strike|blockquote|q|address|article|aside|footer|header|main|nav|section|details|summary|figure|figcaption|time|video|audio|source|canvas|svg|path|g|rect|circle|line|polyline|polygon)(?:\s+[^>]*)?>/i;
         
         const actualPlaceholders = potentialPlaceholders.filter(tag => !knownHtmlTags.test(tag));
         unprotectedPlaceholders.push(...actualPlaceholders);
@@ -553,7 +577,7 @@ function convertRichTextBlock(input, options = {}) {
       return part;
     } else {
       // Outside code block - strip known HTML tags
-      return part.replace(/<\/?(?:div|span|p|a|img|br|hr|b|i|u|strong|em|code|samp|pre|ul|ol|li|table|tr|td|th|tbody|thead|tfoot|h[1-6]|font|center|small|big|sub|sup|abbr|cite|del|ins|mark|s|strike|blockquote|q|address|article|aside|footer|header|main|nav|section|details|summary|figure|figcaption|time|video|audio|source|canvas|svg|path|g|rect|circle|line|polyline|polygon)(?:\s+[^>]*)?>/gi, ' ');
+  return part.replace(/<\/?(?:div|span|p|a|img|br|hr|b|i|u|strong|em|code|samp|var|pre|ul|ol|li|table|tr|td|th|tbody|thead|tfoot|h[1-6]|font|center|small|big|sub|sup|abbr|cite|del|ins|mark|s|strike|blockquote|q|address|article|aside|footer|header|main|nav|section|details|summary|figure|figcaption|time|video|audio|source|canvas|svg|path|g|rect|circle|line|polyline|polygon)(?:\s+[^>]*)?>/gi, ' ');
     }
   }).join('');
   
