@@ -3014,8 +3014,9 @@ async function extractContentFromHtml(html) {
       let autoNestReason = null;
       if (/\bsteps\b/.test(olClassAttr) && !/\bsubsteps\b/.test(olClassAttr)) {
         autoNestReason = 'class:steps';
-      } else if (/\bsubsteps?\b/.test(olIdAttr)) {
+      } else if (/\bsubsteps?\b/.test(olIdAttr) || /\bsubsteps?\b/.test($elem.parent().attr('id') || '')) {
         autoNestReason = 'id:contains-substeps';
+        console.log(`🎯 [TARGET-ID] Triggering auto-nest for OL id="${olIdAttr}" parent id="${$elem.parent().attr('id') || ''}"`);
       } else if (hasPrimaryStepLis && directSubstepLists.length > 0) {
         autoNestReason = 'loose-substeps-list';
       } else if (hasPrimaryStepLis && hasLooseSubstepLis) {
@@ -3041,15 +3042,20 @@ async function extractContentFromHtml(html) {
           .filter(node => node && node.type === 'tag');
         let currentPrimaryLi = null;
         let currentSubstepsOl = null;
+        let liCounter = 0;
 
         directChildren.forEach(node => {
           const $node = $(node);
           const nodeName = node.name?.toLowerCase();
 
           if (nodeName === 'li') {
+            liCounter++;
+            const liIndex = liCounter - 1;
             const liClassAttr = $node.attr('class') || '';
-            const isSubstepLi = /\bsubstep\b/.test(liClassAttr);
-            const isPrimaryLi = /\bstep\b/.test(liClassAttr) && !isSubstepLi;
+            const isLikelyPrimary = autoNestReason === 'id:contains-substeps' && liIndex < 3;
+            const isLikelySubstep = autoNestReason === 'id:contains-substeps' && liIndex > 2;
+            const isSubstepLi = /\bsubstep\b/.test(liClassAttr) || isLikelySubstep;
+            const isPrimaryLi = (/\bstep\b/.test(liClassAttr) && !isSubstepLi) || isLikelyPrimary;
 
             if (isPrimaryLi) {
               currentPrimaryLi = $node;
