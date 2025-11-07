@@ -44,9 +44,6 @@ delete require.cache[tablePath];
 const { convertTableBlock } = require('../converters/table.cjs');
 
 const { generateMarker } = require('../orchestration/marker-management.cjs');
-const { repairListStructure } = require('../utils/orphan-list-repair.cjs');
-
-const ENABLE_ORPHAN_LIST_REPAIR = process.env.SN2N_ORPHAN_LIST_REPAIR === '1' || process.env.SN2N_ORPHAN_LIST_REPAIR === 'true';
 
 /** @private Global tracker for video detection (reset per conversion) */
 let hasDetectedVideos = false;
@@ -1395,7 +1392,6 @@ async function extractContentFromHtml(html) {
   // Use cheerio to parse HTML and process elements in document order
   let $;
   let elementOrderMap = new Map(); // Declare at function scope so it's accessible throughout
-  let orphanListRepairSummary = null;
   
   try {
     // FILE-BASED DIAGNOSTIC: Check HTML BEFORE Cheerio
@@ -1446,64 +1442,6 @@ async function extractContentFromHtml(html) {
     // FILE-BASED DIAGNOSTIC: Check HTML AFTER Cheerio
     const htmlAfter = $.html();
     fs.appendFileSync(logFile, `HTML length AFTER Cheerio.load(): ${htmlAfter.length}\n`);
-
-    if (ENABLE_ORPHAN_LIST_REPAIR) {
-      try {
-        const repairScope = $('.zDocsTopicPageBody').first();
-        const repairOptions = {
-          scope: repairScope && repairScope.length > 0 ? repairScope : undefined,
-          verbose: typeof getExtraDebug === 'function' && getExtraDebug(),
-        };
-
-        orphanListRepairSummary = repairListStructure($, repairOptions);
-
-        if (orphanListRepairSummary) {
-          const summaryParts = [
-            `scope=${orphanListRepairSummary.scope}`,
-            `total=${orphanListRepairSummary.totalListItems}`,
-            `orphans=${orphanListRepairSummary.orphanCount}`,
-            `misnested=${orphanListRepairSummary.misnestedCount}`,
-            `repaired=${orphanListRepairSummary.repairedCount}`,
-            `misnestedRepaired=${orphanListRepairSummary.misnestedRepairedCount}`,
-            `unresolved=${orphanListRepairSummary.unresolvedCount}`,
-            `misnestedUnresolved=${orphanListRepairSummary.misnestedUnresolvedCount}`,
-            `listsCreated=${orphanListRepairSummary.createdListCount}`,
-          ];
-          console.log(`[LIST-REPAIR] ${summaryParts.join(' ')}`);
-          try {
-            fs.appendFileSync(logFile, `[LIST-REPAIR] ${summaryParts.join(' ')}\n`);
-          } catch (fileError) {
-            console.log(`[LIST-REPAIR] Failed to append summary to log file: ${fileError?.message || fileError}`);
-          }
-
-          if (repairOptions.verbose && orphanListRepairSummary.unresolvedCount > 0) {
-            orphanListRepairSummary.unresolved.slice(0, 5).forEach((item, idx) => {
-              console.log(`[LIST-REPAIR] unresolved[${idx}] depth=${item.targetDepth || 'n/a'} hint=${item.depthHint || 'n/a'} type=${item.listType} preview="${item.textPreview}"`);
-              try {
-                fs.appendFileSync(logFile, `[LIST-REPAIR] unresolved[${idx}] depth=${item.targetDepth || 'n/a'} hint=${item.depthHint || 'n/a'} type=${item.listType} preview="${item.textPreview}"\n`);
-              } catch (fileError) {
-                console.log(`[LIST-REPAIR] Failed to append unresolved entry to log file: ${fileError?.message || fileError}`);
-              }
-            });
-            if (orphanListRepairSummary.unresolved.length > 5) {
-              console.log(`[LIST-REPAIR] ... ${orphanListRepairSummary.unresolved.length - 5} additional unresolved items`);
-              try {
-                fs.appendFileSync(logFile, `[LIST-REPAIR] ... ${orphanListRepairSummary.unresolved.length - 5} additional unresolved items\n`);
-              } catch (fileError) {
-                console.log(`[LIST-REPAIR] Failed to append unresolved summary to log file: ${fileError?.message || fileError}`);
-              }
-            }
-          }
-        }
-      } catch (repairError) {
-        console.log(`[LIST-REPAIR] Failed to repair list structure: ${repairError?.message || repairError}`);
-        try {
-          fs.appendFileSync(logFile, `[LIST-REPAIR] Failed to repair list structure: ${repairError?.message || repairError}\n`);
-        } catch (fileError) {
-          console.log(`[LIST-REPAIR] Failed to append repair error to log file: ${fileError?.message || fileError}`);
-        }
-      }
-    }
     
     // CRITICAL DIAGNOSTIC: Check if main steps OL has all LIs AFTER Cheerio
     const mainStepsOlRegex = /<ol[^>]*class="[^"]*ol steps[^"]*"[^>]*>/;
@@ -2982,108 +2920,43 @@ async function extractContentFromHtml(html) {
       // Detect this pattern and promote those substeps into an auto-created nested <ol> under the
       // most recent primary step so they appear as level-2 list items in Notion.
       const olClassAttr = $elem.attr('class') || '';
-      const olIdAttr = $elem.attr('id') || '';
-      const directSubstepLists = $elem.children('ol, ul').filter((_, listNode) => {
-        const listClass = $(listNode).attr('class') || '';
-        return /\bsubsteps\b/.test(listClass);
-      });
-      const hasLooseSubstepLis = $elem.children('li').filter((_, liNode) => /\bsubstep\b/.test($(liNode).attr('class') || '')).length > 0;
-      const hasPrimaryStepLis = $elem.children('li').filter((_, liNode) => /\bstep\b/.test($(liNode).attr('class') || '')).length > 0;
-
-      let autoNestReason = null;
-      if (/\bsteps\b/.test(olClassAttr) && !/\bsubsteps\b/.test(olClassAttr)) {
-        autoNestReason = 'class:steps';
-      } else if (hasPrimaryStepLis && directSubstepLists.length > 0) {
-        autoNestReason = 'loose-substeps-list';
-      } else if (hasPrimaryStepLis && hasLooseSubstepLis) {
-        autoNestReason = 'mixed-step-substep-lis';
-      }
-
-      const shouldAutoNestSubsteps = Boolean(autoNestReason);
+      const shouldAutoNestSubsteps = /\bsteps\b/.test(olClassAttr) && !/\bsubsteps\b/.test(olClassAttr);
       if (shouldAutoNestSubsteps) {
-        console.log(`🔧 [OL-AUTO-SUBSTEPS] Triggered for <ol id="${olIdAttr || 'no-id'}" class="${olClassAttr}": reason=${autoNestReason}`);
-        const olId = $elem.attr('id') || 'no-id';
-        try {
-          const path = require('path');
-          const snapshotSafeId = olId.replace(/[^a-z0-9-_]+/gi, '_');
-          const snapshotName = `auto-substeps-${snapshotSafeId || 'anonymous'}-${Date.now()}.html`;
-          const snapshotPath = path.join(__dirname, '../logs', snapshotName);
-          fs.writeFileSync(snapshotPath, $elem.html() || '', 'utf8');
-          console.log(`🗂️ [OL-AUTO-SUBSTEPS] Captured snapshot ${snapshotName} for analysis.`);
-        } catch (snapshotError) {
-          console.log(`⚠️ [OL-AUTO-SUBSTEPS] Failed to capture snapshot for <ol id="${olId}">: ${snapshotError?.message || snapshotError}`);
-        }
-
-        const directChildren = Array.from($elem.contents())
-          .filter(node => node && node.type === 'tag');
+        const directLis = $elem.find('> li').toArray();
         let currentPrimaryLi = null;
         let currentSubstepsOl = null;
 
-        directChildren.forEach(node => {
-          const $node = $(node);
-          const nodeName = node.name?.toLowerCase();
+        directLis.forEach(liNode => {
+          const $liNode = $(liNode);
+          const liClassAttr = $liNode.attr('class') || '';
+          const isSubstepLi = /\bsubstep\b/.test(liClassAttr);
+          const isPrimaryLi = /\bstep\b/.test(liClassAttr) && !isSubstepLi;
 
-          if (nodeName === 'li') {
-            const liClassAttr = $node.attr('class') || '';
-            const isSubstepLi = /\bsubstep\b/.test(liClassAttr);
-            const isPrimaryLi = /\bstep\b/.test(liClassAttr) && !isSubstepLi;
-
-            if (isPrimaryLi) {
-              currentPrimaryLi = $node;
-              currentSubstepsOl = null;
-              return;
-            }
-
-            if (isSubstepLi && currentPrimaryLi) {
-              if (!currentSubstepsOl || currentSubstepsOl.length === 0 || !currentSubstepsOl.parent().is(currentPrimaryLi)) {
-                const existingSubsteps = currentPrimaryLi.find('> ol.substeps, > ol.ol.substeps').first();
-                currentSubstepsOl = existingSubsteps.length > 0 ? existingSubsteps : null;
-              }
-
-              if (!currentSubstepsOl) {
-                currentSubstepsOl = $('<ol class="ol substeps sn2n-auto-substeps"></ol>');
-                currentPrimaryLi.append(currentSubstepsOl);
-                console.log(`🔧 [OL-AUTO-SUBSTEPS] Created nested <ol> for orphan substeps under primary step.`);
-              }
-
-              currentSubstepsOl.append($node);
-              console.log(`🔧 [OL-AUTO-SUBSTEPS] Moved "${$node.text().trim().substring(0, 60)}" under latest primary step.`);
-              return;
-            }
-
-            currentPrimaryLi = $node;
+          if (isPrimaryLi) {
+            currentPrimaryLi = $liNode;
             currentSubstepsOl = null;
             return;
           }
 
-          const isSubstepsOl = (nodeName === 'ol' || nodeName === 'ul') && /\bsubsteps\b/.test($node.attr('class') || '');
-          if (isSubstepsOl) {
-            if (!currentPrimaryLi) {
-              console.log(`⚠️ [OL-AUTO-SUBSTEPS] Found <${nodeName} class="${$node.attr('class') || ''}"> without a preceding primary <li>; skipping auto-nest.`);
-              currentSubstepsOl = null;
-              return;
+          if (isSubstepLi && currentPrimaryLi) {
+            // Check if the primary already has a substeps <ol>; reuse it when present.
+            if (!currentSubstepsOl || currentSubstepsOl.length === 0 || !currentSubstepsOl.parent().is(currentPrimaryLi)) {
+              const existingSubsteps = currentPrimaryLi.find('> ol.substeps, > ol.ol.substeps').first();
+              currentSubstepsOl = existingSubsteps.length > 0 ? existingSubsteps : null;
             }
 
-            let targetSubsteps = currentPrimaryLi.find('> ol.substeps, > ol.ol.substeps').first();
-            if (targetSubsteps.length === 0) {
-              targetSubsteps = $node;
-              currentPrimaryLi.append(targetSubsteps);
-              console.log(`🔧 [OL-AUTO-SUBSTEPS] Attached existing substeps list (#${targetSubsteps.attr('id') || 'no-id'}) to primary step.`);
-            } else if (targetSubsteps.get(0) !== node) {
-              const movedItemCount = $node.children('li').length;
-              targetSubsteps.append($node.children());
-              $node.remove();
-              console.log(`🔧 [OL-AUTO-SUBSTEPS] Merged ${movedItemCount} substep <li> entries into existing nested list.`);
+            if (!currentSubstepsOl) {
+              currentSubstepsOl = $('<ol class="ol substeps sn2n-auto-substeps"></ol>');
+              currentPrimaryLi.append(currentSubstepsOl);
+              console.log(`🔧 [OL-AUTO-SUBSTEPS] Created nested <ol> for orphan substeps under primary step.`);
             }
 
-            targetSubsteps.addClass('sn2n-auto-substeps');
-            targetSubsteps.attr('data-sn2n-source', 'auto-nested');
-            currentSubstepsOl = targetSubsteps;
-            return;
+            currentSubstepsOl.append($liNode);
+            console.log(`🔧 [OL-AUTO-SUBSTEPS] Moved "${$liNode.text().trim().substring(0, 60)}" under latest primary step.`);
+          } else {
+            currentPrimaryLi = $liNode;
+            currentSubstepsOl = null;
           }
-
-          // Reset tracking when encountering non-list structural nodes (e.g., new <section>)
-          currentSubstepsOl = null;
         });
       }
       
@@ -6386,53 +6259,49 @@ async function extractContentFromHtml(html) {
       }
     }
     
-    if (!ENABLE_ORPHAN_LIST_REPAIR) {
-      // FIX: Collect orphaned <li> elements that are NOT inside any ol/ul
-      // These can appear anywhere in the page body due to malformed ServiceNow HTML
-      // CRITICAL: Only add orphans that are NOT already inside existing contentElements
-      // This prevents duplicate processing of <li> elements that are inside articles/sections
-      const allLis = $('.zDocsTopicPageBody li').toArray();
-      const orphanedLis = allLis.filter(li => {
-        const $li = $(li);
-        
-        // Check if this <li> has an <ol> or <ul> as a parent
-        const hasListParent = $li.closest('ol, ul').length > 0;
-        if (hasListParent) {
-          return false; // Has list parent, not an orphan
-        }
-        
-        // CRITICAL FIX: Check if this <li> is already inside any element in contentElements
-        // This prevents duplicate processing when <li> is inside an article/section that's already queued
-        const isInsideContentElement = contentElements.some(el => {
-          const $el = $(el);
-          // Check if this element contains the <li>
-          return $el.find(li).length > 0 || el === li;
-        });
-        
-        if (isInsideContentElement) {
-          console.log(`🔍 FIX: Skipping <li> already inside contentElement: "${$li.text().trim().substring(0, 60)}..."`);
-          return false;
-        }
-        
-        return true; // This is a true orphan
+    // FIX: Collect orphaned <li> elements that are NOT inside any ol/ul
+    // These can appear anywhere in the page body due to malformed ServiceNow HTML
+    // CRITICAL: Only add orphans that are NOT already inside existing contentElements
+    // This prevents duplicate processing of <li> elements that are inside articles/sections
+    const allLis = $('.zDocsTopicPageBody li').toArray();
+    const orphanedLis = allLis.filter(li => {
+      const $li = $(li);
+      
+      // Check if this <li> has an <ol> or <ul> as a parent
+      const hasListParent = $li.closest('ol, ul').length > 0;
+      if (hasListParent) {
+        return false; // Has list parent, not an orphan
+      }
+      
+      // CRITICAL FIX: Check if this <li> is already inside any element in contentElements
+      // This prevents duplicate processing when <li> is inside an article/section that's already queued
+      const isInsideContentElement = contentElements.some(el => {
+        const $el = $(el);
+        // Check if this element contains the <li>
+        return $el.find(li).length > 0 || el === li;
       });
       
-      if (orphanedLis.length > 0) {
-        console.log(`🔍 FIX: Found ${orphanedLis.length} TRUE orphaned <li> elements (not inside ol/ul AND not in contentElements)`);
-        orphanedLis.forEach((li, idx) => {
-          const $li = $(li);
-          const text = $li.text().trim().substring(0, 80);
-          const parentTag = $li.parent().prop('tagName');
-          const parentClass = $li.parent().attr('class') || 'no-class';
-          console.log(`🔍 FIX:   Orphan LI ${idx + 1}: "${text}..." parent=<${parentTag} class="${parentClass}">`);
-        });
-        contentElements.push(...orphanedLis);
-        console.log(`🔍 FIX: Added ${orphanedLis.length} orphaned <li> to contentElements (now ${contentElements.length} total)`);
-      } else {
-        console.log(`🔍 FIX: No TRUE orphaned <li> elements found (all <li> elements are either in lists or already in contentElements)`);
+      if (isInsideContentElement) {
+        console.log(`🔍 FIX: Skipping <li> already inside contentElement: "${$li.text().trim().substring(0, 60)}..."`);
+        return false;
       }
-    } else if (orphanListRepairSummary && orphanListRepairSummary.unresolvedCount > 0) {
-      console.log(`[LIST-REPAIR] ${orphanListRepairSummary.unresolvedCount} list items remained unresolved after repair; consider fallback handling.`);
+      
+      return true; // This is a true orphan
+    });
+    
+    if (orphanedLis.length > 0) {
+      console.log(`🔍 FIX: Found ${orphanedLis.length} TRUE orphaned <li> elements (not inside ol/ul AND not in contentElements)`);
+      orphanedLis.forEach((li, idx) => {
+        const $li = $(li);
+        const text = $li.text().trim().substring(0, 80);
+        const parentTag = $li.parent().prop('tagName');
+        const parentClass = $li.parent().attr('class') || 'no-class';
+        console.log(`🔍 FIX:   Orphan LI ${idx + 1}: "${text}..." parent=<${parentTag} class="${parentClass}">`);
+      });
+      contentElements.push(...orphanedLis);
+      console.log(`🔍 FIX: Added ${orphanedLis.length} orphaned <li> to contentElements (now ${contentElements.length} total)`);
+    } else {
+      console.log(`🔍 FIX: No TRUE orphaned <li> elements found (all <li> elements are either in lists or already in contentElements)`);
     }
     
     // FIX: Deduplicate contentElements array (orphan collection strategies may overlap)

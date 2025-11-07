@@ -80,13 +80,33 @@ async function findParentListItemByMarker(rootBlockId, marker) {
   
   log(`🔍 BFS START: Searching for marker ${token} starting from ${rootBlockId}`);
 
-  async function listChildren(blockId, cursor) {
-    const res = await notion.blocks.children.list({
-      block_id: blockId,
-      page_size: 100,
-      start_cursor: cursor,
-    });
-    return res;
+  async function listChildren(blockId, cursor, retries = 3) {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        const res = await notion.blocks.children.list({
+          block_id: blockId,
+          page_size: 100,
+          start_cursor: cursor,
+        });
+        return res;
+      } catch (error) {
+        const isRetryable = error.message && (
+          error.message.includes('socket hang up') ||
+          error.message.includes('ECONNRESET') ||
+          error.message.includes('timeout') ||
+          error.message.includes('ETIMEDOUT')
+        );
+        
+        if (isRetryable && attempt < retries) {
+          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // Exponential backoff: 1s, 2s, 4s (max 5s)
+          log(`⚠️ BFS: Retryable error on attempt ${attempt}/${retries} for block ${blockId}: ${error.message}. Retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        } else {
+          log(`❌ BFS: Failed to fetch children for block ${blockId} after ${attempt} attempts: ${error.message}`);
+          throw error; // Re-throw after all retries exhausted or non-retryable error
+        }
+      }
+    }
   }
 
   const queue = [rootBlockId];
