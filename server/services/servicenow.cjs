@@ -183,16 +183,27 @@ async function extractContentFromHtml(html) {
     fs.appendFileSync(logFile, `\n=== ${timestamp} ===\n`);
     fs.appendFileSync(logFile, `HTML length at function entry: ${html ? html.length : 'NULL'}\n`);
     
-    if (html && html.includes('devops-software-quality-sub-category__ol_bpk_gfk_xpb')) {
-      const olMatch = html.match(/<ol[^>]*id="devops-software-quality-sub-category__ol_bpk_gfk_xpb"[^>]*>[\s\S]*?<\/ol>/);
-      if (olMatch) {
-        fs.appendFileSync(logFile, `Target OL at entry: ${olMatch[0].length} chars, ${(olMatch[0].match(/<li/g) || []).length} <li> tags\n`);
-        fs.appendFileSync(logFile, `Contains Submit at entry: ${olMatch[0].includes('<span class="ph uicontrol">Submit</span>')}\n`);
-      } else {
-        fs.appendFileSync(logFile, `OL ID found but regex extraction failed\n`);
+    if (html && (html.includes('devops-software-quality-sub-category__ol_bpk_gfk_xpb') || 
+                 html.includes('t_AddNewChangeType__substeps_bmd_g4t_nv') ||
+                 html.includes('t_AddNewChangeType__substeps_hhn_bmt_nv'))) {
+      const olMatch1 = html.match(/<ol[^>]*id="devops-software-quality-sub-category__ol_bpk_gfk_xpb"[^>]*>[\s\S]*?<\/ol>/);
+      const olMatch2 = html.match(/<ol[^>]*id="t_AddNewChangeType__substeps_bmd_g4t_nv"[^>]*>[\s\S]*?<\/ol>/);
+      const olMatch3 = html.match(/<ol[^>]*id="t_AddNewChangeType__substeps_hhn_bmt_nv"[^>]*>[\s\S]*?<\/ol>/);
+      
+      if (olMatch1) {
+        fs.appendFileSync(logFile, `Target OL (bpk_gfk_xpb) at entry: ${olMatch1[0].length} chars, ${(olMatch1[0].match(/<li/g) || []).length} <li> tags\n`);
+        fs.appendFileSync(logFile, `Contains Submit at entry: ${olMatch1[0].includes('<span class="ph uicontrol">Submit</span>')}\n`);
+      }
+      if (olMatch2) {
+        fs.appendFileSync(logFile, `Target OL (bmd_g4t_nv) at entry: ${olMatch2[0].length} chars, ${(olMatch2[0].match(/<li/g) || []).length} <li> tags\n`);
+        fs.appendFileSync(logFile, `Contains substeps at entry: ${olMatch2[0].includes('substeps')}\n`);
+      }
+      if (olMatch3) {
+        fs.appendFileSync(logFile, `Target OL (hhn_bmt_nv) at entry: ${olMatch3[0].length} chars, ${(olMatch3[0].match(/<li/g) || []).length} <li> tags\n`);
+        fs.appendFileSync(logFile, `Contains substeps at entry: ${olMatch3[0].includes('substeps')}\n`);
       }
     } else {
-      fs.appendFileSync(logFile, `Target OL ID NOT FOUND in HTML at entry\n`);
+      fs.appendFileSync(logFile, `Target OL IDs NOT FOUND in HTML at entry\n`);
     }
   } catch (err) {
     console.error('Failed to write entry diagnostic:', err);
@@ -1531,7 +1542,9 @@ async function extractContentFromHtml(html) {
       fs.appendFileSync(logFile, `Main steps OL after Cheerio: ${mainStepsLiCount} direct <li class="...li step..."> tags\n`);
     }
     
-    const targetOlAfter = htmlAfter.match(/<ol[^>]*id="devops-software-quality-sub-category__ol_bpk_gfk_xpb"[^>]*>[\s\S]*?<\/ol>/);
+    const targetOlAfter = htmlAfter.match(/<ol[^>]*id="devops-software-quality-sub-category__ol_bpk_gfk_xpb"[^>]*>[\s\S]*?<\/ol>/) ||
+                           htmlAfter.match(/<ol[^>]*id="t_AddNewChangeType__substeps_bmd_g4t_nv"[^>]*>[\s\S]*?<\/ol>/) ||
+                           htmlAfter.match(/<ol[^>]*id="t_AddNewChangeType__substeps_hhn_bmt_nv"[^>]*>[\s\S]*?<\/ol>/);
     if (targetOlAfter) {
       fs.appendFileSync(logFile, `Target OL AFTER Cheerio: ${targetOlAfter[0].length} chars, ${(targetOlAfter[0].match(/<li/g) || []).length} <li> tags\n`);
       fs.appendFileSync(logFile, `Contains Submit AFTER Cheerio: ${targetOlAfter[0].includes('<span class="ph uicontrol">Submit</span>')}\n`);
@@ -2973,6 +2986,14 @@ async function extractContentFromHtml(html) {
       console.log(`🔍 [OL-DEBUG] Raw HTML contains "successfully created": ${rawOlHtml.includes('successfully created')}`);
       console.log(`🔍 [OL-DEBUG] Raw HTML length: ${rawOlHtml.length} characters`);
       
+      // Check for the specific problematic IDs mentioned by user
+      const olId = $elem.attr('id') || '';
+      if (olId.includes('AddNewChangeType__substeps')) {
+        console.log(`🎯 [TARGET-ID] Found target OL with ID "${olId}" - this should trigger substep nesting`);
+        console.log(`🎯 [TARGET-ID] OL class: "${$elem.attr('class') || ''}"`);
+        console.log(`🎯 [TARGET-ID] OL contains substeps ID pattern: ${/substeps/.test(olId)}`);
+      }
+      
       // Count total <li> tags (including nested)
       const totalLiTags = (rawOlHtml.match(/<li/g) || []).length;
       console.log(`🔍 [OL-DEBUG] Total <li> tags in raw HTML: ${totalLiTags}`);
@@ -2993,6 +3014,8 @@ async function extractContentFromHtml(html) {
       let autoNestReason = null;
       if (/\bsteps\b/.test(olClassAttr) && !/\bsubsteps\b/.test(olClassAttr)) {
         autoNestReason = 'class:steps';
+      } else if (/\bsubsteps?\b/.test(olIdAttr)) {
+        autoNestReason = 'id:contains-substeps';
       } else if (hasPrimaryStepLis && directSubstepLists.length > 0) {
         autoNestReason = 'loose-substeps-list';
       } else if (hasPrimaryStepLis && hasLooseSubstepLis) {
@@ -3096,6 +3119,38 @@ async function extractContentFromHtml(html) {
         const preview = $li.text().trim().substring(0, 60).replace(/\s+/g, ' ');
         console.log(`🔍   [${idx + 1}/${listItems.length}] "${preview}..."`);
       });
+
+      const listContainsSubmitForm = listItems.some(li => {
+        const text = $(li).text();
+        return typeof text === 'string' && text.toLowerCase().includes('submit the form');
+      });
+
+      if (listContainsSubmitForm) {
+        console.log(`🛰️ [SUBMIT-FORM-DEBUG] Observed <ol id="${olIdAttr || 'no-id'}" class="${olClassAttr}": shouldAutoNest=${shouldAutoNestSubsteps} reason=${autoNestReason || 'none'}`);
+        console.log(`🛰️ [SUBMIT-FORM-DEBUG] List contains target IDs: bmd_g4t_nv=${olIdAttr.includes('bmd_g4t_nv')}, hhn_bmt_nv=${olIdAttr.includes('hhn_bmt_nv')}`);
+
+        listItems.forEach((li, idx) => {
+          const $li = $(li);
+          const attrEntries = Object.entries(li.attribs || {}).map(([key, value]) => `${key}="${value}"`);
+          const childSummary = Array.from(li.children || [])
+            .filter(child => child && typeof child.name === 'string')
+            .map(child => child.name)
+            .join(', ');
+          const textPreview = $li.text().trim().replace(/\s+/g, ' ').substring(0, 120);
+          console.log(`🛰️ [SUBMIT-FORM-DEBUG] li#${idx + 1}: attrs=[${attrEntries.join(' ')}] children=[${childSummary || 'none'}] text="${textPreview}"`);
+        });
+
+        try {
+          const path = require('path');
+          const safeId = (olIdAttr || 'no-id').replace(/[^a-z0-9-_]+/gi, '_');
+          const snapshotName = `submit-form-debug-${safeId}-${Date.now()}.html`;
+          const snapshotPath = path.join(__dirname, '../logs', snapshotName);
+          fs.writeFileSync(snapshotPath, $elem.html() || '', 'utf8');
+          console.log(`🛰️ [SUBMIT-FORM-DEBUG] Wrote snapshot ${snapshotName} for manual inspection.`);
+        } catch (snapshotErr) {
+          console.log(`🛰️ [SUBMIT-FORM-DEBUG] Failed to write snapshot for <ol id="${olIdAttr || 'no-id'}">: ${snapshotErr?.message || snapshotErr}`);
+        }
+      }
       
       // CRITICAL: Snapshot nested blocks for ALL list items BEFORE processing any of them
       // This prevents DOM corruption when nested blocks call .remove() during processing
