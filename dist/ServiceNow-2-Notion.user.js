@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      10.0.20
+// @version      10.0.22
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "10.0.20";
+    window.BUILD_VERSION = "10.0.22";
 (function () {
 
   // Configuration constants and default settings
@@ -56,15 +56,7 @@
   // =============================================================================
 
   const defaultConfig = {
-    databaseId: "24ca89fe-dba5-806f-91a6-e831a6efe344",
-    databaseName: "ServiceNow-2-Notion (API DB)",
-    proxyUrl: "http://localhost:3004",
-    useMartian: true,
-    directSDKImages: true,
-    debugMode: true,
-    showAllDatabases: false,
-    enableDuplicateDetection: true,
-    enableAdvancedContent: true,
+    proxyUrl: "http://127.0.0.1:3004",
   };
 
   // =============================================================================
