@@ -79,6 +79,8 @@ async function findParentListItemByMarker(rootBlockId, marker) {
   const token = `sn2n:${marker}`;
   
   log(`🔍 BFS START: Searching for marker ${token} starting from ${rootBlockId}`);
+  log(`🔍 BFS: Full marker value: "${marker}"`);
+  log(`🔍 BFS: Token format: "(${token})"`);
 
   async function listChildren(blockId, cursor, retries = 3) {
     for (let attempt = 1; attempt <= retries; attempt++) {
@@ -238,6 +240,9 @@ async function orchestrateDeepNesting(pageId, markerMap) {
       log(
         `✅ Orchestrator: Found parent ${parentId} for marker sn2n:${marker}. Will append ${blocksToAppend.length} block(s).`
       );
+      
+      // Log marker details for debugging
+      log(`🔖 Orchestrator: Marker details - marker="${marker}" (original format, may include element ID)`);
       
       // Log what content we're about to append for debugging
       blocksToAppend.forEach((block, idx) => {

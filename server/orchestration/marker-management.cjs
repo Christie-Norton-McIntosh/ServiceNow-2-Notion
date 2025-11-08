@@ -59,15 +59,36 @@ function collectAndStripMarkers(blocks, map = {}, depth = 0) {
         console.log(`${indent}🔖 collectAndStripMarkers: Found marker "${m}" at depth ${depth}, index ${i}, type: ${b.type}`);
         console.log(`${indent}🔖   Content preview: "${contentPreview}${contentPreview.length >= 100 ? '...' : ''}"`);
         
-        // Collect markers at all depths for orchestration
-        // Blocks will be appended to their marker location via API after page creation
-        if (!map[m]) map[m] = [];
-        map[m].push(b);
-        // mark this block as collected so we can remove it from the
-        // initial children before sending to Notion (avoids duplicates and 3+ level nesting)
-        b._sn2n_collected = true;
-        console.log(`${indent}🔖   Marked block as collected (will be removed from initial payload)`);
-        delete b._sn2n_marker;
+        // Check if marker contains element ID (format: "elementId__timestamp-random")
+        if (m.includes('__')) {
+          const elementId = m.split('__')[0];
+          console.log(`${indent}🔖   Marker contains element ID: "${elementId}"`);
+        }
+        
+        // CRITICAL FIX: Callouts with markers should NOT be collected!
+        // Callouts have markers for their OWN children, but the callout itself should be
+        // created in the initial payload so it can be found during orchestration.
+        // Only the callout's children (which also have the same marker) should be collected.
+        const isCalloutWithOwnMarker = b.type === 'callout' && 
+          b.callout?.rich_text?.some(rt => rt.text?.content?.includes(`(sn2n:${m})`));
+        
+        if (isCalloutWithOwnMarker) {
+          console.log(`${indent}🔖   This is a callout with its own marker token - NOT collecting (will be created in initial payload)`);
+          console.log(`${indent}🔖   The callout's children will be collected separately and orchestrated to it`);
+          // Don't delete the marker - keep it so orchestrator can find this callout
+          // Don't mark as collected - keep it in the initial payload
+          // Skip the rest of the collection logic
+        } else {
+          // Collect markers at all depths for orchestration
+          // Blocks will be appended to their marker location via API after page creation
+          if (!map[m]) map[m] = [];
+          map[m].push(b);
+          // mark this block as collected so we can remove it from the
+          // initial children before sending to Notion (avoids duplicates and 3+ level nesting)
+          b._sn2n_collected = true;
+          console.log(`${indent}🔖   Marked block as collected (will be removed from initial payload)`);
+          delete b._sn2n_marker;
+        }
       }
       const type = b.type;
       if (type && b[type] && Array.isArray(b[type].children)) {
