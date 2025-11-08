@@ -3596,11 +3596,32 @@ async function extractContentFromHtml(html) {
                 return; // Skip further processing for this block
               }
               
-              // Callouts can be children of list items - mark them for deferred orchestration
-              // This preserves the callout formatting while keeping proper parent-child relationship
+              // Callouts inside ordered list items
+              // Notion DOES support callouts as children of list items, so we can add them as immediate children
+              // This preserves the source order instead of deferring them
+              // CRITICAL: If this callout has a marker (meaning it has deferred children), we need to attach those
+              // children directly to the callout instead of deferring them, to maintain proper parent-child relationship
               if (block && block.type === 'callout') {
-                console.log(`� Callout inside <li> needs marker for deferred append to numbered_list_item`);
-                markedBlocks.push(block);
+                console.log(`✅ Adding callout as immediate child of ordered list item`);
+                
+                // Check if callout has a marker token (indicating deferred children)
+                const rich = block.callout?.rich_text || [];
+                const markerMatch = rich.find(rt => rt?.text?.content?.match(/\(sn2n:([a-z0-9-]+)\)/));
+                
+                if (markerMatch) {
+                  const markerText = markerMatch.text.content;
+                  const markerIdMatch = markerText.match(/\(sn2n:([a-z0-9-]+)\)/);
+                  if (markerIdMatch) {
+                    const markerId = markerIdMatch[1];
+                    console.log(`🔍 Callout has marker ${markerId} - will attach its deferred children directly`);
+                    
+                    // Store the marker so we can find its children later
+                    block._sn2n_marker = markerId;
+                    block._sn2n_attachChildrenDirectly = true; // Flag to indicate children should be attached, not deferred
+                  }
+                }
+                
+                immediateChildren.push(block);
                 return;
               }
 
@@ -3755,6 +3776,36 @@ async function extractContentFromHtml(html) {
                 processedBlocks.push(...markedBlocks);
               }
               
+              // CRITICAL: Handle callouts that should have their children attached directly
+              // instead of deferred via orchestration
+              allChildren.forEach(child => {
+                if (child && child.type === 'callout' && child._sn2n_attachChildrenDirectly && child._sn2n_marker) {
+                  const calloutMarker = child._sn2n_marker;
+                  console.log(`🔍 Attaching deferred children to callout with marker ${calloutMarker}`);
+                  
+                  // Find all blocks with matching marker in nestedChildren
+                  const calloutChildren = nestedChildren.filter(b => 
+                    b && b._sn2n_marker === calloutMarker && b !== child
+                  );
+                  
+                  if (calloutChildren.length > 0) {
+                    console.log(`🔍   Found ${calloutChildren.length} children to attach to callout`);
+                    
+                    // Remove marker token from callout rich_text
+                    child.callout.rich_text = child.callout.rich_text.filter(rt => 
+                      !rt?.text?.content?.includes(`(sn2n:${calloutMarker})`)
+                    );
+                    
+                    // Attach children directly to callout
+                    child.callout.children = calloutChildren;
+                    
+                    // Remove _sn2n_marker from callout (no longer needs orchestration)
+                    delete child._sn2n_marker;
+                    delete child._sn2n_attachChildrenDirectly;
+                  }
+                }
+              });
+              
               // Add blocks from nested children that already have markers (from nested list processing)
               // These preserve their original markers and parent associations
               // BUT only if they're not already being added as immediate children or marked blocks
@@ -3764,6 +3815,15 @@ async function extractContentFromHtml(html) {
                 // Check if already in immediateChildren or markedBlocks
                 const alreadyAdded = immediateChildren.includes(b) || markedBlocks.includes(b);
                 if (alreadyAdded) return false;
+                
+                // Check if this block's marker matches any callout in allChildren with _sn2n_attachChildrenDirectly
+                const isChildOfImmediateCallout = allChildren.some(parent => 
+                  parent && parent.type === 'callout' && parent._sn2n_marker === b._sn2n_marker
+                );
+                if (isChildOfImmediateCallout) {
+                  console.log(`🔍 Skipping block with marker ${b._sn2n_marker} - already attached to immediate callout child`);
+                  return false;
+                }
                 
                 // Check if this block's marker matches any other block's marker in markedBlocks
                 // If so, it's a child of that block and shouldn't be added separately
