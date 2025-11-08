@@ -4704,7 +4704,23 @@ async function extractContentFromHtml(html) {
       // CRITICAL FIX: Unwrap itemgroup/info wrappers and flatten nested callouts BEFORE processing
       // This prevents nested callouts from being included as text in the parent callout
       $elem.find('div.itemgroup, div.info').each((i, wrapper) => {
+        console.log(`🔍 [PREREQ-FLATTEN] Unwrapping itemgroup/info wrapper ${i}`);
         $(wrapper).replaceWith($(wrapper).html());
+      });
+      
+      // Also flatten any nested callouts (Note, Info, etc.) into plain text
+      // Notion doesn't support nested callouts, so extract their content
+      $elem.find('div.note, div.info, div.warning, div.important, div.tip, div.caution').each((i, calloutDiv) => {
+        const $calloutDiv = $(calloutDiv);
+        const calloutClass = $calloutDiv.attr('class') || '';
+        console.log(`🔍 [PREREQ-FLATTEN] Flattening nested callout: <div class="${calloutClass}">`);
+        
+        // Remove the title span (e.g., "Note:")
+        $calloutDiv.find('span.note__title').remove();
+        
+        // Replace the callout div with its content
+        const calloutContent = $calloutDiv.html() || '';
+        $calloutDiv.replaceWith(calloutContent);
       });
       
       // Parse each child (including text nodes) separately to preserve paragraph boundaries
