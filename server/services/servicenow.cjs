@@ -183,27 +183,49 @@ async function extractContentFromHtml(html) {
     fs.appendFileSync(logFile, `\n=== ${timestamp} ===\n`);
     fs.appendFileSync(logFile, `HTML length at function entry: ${html ? html.length : 'NULL'}\n`);
     
-    if (html && (html.includes('devops-software-quality-sub-category__ol_bpk_gfk_xpb') || 
-                 html.includes('t_AddNewChangeType__substeps_bmd_g4t_nv') ||
-                 html.includes('t_AddNewChangeType__substeps_hhn_bmt_nv'))) {
-      const olMatch1 = html.match(/<ol[^>]*id="devops-software-quality-sub-category__ol_bpk_gfk_xpb"[^>]*>[\s\S]*?<\/ol>/);
-      const olMatch2 = html.match(/<ol[^>]*id="t_AddNewChangeType__substeps_bmd_g4t_nv"[^>]*>[\s\S]*?<\/ol>/);
-      const olMatch3 = html.match(/<ol[^>]*id="t_AddNewChangeType__substeps_hhn_bmt_nv"[^>]*>[\s\S]*?<\/ol>/);
+    // Check for the problematic substeps lists
+    const hasSubstepsBmd = html && html.includes('substeps_bmd_g4t_nv');
+    const hasSubstepsHhn = html && html.includes('substeps_hhn_bmt_nv');
+    
+    if (hasSubstepsBmd || hasSubstepsHhn) {
+      fs.appendFileSync(logFile, `\n🔴 PROBLEMATIC SUBSTEPS DETECTED AT ENTRY:\n`);
       
-      if (olMatch1) {
-        fs.appendFileSync(logFile, `Target OL (bpk_gfk_xpb) at entry: ${olMatch1[0].length} chars, ${(olMatch1[0].match(/<li/g) || []).length} <li> tags\n`);
-        fs.appendFileSync(logFile, `Contains Submit at entry: ${olMatch1[0].includes('<span class="ph uicontrol">Submit</span>')}\n`);
+      if (hasSubstepsBmd) {
+        const olMatch = html.match(/<ol[^>]*id="[^"]*substeps_bmd_g4t_nv"[^>]*>[\s\S]*?<\/ol>/);
+        if (olMatch) {
+          fs.appendFileSync(logFile, `Target OL (bmd_g4t_nv) at entry: ${olMatch[0].length} chars, ${(olMatch[0].match(/<li/g) || []).length} <li> tags\n`);
+          fs.appendFileSync(logFile, `Contains substeps at entry: ${olMatch[0].includes('substep')}\n`);
+        }
       }
-      if (olMatch2) {
-        fs.appendFileSync(logFile, `Target OL (bmd_g4t_nv) at entry: ${olMatch2[0].length} chars, ${(olMatch2[0].match(/<li/g) || []).length} <li> tags\n`);
-        fs.appendFileSync(logFile, `Contains substeps at entry: ${olMatch2[0].includes('substeps')}\n`);
+      
+      if (hasSubstepsHhn) {
+        const olMatch = html.match(/<ol[^>]*id="[^"]*substeps_hhn_bmt_nv"[^>]*>[\s\S]*?<\/ol>/);
+        if (olMatch) {
+          fs.appendFileSync(logFile, `Target OL (hhn_bmt_nv) at entry: ${olMatch[0].length} chars, ${(olMatch[0].match(/<li/g) || []).length} <li> tags\n`);
+          fs.appendFileSync(logFile, `Contains substeps at entry: ${olMatch[0].includes('substep')}\n`);
+        }
       }
-      if (olMatch3) {
-        fs.appendFileSync(logFile, `Target OL (hhn_bmt_nv) at entry: ${olMatch3[0].length} chars, ${(olMatch3[0].match(/<li/g) || []).length} <li> tags\n`);
-        fs.appendFileSync(logFile, `Contains substeps at entry: ${olMatch3[0].includes('substeps')}\n`);
+      
+      // Save full HTML snapshot at entry
+      try {
+        const snapshotPath = path.join(__dirname, '../logs', `full-html-entry-${Date.now()}.html`);
+        fs.writeFileSync(snapshotPath, html, 'utf8');
+        fs.appendFileSync(logFile, `🔴 Saved full HTML snapshot at entry: full-html-entry-${Date.now()}.html\n`);
+      } catch (snapErr) {
+        fs.appendFileSync(logFile, `Failed to save entry snapshot: ${snapErr.message}\n`);
       }
-    } else {
-      fs.appendFileSync(logFile, `Target OL IDs NOT FOUND in HTML at entry\n`);
+    }
+    
+    if (html && html.includes('devops-software-quality-sub-category__ol_bpk_gfk_xpb')) {
+      const olMatch = html.match(/<ol[^>]*id="devops-software-quality-sub-category__ol_bpk_gfk_xpb"[^>]*>[\s\S]*?<\/ol>/);
+      if (olMatch) {
+        fs.appendFileSync(logFile, `Target OL at entry: ${olMatch[0].length} chars, ${(olMatch[0].match(/<li/g) || []).length} <li> tags\n`);
+        fs.appendFileSync(logFile, `Contains Submit at entry: ${olMatch[0].includes('<span class="ph uicontrol">Submit</span>')}\n`);
+      } else {
+        fs.appendFileSync(logFile, `OL ID found but regex extraction failed\n`);
+      }
+    } else if (!hasSubstepsBmd && !hasSubstepsHhn) {
+      fs.appendFileSync(logFile, `Target OL ID NOT FOUND in HTML at entry\n`);
     }
   } catch (err) {
     console.error('Failed to write entry diagnostic:', err);
@@ -379,6 +401,20 @@ async function extractContentFromHtml(html) {
   // Returns object with { richText: [], imageBlocks: [] }
   async function parseRichText(html) {
     if (!html) return { richText: [{ type: "text", text: { content: "" } }], imageBlocks: [], videoBlocks: [] };
+
+    // DEBUG: Log when input contains "account" or "Admin" to diagnose missing text
+    if (html && (html.toLowerCase().includes('account') || html.toLowerCase().includes('admin'))) {
+      console.log(`🔍 [ADMIN-ACCOUNT-DEBUG] parseRichText input contains "account" or "admin":`);
+      console.log(`   Input length: ${html.length} chars`);
+      console.log(`   Full input: "${html.substring(0, 500)}"`);
+      
+      // Check for specific patterns
+      if (html.includes('Admin account')) {
+        const accountIndex = html.indexOf('Admin account');
+        const snippet = html.substring(accountIndex, accountIndex + 100);
+        console.log(`   Found "Admin account" at position ${accountIndex}: "${snippet}"`);
+      }
+    }
 
     const richText = [];
     const imageBlocks = [];
@@ -1113,6 +1149,19 @@ async function extractContentFromHtml(html) {
     richText.length = 0;
     richText.push(...cleanedRichText);
 
+    // DEBUG: Log output when it contains "GitHub" to check if "Admin account in" was lost
+    const outputText = richText.map(rt => rt.text?.content || '').join('');
+    if (outputText.toLowerCase().includes('github') && (html.toLowerCase().includes('account') || html.toLowerCase().includes('admin'))) {
+      console.log(`🔍 [ADMIN-ACCOUNT-DEBUG] parseRichText OUTPUT (contains GitHub):`);
+      console.log(`   Output text: "${outputText.substring(0, 300)}"`);
+      console.log(`   Original input had "account/admin": ${html.toLowerCase().includes('account') || html.toLowerCase().includes('admin')}`);
+      console.log(`   Output has "Admin account": ${outputText.includes('Admin account')}`);
+      console.log(`   Rich text elements: ${richText.length}`);
+      richText.forEach((rt, idx) => {
+        console.log(`   [${idx}] ${rt.text?.content?.substring(0, 100) || '(no text)'}`);
+      });
+    }
+
     return { richText, imageBlocks, videoBlocks };
   }
 
@@ -1542,9 +1591,7 @@ async function extractContentFromHtml(html) {
       fs.appendFileSync(logFile, `Main steps OL after Cheerio: ${mainStepsLiCount} direct <li class="...li step..."> tags\n`);
     }
     
-    const targetOlAfter = htmlAfter.match(/<ol[^>]*id="devops-software-quality-sub-category__ol_bpk_gfk_xpb"[^>]*>[\s\S]*?<\/ol>/) ||
-                           htmlAfter.match(/<ol[^>]*id="t_AddNewChangeType__substeps_bmd_g4t_nv"[^>]*>[\s\S]*?<\/ol>/) ||
-                           htmlAfter.match(/<ol[^>]*id="t_AddNewChangeType__substeps_hhn_bmt_nv"[^>]*>[\s\S]*?<\/ol>/);
+    const targetOlAfter = htmlAfter.match(/<ol[^>]*id="devops-software-quality-sub-category__ol_bpk_gfk_xpb"[^>]*>[\s\S]*?<\/ol>/);
     if (targetOlAfter) {
       fs.appendFileSync(logFile, `Target OL AFTER Cheerio: ${targetOlAfter[0].length} chars, ${(targetOlAfter[0].match(/<li/g) || []).length} <li> tags\n`);
       fs.appendFileSync(logFile, `Contains Submit AFTER Cheerio: ${targetOlAfter[0].includes('<span class="ph uicontrol">Submit</span>')}\n`);
@@ -1861,6 +1908,9 @@ async function extractContentFromHtml(html) {
             const { richText: nestedText } = await parseRichText(cleanedHtml);
             nestedCalloutTexts.push(nestedText);
             console.log(`🔍   Extracted ${nestedText.length} rich_text elements from nested callout`);
+            // CRITICAL: Remove the nested callout from DOM to prevent duplicate processing
+            $nestedBlock.remove();
+            console.log(`🔍   Removed nested callout div from DOM to prevent duplication`);
           } else {
             console.log(`🔍 Processing callout nested block: <${blockTag}${blockClass ? ` class="${blockClass}"` : ''}>`);
             const nestedProcessed = await processElement(nestedBlock);
@@ -2986,14 +3036,6 @@ async function extractContentFromHtml(html) {
       console.log(`🔍 [OL-DEBUG] Raw HTML contains "successfully created": ${rawOlHtml.includes('successfully created')}`);
       console.log(`🔍 [OL-DEBUG] Raw HTML length: ${rawOlHtml.length} characters`);
       
-      // Check for the specific problematic IDs mentioned by user
-      const olId = $elem.attr('id') || '';
-      if (olId.includes('AddNewChangeType__substeps')) {
-        console.log(`🎯 [TARGET-ID] Found target OL with ID "${olId}" - this should trigger substep nesting`);
-        console.log(`🎯 [TARGET-ID] OL class: "${$elem.attr('class') || ''}"`);
-        console.log(`🎯 [TARGET-ID] OL contains substeps ID pattern: ${/substeps/.test(olId)}`);
-      }
-      
       // Count total <li> tags (including nested)
       const totalLiTags = (rawOlHtml.match(/<li/g) || []).length;
       console.log(`🔍 [OL-DEBUG] Total <li> tags in raw HTML: ${totalLiTags}`);
@@ -3014,9 +3056,6 @@ async function extractContentFromHtml(html) {
       let autoNestReason = null;
       if (/\bsteps\b/.test(olClassAttr) && !/\bsubsteps\b/.test(olClassAttr)) {
         autoNestReason = 'class:steps';
-      } else if (/\bsubsteps?\b/.test(olIdAttr) || /\bsubsteps?\b/.test($elem.parent().attr('id') || '')) {
-        autoNestReason = 'id:contains-substeps';
-        console.log(`🎯 [TARGET-ID] Triggering auto-nest for OL id="${olIdAttr}" parent id="${$elem.parent().attr('id') || ''}"`);
       } else if (hasPrimaryStepLis && directSubstepLists.length > 0) {
         autoNestReason = 'loose-substeps-list';
       } else if (hasPrimaryStepLis && hasLooseSubstepLis) {
@@ -3042,20 +3081,15 @@ async function extractContentFromHtml(html) {
           .filter(node => node && node.type === 'tag');
         let currentPrimaryLi = null;
         let currentSubstepsOl = null;
-        let liCounter = 0;
 
         directChildren.forEach(node => {
           const $node = $(node);
           const nodeName = node.name?.toLowerCase();
 
           if (nodeName === 'li') {
-            liCounter++;
-            const liIndex = liCounter - 1;
             const liClassAttr = $node.attr('class') || '';
-            const isLikelyPrimary = autoNestReason === 'id:contains-substeps' && liIndex < 3;
-            const isLikelySubstep = autoNestReason === 'id:contains-substeps' && liIndex > 2;
-            const isSubstepLi = /\bsubstep\b/.test(liClassAttr) || isLikelySubstep;
-            const isPrimaryLi = (/\bstep\b/.test(liClassAttr) && !isSubstepLi) || isLikelyPrimary;
+            const isSubstepLi = /\bsubstep\b/.test(liClassAttr);
+            const isPrimaryLi = /\bstep\b/.test(liClassAttr) && !isSubstepLi;
 
             if (isPrimaryLi) {
               currentPrimaryLi = $node;
@@ -3119,12 +3153,59 @@ async function extractContentFromHtml(html) {
       const listItems = $elem.find('> li').toArray();
       console.log(`🔍 [OL-DEBUG] Cheerio found ${listItems.length} DIRECT <li> children`);
       
+      // Check if this is one of the problematic substeps lists
+      const isProblematicSubsteps = olIdAttr && (olIdAttr.includes('substeps_bmd_g4t_nv') || olIdAttr.includes('substeps_hhn_bmt_nv'));
+      if (isProblematicSubsteps) {
+        console.log(`🔴 [PROBLEMATIC-SUBSTEPS] Processing OL id="${olIdAttr}" with ${listItems.length} items`);
+        listItems.forEach((li, idx) => {
+          const $li = $(li);
+          const textPreview = $li.text().trim().replace(/\s+/g, ' ').substring(0, 100);
+          console.log(`🔴   [${idx + 1}] "${textPreview}"`);
+        });
+      }
+      
       // Debug: Log each list item's text preview to verify we have them all
       listItems.forEach((li, idx) => {
         const $li = $(li);
         const preview = $li.text().trim().substring(0, 60).replace(/\s+/g, ' ');
         console.log(`🔍   [${idx + 1}/${listItems.length}] "${preview}..."`);
       });
+
+      // DEBUG: Check for sibling substeps lists that should be nested
+      const allDirectChildren = Array.from($elem.get(0).childNodes).filter(node => node && node.type === 'tag');
+      const directSubstepsLists = allDirectChildren.filter(node => {
+        const $node = $(node);
+        const nodeName = node.name?.toLowerCase();
+        if (nodeName !== 'ol' && nodeName !== 'ul') return false;
+        const nodeClass = $node.attr('class') || '';
+        const nodeId = $node.attr('id') || '';
+        return /\bsubsteps\b/.test(nodeClass) || /substeps/.test(nodeId);
+      });
+      
+      if (directSubstepsLists.length > 0) {
+        console.log(`🔴 [SIBLING-SUBSTEPS-DEBUG] Found ${directSubstepsLists.length} substeps lists as SIBLINGS to main <li> items!`);
+        console.log(`🔴   Parent <ol id="${olIdAttr || 'no-id'}" class="${olClassAttr}">`);
+        console.log(`🔴   shouldAutoNest=${shouldAutoNestSubsteps} reason=${autoNestReason || 'none'}`);
+        
+        directSubstepsLists.forEach((substepsList, idx) => {
+          const $list = $(substepsList);
+          const listId = $list.attr('id') || 'no-id';
+          const listClass = $list.attr('class') || '';
+          const itemCount = $list.find('> li').length;
+          console.log(`🔴   [${idx + 1}] <${substepsList.name} id="${listId}" class="${listClass}"> with ${itemCount} direct <li> children`);
+        });
+        
+        try {
+          const path = require('path');
+          const safeId = (olIdAttr || 'no-id').replace(/[^a-z0-9-_]+/gi, '_');
+          const snapshotName = `sibling-substeps-${safeId}-${Date.now()}.html`;
+          const snapshotPath = path.join(__dirname, '../logs', snapshotName);
+          fs.writeFileSync(snapshotPath, $elem.html() || '', 'utf8');
+          console.log(`🔴 [SIBLING-SUBSTEPS-DEBUG] Wrote snapshot ${snapshotName}`);
+        } catch (snapshotErr) {
+          console.log(`🔴 [SIBLING-SUBSTEPS-DEBUG] Snapshot failed: ${snapshotErr?.message || snapshotErr}`);
+        }
+      }
 
       const listContainsSubmitForm = listItems.some(li => {
         const text = $(li).text();
@@ -3133,7 +3214,6 @@ async function extractContentFromHtml(html) {
 
       if (listContainsSubmitForm) {
         console.log(`🛰️ [SUBMIT-FORM-DEBUG] Observed <ol id="${olIdAttr || 'no-id'}" class="${olClassAttr}": shouldAutoNest=${shouldAutoNestSubsteps} reason=${autoNestReason || 'none'}`);
-        console.log(`🛰️ [SUBMIT-FORM-DEBUG] List contains target IDs: bmd_g4t_nv=${olIdAttr.includes('bmd_g4t_nv')}, hhn_bmt_nv=${olIdAttr.includes('hhn_bmt_nv')}`);
 
         listItems.forEach((li, idx) => {
           const $li = $(li);
@@ -3685,7 +3765,16 @@ async function extractContentFromHtml(html) {
                 };
                 if (allChildren.length > 0 && index === 0) {
                   listItemBlock.numbered_list_item.children = allChildren;
-                  console.log(`🔍 Added ${allChildren.length} nested blocks as children of ordered list item`);
+                  const parentText = chunkRichText.map(rt => rt.text.content).join('').substring(0, 80);
+                  console.log(`🔍 Added ${allChildren.length} nested blocks as children of ordered list item "${parentText}"`);
+                  
+                  // Log details of each child being added
+                  allChildren.forEach((child, childIdx) => {
+                    if (child && child.type === 'numbered_list_item' && child.numbered_list_item && child.numbered_list_item.rich_text) {
+                      const childText = child.numbered_list_item.rich_text.map(rt => rt.text.content).join('').substring(0, 60);
+                      console.log(`🔍   Child [${childIdx + 1}]: "${childText}"`);
+                    }
+                  });
                 }
                 processedBlocks.push(listItemBlock);
               });
@@ -4733,6 +4822,9 @@ async function extractContentFromHtml(html) {
                   $tempDiv.append('<br/>'); // Use <br/> so it becomes a newline during rich text parsing
                 }
                 $tempDiv.append(cleanedHtml); // Add nested callout text to parent callout
+                // CRITICAL: Remove the nested callout from DOM to prevent duplicate processing
+                $node.remove();
+                console.log(`🔍   Removed nested callout div from DOM to prevent duplication`);
               } else {
                 // Keep inline elements in the callout
                 $tempDiv.append(node.cloneNode(true));

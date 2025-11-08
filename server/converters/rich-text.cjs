@@ -193,10 +193,10 @@ function convertRichTextBlock(input, options = {}) {
     // Strip SVG icons from link content (these are just decorative icons)
     cleanedContent = cleanedContent.replace(/<svg[\s\S]*?<\/svg>/gi, '');
     
-    // Strip span tags with keyword/parmname/codeph classes from link content
+    // Strip span tags with keyword/parmname/codeph/apiname classes from link content
     // Note: Generic "ph" class removed - only specific technical classes
     cleanedContent = cleanedContent.replace(
-      /<span[^>]*class=["'][^"']*(?:\bkeyword\b|\bparmname\b|\bcodeph\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi,
+      /<span[^>]*class=["'][^"']*(?:\bkeyword\b|\bparmname\b|\bcodeph\b|\bapiname\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi,
       (spanMatch, spanContent) => {
         // Just return the content without the span tags
         return spanContent || '';
@@ -356,10 +356,10 @@ function convertRichTextBlock(input, options = {}) {
     console.log(`   Spans remaining: ${(html.match(/<span/g) || []).length}`);
   }
   
-  // Then handle specific technical identifier classes
-  html = html.replace(/<span[^>]*class=["'][^"']*(?:\bkeyword\b|\bparmname\b|\bcodeph\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
+  // Then handle specific technical identifier classes (keyword, parmname, codeph, apiname)
+  html = html.replace(/<span[^>]*class=["'][^"']*(?:\bkeyword\b|\bparmname\b|\bcodeph\b|\bapiname\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
     if (process.env.SN2N_VERBOSE === '1') {
-      console.log(`🔍 Matched span with class keyword/parmname/codeph: "${match.substring(0, 80)}"`);
+      console.log(`🔍 Matched span with class keyword/parmname/codeph/apiname: "${match.substring(0, 80)}"`);
     }
     
     // Use shared processing utility
@@ -417,7 +417,8 @@ function convertRichTextBlock(input, options = {}) {
       return segment;
     }
     // Process this segment for role patterns
-    return segment.replace(/\b(Role required:)\s+([a-z_][a-z0-9_.]*(?:\s+or\s+[a-z_][a-z0-9_.]*)*(?:,\s*[a-z_][a-z0-9_.]*)*)/gi, (match, label, roles) => {
+    // Exclude common non-role words like "No", "None", "Not", etc.
+    return segment.replace(/\b(Role required:)\s+(?!(?:No|None|Not|Never|N\/A)\b)([a-z_][a-z0-9_.]*(?:\s+or\s+[a-z_][a-z0-9_.]*)*(?:,\s*[a-z_][a-z0-9_.]*)*)/gi, (match, label, roles) => {
       console.log(`🔍 [ROLE] Matched in segment [${idx}] "Role required:" with roles: "${roles}"`);
       // Split roles by comma or "or", wrap each in code markers
       const roleList = roles.split(/(?:,\s*|\s+or\s+)/i).map(role => {
