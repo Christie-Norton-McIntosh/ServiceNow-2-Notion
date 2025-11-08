@@ -106,7 +106,6 @@ function collectListEntries($, $scope) {
       const listIdAttr = (parentList.attr('id') || '').toLowerCase();
       if (/substeps?/.test(listClassAttr) || /substeps?/.test(listIdAttr)) {
         contextDepthHint = takeMaxDepth(contextDepthHint, 2);
-        console.log(`[LIST-REPAIR] Parent list ID "${listIdAttr}" class "${listClassAttr}" triggers contextDepthHint=2 for li: "${getNodePreview($li)}"`);
       }
       if (/subsubsteps?/.test(listClassAttr) || /subsubsteps?/.test(listIdAttr)) {
         contextDepthHint = takeMaxDepth(contextDepthHint, 3);
@@ -115,15 +114,6 @@ function collectListEntries($, $scope) {
 
     const targetDepth = determineTargetDepth(actualDepth, depthHintInfo.depth, contextDepthHint);
     const needsDepthFix = parentList.length > 0 && targetDepth > actualDepth;
-
-    if (needsDepthFix || contextDepthHint) {
-      console.log(`[LIST-REPAIR] Entry ${index}: actualDepth=${actualDepth}, targetDepth=${targetDepth}, contextHint=${contextDepthHint}, needsFix=${needsDepthFix}, text="${getNodePreview($li)}"`);
-      if (parentList && parentList.length > 0) {
-        const parentId = parentList.attr('id') || 'no-id';
-        const parentClass = parentList.attr('class') || 'no-class';
-        console.log(`[LIST-REPAIR] Parent list: id="${parentId}" class="${parentClass}"`);
-      }
-    }
 
     entries.push({
       index,

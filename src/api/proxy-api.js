@@ -60,18 +60,30 @@ export async function apiCall(method, endpoint, data = null) {
         "Content-Type": "application/json",
       },
       data: stringifiedData,
+      timeout: 120000, // 120 second timeout for large content
       onload: function (response) {
         try {
-          const result = JSON.parse(response.responseText);
-          resolve(result);
+          // Check HTTP status
+          if (response.status >= 200 && response.status < 300) {
+            const result = JSON.parse(response.responseText);
+            resolve(result);
+          } else {
+            debug(`❌ API call returned HTTP ${response.status}:`, response.responseText?.substring(0, 500));
+            resolve({ success: false, error: `HTTP ${response.status}: ${response.statusText || 'Request failed'}` });
+          }
         } catch (e) {
-          debug("❌ Failed to parse API response:", response.responseText);
+          debug("❌ Failed to parse API response:", response.responseText?.substring(0, 500));
           resolve({ success: false, error: "Invalid API response" });
         }
       },
       onerror: function (error) {
-        debug("❌ API call failed:", error);
-        reject(new Error(`API call failed: ${error.error || "Network error"}`));
+        debug("❌ API call onerror triggered:", error);
+        const errorMsg = error?.error || error?.message || JSON.stringify(error) || "Network error";
+        reject(new Error(`API call failed: ${errorMsg}`));
+      },
+      ontimeout: function () {
+        debug("❌ API call timed out after 120 seconds");
+        reject(new Error("API call failed: Request timed out after 120 seconds"));
       },
     });
   });
