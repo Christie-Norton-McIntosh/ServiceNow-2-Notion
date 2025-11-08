@@ -2947,8 +2947,8 @@ async function extractContentFromHtml(html) {
             }
             const listItemBlock = {
               object: "block",
-              type: "numbered_list_item",
-              numbered_list_item: {
+              type: "bulleted_list_item",
+              bulleted_list_item: {
                 rich_text: chunkRichText,
               },
             };
