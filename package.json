@@ -1,10 +1,6 @@
 {
   "name": "servicenow-2-notion",
-<<<<<<< HEAD
-  "version": "10.0.17",
-=======
-  "version": "10.0.16",
->>>>>>> 116cd45 (chore: build v10.0.16 userscript)
+  "version": "10.0.18",
   "description": "Modular ServiceNow content extractor for Universal Workflow",
   "type": "module",
   "main": "src/main.js",
