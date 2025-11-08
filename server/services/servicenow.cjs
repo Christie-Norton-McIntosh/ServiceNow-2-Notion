@@ -796,17 +796,20 @@ async function extractContentFromHtml(html) {
         return segment;
       }
       // Process this segment for role patterns
+      // Exclude common non-role words like "No", "None", "Not", "Never", "N/A"
       return segment.replace(/\b(Role required:)\s+([a-z_][a-z0-9_.]*(?:\s+or\s+[a-z_][a-z0-9_.]*)*(?:,\s*[a-z_][a-z0-9_.]*)*)/gi, (match, label, roles) => {
-        console.log(`🔍 [ROLE] Matched in segment [${idx}] "Role required:" with roles: "${roles}"`);
+        // Check if the role is a non-role word that should be excluded
+        const firstRole = roles.split(/(?:,\s*|\s+or\s+)/i)[0].trim();
+        if (/^(?:No|None|Not|Never|N\/A)$/i.test(firstRole)) {
+          return match; // Return original text without code formatting
+        }
+        
         // Split roles by comma or "or", wrap each in code markers
         const roleList = roles.split(/(?:,\s*|\s+or\s+)/i).map(role => {
           const trimmed = role.trim();
-          console.log(`🔍 [ROLE] Wrapping role: "${trimmed}"`);
           return `__CODE_START__${trimmed}__CODE_END__`;
         }).join(' or ');
-        const result = `${label} ${roleList}`;
-        console.log(`🔍 [ROLE] Result: "${result}"`);
-        return result;
+        return `${label} ${roleList}`;
       });
     }).join('');
 
