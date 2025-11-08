@@ -2538,7 +2538,8 @@ async function extractContentFromHtml(html) {
             } else {
               // Text node or inline element - accumulate as text segment
               if (child.nodeType === 3) { // Text node
-                const text = child.textContent || '';
+                // Cheerio text nodes use .data property, not .textContent
+                const text = child.data || child.textContent || '';
                 if (text.trim()) {
                   textSegments.push(text);
                 }
