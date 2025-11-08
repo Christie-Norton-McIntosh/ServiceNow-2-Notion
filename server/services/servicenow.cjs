@@ -1942,7 +1942,8 @@ async function extractContentFromHtml(html) {
           
           // Add marker for orchestrator to append children after creation
           if (childBlocks.length > 0) {
-            const marker = generateMarker();
+            const elemId = $elem.attr('id');
+            const marker = generateMarker(elemId);
             
             // Tag each child block with the marker for orchestration
             childBlocks.forEach(block => {
@@ -2705,7 +2706,8 @@ async function extractContentFromHtml(html) {
                 // If there are marked blocks, generate a marker and add token to rich text
                 let markerToken = null;
                 if (markedBlocks.length > 0) {
-                  const marker = generateMarker();
+                  const liId = $li.attr('id');
+                  const marker = generateMarker(liId);
                   markerToken = `(sn2n:${marker})`;
                   // Tag each marked block with the marker for orchestration
                   // CRITICAL: Don't overwrite existing markers (blocks may already have markers from nested processing)
@@ -2800,7 +2802,8 @@ async function extractContentFromHtml(html) {
               // Add marker if there are remaining children
               let richText = [...promotedText];
               if (markedBlocks.length > 0) {
-                const marker = generateMarker();
+                const liId = $li.attr('id');
+                const marker = generateMarker(liId);
                 const markerToken = `(sn2n:${marker})`;
                 markedBlocks.forEach(block => {
                   block._sn2n_marker = marker;
@@ -2865,7 +2868,8 @@ async function extractContentFromHtml(html) {
               let markerToken = null;
               const richText = [{ type: "text", text: { content: "" } }];
               if (markedBlocks.length > 0) {
-                const marker = generateMarker();
+                const liId = $li.attr('id');
+                const marker = generateMarker(liId);
                 markerToken = `(sn2n:${marker})`;
                 markedBlocks.forEach(block => {
                   block._sn2n_marker = marker;
@@ -2924,7 +2928,8 @@ async function extractContentFromHtml(html) {
           
           const richTextChunks = splitRichTextArray(liRichText);
           const hasImages = liImages && liImages.length > 0;
-          const imageMarker = hasImages ? generateMarker() : null;
+          const liId = $li.attr('id');
+          const imageMarker = hasImages ? generateMarker(liId) : null;
           const imageMarkerToken = imageMarker ? `(sn2n:${imageMarker})` : null;
           if (imageMarker) {
             liImages.forEach(img => {
@@ -3722,7 +3727,8 @@ async function extractContentFromHtml(html) {
               console.log(`🔍 List item text: "${liRichText.map(rt => rt.text.content).join('').substring(0, 80)}..."`);
               console.log(`🔍 List item has ${allChildren.length} children: ${allChildren.map(c => c.type).join(', ')}`);
               const hasMarkedBlocks = markedBlocks.length > 0;
-              const marker = hasMarkedBlocks ? generateMarker() : null;
+              const liId = $li.attr('id');
+              const marker = hasMarkedBlocks ? generateMarker(liId) : null;
               const markerToken = marker ? `(sn2n:${marker})` : null;
               if (marker) {
                 markedBlocks.forEach(block => {
@@ -3862,7 +3868,8 @@ async function extractContentFromHtml(html) {
               // Add marker if there are remaining children
               let richText = [...promotedText];
               if (markedBlocks.length > 0) {
-                const marker = generateMarker();
+                const liId = $li.attr('id');
+                const marker = generateMarker(liId);
                 const markerToken = `(sn2n:${marker})`;
                 markedBlocks.forEach(block => {
                   block._sn2n_marker = marker;
@@ -3927,7 +3934,8 @@ async function extractContentFromHtml(html) {
               let markerToken = null;
               const richText = [{ type: "text", text: { content: "" } }];
               if (markedBlocks.length > 0) {
-                const marker = generateMarker();
+                const liId = $li.attr('id');
+                const marker = generateMarker(liId);
                 markerToken = `(sn2n:${marker})`;
                 markedBlocks.forEach(block => {
                   block._sn2n_marker = marker;
@@ -4003,7 +4011,8 @@ async function extractContentFromHtml(html) {
             // Mark images for deferred orchestration to avoid 4-level nesting
             // (numbered_list_item > bulleted_list_item > numbered_list_item > image)
             if (liImages && liImages.length > 0) {
-              const marker = generateMarker();
+              const liId = $li.attr('id');
+              const marker = generateMarker(liId);
               const markerToken = `(sn2n:${marker})`;
               liImages.forEach(img => {
                 img._sn2n_marker = marker;

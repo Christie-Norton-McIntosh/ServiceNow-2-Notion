@@ -10,10 +10,21 @@ function getGlobals() {
 
 /**
  * Generate a unique marker for deep nesting
- * @returns {string} Unique marker
+ * @param {string|null} elementId - Optional element ID to incorporate into marker for debugging
+ * @returns {string} Unique marker with optional element ID prefix
  */
-function generateMarker() {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+function generateMarker(elementId = null) {
+  const timestamp = Date.now().toString(36);
+  const random = Math.random().toString(36).slice(2, 8);
+  
+  // If element ID provided, prepend it to the marker for easier debugging
+  // Format: "elementId__timestamp-random" or just "timestamp-random" if no ID
+  if (elementId && typeof elementId === 'string' && elementId.trim().length > 0) {
+    const cleanId = elementId.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+    return `${cleanId}__${timestamp}-${random}`;
+  }
+  
+  return `${timestamp}-${random}`;
 }
 
 /**
