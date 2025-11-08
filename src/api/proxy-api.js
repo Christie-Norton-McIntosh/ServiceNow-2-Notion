@@ -45,6 +45,9 @@ export async function apiCall(method, endpoint, data = null) {
 
     const stringifiedData = data ? JSON.stringify(data) : undefined;
     
+    // Track request timing
+    const startTime = Date.now();
+    
     // DEBUG: Log stringified data size
     if (stringifiedData && data && (data.content || data.contentHtml)) {
       console.log('🔍 apiCall - Stringified data length:', stringifiedData.length);
@@ -62,6 +65,9 @@ export async function apiCall(method, endpoint, data = null) {
       data: stringifiedData,
       timeout: 300000, // 5 minute timeout for large content with images
       onload: function (response) {
+        const elapsedMs = Date.now() - startTime;
+        debug(`⏱️ API call completed in ${(elapsedMs / 1000).toFixed(1)}s`);
+        
         try {
           // Check HTTP status
           if (response.status >= 200 && response.status < 300) {
@@ -77,12 +83,23 @@ export async function apiCall(method, endpoint, data = null) {
         }
       },
       onerror: function (error) {
-        debug("❌ API call onerror triggered:", error);
-        const errorMsg = error?.error || error?.message || JSON.stringify(error) || "Network error";
-        reject(new Error(`API call failed: ${errorMsg}`));
+        const elapsedMs = Date.now() - startTime;
+        debug(`❌ API call onerror triggered after ${(elapsedMs / 1000).toFixed(1)}s:`, error);
+        debug(`   Status: ${error?.status}, ReadyState: ${error?.readyState}`);
+        
+        // Detect if this is actually a timeout (408 or happens around 2 minutes)
+        const isLikelyTimeout = error?.status === 408 || (elapsedMs > 110000 && elapsedMs < 130000);
+        
+        if (isLikelyTimeout) {
+          reject(new Error(`API call failed: Request timed out after ${(elapsedMs / 1000).toFixed(1)}s. This appears to be a browser/network timeout (not our 5-minute limit). The page may be too large or processing is taking too long. Try a smaller page or contact support.`));
+        } else {
+          const errorMsg = error?.error || error?.message || JSON.stringify(error) || "Network error";
+          reject(new Error(`API call failed: ${errorMsg}`));
+        }
       },
       ontimeout: function () {
-        debug("❌ API call timed out after 5 minutes");
+        const elapsedMs = Date.now() - startTime;
+        debug(`❌ API call timed out after ${(elapsedMs / 1000).toFixed(1)}s (our 5-minute limit)`);
         reject(new Error("API call failed: Request timed out after 5 minutes. The page may be too large or contain many images that need to be downloaded and uploaded."));
       },
     });
