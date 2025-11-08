@@ -401,21 +401,6 @@ async function extractContentFromHtml(html) {
   // Returns object with { richText: [], imageBlocks: [] }
   async function parseRichText(html) {
     if (!html) return { richText: [{ type: "text", text: { content: "" } }], imageBlocks: [], videoBlocks: [] };
-
-    // DEBUG: Log when input contains "account" or "Admin" to diagnose missing text
-    if (html && (html.toLowerCase().includes('account') || html.toLowerCase().includes('admin'))) {
-      console.log(`🔍 [ADMIN-ACCOUNT-DEBUG] parseRichText input contains "account" or "admin":`);
-      console.log(`   Input length: ${html.length} chars`);
-      console.log(`   Full input: "${html.substring(0, 500)}"`);
-      
-      // Check for specific patterns
-      if (html.includes('Admin account')) {
-        const accountIndex = html.indexOf('Admin account');
-        const snippet = html.substring(accountIndex, accountIndex + 100);
-        console.log(`   Found "Admin account" at position ${accountIndex}: "${snippet}"`);
-      }
-    }
-
     const richText = [];
     const imageBlocks = [];
     const videoBlocks = [];
@@ -1148,19 +1133,6 @@ async function extractContentFromHtml(html) {
     // Replace richText array contents with cleaned version
     richText.length = 0;
     richText.push(...cleanedRichText);
-
-    // DEBUG: Log output when it contains "GitHub" to check if "Admin account in" was lost
-    const outputText = richText.map(rt => rt.text?.content || '').join('');
-    if (outputText.toLowerCase().includes('github') && (html.toLowerCase().includes('account') || html.toLowerCase().includes('admin'))) {
-      console.log(`🔍 [ADMIN-ACCOUNT-DEBUG] parseRichText OUTPUT (contains GitHub):`);
-      console.log(`   Output text: "${outputText.substring(0, 300)}"`);
-      console.log(`   Original input had "account/admin": ${html.toLowerCase().includes('account') || html.toLowerCase().includes('admin')}`);
-      console.log(`   Output has "Admin account": ${outputText.includes('Admin account')}`);
-      console.log(`   Rich text elements: ${richText.length}`);
-      richText.forEach((rt, idx) => {
-        console.log(`   [${idx}] ${rt.text?.content?.substring(0, 100) || '(no text)'}`);
-      });
-    }
 
     return { richText, imageBlocks, videoBlocks };
   }
@@ -1908,9 +1880,6 @@ async function extractContentFromHtml(html) {
             const { richText: nestedText } = await parseRichText(cleanedHtml);
             nestedCalloutTexts.push(nestedText);
             console.log(`🔍   Extracted ${nestedText.length} rich_text elements from nested callout`);
-            // CRITICAL: Remove the nested callout from DOM to prevent duplicate processing
-            $nestedBlock.remove();
-            console.log(`🔍   Removed nested callout div from DOM to prevent duplication`);
           } else {
             console.log(`🔍 Processing callout nested block: <${blockTag}${blockClass ? ` class="${blockClass}"` : ''}>`);
             const nestedProcessed = await processElement(nestedBlock);
@@ -4822,9 +4791,6 @@ async function extractContentFromHtml(html) {
                   $tempDiv.append('<br/>'); // Use <br/> so it becomes a newline during rich text parsing
                 }
                 $tempDiv.append(cleanedHtml); // Add nested callout text to parent callout
-                // CRITICAL: Remove the nested callout from DOM to prevent duplicate processing
-                $node.remove();
-                console.log(`🔍   Removed nested callout div from DOM to prevent duplication`);
               } else {
                 // Keep inline elements in the callout
                 $tempDiv.append(node.cloneNode(true));
