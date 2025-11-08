@@ -417,8 +417,7 @@ function convertRichTextBlock(input, options = {}) {
       return segment;
     }
     // Process this segment for role patterns
-    // Exclude common non-role words like "No", "None", "Not", etc.
-    return segment.replace(/\b(Role required:)\s+(?!(?:No|None|Not|Never|N\/A)\b)([a-z_][a-z0-9_.]*(?:\s+or\s+[a-z_][a-z0-9_.]*)*(?:,\s*[a-z_][a-z0-9_.]*)*)/gi, (match, label, roles) => {
+    return segment.replace(/\b(Role required:)\s+([a-z_][a-z0-9_.]*(?:\s+or\s+[a-z_][a-z0-9_.]*)*(?:,\s*[a-z_][a-z0-9_.]*)*)/gi, (match, label, roles) => {
       console.log(`🔍 [ROLE] Matched in segment [${idx}] "Role required:" with roles: "${roles}"`);
       // Split roles by comma or "or", wrap each in code markers
       const roleList = roles.split(/(?:,\s*|\s+or\s+)/i).map(role => {
