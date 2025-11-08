@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      10.0.18
+// @version      10.0.19
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "10.0.18";
+    window.BUILD_VERSION = "10.0.19";
 (function () {
 
   // Configuration constants and default settings
@@ -988,7 +988,7 @@
           "Content-Type": "application/json",
         },
         data: stringifiedData,
-        timeout: 120000, // 120 second timeout for large content
+        timeout: 300000, // 5 minute timeout for large content with images
         onload: function (response) {
           try {
             // Check HTTP status
@@ -1010,8 +1010,8 @@
           reject(new Error(`API call failed: ${errorMsg}`));
         },
         ontimeout: function () {
-          debug("❌ API call timed out after 120 seconds");
-          reject(new Error("API call failed: Request timed out after 120 seconds"));
+          debug("❌ API call timed out after 5 minutes");
+          reject(new Error("API call failed: Request timed out after 5 minutes. The page may be too large or contain many images that need to be downloaded and uploaded."));
         },
       });
     });
