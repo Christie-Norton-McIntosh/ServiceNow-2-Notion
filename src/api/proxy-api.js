@@ -60,7 +60,7 @@ export async function apiCall(method, endpoint, data = null) {
         "Content-Type": "application/json",
       },
       data: stringifiedData,
-      timeout: 120000, // 120 second timeout for large content
+      timeout: 300000, // 5 minute timeout for large content with images
       onload: function (response) {
         try {
           // Check HTTP status
@@ -82,8 +82,8 @@ export async function apiCall(method, endpoint, data = null) {
         reject(new Error(`API call failed: ${errorMsg}`));
       },
       ontimeout: function () {
-        debug("❌ API call timed out after 120 seconds");
-        reject(new Error("API call failed: Request timed out after 120 seconds"));
+        debug("❌ API call timed out after 5 minutes");
+        reject(new Error("API call failed: Request timed out after 5 minutes. The page may be too large or contain many images that need to be downloaded and uploaded."));
       },
     });
   });
