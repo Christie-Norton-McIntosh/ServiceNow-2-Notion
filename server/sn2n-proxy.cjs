@@ -1904,7 +1904,7 @@ if (require.main === module) {
     }
   }
   
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     // Always print a concise startup message; verbose logs use log()
     console.log(
       new Date().toISOString(),
@@ -1917,6 +1917,11 @@ if (require.main === module) {
       !!process.env.NOTION_TOKEN
     );
   });
+  
+  // Set server timeout to 5 minutes to match client timeout
+  server.timeout = 300000; // 5 minutes
+  server.keepAliveTimeout = 305000; // Slightly longer than timeout
+  server.headersTimeout = 310000; // Slightly longer than keepAliveTimeout
 }
 
 module.exports = {

@@ -72,7 +72,33 @@ export async function apiCall(method, endpoint, data = null) {
       },
       onerror: function (error) {
         debug("❌ API call failed:", error);
-        reject(new Error(`API call failed: ${error.error || "Network error"}`));
+        // Log full error object for debugging
+        console.error("[NETWORK-ERROR] Full error object:", JSON.stringify(error, null, 2));
+        console.error("[NETWORK-ERROR] Error keys:", Object.keys(error));
+        console.error("[NETWORK-ERROR] Error type:", typeof error);
+        console.error("[NETWORK-ERROR] Status code:", error.status);
+        console.error("[NETWORK-ERROR] URL attempted:", url);
+        
+        // Extract meaningful error message
+        let errorMsg = "Network error";
+        if (error) {
+          // Check for specific status codes
+          if (error.status === 408) {
+            errorMsg = "Request timeout - Server did not respond in time. The page may be too large or the proxy server may be busy.";
+          } else if (error.status === 0) {
+            errorMsg = "Cannot connect to proxy server. Please ensure:\n1. The proxy server is running (npm start in server/)\n2. Tampermonkey has permission to access localhost\n3. No firewall is blocking the connection";
+          } else if (typeof error === 'string') {
+            errorMsg = error;
+          } else if (error.error) {
+            errorMsg = error.error;
+          } else if (error.statusText) {
+            errorMsg = error.statusText;
+          } else if (error.message) {
+            errorMsg = error.message;
+          }
+        }
+        
+        reject(new Error(`API call failed: ${errorMsg}`));
       },
       ontimeout: function () {
         debug("❌ API call timed out after 5 minutes");
