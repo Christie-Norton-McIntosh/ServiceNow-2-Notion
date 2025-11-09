@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      10.0.26
+// @version      10.0.27
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "10.0.26";
+    window.BUILD_VERSION = "10.0.27";
 (function () {
 
   // Configuration constants and default settings
@@ -979,7 +979,18 @@
         // Check if sections are still in stringified data
         const sectionCountAfter = (stringifiedData.match(/predictive-intelligence-for-incident__section_/g) || []).length;
         console.log('🔍 apiCall - Sections in stringified data:', sectionCountAfter);
+        
+        // Log payload size in MB
+        const sizeInMB = (stringifiedData.length / (1024 * 1024)).toFixed(2);
+        console.log(`📦 apiCall - Payload size: ${sizeInMB} MB`);
+        
+        // Warn if payload is very large
+        if (stringifiedData.length > 10 * 1024 * 1024) { // 10 MB
+          console.warn(`⚠️ Large payload detected (${sizeInMB} MB) - this may cause timeout or memory issues`);
+        }
       }
+      
+      console.log(`🌐 apiCall - Sending ${method} request to ${url} with timeout: 300s`);
 
       GM_xmlhttpRequest({
         method: method,
