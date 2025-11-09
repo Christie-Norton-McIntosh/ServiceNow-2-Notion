@@ -666,6 +666,21 @@ router.post('/W2N', async (req, res) => {
 
     log("✅ Page created successfully:", response.id);
     
+    // SEND RESPONSE IMMEDIATELY to prevent client timeout
+    // The response must be sent before validation and other post-processing
+    // which can take a long time (30+ seconds for complex pages)
+    log("📤 Sending response to client...");
+    sendSuccess(res, {
+      pageUrl: response.url,
+      page: {
+        id: response.id,
+        url: response.url,
+        title: payload.title,
+      },
+      note: "Validation and post-processing will continue asynchronously"
+    });
+    log("✅ Response sent - continuing with post-processing...");
+    
     // Check for any placeholder warnings that occurred during conversion
     const placeholderWarnings = getAndClearPlaceholderWarnings();
     if (placeholderWarnings.length > 0) {
@@ -927,28 +942,16 @@ router.post('/W2N', async (req, res) => {
     }
 
     log("🔗 Page URL:", response.url);
-
-    const responseData = {
-      pageUrl: response.url,
-      page: {
-        id: response.id,
-        url: response.url,
-        title: payload.title,
-      },
-    };
     
-    // Include validation results in response if available
+    // Note: Response was already sent immediately after page creation (before validation)
+    // to prevent client timeout. Validation results are logged but not sent to client.
     if (validationResult) {
-      responseData.validation = {
-        success: validationResult.success,
-        hasErrors: validationResult.hasErrors,
-        issueCount: validationResult.issues.length,
-        warningCount: validationResult.warnings.length,
-        stats: validationResult.stats
-      };
+      log(`📊 Validation summary: ${validationResult.success ? 'PASSED' : 'FAILED'}`);
+      log(`   Errors: ${validationResult.issues.length}, Warnings: ${validationResult.warnings.length}`);
     }
-
-    return sendSuccess(res, responseData);
+    
+    log("✅ Post-processing complete");
+    return;
   } catch (error) {
     const { log, sendError } = getGlobals();
     log("❌ Error creating Notion page:", error.message);
