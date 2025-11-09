@@ -151,15 +151,15 @@ router.post('/W2N', async (req, res) => {
     }
 
     // Allow a dry-run mode for testing conversions without creating a Notion page
-    if (payload.dryRun) {
+  if (payload.dryRun) {
       log("🔍 DryRun mode enabled - converting content to blocks without creating page");
       let children = [];
       let hasVideos = false;
       let extractionWarnings = [];
       if (payload.contentHtml) {
         log("🔄 (dryRun) Converting HTML content to Notion blocks");
-        const result = await htmlToNotionBlocks(payload.contentHtml);
-        children = result.blocks;
+  const result = await htmlToNotionBlocks(payload.contentHtml);
+  children = result.blocks;
         hasVideos = result.hasVideos;
         extractionWarnings = result.warnings || [];
         log(`✅ (dryRun) Converted HTML to ${children.length} Notion blocks`);
@@ -177,6 +177,80 @@ router.post('/W2N', async (req, res) => {
         extractionWarnings = result.warnings || [];
         log(`✅ (dryRun) Converted content to ${children.length} Notion blocks`);
       }
+      // DRYRUN ENHANCEMENT: Simulate marker-based orchestration so structure matches real page
+      try {
+        const { collectAndStripMarkers, removeCollectedBlocks } = getGlobals();
+        if (typeof collectAndStripMarkers === 'function' && typeof removeCollectedBlocks === 'function') {
+          log('🔖 (dryRun) Collecting marker-tagged blocks for simulated orchestration');
+          const markerMap = collectAndStripMarkers(children, {});
+          const removed = removeCollectedBlocks(children);
+          if (removed > 0) log(`🔖 (dryRun) Removed ${removed} collected block(s) from top-level`);
+
+          // Helper: strip marker tokens from rich_text
+          const stripMarkerTokens = (rich) => {
+            if (!Array.isArray(rich)) return rich;
+            const cleaned = [];
+            const tokenRegex = /\(sn2n:[^)]+\)/g;
+            for (const rt of rich) {
+              const t = (rt && rt.text && typeof rt.text.content === 'string') ? rt.text.content : '';
+              const newText = t.replace(tokenRegex, '').replace(/\s{2,}/g, ' ').trim();
+              const clone = { ...(rt || {}) };
+              if (clone.text && typeof clone.text === 'object') {
+                clone.text = { ...clone.text, content: newText };
+              }
+              // Recompute plain_text for consistency
+              clone.plain_text = newText;
+              // Skip empty text nodes without link
+              if (newText.length === 0 && !clone.text?.link) continue;
+              cleaned.push(clone);
+            }
+            return cleaned;
+          };
+
+          // Attach collected blocks to parents containing the corresponding marker token
+          const attachToParents = (arr) => {
+            if (!Array.isArray(arr)) return;
+            for (const blk of arr) {
+              if (!blk || typeof blk !== 'object') continue;
+              const type = blk.type;
+              const typed = type && blk[type] ? blk[type] : null;
+              const rich = typed && Array.isArray(typed.rich_text) ? typed.rich_text : [];
+              // Find any marker tokens in rich_text
+              const concat = rich.map(r => r?.text?.content || '').join('');
+              const matches = concat.match(/\(sn2n:([a-z0-9_\-]+)\)/gi) || [];
+              if (matches.length > 0) {
+                for (const token of matches) {
+                  const marker = token.slice(6, -1); // remove "(sn2n:" and ")"
+                  const blocksToAppend = markerMap[marker] || [];
+                  if (blocksToAppend.length > 0) {
+                    // Ensure children array exists for supported types
+                    const supportedParents = ['numbered_list_item', 'bulleted_list_item', 'callout', 'toggle', 'to_do', 'paragraph'];
+                    if (type && supportedParents.includes(type)) {
+                      if (!blk[type].children) blk[type].children = [];
+                      blk[type].children.push(...blocksToAppend);
+                      // Mark as attached so we don't attach again
+                      markerMap[marker] = [];
+                    }
+                  }
+                }
+                // Strip marker tokens from rich_text after attaching
+                if (typed) {
+                  typed.rich_text = stripMarkerTokens(rich);
+                }
+              }
+              // Recurse into children
+              if (typed && Array.isArray(typed.children)) attachToParents(typed.children);
+              if (Array.isArray(blk.children)) attachToParents(blk.children);
+            }
+          };
+
+          attachToParents(children);
+          log('🔖 (dryRun) Marker attachment simulation complete');
+        }
+      } catch (e) {
+        log(`⚠️ (dryRun) Marker simulation failed: ${e && e.message ? e.message : e}`);
+      }
+
       return sendSuccess(res, { dryRun: true, children, hasVideos, warnings: extractionWarnings });
     }
 
@@ -793,6 +867,51 @@ router.post('/W2N', async (req, res) => {
           validationResult.issues.forEach((issue, idx) => {
             log(`   ${idx + 1}. ${issue}`);
           });
+          
+          // AUTO-CAPTURE: Save HTML to fixtures folder when validation fails
+          const shouldSaveFixtures = process.env.SN2N_SAVE_VALIDATION_FAILURES !== 'false' && process.env.SN2N_SAVE_VALIDATION_FAILURES !== '0';
+          if (shouldSaveFixtures && payload.contentHtml) {
+            try {
+              const fixturesDir = process.env.SN2N_FIXTURES_DIR || path.join(__dirname, '../../tests/fixtures/validation-failures');
+              
+              // Ensure directory exists
+              if (!fs.existsSync(fixturesDir)) {
+                fs.mkdirSync(fixturesDir, { recursive: true });
+              }
+              
+              // Create sanitized filename from page title
+              const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
+              const sanitizedTitle = (payload.title || 'untitled')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '')
+                .substring(0, 60);
+              const filename = `${sanitizedTitle}-${timestamp}.html`;
+              const filepath = path.join(fixturesDir, filename);
+              
+              // Create metadata comment
+              const metadata = [
+                '<!--',
+                `  Page: ${payload.title || 'Untitled'}`,
+                `  URL: ${payload.url || 'N/A'}`,
+                `  Captured: ${new Date().toISOString()}`,
+                `  Validation Errors: ${validationResult.issues.join('; ')}`,
+                validationResult.warnings.length > 0 ? `  Warnings: ${validationResult.warnings.join('; ')}` : null,
+                `  Page ID: ${response.id}`,
+                `  Block Count (expected): ${children.length}`,
+                `  Block Count (actual): ${validationResult.stats?.totalBlocks || 'unknown'}`,
+                '-->'
+              ].filter(Boolean).join('\n');
+              
+              // Write HTML with metadata
+              const htmlWithMetadata = `${metadata}\n${payload.contentHtml}`;
+              fs.writeFileSync(filepath, htmlWithMetadata, 'utf8');
+              
+              log(`💾 Auto-saved validation failure HTML to: ${filename}`);
+            } catch (saveError) {
+              log(`⚠️ Failed to save validation failure HTML: ${saveError.message}`);
+            }
+          }
         }
         if (validationResult.warnings.length > 0) {
           log(`⚠️ Validation found ${validationResult.warnings.length} warning(s):`);
