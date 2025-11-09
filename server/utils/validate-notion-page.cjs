@@ -171,8 +171,8 @@ function parseSourceHtmlCounts(html) {
     
     const paragraphs = allParagraphs - paragraphsInTables - paragraphsPromotedToListText;
     
-    // Count headings
-    const headings = $('h1, h2, h3, h4, h5, h6').length;
+    // Count headings (excluding h1 which is used as the page title)
+    const headings = $('h2, h3, h4, h5, h6').length;
     
     // Count tables
     const tables = $('table').length;
