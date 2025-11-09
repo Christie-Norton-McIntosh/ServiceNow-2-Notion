@@ -51,7 +51,18 @@ export async function apiCall(method, endpoint, data = null) {
       // Check if sections are still in stringified data
       const sectionCountAfter = (stringifiedData.match(/predictive-intelligence-for-incident__section_/g) || []).length;
       console.log('🔍 apiCall - Sections in stringified data:', sectionCountAfter);
+      
+      // Log payload size in MB
+      const sizeInMB = (stringifiedData.length / (1024 * 1024)).toFixed(2);
+      console.log(`📦 apiCall - Payload size: ${sizeInMB} MB`);
+      
+      // Warn if payload is very large
+      if (stringifiedData.length > 10 * 1024 * 1024) { // 10 MB
+        console.warn(`⚠️ Large payload detected (${sizeInMB} MB) - this may cause timeout or memory issues`);
+      }
     }
+    
+    console.log(`🌐 apiCall - Sending ${method} request to ${url} with timeout: 300s`);
 
     GM_xmlhttpRequest({
       method: method,
