@@ -32,6 +32,7 @@ server/.env
 # Log files
 logs/
 *.log
+tests/
 
 # Editor directories and files
 .idea/
