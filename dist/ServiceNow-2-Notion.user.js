@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      10.0.16
+// @version      10.0.17
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "10.0.16";
+    window.BUILD_VERSION = "10.0.17";
 (function () {
 
   // Configuration constants and default settings
@@ -988,6 +988,7 @@
           "Content-Type": "application/json",
         },
         data: stringifiedData,
+        timeout: 300000, // 5 minutes (300 seconds) - matches server-side timeout
         onload: function (response) {
           try {
             const result = JSON.parse(response.responseText);
@@ -1000,6 +1001,10 @@
         onerror: function (error) {
           debug("❌ API call failed:", error);
           reject(new Error(`API call failed: ${error.error || "Network error"}`));
+        },
+        ontimeout: function () {
+          debug("❌ API call timed out after 5 minutes");
+          reject(new Error(`Request timed out after 5 minutes. The page may be too large or processing is taking too long. Try a smaller page or contact support.`));
         },
       });
     });
@@ -1014,11 +1019,16 @@
    */
   async function fallbackFetchCall(method, url, data = null) {
     try {
+      // Create AbortController for timeout handling
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
+
       const options = {
         method: method,
         headers: {
           "Content-Type": "application/json",
         },
+        signal: controller.signal,
       };
 
       if (data) {
@@ -1026,6 +1036,7 @@
       }
 
       const response = await fetch(url, options);
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -1034,6 +1045,10 @@
       const result = await response.json();
       return result;
     } catch (error) {
+      if (error.name === 'AbortError') {
+        debug("❌ Fallback API call timed out after 5 minutes");
+        throw new Error(`Request timed out after 5 minutes. The page may be too large or processing is taking too long. Try a smaller page or contact support.`);
+      }
       debug("❌ Fallback API call failed:", error);
       throw error;
     }
