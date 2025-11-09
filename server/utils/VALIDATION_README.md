@@ -4,6 +4,32 @@
 
 The validation utility (`validate-notion-page.cjs`) runs after a Notion page is created to verify that the content was converted correctly. It checks for common issues and flags problems by updating Notion page properties.
 
+## Quick Start (3 Steps)
+
+1. Add two properties to your target Notion database:
+  - `Error` (Checkbox)
+  - `Validation` (Text or Rich Text)
+2. Enable validation by setting `SN2N_VALIDATE_OUTPUT=1` in your root or `server/.env`.
+3. Restart the server (`npm start`) and create/export a page — validation runs automatically post-creation.
+
+### What You Will See
+**Passing Page:**
+- Error (unchecked)
+- Validation: `✅ Validation passed: <blocks> blocks, <headings> headings, no issues`
+
+**Failing Page (critical issues):**
+- Error (checked)
+- Validation summary starting with `❌ Validation failed...` detailing marker leaks or block count problems.
+
+**Warnings Only:**
+- Error remains unchecked
+- Validation summary starts with `✅ Validation passed (critical elements match)` and lists informational warnings (e.g. block count high, missing expected headings).
+
+### Typical Use Cases
+- During debugging of conversion changes (keep enabled)
+- During bulk import (disable for speed)
+- While adding new deep-nesting or marker orchestration logic (enable to catch leaks)
+
 ## Features
 
 ### 1. **Marker Leak Detection** (CRITICAL)
@@ -77,6 +103,9 @@ The validation utility requires these properties in your Notion database:
    - **Error** → Type: Checkbox
    - **Validation** → Type: Text (or Rich Text)
 3. No code changes needed - validator updates these automatically
+
+### Optional Expected Headings
+You can supply an `expectedHeadings` array when invoking validation (already wired in route integration) to ensure critical sections (e.g. "Overview", "Prerequisites", "Procedure") appear. Missing headings are treated as warnings, not failures.
 
 ## Validation Results
 
@@ -255,6 +284,26 @@ Potential additions to validation:
 - [ ] Content diff (compare plain text with source HTML)
 
 ## Example Validation Log
+## Benefits & Workflow
+
+| Benefit | Description |
+|---------|-------------|
+| Automatic QA | Every page gets a structural & content sanity check immediately post-create. |
+| Fast Triage | Filter database on `Error` checkbox to find pages needing attention. |
+| Marker Leak Defense | Detects failed deep nesting orchestration early (critical). |
+| Content Comparison | Source vs Notion counts highlight extraction anomalies. |
+| Extensible | Add custom rules (e.g. max code blocks) with a few lines. |
+
+### Recommended Workflow
+1. Enable validation while developing conversion or orchestration changes.
+2. Export a representative set of ServiceNow pages.
+3. Filter by `Error` in Notion; inspect `Validation` details.
+4. Fix issues (e.g. marker leaks), re-export to confirm.
+5. Disable validation for large bulk operations if performance is a concern.
+
+### Moving From Setup Doc
+This file now consolidates the prior high-level setup guide (`VALIDATION_SETUP.md`). The root-level setup document can be removed; refer here for both quick start and deep technical details.
+
 
 ```
 🔍 [VALIDATION] Starting validation for page abc-123-def
