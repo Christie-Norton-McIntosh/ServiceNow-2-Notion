@@ -210,8 +210,18 @@ app.use(
   })
 );
 
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+app.use(express.json({ limit: "100mb" }));
+app.use(express.urlencoded({ extended: true, limit: "100mb" }));
+
+// Log incoming request size for debugging
+app.use((req, res, next) => {
+  const contentLength = req.headers['content-length'];
+  if (contentLength && parseInt(contentLength) > 1024 * 1024) {
+    const sizeMB = (parseInt(contentLength) / (1024 * 1024)).toFixed(2);
+    log(`📦 Incoming ${req.method} ${req.path} - Size: ${sizeMB} MB`);
+  }
+  next();
+});
 
 // Development-friendly CORS fallback: ensure preflight and simple fetches
 // work even when the userscript runs without GM_xmlhttpRequest (browser fetch).
