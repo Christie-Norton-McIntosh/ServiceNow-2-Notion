@@ -44,9 +44,6 @@ delete require.cache[tablePath];
 const { convertTableBlock } = require('../converters/table.cjs');
 
 const { generateMarker } = require('../orchestration/marker-management.cjs');
-const { repairListStructure } = require('../utils/orphan-list-repair.cjs');
-
-const ENABLE_ORPHAN_LIST_REPAIR = process.env.SN2N_ORPHAN_LIST_REPAIR === '1' || process.env.SN2N_ORPHAN_LIST_REPAIR === 'true';
 
 /** @private Global tracker for video detection (reset per conversion) */
 let hasDetectedVideos = false;
@@ -173,114 +170,11 @@ function enforceNestingDepthLimit(blocks, currentDepth = 0) {
 async function extractContentFromHtml(html) {
   const { log, normalizeAnnotations, isValidImageUrl, downloadAndUploadImage, normalizeUrl, getExtraDebug } = getGlobals();
   
-  // CRITICAL FILE-BASED DIAGNOSTIC: Write to file so we can verify execution
-  const fs = require('fs');
-  const path = require('path');
-  const logFile = path.join(__dirname, '../logs', 'entry-diagnostic.log');
-  const timestamp = new Date().toISOString();
-  
-  try {
-    fs.appendFileSync(logFile, `\n=== ${timestamp} ===\n`);
-    fs.appendFileSync(logFile, `HTML length at function entry: ${html ? html.length : 'NULL'}\n`);
-    
-    // Check for the problematic substeps lists
-    const hasSubstepsBmd = html && html.includes('substeps_bmd_g4t_nv');
-    const hasSubstepsHhn = html && html.includes('substeps_hhn_bmt_nv');
-    
-    if (hasSubstepsBmd || hasSubstepsHhn) {
-      fs.appendFileSync(logFile, `\n🔴 PROBLEMATIC SUBSTEPS DETECTED AT ENTRY:\n`);
-      
-      if (hasSubstepsBmd) {
-        const olMatch = html.match(/<ol[^>]*id="[^"]*substeps_bmd_g4t_nv"[^>]*>[\s\S]*?<\/ol>/);
-        if (olMatch) {
-          fs.appendFileSync(logFile, `Target OL (bmd_g4t_nv) at entry: ${olMatch[0].length} chars, ${(olMatch[0].match(/<li/g) || []).length} <li> tags\n`);
-          fs.appendFileSync(logFile, `Contains substeps at entry: ${olMatch[0].includes('substep')}\n`);
-        }
-      }
-      
-      if (hasSubstepsHhn) {
-        const olMatch = html.match(/<ol[^>]*id="[^"]*substeps_hhn_bmt_nv"[^>]*>[\s\S]*?<\/ol>/);
-        if (olMatch) {
-          fs.appendFileSync(logFile, `Target OL (hhn_bmt_nv) at entry: ${olMatch[0].length} chars, ${(olMatch[0].match(/<li/g) || []).length} <li> tags\n`);
-          fs.appendFileSync(logFile, `Contains substeps at entry: ${olMatch[0].includes('substep')}\n`);
-        }
-      }
-      
-      // Save full HTML snapshot at entry
-      try {
-        const snapshotPath = path.join(__dirname, '../logs', `full-html-entry-${Date.now()}.html`);
-        fs.writeFileSync(snapshotPath, html, 'utf8');
-        fs.appendFileSync(logFile, `🔴 Saved full HTML snapshot at entry: full-html-entry-${Date.now()}.html\n`);
-      } catch (snapErr) {
-        fs.appendFileSync(logFile, `Failed to save entry snapshot: ${snapErr.message}\n`);
-      }
-    }
-    
-    if (html && html.includes('devops-software-quality-sub-category__ol_bpk_gfk_xpb')) {
-      const olMatch = html.match(/<ol[^>]*id="devops-software-quality-sub-category__ol_bpk_gfk_xpb"[^>]*>[\s\S]*?<\/ol>/);
-      if (olMatch) {
-        fs.appendFileSync(logFile, `Target OL at entry: ${olMatch[0].length} chars, ${(olMatch[0].match(/<li/g) || []).length} <li> tags\n`);
-        fs.appendFileSync(logFile, `Contains Submit at entry: ${olMatch[0].includes('<span class="ph uicontrol">Submit</span>')}\n`);
-      } else {
-        fs.appendFileSync(logFile, `OL ID found but regex extraction failed\n`);
-      }
-    } else if (!hasSubstepsBmd && !hasSubstepsHhn) {
-      fs.appendFileSync(logFile, `Target OL ID NOT FOUND in HTML at entry\n`);
-    }
-  } catch (err) {
-    console.error('Failed to write entry diagnostic:', err);
-  }
-  
   console.log('🚨🚨🚨 SERVICENOW.CJS FUNCTION START - MODULE LOADED 🚨🚨🚨');
-  console.log(`🔬🔬🔬 [ENTRY] HTML length at function entry: ${html ? html.length : 'NULL'}`);
-  
-  // 🔧 WORKAROUND: DISABLED - This was causing issues with OL preservation
-  // The workaround tried to preserve specific OLs but was actually corrupting content
-  // Let Cheerio handle all HTML parsing without pre-processing interference
-  /*
-  const targetOlIds = [
-    'devops-software-quality-sub-category__ol_bpk_gfk_xpb',
-    'dev-ops-software-quality-summary__ol_sk4_k4b_wpb'
-  ];
-  */
-  
-  const preservedOls = []; // Keep empty array so restoration loop doesn't error
-  
-  /* DISABLED - This workaround was corrupting OLs
-  for (const olId of targetOlIds) {
-    if (html && html.includes(olId)) {
-      const olMatch = html.match(new RegExp(`<ol[^>]*id="${olId}"[^>]*>[\\s\\S]*?<\\/ol>`, 'i'));
-      if (olMatch) {
-        const preservedOl = olMatch[0];
-        // Use a div placeholder that won't be stripped during preprocessing
-        const uniqueId = `sn2n_preserved_ol_${Date.now()}_${olId}`;
-        const placeholder = `<div data-sn2n-preserved-ol="${uniqueId}"></div>`;
-        // Replace the OL in the HTML with a placeholder
-        html = html.replace(olMatch[0], placeholder);
-        
-        preservedOls.push({ olId, preservedOl, placeholder });
-        
-        console.log(`🔧 [OL-WORKAROUND] Preserved OL "${olId}" (${preservedOl.length} chars, ${(preservedOl.match(/<li/g) || []).length} LI tags)`);
-        console.log(`🔧 [OL-WORKAROUND] Placeholder: ${placeholder}`);
-        try {
-          fs.appendFileSync(logFile, `\n🔧 WORKAROUND: Preserved OL "${olId}" before preprocessing\n`);
-          fs.appendFileSync(logFile, `Preserved OL length: ${preservedOl.length} chars\n`);
-          fs.appendFileSync(logFile, `Preserved OL LI count: ${(preservedOl.match(/<li/g) || []).length}\n`);
-          fs.appendFileSync(logFile, `Placeholder: ${placeholder}\n`);
-        } catch (err) {
-          console.error('Failed to log workaround:', err);
-        }
-      }
-    }
-  }
-  */
-  
-  // Array to collect warnings during extraction for later logging
-  const warnings = [];
   
   // cleanHtmlText already imported at top of file
   if (!html || typeof html !== "string") {
-    return { blocks: [], hasVideos: false, warnings: [] };
+    return { blocks: [], hasVideos: false };
   }
 
   // Reset video detection flag for this conversion
@@ -297,98 +191,32 @@ async function extractContentFromHtml(html) {
   html = html.replace(/<svg[\s\S]*?<\/svg>/gi, "");
 
   // Remove ServiceNow documentation helper UI elements
-  console.log(`🔬 [REGEX-DIAGNOSTIC] HTML before UI element removal: ${html.length}`);
   html = html.replace(/<div[^>]*class="[^\"]*zDocsCodeExplanationContainer[^\"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
-  console.log(`🔬 [REGEX-DIAGNOSTIC] After zDocsCodeExplanationContainer: ${html.length}`);
   html = html.replace(/<button[^>]*class="[^\"]*zDocsAiActionsButton[^\"]*"[^>]*>[\s\S]*?<\/button>/gi, "");
-  console.log(`🔬 [REGEX-DIAGNOSTIC] After zDocsAiActionsButton: ${html.length}`);
   html = html.replace(/<div[^>]*class="(?![^\"]*code-toolbar)[^\"]*\btoolbar\b[^\"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
-  console.log(`🔬 [REGEX-DIAGNOSTIC] After toolbar: ${html.length}`);
   html = html.replace(/<button[^>]*class="[^\"]*copy-to-clipboard-button[^\"]*"[^>]*>[\s\S]*?<\/button>/gi, "");
-  console.log(`🔬 [REGEX-DIAGNOSTIC] After copy-to-clipboard: ${html.length}`);
   
-  // UNWRAP filter divs instead of removing them completely - keep content, remove wrapper only
-  console.log(`🔬 [REGEX-DIAGNOSTIC] HTML length before zDocsFilterTableDiv unwrap: ${html.length}`);
-  // Just remove the opening tag - the content stays, orphaned closing </div> will be handled by Cheerio
-  html = html.replace(/<div[^>]*class="[^\"]*zDocsFilterTableDiv[^\"]*"[^>]*>/gi, "");
-  console.log(`🔬 [REGEX-DIAGNOSTIC] HTML length after zDocsFilterTableDiv unwrap: ${html.length}`);
-  
-  console.log(`🔬 [REGEX-DIAGNOSTIC] HTML length before smartTable unwrap: ${html.length}`);
-  // Unwrap smartTable divs - remove opening tag only, keep content
-  html = html.replace(/<div[^>]*class="[^\"]*smartTable[^\"]*"[^>]*>/gi, "");
-  console.log(`🔬 [REGEX-DIAGNOSTIC] HTML length after smartTable unwrap: ${html.length}`);
-  
-  console.log(`🔬 [REGEX-DIAGNOSTIC] Before button removal: ${html.length}`);
-  // COMMENT OUT button removal temporarily to preserve all content
-  // html = html.replace(/<button[^>]*class="[^\"]*(?:zDocsTopicPageTableExportButton|zDocsTopicPageTableExportMenu|dropdown-item)[^\"]*"[^>]*>[\s\S]*?<\/button>/gi, "");
-  console.log(`🔬 [REGEX-DIAGNOSTIC] After button removal: ${html.length}`);
-  
-  // DataTables wrapper divs - these should be empty wrappers, but keep for now to preserve content
-  console.log(`🔬 [REGEX-DIAGNOSTIC] Before DataTables removal: ${html.length}`);
-  // COMMENTED OUT to preserve all content
-  // html = html.replace(/<div[^>]*class="[^\"]*dataTables_wrapper[^\"]*"[^>]*>/gi, "");
-  // html = html.replace(/<div[^>]*class="[^\"]*dataTables_filter[^\"]*"[^>]*>/gi, "");
-  // html = html.replace(/<div[^>]*class="[^\"]*dataTables_length[^\"]*"[^>]*>/gi, "");
-  // html = html.replace(/<div[^>]*class="[^\"]*dataTables_info[^\"]*"[^>]*>/gi, "");
-  // html = html.replace(/<div[^>]*class="[^\"]*dataTables_paginate[^\"]*"[^>]*>/gi, "");
-  console.log(`🔬 [REGEX-DIAGNOSTIC] After DataTables removal: ${html.length}`);
+  // Remove DataTables wrapper divs (generated by JavaScript table libraries)
+  // These contain no useful content and often leak into text extraction
+  html = html.replace(/<div[^>]*class="[^\"]*dataTables_wrapper[^\"]*"[^>]*>/gi, "");
+  html = html.replace(/<div[^>]*class="[^\"]*dataTables_filter[^\"]*"[^>]*>/gi, "");
+  html = html.replace(/<div[^>]*class="[^\"]*dataTables_length[^\"]*"[^>]*>/gi, "");
+  html = html.replace(/<div[^>]*class="[^\"]*dataTables_info[^\"]*"[^>]*>/gi, "");
+  html = html.replace(/<div[^>]*class="[^\"]*dataTables_paginate[^\"]*"[^>]*>/gi, "");
 
-  // DEDUPLICATE: Remove standalone articles that are also nested inside other articles
-  // ServiceNow pages sometimes include both standalone articles AND the same articles nested in a wrapper
-  // We need to keep only the properly nested structure to avoid duplicate content
-  
-  console.log(`🔬 [REGEX-DIAGNOSTIC] HTML length BEFORE dedupe Cheerio load: ${html.length}`);
-  
-  // DIAGNOSTIC: Check main steps OL BEFORE dedupe Cheerio load
-  const mainStepsBeforeLoad = html.match(/<ol[^>]*class="[^"]*ol steps[^"]*"[^>]*>[\s\S]*?<\/ol>/);
-  if (mainStepsBeforeLoad) {
-    const liCount = (mainStepsBeforeLoad[0].match(/<li[^>]*class="[^"]*li step[^"]*"[^>]*>/g) || []).length;
-    console.log(`🔬 [DEDUPE-DIAGNOSTIC] Main steps OL BEFORE $dedupe.load(): ${liCount} direct LI children`);
-  }
-  
-  const $dedupe = cheerio.load(html, { decodeEntities: false, xmlMode: false });
-  
-  // Find all article elements with IDs
-  const articlesWithIds = {};
-  $dedupe('article[id]').each((i, elem) => {
-    const id = $dedupe(elem).attr('id');
-    if (!articlesWithIds[id]) {
-      articlesWithIds[id] = [];
-    }
-    articlesWithIds[id].push(elem);
-  });
-  
-  // For each ID that appears multiple times, remove the standalone one (keep the nested one)
-  Object.keys(articlesWithIds).forEach(id => {
-    if (articlesWithIds[id].length > 1) {
-      console.log(`🔍 [DEDUPE] Found ${articlesWithIds[id].length} articles with id="${id}"`);
-      // Find which one is standalone (has no article ancestors) vs nested
-      articlesWithIds[id].forEach(elem => {
-        const $elem = $dedupe(elem);
-        const articleAncestors = $elem.parents('article').length;
-        if (articleAncestors === 0) {
-          console.log(`🗑️ [DEDUPE] Removing standalone article with id="${id}" (will use nested version)`);
-          $elem.remove();
-        }
-      });
-    }
-  });
-  
-  // DIAGNOSTIC: Check main steps OL BEFORE extracting HTML from dedupe Cheerio
-  const mainStepsBeforeDedupe = $dedupe.html().match(/<ol[^>]*class="[^"]*ol steps[^"]*"[^>]*>[\s\S]*?<\/ol>/);
-  if (mainStepsBeforeDedupe) {
-    const liCount = (mainStepsBeforeDedupe[0].match(/<li[^>]*class="[^"]*li step[^"]*"[^>]*>/g) || []).length;
-    console.log(`🔬 [DEDUPE-DIAGNOSTIC] Main steps OL in $dedupe BEFORE .html(): ${liCount} direct LI children`);
-  }
-  
-  html = $dedupe.html();
-  
-  // DIAGNOSTIC: Check main steps OL AFTER extracting HTML
-  const mainStepsAfterDedupe = html.match(/<ol[^>]*class="[^"]*ol steps[^"]*"[^>]*>[\s\S]*?<\/ol>/);
-  if (mainStepsAfterDedupe) {
-    const liCount = (mainStepsAfterDedupe[0].match(/<li[^>]*class="[^"]*li step[^"]*"[^>]*>/g) || []).length;
-    console.log(`🔬 [DEDUPE-DIAGNOSTIC] Main steps OL AFTER .html(): ${liCount} direct LI children`);
-  }
+  // Inline full HTML-to-Notion block parsing logic (migrated from sn2n-proxy.cjs)
+  // This includes paragraphs, lists, tables, code blocks, images, headings, callouts, etc.
+  // Uses helpers: cleanHtmlText, isValidImageUrl, downloadAndUploadImage, normalizeAnnotations, etc.
+
+  // Remove script and style tags
+  html = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
+  html = html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
+
+  // Remove ServiceNow documentation helper UI elements
+  html = html.replace(/<div[^>]*class="[^\"]*zDocsCodeExplanationContainer[^\"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
+  html = html.replace(/<button[^>]*class="[^\"]*zDocsAiActionsButton[^\"]*"[^>]*>[\s\S]*?<\/button>/gi, "");
+  html = html.replace(/<div[^>]*class="(?![^\"]*code-toolbar)[^\"]*\btoolbar\b[^\"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
+  html = html.replace(/<button[^>]*class="[^\"]*copy-to-clipboard-button[^\"]*"[^>]*>[\s\S]*?<\/button>/gi, "");
 
   // DIAGNOSTIC: Check HTML length AFTER initial cleanup
   const sectionsAfterCleanup = (html.match(/<section[^>]*id="[^"]*"/g) || []).length;
@@ -401,10 +229,16 @@ async function extractContentFromHtml(html) {
   // Returns object with { richText: [], imageBlocks: [] }
   async function parseRichText(html) {
     if (!html) return { richText: [{ type: "text", text: { content: "" } }], imageBlocks: [], videoBlocks: [] };
+
     const richText = [];
     const imageBlocks = [];
     const videoBlocks = [];
     let text = html;
+
+  // Strip <var> wrappers early (preserve inner content). Appearing raw in output after
+  // recent rollback. We only remove opening/closing tags; keep inner text for later formatting.
+  // Examples: <var class="keyword varname">true</var> -> true
+  text = text.replace(/<var[^>]*>([\s\S]*?)<\/var>/gi, '$1');
 
     // DEBUG: Log input HTML BEFORE normalization
     if (text && (text.includes('http') || text.includes('<code'))) {
@@ -432,21 +266,6 @@ async function extractContentFromHtml(html) {
     if (html && (html.includes('http') || html.includes('<code'))) {
       fs.appendFileSync('/Users/norton-mcintosh/GitHub/ServiceNow-2-Notion/debug-url-extract.log',
         `=== AFTER normalization ===\n${JSON.stringify(text)}\n=== END ===\n`);
-    }
-    
-    // CRITICAL: Convert <br> and <br/> tags to markers BEFORE any other processing
-    // Use marker to distinguish intentional breaks from HTML formatting whitespace
-    const beforeBrConversion = text;
-    text = text.replace(/<br\s*\/?>/gi, '__BR_NEWLINE__');
-    if (beforeBrConversion !== text) {
-      console.log(`🔍 [BR-CONVERSION] Converted <br> tags to __BR_NEWLINE__ markers in parseRichText`);
-      const adminIndex = text.indexOf('admin');
-      if (adminIndex !== -1) {
-        const snippet = text.substring(adminIndex, adminIndex + 80);
-        console.log(`   Text around "admin": "${snippet}"`);
-      }
-      console.log(`   Before: "${beforeBrConversion.substring(0, 150)}"`);
-      console.log(`   After: "${text.substring(0, 150)}"`);
     }
     
     // CRITICAL: Extract and decode URLs from <kbd> tags FIRST
@@ -481,37 +300,6 @@ async function extractContentFromHtml(html) {
 
     console.log(`🔍 [parseRichText] After kbd extraction (${kbdPlaceholders.length} kbd tags):`, text.substring(0, 300));
 
-    // CRITICAL: Extract links FIRST (before placeholder protection)
-    // This prevents <a> tags from being misidentified as placeholders
-    const links = [];
-    text = text.replace(/<a[^>]*href=["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi, (match, href, content) => {
-      const linkIndex = links.length;
-      // Don't clean content yet - it will be cleaned later in the rich_text processing
-      links.push({ href, content });
-      return `__LINK_${linkIndex}__`;
-    });
-
-    console.log(`🔍 [parseRichText] After link extraction (${links.length} links):`, text.substring(0, 300));
-
-    // CRITICAL: Protect technical placeholders like <plugin name>, <instance-name>, etc.
-    // These are NOT HTML tags and should be preserved in the output
-    const technicalPlaceholders = [];
-    text = text.replace(/<([^>]+)>/g, (match, content) => {
-      // Check if this looks like an HTML tag or a placeholder
-      // HTML tag: starts with tag name, optionally followed by end or attributes like: <div>, <span class="x">
-      // Placeholder: anything else like <plugin name>, <instance-name>, <Tool ID>, <file.txt>
-      const isHtmlTag = /^\/?\s*[a-z][a-z0-9]*\s*($|>|\/|[a-z]+=)/i.test(content.trim());
-      if (!isHtmlTag) {
-        const marker = `__TECH_PLACEHOLDER_${technicalPlaceholders.length}__`;
-        technicalPlaceholders.push(content);
-        console.log(`🔒 [parseRichText] Protected placeholder: "<${content}>"`);
-        return marker;
-      }
-      return match; // Leave HTML tags for normal processing
-    });
-
-    console.log(`🔍 [parseRichText] After placeholder protection (${technicalPlaceholders.length} placeholders):`, text.substring(0, 300));
-
     // Restore kbd placeholders with appropriate markers BEFORE HTML cleanup
     // Use shared utility for intelligent detection (technical → code, UI labels → bold)
     kbdPlaceholders.forEach((content, index) => {
@@ -519,16 +307,6 @@ async function extractContentFromHtml(html) {
       const formatted = processKbdContent(content);
       text = text.replace(placeholder, formatted);
       console.log(`🔍 [parseRichText] Restored <kbd>: "${content}" → ${formatted.includes('CODE') ? 'code' : 'bold'}`);
-    });
-
-    // CRITICAL: Protect angle brackets inside CODE markers from being mistaken for HTML tags
-    // The span stripping regex uses [^>]* which stops at first >, breaking placeholders like <project_sys_id>
-    // Replace < and > with safe placeholders inside CODE blocks, then restore after span stripping
-    text = text.replace(/__CODE_START__([\s\S]*?)__CODE_END__/g, (match, codeContent) => {
-      const protectedContent = codeContent
-        .replace(/</g, '__LT__')
-        .replace(/>/g, '__GT__');
-      return `__CODE_START__${protectedContent}__CODE_END__`;
     });
 
     // Handle span with uicontrol class as bold + blue
@@ -558,11 +336,6 @@ async function extractContentFromHtml(html) {
       console.log(`   "${snippet}"`);
     }
 
-    // Strip <var> wrappers that ServiceNow uses for keyword styling
-    if (/<var[\s>]/i.test(text)) {
-      text = text.replace(/<var[^>]*>([\s\S]*?)<\/var>/gi, '$1');
-    }
-
     // DEBUG: Check if we have ">" characters
     if (text.includes('>') && !text.includes('<')) {
       console.log('🔍 [parseRichText] Found standalone ">" character before cleanup');
@@ -573,12 +346,6 @@ async function extractContentFromHtml(html) {
     text = text.replace(/<\/?div[^>]*>/gi, ' ');  // Remove ALL div tags (opening and closing)
     text = text.replace(/<\/?section[^>]*>/gi, ' ');
     text = text.replace(/<\/?article[^>]*>/gi, ' ');
-    
-    // CRITICAL FIX: Strip list tags - they're block elements that should be processed separately
-    // These sometimes leak through when nested lists aren't properly extracted
-    text = text.replace(/<\/?ol[^>]*>/gi, ' ');
-    text = text.replace(/<\/?ul[^>]*>/gi, ' ');
-    text = text.replace(/<\/?li[^>]*>/gi, ' ');
     
     // CRITICAL FIX: Strip <p> tags - they cause unwanted line breaks in callouts and inline text
     // Replace with space to preserve word boundaries
@@ -593,22 +360,7 @@ async function extractContentFromHtml(html) {
     text = text.replace(/^[^<]+?(?:class|id|style|href|src)=[^>]*>/gi, ' ');  // Incomplete tag at beginning
     
     // Clean up extra whitespace from tag removal
-    // CRITICAL: Preserve newlines while normalizing other whitespace
-    // Replace multiple non-newline whitespace with single space
-    text = text.replace(/[^\S\n]+/g, ' ');
-    // Clean up multiple consecutive newlines (keep max 1)
-    text = text.replace(/\n+/g, '\n');
-    // Trim spaces (not newlines) from start and end
-    text = text.replace(/^[ \t]+|[ \t]+$/g, '');
-    
-    // CRITICAL: Restore protected angle brackets inside CODE markers
-    // These were temporarily replaced to prevent span stripping regex from breaking on them
-    text = text.replace(/__CODE_START__([\s\S]*?)__CODE_END__/g, (match, codeContent) => {
-      const restoredContent = codeContent
-        .replace(/__LT__/g, '<')
-        .replace(/__GT__/g, '>');
-      return `__CODE_START__${restoredContent}__CODE_END__`;
-    });
+    text = text.replace(/\s+/g, ' ').trim();
 
     console.log('🔍 [parseRichText] After HTML cleanup:', text.substring(0, 300));
     console.log('🔍 [parseRichText] Has newline after cleanup?', text.includes('\n'));
@@ -734,32 +486,25 @@ async function extractContentFromHtml(html) {
       if (content.includes('__CODE_START__')) {
         return content;
       }
-      console.log(`🔧 [CODE-TAG] Wrapping <code> tag content: "${content.substring(0, 50)}${content.length > 50 ? '...' : ''}"`);
       return `__CODE_START__${content}__CODE_END__`;
     });
 
-    // Handle <samp> tags (sample output/system output) - treat same as inline code
-    text = text.replace(/<samp([^>]*)>([\s\S]*?)<\/samp>/gi, (match, attrs, content) => {
-      console.log(`💾 [SAMP TAG in parseRichText] Converting <samp> to inline code: "${content.substring(0, 100)}"`);
-      // If content already has CODE markers, don't double-wrap
-      if (content.includes('__CODE_START__')) {
-        return content;
-      }
-      return `__CODE_START__${content}__CODE_END__`;
+    // CRITICAL: Extract links FIRST, before identifier detection
+    // This prevents URLs like "integration.html" from being wrapped with code markers
+    const links = [];
+    text = text.replace(/<a[^>]*href=["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi, (match, href, content) => {
+      const linkIndex = links.length;
+      links.push({ href, content: cleanHtmlText(content) });
+      return `__LINK_${linkIndex}__`;
     });
-
-    // NOTE: Link extraction already happened earlier (before placeholder protection)
-    // The links array was created and <a> tags converted to __LINK_n__ markers
 
     // Handle spans with technical identifier classes (keyword, parmname, codeph, etc.)
     // Note: Generic "ph" class removed - only specific technical classes get formatting
     text = text.replace(/<span[^>]*class=["'][^"']*(?:\bkeyword\b|\bparmname\b|\bcodeph\b)[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
-      console.log(`🏷️ [SPAN] Found span with technical class: class="${match.match(/class=["']([^"']*)["']/)?.[1]}", content="${content}"`);
+      if (getExtraDebug && getExtraDebug()) log(`🔍 Found span with technical class: ${match.substring(0, 100)}`);
       
       // Use shared processing utility (no activeBlocks needed in parseRichText context)
       const result = processTechnicalSpan(content);
-      
-      console.log(`🏷️ [SPAN] Result: ${result.includes('__CODE_START__') ? 'CODE' : 'PLAIN'}`);
       
       // If unchanged (returned as-is), return original match to preserve HTML
       if (result === content || result === content.trim()) {
@@ -770,60 +515,35 @@ async function extractContentFromHtml(html) {
     });
 
     // Handle raw technical identifiers in parentheses/brackets as inline code
-    // Must contain at least one dot or underscore to be considered a technical identifier
-    // Remove the brackets/parentheses from the output (treat same as parentheses around code)
-    text = text.replace(/([\(\[])[ \t\n\r]*([a-zA-Z][-a-zA-Z0-9_]*(?:[_.][-a-zA-Z0-9_]+)+)[ \t\n\r]*([\)\]])/g, (match, open, code, close) => {
+    text = text.replace(/([\(\[])[ \t\n\r]*([^\s()[\]]*[_.][^\s()[\]]*)[ \t\n\r]*([\)\]])/g, (match, open, code, close) => {
       return `__CODE_START__${code.trim()}__CODE_END__`;
     });
 
+    // Handle technical identifiers like (com.snc.software_asset_management) as inline code
+    text = text.replace(/\(([a-zA-Z][a-zA-Z0-9]*(?:\.[a-zA-Z][a-zA-Z0-9_]*)+)\)/g, (match, identifier) => {
+      return `(__CODE_START__${identifier}__CODE_END__)`;
+    });
+
     // Handle role names after "Role required:" as inline code
-    // Examples: "Role required: admin", "Role required: sn_devops.admin, asset", "Role required: sn_devops.admin or sn_devops.tool_owner"
-    // Roles can contain underscores and dots (e.g., sn_devops.admin)
-    // CRITICAL: Process text in segments split by __BR_NEWLINE__ to avoid matching across line breaks
-    const textBeforeSplit = text;
-    const textSegments = text.split(/(__BR_NEWLINE__|__[A-Z_]+__)/);
-    if (textBeforeSplit.includes('Role required:')) {
-      console.log(`🔍 [ROLE-SPLIT-SN] Split into ${textSegments.length} segments around markers`);
-      textSegments.forEach((seg, idx) => {
-        if (seg.includes('Role required:') || seg.includes('admin') || seg.includes('__BR_NEWLINE__')) {
-          console.log(`🔍 [ROLE-SPLIT-SN]   [${idx}] "${seg.substring(0, 80)}"`);
-        }
-      });
-    }
-    text = textSegments.map((segment, idx) => {
-      // Skip markers - don't process them
-      if (segment.startsWith('__') && segment.endsWith('__')) {
-        return segment;
-      }
-      // Process this segment for role patterns
-      // Exclude common non-role words like "No", "None", "Not", "Never", "N/A"
-      return segment.replace(/\b(Role required:)\s+([a-z_][a-z0-9_.]*(?:\s+or\s+[a-z_][a-z0-9_.]*)*(?:,\s*[a-z_][a-z0-9_.]*)*)/gi, (match, label, roles) => {
-        // Check if the role is a non-role word that should be excluded
-        const firstRole = roles.split(/(?:,\s*|\s+or\s+)/i)[0].trim();
-        if (/^(?:No|None|Not|Never|N\/A)$/i.test(firstRole)) {
-          return match; // Return original text without code formatting
-        }
-        
-        // Split roles by comma or "or", wrap each in code markers
-        const roleList = roles.split(/(?:,\s*|\s+or\s+)/i).map(role => {
-          const trimmed = role.trim();
-          return `__CODE_START__${trimmed}__CODE_END__`;
-        }).join(' or ');
-        return `${label} ${roleList}`;
-      });
-    }).join('');
+    // Matches "Role required: admin" or "Role required: admin, asset"
+    text = text.replace(/\b(Role required:)\s+([a-z_]+(?:,\s*[a-z_]+)*)/gi, (match, label, roles) => {
+      console.log(`🔍 [ROLE] Matched "Role required:" with roles: "${roles}"`);
+      const roleList = roles.split(/,\s*/).map(role => {
+        const trimmed = role.trim();
+        console.log(`🔍 [ROLE] Wrapping role: "${trimmed}"`);
+        return `__CODE_START__${trimmed}__CODE_END__`;
+      }).join(', ');
+      const result = `${label} ${roleList}`;
+      console.log(`🔍 [ROLE] Result: "${result}"`);
+      return result;
+    });
 
     // Handle standalone multi-word identifiers connected by _ or . (no spaces) as inline code
-    // Each segment can start with a letter, can contain letters, numbers, hyphens, and underscores
-    // Examples: com.snc.incident.mim.ml_solution, sys_user_table, sn_devops.admin, package.class.method, com.glide.service-portal
-    // Must have at least 2 segments separated by . or _ and no brackets/parentheses
-    text = text.replace(/\b([a-zA-Z][-a-zA-Z0-9_]*(?:[_.][a-zA-Z][-a-zA-Z0-9_]*)+)\b/g, (match, identifier, offset) => {
+    // Examples: com.snc.incident.mim.ml_solution, sys_user_table, package.class.method
+    // Must have at least 2 segments and no brackets/parentheses
+    text = text.replace(/\b([a-zA-Z][a-zA-Z0-9]*(?:[_.][a-zA-Z][a-zA-Z0-9]*)+)(?![_.a-zA-Z0-9])/g, (match, identifier, offset) => {
       // Skip if already wrapped or if it's part of a URL
       if (match.includes('__CODE_START__') || match.includes('http')) {
-        return match;
-      }
-      // Skip if this contains formatting markers (like __BOLD_END__, __BOLD_BLUE_END__)
-      if (match.includes('__BOLD') || match.includes('__ITALIC') || match.includes('__LINK') || match.includes('_START__') || match.includes('_END__')) {
         return match;
       }
       // Check if this identifier is inside a CODE_START...CODE_END block (URL)
@@ -834,52 +554,7 @@ async function extractContentFromHtml(html) {
         // We're inside a CODE block, don't wrap again
         return match;
       }
-      console.log(`🔧 [TECH-ID] Wrapping standalone identifier: "${identifier}"`);
       return `__CODE_START__${identifier}__CODE_END__`;
-    });
-
-    // Handle role identifiers that appear in comma-separated lists after a colon
-    // Common pattern: "For X: admin, contract_manager" or "Role required: admin"
-    // Match lowercase identifiers that START WITH A LETTER (with optional underscores)
-    text = text.replace(/:\s*([a-z][a-z_]*(?:\s*,\s*[a-z][a-z_]*)*)/g, (match, roleList, offset) => {
-      // Skip if already wrapped or inside a URL
-      if (match.includes('__CODE_START__') || match.includes('http')) {
-        return match;
-      }
-      // Check context - should be after words like "workspace", "required", "UI", etc.
-      const before = text.substring(Math.max(0, offset - 30), offset);
-      if (!/(?:workspace|required|ui)\s*$/i.test(before)) {
-        return match; // Not in role context
-      }
-      
-      // Wrap each role identifier in code markers, keeping spaces/commas completely outside
-      // Split on commas to process each identifier separately
-      const identifiers = roleList.split(/\s*,\s*/);
-      console.log(`🔧 [ROLE-ID] Split roleList into ${identifiers.length} identifiers:`, identifiers.map(r => `"${r}"`));
-      const wrappedRoles = identifiers.map((role, idx) => {
-        const originalRole = role;
-        role = role.trim(); // Remove any leading/trailing spaces from identifier
-        // Skip if already wrapped or if it's a common word
-        if (!role || role.includes('__CODE_START__') || ['and', 'or', 'the', 'a', 'an', 'for', 'to', 'of'].includes(role)) {
-          console.log(`🔧 [ROLE-ID] Skipping: "${originalRole}" (trimmed: "${role}")`);
-          return role;
-        }
-        console.log(`🔧 [ROLE-ID] Wrapping role identifier: "${role}" (original: "${originalRole}")`);
-        return `__CODE_START__${role}__CODE_END__`;
-      }).join(', '); // Rejoin with consistent comma-space separator
-      console.log(`🔧 [ROLE-ID] Final wrapped: "${wrappedRoles}"`);
-      return ': ' + wrappedRoles;
-    });
-
-    // CRITICAL: Move leading/trailing spaces outside of code blocks
-    // This ensures spaces and punctuation stay as plain text, not inside code formatting
-    text = text.replace(/__CODE_START__(\s*)(.*?)(\s*)__CODE_END__/g, (match, leadingSpaces, content, trailingSpaces) => {
-      const trimmedContent = content.trim();
-      if (!trimmedContent) {
-        // If content is only whitespace, don't wrap it
-        return leadingSpaces + content + trailingSpaces;
-      }
-      return `${leadingSpaces}__CODE_START__${trimmedContent}__CODE_END__${trailingSpaces}`;
     });
 
     // Handle p/span with sectiontitle tasklabel class as bold
@@ -912,17 +587,6 @@ async function extractContentFromHtml(html) {
     text = text.replace(/(<\/a>)(\s*)(<p[^>]*>)/gi, (match, closingA, whitespace, openingP) => {
       return `${closingA}__SOFT_BREAK__${openingP}`;
     });
-
-    // Normalize any broken marker tokens (with spaces) BEFORE splitting
-    text = text
-      .replace(/__\s+CODE\s+START__/g, '__CODE_START__')
-      .replace(/__\s+CODE\s+END__/g, '__CODE_END__')
-      .replace(/__\s+BOLD\s+START__/g, '__BOLD_START__')
-      .replace(/__\s+BOLD\s+END__/g, '__BOLD_END__')
-      .replace(/__\s+BOLD\s+BLUE\s+START__/g, '__BOLD_BLUE_START__')
-      .replace(/__\s+BOLD\s+BLUE\s+END__/g, '__BOLD_BLUE_END__')
-      .replace(/__\s+ITALIC\s+START__/g, '__ITALIC_START__')
-      .replace(/__\s+ITALIC\s+END__/g, '__ITALIC_END__');
 
     // Split by markers and build rich text
     fs.appendFileSync('/Users/norton-mcintosh/GitHub/ServiceNow-2-Notion/debug-url-extract.log',
@@ -970,30 +634,20 @@ async function extractContentFromHtml(html) {
         const linkMatch = part.match(/^__LINK_(\d+)__$/);
         const linkIndex = parseInt(linkMatch[1]);
         const linkInfo = links[linkIndex];
-        if (linkInfo) {
-          // Clean the link content (strip HTML tags, restore placeholders)
-          let cleanedContent = cleanHtmlText(linkInfo.content);
-          // Restore technical placeholders in link text
-          cleanedContent = cleanedContent.replace(/__TECH_PLACEHOLDER_(\d+)__/g, (match, index) => {
-            const placeholder = technicalPlaceholders[parseInt(index)];
-            return `<${placeholder}>`;
-          });
-          
-          if (cleanedContent.trim()) {
-            let url = convertServiceNowUrl(linkInfo.href);
-            if (url && isValidNotionUrl(url)) {
-              richText.push({
-                type: "text",
-                text: { content: cleanedContent.trim(), link: { url } },
-                annotations: normalizeAnnotations(currentAnnotations),
-              });
-            } else {
-              richText.push({
-                type: "text",
-                text: { content: cleanedContent.trim() },
-                annotations: normalizeAnnotations(currentAnnotations),
-              });
-            }
+        if (linkInfo && linkInfo.content.trim()) {
+          let url = convertServiceNowUrl(linkInfo.href);
+          if (url && isValidNotionUrl(url)) {
+            richText.push({
+              type: "text",
+              text: { content: linkInfo.content.trim(), link: { url } },
+              annotations: normalizeAnnotations(currentAnnotations),
+            });
+          } else {
+            richText.push({
+              type: "text",
+              text: { content: linkInfo.content.trim() },
+              annotations: normalizeAnnotations(currentAnnotations),
+            });
           }
         }
       } else if (part) {
@@ -1048,94 +702,16 @@ async function extractContentFromHtml(html) {
       }
     }
 
-    // DEBUG: Log richText array before spacing logic
-    if (text.includes('Role required') && text.includes('admin')) {
-      console.log(`🔍 [PRE-SPACING] richText array has ${richText.length} elements:`);
-      richText.forEach((rt, idx) => {
-        console.log(`  [${idx}] content="${rt.text.content.substring(0, 50)}" code=${rt.annotations?.code} charCode=${rt.text.content.charCodeAt(0)}`);
-      });
-    }
-
     // Ensure proper spacing between rich text elements
     for (let i = 0; i < richText.length - 1; i++) {
       const current = richText[i];
       const next = richText[i + 1];
 
-      // DEBUG: Log spacing decisions for code blocks
-      if (current.annotations?.code || next.text.content === "\n") {
-        console.log(`🔍 [SPACING] Element ${i}: "${current.text.content}" (code=${current.annotations?.code}) -> Element ${i+1}: "${next.text.content}"`);
-      }
-
       // If current text doesn't end with space and next text doesn't start with space
-      // BUT: Don't add space if next element is a newline OR if current element is a newline (preserve line breaks)
-      if (current.text.content && next.text.content && 
-          !current.text.content.endsWith(" ") && 
-          !next.text.content.startsWith(" ") &&
-          current.text.content !== "\n" &&
-          next.text.content !== "\n") {
-        console.log(`🔍 [SPACING] Adding space after "${current.text.content}"`);
+      if (current.text.content && next.text.content && !current.text.content.endsWith(" ") && !next.text.content.startsWith(" ")) {
         current.text.content += " ";
       }
     }
-
-    // CRITICAL: Restore protected technical placeholders at the very end
-    // Convert markers back to angle bracket format: __TECH_PLACEHOLDER_0__ -> <plugin name>
-    richText.forEach(element => {
-      if (element.text && element.text.content) {
-        element.text.content = element.text.content.replace(/__TECH_PLACEHOLDER_(\d+)__/g, (match, index) => {
-          const placeholder = technicalPlaceholders[parseInt(index)];
-          console.log(`🔓 [parseRichText] Restored placeholder: "__TECH_PLACEHOLDER_${index}__" -> "<${placeholder}>"`);
-          return `<${placeholder}>`;
-        });
-      }
-    });
-
-    // CRITICAL: Global cleanup for code-annotated elements
-    // Trim leading/trailing spaces from code blocks and ensure spaces appear as plain text between elements
-    const cleanedRichText = [];
-    for (let i = 0; i < richText.length; i++) {
-      const rt = richText[i];
-      
-      if (rt.annotations?.code && rt.text?.content) {
-        const originalContent = rt.text.content;
-        const leadingSpaces = originalContent.match(/^(\s*)/)[1];
-        const trailingSpaces = originalContent.match(/(\s*)$/)[1];
-        const trimmedContent = originalContent.trim();
-        
-        // Add leading spaces as plain text if they exist
-        if (leadingSpaces && cleanedRichText.length > 0) {
-          cleanedRichText.push({
-            type: "text",
-            text: { content: leadingSpaces },
-            annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: "default" }
-          });
-        }
-        
-        // Add the trimmed code block (only if there's actual content)
-        if (trimmedContent) {
-          cleanedRichText.push({
-            ...rt,
-            text: { ...rt.text, content: trimmedContent }
-          });
-        }
-        
-        // Add trailing spaces as plain text if they exist AND there's a next element
-        if (trailingSpaces && i < richText.length - 1) {
-          cleanedRichText.push({
-            type: "text",
-            text: { content: trailingSpaces },
-            annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: "default" }
-          });
-        }
-      } else {
-        // Not a code block, keep as-is
-        cleanedRichText.push(rt);
-      }
-    }
-    
-    // Replace richText array contents with cleaned version
-    richText.length = 0;
-    richText.push(...cleanedRichText);
 
     return { richText, imageBlocks, videoBlocks };
   }
@@ -1220,16 +796,6 @@ async function extractContentFromHtml(html) {
       } else {
         // Fallback to external URL if upload fails
         log(`⚠️ Image upload failed, falling back to external URL: ${src.substring(0, 80)}...`);
-        
-        // Collect warning for later logging (after page creation when we have pageId)
-        warnings.push({
-          type: 'IMAGE_UPLOAD_FAILED',
-          data: {
-            imageUrl: src,
-            errorMessage: 'Upload returned null/undefined'
-          }
-        });
-        
         return {
           object: "block",
           type: "image",
@@ -1242,15 +808,6 @@ async function extractContentFromHtml(html) {
       }
     } catch (error) {
       log(`❌ Error processing image ${src}: ${error.message}`);
-      
-      // Collect warning for later logging (after page creation when we have pageId)
-      warnings.push({
-        type: 'IMAGE_UPLOAD_FAILED',
-        data: {
-          imageUrl: src,
-          errorMessage: error.message
-        }
-      });
       return null;
     }
   }
@@ -1405,187 +962,13 @@ async function extractContentFromHtml(html) {
     }
   }
   
-  // 🔧 WORKAROUND: Restore all preserved OLs before Cheerio processing
-  for (const { olId, preservedOl, placeholder } of preservedOls) {
-    if (html.includes(placeholder)) {
-      html = html.replace(placeholder, preservedOl);
-      console.log(`🔧 [OL-WORKAROUND] ✅ Restored OL "${olId}" (${preservedOl.length} chars) before Cheerio`);
-      try {
-        fs.appendFileSync(logFile, `🔧 ✅ Restored OL "${olId}" before Cheerio\n`);
-      } catch (err) {
-        console.error('Failed to log restoration:', err);
-      }
-    } else {
-      console.error(`🔧 [OL-WORKAROUND] ❌ PLACEHOLDER NOT FOUND for "${olId}"! Placeholder was stripped during preprocessing.`);
-      console.error(`🔧 [OL-WORKAROUND] Looking for: ${placeholder}`);
-      try {
-        fs.appendFileSync(logFile, `🔧 ❌ ERROR: Placeholder not found for "${olId}" before Cheerio!\n`);
-        fs.appendFileSync(logFile, `Missing placeholder: ${placeholder}\n`);
-      } catch (err) {
-        console.error('Failed to log error:', err);
-      }
-    }
-  }
-
   // Use cheerio to parse HTML and process elements in document order
   let $;
-  let elementOrderMap = new Map(); // Declare at function scope so it's accessible throughout
-  let orphanListRepairSummary = null;
-  
   try {
-    // FILE-BASED DIAGNOSTIC: Check HTML BEFORE Cheerio
-    const fs = require('fs');
-    const path = require('path');
-    const logFile = path.join(__dirname, '../logs', 'entry-diagnostic.log');
-    
-    fs.appendFileSync(logFile, `\n--- CHEERIO LOAD ---\n`);
-    fs.appendFileSync(logFile, `HTML length BEFORE Cheerio.load(): ${html.length}\n`);
-    
-    // Check main steps OL BEFORE Cheerio
-    const mainStepsOlRegexBefore = /<ol[^>]*class="[^"]*ol steps[^"]*"[^>]*>/;
-    const mainStepsMatchBefore = html.match(mainStepsOlRegexBefore);
-    if (mainStepsMatchBefore) {
-      const olStartIdxBefore = html.indexOf(mainStepsMatchBefore[0]);
-      // Find closing tag by counting nested OLs
-      let openCountBefore = 1;
-      let searchIdxBefore = olStartIdxBefore + mainStepsMatchBefore[0].length;
-      while (openCountBefore > 0 && searchIdxBefore < html.length) {
-        const nextOpen = html.indexOf('<ol', searchIdxBefore);
-        const nextClose = html.indexOf('</ol>', searchIdxBefore);
-        if (nextClose === -1) break;
-        if (nextOpen !== -1 && nextOpen < nextClose) {
-          openCountBefore++;
-          searchIdxBefore = nextOpen + 3;
-        } else {
-          openCountBefore--;
-          searchIdxBefore = nextClose + 5;
-        }
-      }
-      const mainStepsOlHtmlBefore = html.substring(olStartIdxBefore, searchIdxBefore);
-      const mainStepsLiCountBefore = (mainStepsOlHtmlBefore.match(/<li[^>]*class="[^"]*li step[^"]*"[^>]*>/g) || []).length;
-      console.log(`🔬 [CHEERIO-DIAGNOSTIC] BEFORE load: Main steps OL has ${mainStepsLiCountBefore} direct LI children in raw HTML`);
-      fs.appendFileSync(logFile, `Main steps OL BEFORE Cheerio: ${mainStepsLiCountBefore} direct <li class="...li step..."> tags\n`);
-    }
-    
-    const targetOlBefore = html.match(/<ol[^>]*id="devops-software-quality-sub-category__ol_bpk_gfk_xpb"[^>]*>[\s\S]*?<\/ol>/);
-    if (targetOlBefore) {
-      fs.appendFileSync(logFile, `Target OL BEFORE Cheerio: ${targetOlBefore[0].length} chars, ${(targetOlBefore[0].match(/<li/g) || []).length} <li> tags\n`);
-      fs.appendFileSync(logFile, `Contains Submit BEFORE Cheerio: ${targetOlBefore[0].includes('<span class="ph uicontrol">Submit</span>')}\n`);
-    }
-    
     $ = cheerio.load(html, { 
       decodeEntities: false,
       _useHtmlParser2: true 
     });
-    
-    // FILE-BASED DIAGNOSTIC: Check HTML AFTER Cheerio
-    const htmlAfter = $.html();
-    fs.appendFileSync(logFile, `HTML length AFTER Cheerio.load(): ${htmlAfter.length}\n`);
-
-    if (ENABLE_ORPHAN_LIST_REPAIR) {
-      try {
-        const repairScope = $('.zDocsTopicPageBody').first();
-        const repairOptions = {
-          scope: repairScope && repairScope.length > 0 ? repairScope : undefined,
-          verbose: typeof getExtraDebug === 'function' && getExtraDebug(),
-        };
-
-        orphanListRepairSummary = repairListStructure($, repairOptions);
-
-        if (orphanListRepairSummary) {
-          const summaryParts = [
-            `scope=${orphanListRepairSummary.scope}`,
-            `total=${orphanListRepairSummary.totalListItems}`,
-            `orphans=${orphanListRepairSummary.orphanCount}`,
-            `misnested=${orphanListRepairSummary.misnestedCount}`,
-            `repaired=${orphanListRepairSummary.repairedCount}`,
-            `misnestedRepaired=${orphanListRepairSummary.misnestedRepairedCount}`,
-            `unresolved=${orphanListRepairSummary.unresolvedCount}`,
-            `misnestedUnresolved=${orphanListRepairSummary.misnestedUnresolvedCount}`,
-            `listsCreated=${orphanListRepairSummary.createdListCount}`,
-          ];
-          console.log(`[LIST-REPAIR] ${summaryParts.join(' ')}`);
-          try {
-            fs.appendFileSync(logFile, `[LIST-REPAIR] ${summaryParts.join(' ')}\n`);
-          } catch (fileError) {
-            console.log(`[LIST-REPAIR] Failed to append summary to log file: ${fileError?.message || fileError}`);
-          }
-
-          if (repairOptions.verbose && orphanListRepairSummary.unresolvedCount > 0) {
-            orphanListRepairSummary.unresolved.slice(0, 5).forEach((item, idx) => {
-              console.log(`[LIST-REPAIR] unresolved[${idx}] depth=${item.targetDepth || 'n/a'} hint=${item.depthHint || 'n/a'} type=${item.listType} preview="${item.textPreview}"`);
-              try {
-                fs.appendFileSync(logFile, `[LIST-REPAIR] unresolved[${idx}] depth=${item.targetDepth || 'n/a'} hint=${item.depthHint || 'n/a'} type=${item.listType} preview="${item.textPreview}"\n`);
-              } catch (fileError) {
-                console.log(`[LIST-REPAIR] Failed to append unresolved entry to log file: ${fileError?.message || fileError}`);
-              }
-            });
-            if (orphanListRepairSummary.unresolved.length > 5) {
-              console.log(`[LIST-REPAIR] ... ${orphanListRepairSummary.unresolved.length - 5} additional unresolved items`);
-              try {
-                fs.appendFileSync(logFile, `[LIST-REPAIR] ... ${orphanListRepairSummary.unresolved.length - 5} additional unresolved items\n`);
-              } catch (fileError) {
-                console.log(`[LIST-REPAIR] Failed to append unresolved summary to log file: ${fileError?.message || fileError}`);
-              }
-            }
-          }
-        }
-      } catch (repairError) {
-        console.log(`[LIST-REPAIR] Failed to repair list structure: ${repairError?.message || repairError}`);
-        try {
-          fs.appendFileSync(logFile, `[LIST-REPAIR] Failed to repair list structure: ${repairError?.message || repairError}\n`);
-        } catch (fileError) {
-          console.log(`[LIST-REPAIR] Failed to append repair error to log file: ${fileError?.message || fileError}`);
-        }
-      }
-    }
-    
-    // CRITICAL DIAGNOSTIC: Check if main steps OL has all LIs AFTER Cheerio
-    const mainStepsOlRegex = /<ol[^>]*class="[^"]*ol steps[^"]*"[^>]*>/;
-    const mainStepsMatch = htmlAfter.match(mainStepsOlRegex);
-    if (mainStepsMatch) {
-      const olStartIdx = htmlAfter.indexOf(mainStepsMatch[0]);
-      // Find closing tag by counting nested OLs
-      let openCount = 1;
-      let searchIdx = olStartIdx + mainStepsMatch[0].length;
-      while (openCount > 0 && searchIdx < htmlAfter.length) {
-        const nextOpen = htmlAfter.indexOf('<ol', searchIdx);
-        const nextClose = htmlAfter.indexOf('</ol>', searchIdx);
-        if (nextClose === -1) break;
-        if (nextOpen !== -1 && nextOpen < nextClose) {
-          openCount++;
-          searchIdx = nextOpen + 3;
-        } else {
-          openCount--;
-          searchIdx = nextClose + 5;
-        }
-      }
-      const mainStepsOlHtml = htmlAfter.substring(olStartIdx, searchIdx);
-      const mainStepsLiCount = (mainStepsOlHtml.match(/<li[^>]*class="[^"]*li step[^"]*"[^>]*>/g) || []).length;
-      console.log(`🔬 [CHEERIO-DIAGNOSTIC] After load: Main steps OL has ${mainStepsLiCount} direct LI children (should be 6)`);
-      fs.appendFileSync(logFile, `Main steps OL after Cheerio: ${mainStepsLiCount} direct <li class="...li step..."> tags\n`);
-    }
-    
-    const targetOlAfter = htmlAfter.match(/<ol[^>]*id="devops-software-quality-sub-category__ol_bpk_gfk_xpb"[^>]*>[\s\S]*?<\/ol>/);
-    if (targetOlAfter) {
-      fs.appendFileSync(logFile, `Target OL AFTER Cheerio: ${targetOlAfter[0].length} chars, ${(targetOlAfter[0].match(/<li/g) || []).length} <li> tags\n`);
-      fs.appendFileSync(logFile, `Contains Submit AFTER Cheerio: ${targetOlAfter[0].includes('<span class="ph uicontrol">Submit</span>')}\n`);
-    } else {
-      fs.appendFileSync(logFile, `Target OL NOT FOUND after Cheerio.load()!\n`);
-    }
-    
-    console.log(`🔬 [CHEERIO-LOAD] HTML length BEFORE load: ${html.length}`);
-    console.log(`🔬 [CHEERIO-LOAD] HTML length AFTER load: ${htmlAfter.length}`);
-    
-    // Build DOM order map to preserve original element positions
-    // This is critical for keeping orphan elements (e.g., stray <li>) in correct order
-    let orderCounter = 0;
-    $.root().find('*').each((_, el) => {
-      if (el && !elementOrderMap.has(el)) {
-        elementOrderMap.set(el, orderCounter++);
-      }
-    });
-    console.log(`🗺️ Built element order map with ${elementOrderMap.size} indexed elements`);
     
     // CRITICAL DIAGNOSTIC: Count ALL structural elements AFTER Cheerio parsing
     const cheerioSections = $('section[id]');
@@ -1625,17 +1008,6 @@ async function extractContentFromHtml(html) {
       if (lostSectionIds.length > 0) {
         console.log(`🔥🔥🔥 Lost section IDs: ${lostSectionIds.join(', ')}`);
       }
-      
-      // Collect warning for later logging (after page creation when we have pageId)
-      warnings.push({
-        type: 'CHEERIO_PARSING_ISSUE',
-        data: {
-          lostSections,
-          lostArticles,
-          lostSectionIds,
-          lostArticleIds
-        }
-      });
       if (lostArticleIds.length > 0) {
         console.log(`🔥🔥🔥 Lost article IDs: ${lostArticleIds.join(', ')}`);
       }
@@ -1668,35 +1040,6 @@ async function extractContentFromHtml(html) {
     
   const elemClass = $elem.attr('class') || 'none';
   if (getExtraDebug && getExtraDebug()) log(`🔍 Processing element: <${tagName}>, class="${elemClass}"`);
-    
-    // DEBUG: Log ALL paragraphs to trace missing text
-    if ((tagName === 'p' || (tagName === 'div' && elemClass.includes('p')))) {
-      const elemTextPreview = $elem.text().trim().substring(0, 80).replace(/\s+/g, ' ');
-      console.log(`🔎 [ELEMENT-TRACE] Processing <${tagName}${elemClass !== 'none' ? ` class="${elemClass}"` : ''}>`);
-      console.log(`🔎 [ELEMENT-TRACE]   Text preview: "${elemTextPreview}..."`);
-      
-      // Check if this paragraph contains nested <ol>
-      const hasNestedOl = $elem.find('> ol').length > 0;
-      if (hasNestedOl) {
-        console.log(`🔎 [ELEMENT-TRACE]   ⚠️ This paragraph contains nested <ol> - should trigger mixed content processing`);
-        
-        // DEBUG: Check if this is the "Software Quality Sub Categories" paragraph
-        const paraHtml = $elem.html();
-        if (paraHtml && (paraHtml.includes('Software Quality Sub Categories') || paraHtml.includes('Integrations'))) {
-          console.log(`🚨 [PARA-WITH-OL] Found target paragraph with <ol>!`);
-          console.log(`🚨 [PARA-WITH-OL] HTML contains "Click Submit": ${paraHtml.includes('Click Submit')}`);
-          console.log(`🚨 [PARA-WITH-OL] HTML contains "successfully created": ${paraHtml.includes('successfully created')}`);
-          console.log(`🚨 [PARA-WITH-OL] Number of <li> tags in HTML: ${(paraHtml.match(/<li/g) || []).length}`);
-        }
-      }
-    }
-    
-    // DEBUG: Check if this element contains "Role required"
-    const elemHtml = $elem.html() || '';
-    if (elemHtml.includes('Role required')) {
-      console.log(`🔍 [ELEMENT-ROLE-DEBUG] Found "Role required" in <${tagName} class="${elemClass}">`);
-      console.log(`🔍 [ELEMENT-ROLE-DEBUG] Full HTML: ${elemHtml.substring(0, 300)}...`);
-    }
     
     // SKIP UI CHROME ELEMENTS (dropdown menus, export buttons, filter divs, etc.)
     // Check this FIRST before any other processing
@@ -1765,12 +1108,6 @@ async function extractContentFromHtml(html) {
       console.log(`🔍 ✅ MATCHED CALLOUT! class="${$elem.attr('class')}"`);
       console.log(`🔍 Callout HTML preview (first 500 chars): ${($elem.html() || '').substring(0, 500)}`);
 
-      // Check if this callout contains "Role required"
-      if (($elem.html() || '').includes('Role required')) {
-        console.log(`🔍 [CALLOUT-ROLE-DEBUG] Found "Role required" in callout element!`);
-        console.log(`🔍 [CALLOUT-ROLE-DEBUG] Full callout HTML: ${$elem.html()}`);
-      }
-
       // Callout/Note
       const classAttr = $elem.attr('class') || '';
       const { color: calloutColor, icon: calloutIcon } = getCalloutPropsFromClasses(classAttr);
@@ -1780,23 +1117,8 @@ async function extractContentFromHtml(html) {
       // IMPORTANT: div.p is a ServiceNow wrapper that often contains mixed content (text + blocks)
       // For div.p with nested blocks: process the ENTIRE div.p as a child block (it will handle mixed content)
       
-      // CRITICAL FIX: Unwrap itemgroup/info wrappers BEFORE finding nested blocks
-      // This allows nested callouts (div.note inside div.itemgroup) to be detected as direct children
-      const itemgroupWrappers = $elem.find('> div.itemgroup, > div.info');
-      if (itemgroupWrappers.length > 0) {
-        console.log(`🔍 [NESTED-CALLOUT] Unwrapping ${itemgroupWrappers.length} itemgroup/info wrappers in callout`);
-        itemgroupWrappers.each((i, wrapper) => {
-          const $wrapper = $(wrapper);
-          console.log(`🔍 [NESTED-CALLOUT] Unwrapping <div class="${$wrapper.attr('class')}"> - inner HTML: ${($wrapper.html() || '').substring(0, 100)}...`);
-          $wrapper.replaceWith($wrapper.html());
-        });
-      }
-      
       // Find nested blocks that are direct children (excluding div.p which needs special handling)
-      // Include > img so standalone images inside callouts are processed as child blocks
-      // Note: Now div.note will be found directly if it was inside an itemgroup wrapper
-      const directNestedBlocks = $elem.find('> ul, > ol, > figure, > table, > pre, > div.table-wrap, > div.note, > div.warning, > div.important, > div.tip, > div.caution, > img');
-      console.log(`🔍 [NESTED-CALLOUT] After unwrapping, found ${directNestedBlocks.length} direct nested blocks`);
+      const directNestedBlocks = $elem.find('> ul, > ol, > figure, > table, > pre, > div.table-wrap, > div.note, > div.itemgroup, > div.info');
       
       // Check if any div.p elements contain nested blocks - if so, treat the entire div.p as a nested block
       const divPWithBlocks = $elem.find('> div.p').filter((i, divP) => {
@@ -1812,9 +1134,8 @@ async function extractContentFromHtml(html) {
         
         // Clone and remove nested blocks to get just the text content
         // Remove direct nested blocks AND any div.p that contains nested blocks
-        // Note: itemgroup/info already unwrapped, so no need to remove them
         const $clone = $elem.clone();
-        $clone.find('> ul, > ol, > figure, > table, > pre, > div.table-wrap, > div.note, > div.warning, > div.important, > div.tip, > div.caution, > img').remove();
+        $clone.find('> ul, > ol, > figure, > table, > pre, > div.table-wrap, > div.note, > div.itemgroup, > div.info').remove();
         
         // Remove div.p elements that contain nested blocks (these are processed as child blocks)
         $clone.find('> div.p').each((i, divP) => {
@@ -1826,20 +1147,7 @@ async function extractContentFromHtml(html) {
           }
         });
         
-        // CRITICAL FIX: Use outerHTML then extract inner content properly
-        let textOnlyHtml = '';
-        const cloneOuterHtml = $.html($clone);
-        const cloneOpeningTagMatch = cloneOuterHtml.match(/^<[^>]+>/);
-        const cloneClosingTagMatch = cloneOuterHtml.match(/<\/[^>]+>$/);
-        
-        if (cloneOpeningTagMatch && cloneClosingTagMatch) {
-          textOnlyHtml = cloneOuterHtml.substring(
-            cloneOpeningTagMatch[0].length,
-            cloneOuterHtml.length - cloneClosingTagMatch[0].length
-          );
-        } else {
-          textOnlyHtml = $clone.html() || '';
-        }
+        let textOnlyHtml = $clone.html() || '';
         
         console.log(`🔍 Callout textOnlyHtml (before title removal): "${textOnlyHtml.substring(0, 200)}${textOnlyHtml.length > 200 ? '...' : ''}"`);
         
@@ -1848,68 +1156,23 @@ async function extractContentFromHtml(html) {
         
         console.log(`🔍 Callout textOnlyHtml (after title removal): "${textOnlyHtml.substring(0, 200)}${textOnlyHtml.length > 200 ? '...' : ''}"`);
         
-        // Check for samp/plugin activation patterns for debugging
-        if (textOnlyHtml.includes('samp') || textOnlyHtml.includes('Plugin Activation') || textOnlyHtml.includes('&lt;')) {
-          console.log(`💾 [SAMP DEBUG] Callout contains samp/plugin text or escaped HTML:`);
-          console.log(`   Full HTML: "${textOnlyHtml}"`);
-        }
-        
         // Parse HTML directly to preserve formatting (links, bold, etc.)
         const { richText: calloutRichText } = await parseRichText(textOnlyHtml);
         
         // Process nested blocks as children - these will be appended after page creation
-        // CRITICAL: Flatten nested callouts (Notion doesn't support nested callouts)
         const childBlocks = [];
-        const nestedCalloutTexts = []; // Collect text from nested callouts to add to parent
-        
         for (const nestedBlock of allNestedBlocks.toArray()) {
           const $nestedBlock = $(nestedBlock);
           const blockTag = nestedBlock.name;
           const blockClass = $nestedBlock.attr('class') || '';
-          
-          // Check if this is a nested callout (div.note, div.info, div.warning, etc.)
-          const isNestedCallout = blockTag === 'div' && 
-            /\b(note|info|warning|important|tip|caution)\b/.test(blockClass) &&
-            !/\bitemgroup\b/.test(blockClass);
-          
-          console.log(`🔍 [NESTED-CALLOUT] Checking nested block: <${blockTag} class="${blockClass}"> - isNestedCallout: ${isNestedCallout}`);
-          
-          if (isNestedCallout) {
-            console.log(`🔍 [NESTED-CALLOUT] ✅ Flattening nested callout: <${blockTag} class="${blockClass}"> (Notion doesn't support nested callouts)`);
-            // Extract text from nested callout and add to parent callout's text
-            const nestedCalloutHtml = $nestedBlock.html() || '';
-            // Remove the title span from nested callout
-            const cleanedHtml = nestedCalloutHtml.replace(/<span[^>]*class=["'][^"']*note__title[^"']*["'][^>]*>([^<]*)<\/span>/gi, '$1');
-            const { richText: nestedText } = await parseRichText(cleanedHtml);
-            nestedCalloutTexts.push(nestedText);
-            console.log(`🔍   Extracted ${nestedText.length} rich_text elements from nested callout`);
-          } else {
-            console.log(`🔍 Processing callout nested block: <${blockTag}${blockClass ? ` class="${blockClass}"` : ''}>`);
-            const nestedProcessed = await processElement(nestedBlock);
-            console.log(`🔍   Returned ${nestedProcessed.length} blocks: ${nestedProcessed.map(b => b.type).join(', ')}`);
-            childBlocks.push(...nestedProcessed);
-          }
-        }
-        
-        // Combine parent callout text with flattened nested callout texts
-        let finalCalloutRichText = calloutRichText;
-        if (nestedCalloutTexts.length > 0) {
-          console.log(`🔍 Combining parent callout with ${nestedCalloutTexts.length} flattened nested callout(s)`);
-          // Add newlines between sections
-          for (const nestedText of nestedCalloutTexts) {
-            if (finalCalloutRichText.length > 0) {
-              finalCalloutRichText.push({
-                type: 'text',
-                text: { content: '\n' },
-                annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' }
-              });
-            }
-            finalCalloutRichText.push(...nestedText);
-          }
+          console.log(`🔍 Processing callout nested block: <${blockTag}${blockClass ? ` class="${blockClass}"` : ''}>`);
+          const nestedProcessed = await processElement(nestedBlock);
+          console.log(`🔍   Returned ${nestedProcessed.length} blocks: ${nestedProcessed.map(b => b.type).join(', ')}`);
+          childBlocks.push(...nestedProcessed);
         }
         
         // Check if callout has actual content or is just empty/whitespace/title-only
-        const calloutContent = finalCalloutRichText.map(rt => rt.text.content).join('').trim();
+        const calloutContent = calloutRichText.map(rt => rt.text.content).join('').trim();
         const hasCalloutContent = calloutContent.length > 0;
         
         // Check if content is ONLY the note title (e.g., "Note:", "Important:", etc.)
@@ -1928,13 +1191,13 @@ async function extractContentFromHtml(html) {
           processedBlocks.push(...childBlocks);
         } else {
           // Create callout WITH content (even if it's just the title)
-          console.log(`🔍 Creating callout with ${finalCalloutRichText.length} rich_text elements and ${childBlocks.length} deferred children`);
+          console.log(`🔍 Creating callout with ${calloutRichText.length} rich_text elements and ${childBlocks.length} deferred children`);
           
           const calloutBlock = {
             object: "block",
             type: "callout",
             callout: {
-              rich_text: finalCalloutRichText.length > 0 ? finalCalloutRichText : [{ type: "text", text: { content: "" } }],
+              rich_text: calloutRichText.length > 0 ? calloutRichText : [{ type: "text", text: { content: "" } }],
               icon: { type: "emoji", emoji: calloutIcon },
               color: calloutColor
             }
@@ -1942,8 +1205,7 @@ async function extractContentFromHtml(html) {
           
           // Add marker for orchestrator to append children after creation
           if (childBlocks.length > 0) {
-            const elemId = $elem.attr('id');
-            const marker = generateMarker(elemId);
+            const marker = generateMarker();
             
             // Tag each child block with the marker for orchestration
             childBlocks.forEach(block => {
@@ -1977,26 +1239,9 @@ async function extractContentFromHtml(html) {
         }
       } else {
         // No nested blocks - process as simple callout with just rich_text
-        // CRITICAL FIX: Use outerHTML then extract inner content properly
-        console.log(`🔍 [CALLOUT-FIX-DEBUG] Processing simple callout, original $elem.html() length: ${($elem.html() || '').length}`);
-        let cleanedContent = '';
-        const outerHtml = $.html($elem);
-        const openingTagMatch = outerHtml.match(/^<[^>]+>/);
-        const closingTagMatch = outerHtml.match(/<\/[^>]+>$/);
-        
-        if (openingTagMatch && closingTagMatch) {
-          cleanedContent = outerHtml.substring(
-            openingTagMatch[0].length,
-            outerHtml.length - closingTagMatch[0].length
-          );
-          console.log(`🔍 [CALLOUT-FIX-DEBUG] Successfully extracted inner HTML, length: ${cleanedContent.length}`);
-        } else {
-          cleanedContent = $elem.html() || '';
-          console.log(`🔍 [CALLOUT-FIX-DEBUG] Fallback to original method, length: ${cleanedContent.length}`);
-        }
-        
-  // Remove note title span (it already has a colon like "Note:")
-  cleanedContent = cleanedContent.replace(/<span[^>]*class=["'][^"']*note__title[^"']*["'][^>]*>([^<]*)<\/span>/gi, '$1 ');
+        let cleanedContent = $elem.html() || '';
+        // Remove note title span (it already has a colon like "Note:")
+        cleanedContent = cleanedContent.replace(/<span[^>]*class=["'][^"']*note__title[^"']*["'][^>]*>([^<]*)<\/span>/gi, '$1 ');
         
         const { richText: calloutRichText, imageBlocks: calloutImages } = await parseRichText(cleanedContent);
         console.log(`🔍 Simple callout rich_text has ${calloutRichText.length} elements, content preview: "${calloutRichText.map(rt => rt.text.content).join('').substring(0, 100)}..."`);
@@ -2027,31 +1272,10 @@ async function extractContentFromHtml(html) {
     // Note: Exclude "itemgroup" divs - those are just ServiceNow content containers, not callouts
     } else if (tagName === 'aside' || (tagName === 'div' && !/\bitemgroup\b/.test($elem.attr('class') || '') && /\b(info|note|warning|important|tip|caution)\b/.test($elem.attr('class') || ''))) {
       const classAttr = $elem.attr('class') || '';
-      console.log(`� [CALLOUT] Processing <${tagName}> with class="${classAttr}"`);
-      
-      // CRITICAL FIX: Use outerHTML then extract inner content properly
-      // This prevents attribute values from bleeding into content
-      let inner = '';
-      const outerHtml = $.html($elem);
-      const openingTagMatch = outerHtml.match(/^<[^>]+>/);
-      const closingTagMatch = outerHtml.match(/<\/[^>]+>$/);
-      
-      if (openingTagMatch && closingTagMatch) {
-        inner = outerHtml.substring(
-          openingTagMatch[0].length,
-          outerHtml.length - closingTagMatch[0].length
-        );
-        console.log(`🔍 [CALLOUT-FIX-DEBUG] Successfully extracted callout HTML, length: ${inner.length}`);
-      } else {
-        inner = $elem.html() || '';
-        console.log(`🔍 [CALLOUT-FIX-DEBUG] Fallback to original method, length: ${inner.length}`);
-      }
-      
-      console.log(`📋 [CALLOUT] Inner HTML (first 300 chars): ${inner.substring(0, 300)}`);
-      console.log(`📋 [CALLOUT] Contains <img> tags: ${inner.includes('<img') ? 'YES' : 'NO'}`);
+  if (getExtraDebug && getExtraDebug()) log(`🔍 MATCHED CALLOUT CONTAINER (<${tagName}>) class="${classAttr}"`);
       const { color: calloutColor, icon: calloutIcon } = getCalloutPropsFromClasses(classAttr);
+      const inner = $elem.html() || '';
       const { richText: calloutRichText, imageBlocks: calloutImages } = await parseRichText(inner);
-      console.log(`📋 [CALLOUT] parseRichText returned ${calloutImages?.length || 0} image blocks`);
       
       // Add any image blocks found in the callout
       if (calloutImages && calloutImages.length > 0) {
@@ -2330,20 +1554,9 @@ async function extractContentFromHtml(html) {
     } else if (tagName === 'img') {
       // Image (standalone)
       const src = $elem.attr('src');
-      const imgId = $elem.attr('id');
-      const imgClass = $elem.attr('class');
-      console.log(`🖼️ [STANDALONE IMG] id="${imgId}", class="${imgClass}", src="${src?.substring(0, 80)}"`);
       if (src && isValidImageUrl(src)) {
-        console.log(`🖼️ [STANDALONE IMG] ✅ Valid image URL, creating block`);
         const imageBlock = await createImageBlock(src, $elem.attr('alt') || '');
-        if (imageBlock) {
-          console.log(`🖼️ [STANDALONE IMG] ✅ Image block created`);
-          processedBlocks.push(imageBlock);
-        } else {
-          console.log(`🖼️ [STANDALONE IMG] ❌ Image block creation failed`);
-        }
-      } else {
-        console.log(`🖼️ [STANDALONE IMG] ❌ Invalid or missing image URL`);
+        if (imageBlock) processedBlocks.push(imageBlock);
       }
       $elem.remove(); // Mark as processed
       
@@ -2477,85 +1690,30 @@ async function extractContentFromHtml(html) {
         // Note: We search for div.p wrappers which may contain div.note elements
         // IMPORTANT: div.itemgroup and div.info are NOT block elements - they're just wrappers
         // We need to look INSIDE them for actual block elements (div.note, pre, ul, etc.)
-        // CRITICAL FIX: Unwrap div.itemgroup and div.info to expose nested callouts
-        // Use jQuery's .unwrap() method which is more reliable than .replaceWith()
-        // IMPORTANT: Must unwrap from innermost to outermost to avoid DOM reference issues
-        
-        // First pass: find all wrappers and collect them
-        const wrappers = $li.find('> div.itemgroup, > div.info').toArray();
-        
-        // Unwrap each wrapper by replacing it with its children
-        wrappers.forEach((wrapper) => {
-          const $wrapper = $(wrapper);
-          const children = $wrapper.contents();
-          
-          // Replace wrapper with its children
-          $wrapper.replaceWith(children);
+        // First, unwrap div.itemgroup and div.info so we can find nested blocks properly
+        $li.find('> div.itemgroup, > div.info').each((i, wrapper) => {
+          $(wrapper).replaceWith($(wrapper).html());
         });
         
-        // After unwrapping, re-query to find all nested blocks including newly-exposed callouts
-        const nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.stepxmp, > div.note, > div.warning, > div.important, > div.tip, > div.caution').toArray();
+        const nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.stepxmp, > div.note').toArray();
         
         if (nestedBlocks.length > 0) {
           console.log(`🔍 List item contains ${nestedBlocks.length} nested block elements`);
           
-          // CRITICAL FIX: Extract text BETWEEN and AFTER nested blocks, not just before them
-          // IMPORTANT: Use Cheerio's .contents() to get ALL nodes (elements + text) after unwrapping itemgroup/info
-          const allChildren = $li.contents().toArray();
-          const textSegments = []; // Collect all text segments
-          const nestedChildren = []; // Collect processed nested blocks
+          // Extract text content without nested blocks for the list item text
+          const $textOnly = $li.clone();
+          // Remove nested blocks (including div.p which may contain div.note, AND direct div.note children)
+          $textOnly.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.stepxmp, > div.note').remove();
+          const textOnlyHtml = $textOnly.html();
           
-          for (let i = 0; i < allChildren.length; i++) {
-            const child = allChildren[i];
-            
-            // Check if this child is a block element we need to process
-            // CRITICAL: Must match the exact selector used to find nestedBlocks above
-            const nodeName = child.nodeName || child.name || child.tagName || 'UNKNOWN';
-            const $child = $(child);
-            const classAttr = $child.attr('class') || '';
-            const classes = classAttr.split(/\s+/).filter(c => c.length > 0);
-            
-            // CRITICAL FIX: Cheerio nodes use .name property, not .nodeName
-            const elementTag = (child.name || child.nodeName || child.tagName || '').toUpperCase();
-            
-            const isBlockElement = child.nodeType === 1 && ( // Element node
-              ['PRE', 'UL', 'OL', 'FIGURE', 'TABLE', 'P'].includes(elementTag) ||
-              (elementTag === 'DIV' && (() => {
-                // Check if element has one of the specific block classes
-                // Use exact class matching, not word boundary regex (avoids matching note__title, etc.)
-                return classes.includes('table-wrap') || 
-                       classes.includes('p') || 
-                       classes.includes('stepxmp') ||
-                       classes.includes('note') ||
-                       classes.includes('info') ||
-                       classes.includes('warning') ||
-                       classes.includes('important') ||
-                       classes.includes('tip') ||
-                       classes.includes('caution');
-              })())
-            );
-            
-            if (isBlockElement) {
-              console.log(`🔍 Processing nested block in list item: <${(child.nodeName || 'unknown').toLowerCase()}>`);
-              const childBlocks = await processElement(child);
-              nestedChildren.push(...childBlocks);
-            } else {
-              // Text node or inline element - accumulate as text segment
-              if (child.nodeType === 3) { // Text node
-                // Cheerio text nodes use .data property, not .textContent
-                const text = child.data || child.textContent || '';
-                if (text.trim()) {
-                  textSegments.push(text);
-                }
-              } else if (child.nodeType === 1) { // Inline element
-                textSegments.push($(child).prop('outerHTML'));
-              }
-            }
+          // Process nested blocks first to add as children
+          const nestedChildren = [];
+          for (let i = 0; i < nestedBlocks.length; i++) {
+            const nestedBlock = nestedBlocks[i];
+            console.log(`🔍 Processing nested block in list item: <${nestedBlock.name}>`);
+            const childBlocks = await processElement(nestedBlock);
+            nestedChildren.push(...childBlocks);
           }
-          
-          // Combine all text segments into one HTML string
-          const textOnlyHtml = textSegments.join('');
-          console.log(`🔍 [UL-TEXT-EXTRACTION] Extracted ${textSegments.length} text segments from list item with ${nestedBlocks.length} nested blocks`);
           
           // Create the list item with text content AND nested blocks as children
           if (textOnlyHtml && cleanHtmlText(textOnlyHtml).trim()) {
@@ -2665,34 +1823,17 @@ async function extractContentFromHtml(html) {
             // also mark the immediateChildren so everything goes through orchestration
             // and maintains correct source order. Otherwise, immediateChildren get added
             // to the list item first, then markedBlocks get appended, reversing the order.
-            // EXCEPTION: Do NOT defer list items (bulleted_list_item, numbered_list_item) - they should remain as immediate children
-            // even when there are container blocks, otherwise they get flattened incorrectly.
             const hasContainerBlocks = markedBlocks.some(b => 
               b && (b.type === 'callout' || b.type === 'table' || b.type === 'heading_3')
             );
             
             let allChildren;
             if (hasContainerBlocks && immediateChildren.length > 0) {
-              // Separate list items from other immediate children
-              const listItems = immediateChildren.filter(b => 
-                b && (b.type === 'bulleted_list_item' || b.type === 'numbered_list_item')
-              );
-              const nonListChildren = immediateChildren.filter(b => 
-                !b || (b.type !== 'bulleted_list_item' && b.type !== 'numbered_list_item')
-              );
-              
-              if (nonListChildren.length > 0) {
-                console.log(`🔄 Deferring ${nonListChildren.length} non-list immediate children for orchestration to maintain correct order with container blocks`);
-                // Move non-list immediate children to marked blocks - they'll be orchestrated together
-                markedBlocks.push(...nonListChildren);
-              }
-              
-              // Keep list items as immediate children - they maintain correct nesting
-              if (listItems.length > 0) {
-                console.log(`✅ Keeping ${listItems.length} list items as immediate children (proper nesting)`);
-              }
-              
-              allChildren = [...listItems];
+              console.log(`🔄 Deferring ${immediateChildren.length} immediate children for orchestration to maintain correct order with container blocks`);
+              // Move immediate children to marked blocks - they'll all be orchestrated together
+              // Use push() to add AFTER container blocks, maintaining source order
+              markedBlocks.push(...immediateChildren);
+              allChildren = [];
             } else {
               // Use only immediateChildren - images are now handled separately with markers
               allChildren = [...immediateChildren];
@@ -2706,15 +1847,11 @@ async function extractContentFromHtml(html) {
                 // If there are marked blocks, generate a marker and add token to rich text
                 let markerToken = null;
                 if (markedBlocks.length > 0) {
-                  const liId = $li.attr('id');
-                  const marker = generateMarker(liId);
+                  const marker = generateMarker();
                   markerToken = `(sn2n:${marker})`;
                   // Tag each marked block with the marker for orchestration
-                  // CRITICAL: Don't overwrite existing markers (blocks may already have markers from nested processing)
                   markedBlocks.forEach(block => {
-                    if (!block._sn2n_marker) {
-                      block._sn2n_marker = marker;
-                    }
+                    block._sn2n_marker = marker;
                   });
                   // Add marker token to end of rich text (will be found by orchestrator)
                   chunk.push({
@@ -2784,9 +1921,9 @@ async function extractContentFromHtml(html) {
             const firstParagraphIndex = nestedChildren.findIndex(child => 
               child && child.type === 'paragraph' && child.paragraph && child.paragraph.rich_text
             );
+            const firstParagraph = firstParagraphIndex !== -1 ? nestedChildren[firstParagraphIndex] : null;
             
-            if (firstParagraphIndex !== -1) {
-              const firstParagraph = nestedChildren[firstParagraphIndex];
+            if (firstParagraphIndex !== -1 && !(firstParagraph && firstParagraph._sn2n_source_container === 'stepxmp')) {
               const beforeParagraph = nestedChildren.slice(0, firstParagraphIndex);
               const afterParagraph = nestedChildren.slice(firstParagraphIndex + 1);
               const remainingChildren = [...beforeParagraph, ...afterParagraph];
@@ -2802,8 +1939,7 @@ async function extractContentFromHtml(html) {
               // Add marker if there are remaining children
               let richText = [...promotedText];
               if (markedBlocks.length > 0) {
-                const liId = $li.attr('id');
-                const marker = generateMarker(liId);
+                const marker = generateMarker();
                 const markerToken = `(sn2n:${marker})`;
                 markedBlocks.forEach(block => {
                   block._sn2n_marker = marker;
@@ -2868,8 +2004,7 @@ async function extractContentFromHtml(html) {
               let markerToken = null;
               const richText = [{ type: "text", text: { content: "" } }];
               if (markedBlocks.length > 0) {
-                const liId = $li.attr('id');
-                const marker = generateMarker(liId);
+                const marker = generateMarker();
                 markerToken = `(sn2n:${marker})`;
                 markedBlocks.forEach(block => {
                   block._sn2n_marker = marker;
@@ -2896,24 +2031,7 @@ async function extractContentFromHtml(html) {
           }
         } else {
           // Simple list item with no nested blocks
-          // CRITICAL FIX: Use outerHTML then extract inner content properly
-          console.log(`🔍 [LIST-FIX-DEBUG] Processing list item, original $li.html() length: ${($li.html() || '').length}`);
-          let liHtml = '';
-          const liOuterHtml = $.html($li);
-          const liOpeningTagMatch = liOuterHtml.match(/^<[^>]+>/);
-          const liClosingTagMatch = liOuterHtml.match(/<\/[^>]+>$/);
-          
-          if (liOpeningTagMatch && liClosingTagMatch) {
-            liHtml = liOuterHtml.substring(
-              liOpeningTagMatch[0].length,
-              liOuterHtml.length - liClosingTagMatch[0].length
-            );
-            console.log(`🔍 [LIST-FIX-DEBUG] Successfully extracted list item HTML, length: ${liHtml.length}`);
-          } else {
-            liHtml = $li.html() || '';
-            console.log(`🔍 [LIST-FIX-DEBUG] Fallback to original method, length: ${liHtml.length}`);
-          }
-          
+          let liHtml = $li.html() || '';
           // Strip SVG icon elements (decorative only, no content value)
           liHtml = liHtml.replace(/<svg[\s\S]*?<\/svg>/gi, '');
           console.log(`🔍 List item HTML: "${liHtml.substring(0, 100)}"`);
@@ -2927,22 +2045,26 @@ async function extractContentFromHtml(html) {
           }
           
           const richTextChunks = splitRichTextArray(liRichText);
-          const hasImages = liImages && liImages.length > 0;
-          const liId = $li.attr('id');
-          const imageMarker = hasImages ? generateMarker(liId) : null;
-          const imageMarkerToken = imageMarker ? `(sn2n:${imageMarker})` : null;
-          if (imageMarker) {
-            liImages.forEach(img => {
-              img._sn2n_marker = imageMarker;
-            });
-          }
-          richTextChunks.forEach((chunk, index) => {
-            const chunkRichText = chunk.slice();
-            const isLastChunk = index === richTextChunks.length - 1;
-            if (imageMarkerToken && isLastChunk) {
-              chunkRichText.push({
+          for (const chunk of richTextChunks) {
+            const listItemBlock = {
+              object: "block",
+              type: "bulleted_list_item",
+              bulleted_list_item: {
+                rich_text: chunk,
+              },
+            };
+            
+            // Mark images for deferred orchestration to avoid 4-level nesting
+            // (numbered_list_item > bulleted_list_item > numbered_list_item > image)
+            if (liImages && liImages.length > 0) {
+              const marker = generateMarker();
+              const markerToken = `(sn2n:${marker})`;
+              liImages.forEach(img => {
+                img._sn2n_marker = marker;
+              });
+              listItemBlock.bulleted_list_item.rich_text.push({
                 type: "text",
-                text: { content: ` ${imageMarkerToken}` },
+                text: { content: ` ${markerToken}` },
                 annotations: {
                   bold: false,
                   italic: false,
@@ -2952,329 +2074,38 @@ async function extractContentFromHtml(html) {
                   color: "default"
                 }
               });
+              console.log(`🔍 Creating bulleted_list_item with ${chunk.length} rich_text elements`);
+              console.log(`🔍 Added marker ${markerToken} for ${liImages.length} deferred image(s)`);
+              processedBlocks.push(listItemBlock);
+              processedBlocks.push(...liImages);
+            } else {
+              console.log(`🔍 Creating bulleted_list_item with ${chunk.length} rich_text elements`);
+              processedBlocks.push(listItemBlock);
             }
-            const listItemBlock = {
-              object: "block",
-              type: "bulleted_list_item",
-              bulleted_list_item: {
-                rich_text: chunkRichText,
-              },
-            };
-            processedBlocks.push(listItemBlock);
-          });
-          if (hasImages) {
-            processedBlocks.push(...liImages);
           }
         }
       }
       console.log(`✅ Created list blocks from <ul>`);
-      
-      // CRITICAL: Remove all <li> children FIRST before removing the <ul>
-      // This prevents orphaned <li> elements from being left in the DOM
-      try {
-        $elem.find('li').each((_, liNode) => {
-          try {
-            $(liNode).remove();
-          } catch (e) {
-            console.log(`⚠️ Failed to remove <li> node: ${e?.message || e}`);
-          }
-        });
-        console.log(`🧹 Removed all <li> children from <ul> to prevent orphaning`);
-      } catch (e) {
-        console.log(`⚠️ Failed to remove <li> children: ${e?.message || e}`);
-      }
-      
-      $elem.remove(); // Mark <ul> as processed
+      $elem.remove(); // Mark as processed
       
     } else if (tagName === 'ol') {
       // Ordered list
-      
-      // Helper function for normalizing text for duplicate detection
-      // Defined once at ordered list scope for reuse in duplicate pruning logic
-      const normalizeSentenceSpacing = (value) => {
-        if (!value) return "";
-        return value
-          .replace(/\s+([.,;:!?])/g, '$1')
-          .replace(/\(\s+/g, '(')
-          .replace(/\s+\)/g, ')')
-          .replace(/\[\s+/g, '[')
-          .replace(/\s+\]/g, ']')
-          .replace(/\s+/g, ' ')
-          .trim();
-      };
-      
-      // CRITICAL: Snapshot list items BEFORE processing to prevent DOM corruption
-      // When nested elements call $elem.remove(), they can affect the parent's childNodes
-      
-      // DEBUG: Log raw HTML before Cheerio queries
-      const rawOlHtml = $elem.html();
-      const firstChars = rawOlHtml.substring(0, 200).replace(/\s+/g, ' ');
-      console.log(`🔍 [OL-DEBUG] Raw <ol> HTML (first 200 chars): "${firstChars}..."`);
-      console.log(`🔍 [OL-DEBUG] Raw HTML contains '<span class="ph uicontrol">Submit</span>': ${rawOlHtml.includes('<span class="ph uicontrol">Submit</span>')}`);
-      console.log(`🔍 [OL-DEBUG] Raw HTML contains "successfully created": ${rawOlHtml.includes('successfully created')}`);
-      console.log(`🔍 [OL-DEBUG] Raw HTML length: ${rawOlHtml.length} characters`);
-      
-      // Count total <li> tags (including nested)
-      const totalLiTags = (rawOlHtml.match(/<li/g) || []).length;
-      console.log(`🔍 [OL-DEBUG] Total <li> tags in raw HTML: ${totalLiTags}`);
-
-      // ServiceNow sometimes renders substep <li> elements directly under the main steps <ol>
-      // (class="ol steps") instead of wrapping them in their own <ol class="substeps"> container.
-      // Detect this pattern and promote those substeps into an auto-created nested <ol> under the
-      // most recent primary step so they appear as level-2 list items in Notion.
-      const olClassAttr = $elem.attr('class') || '';
-      const olIdAttr = $elem.attr('id') || '';
-      const directSubstepLists = $elem.children('ol, ul').filter((_, listNode) => {
-        const listClass = $(listNode).attr('class') || '';
-        return /\bsubsteps\b/.test(listClass);
-      });
-      const hasLooseSubstepLis = $elem.children('li').filter((_, liNode) => /\bsubstep\b/.test($(liNode).attr('class') || '')).length > 0;
-      const hasPrimaryStepLis = $elem.children('li').filter((_, liNode) => /\bstep\b/.test($(liNode).attr('class') || '')).length > 0;
-
-      let autoNestReason = null;
-      if (/\bsteps\b/.test(olClassAttr) && !/\bsubsteps\b/.test(olClassAttr)) {
-        autoNestReason = 'class:steps';
-      } else if (hasPrimaryStepLis && directSubstepLists.length > 0) {
-        autoNestReason = 'loose-substeps-list';
-      } else if (hasPrimaryStepLis && hasLooseSubstepLis) {
-        autoNestReason = 'mixed-step-substep-lis';
-      }
-
-      const shouldAutoNestSubsteps = Boolean(autoNestReason);
-      if (shouldAutoNestSubsteps) {
-        console.log(`🔧 [OL-AUTO-SUBSTEPS] Triggered for <ol id="${olIdAttr || 'no-id'}" class="${olClassAttr}": reason=${autoNestReason}`);
-        const olId = $elem.attr('id') || 'no-id';
-        try {
-          const path = require('path');
-          const snapshotSafeId = olId.replace(/[^a-z0-9-_]+/gi, '_');
-          const snapshotName = `auto-substeps-${snapshotSafeId || 'anonymous'}-${Date.now()}.html`;
-          const snapshotPath = path.join(__dirname, '../logs', snapshotName);
-          fs.writeFileSync(snapshotPath, $elem.html() || '', 'utf8');
-          console.log(`🗂️ [OL-AUTO-SUBSTEPS] Captured snapshot ${snapshotName} for analysis.`);
-        } catch (snapshotError) {
-          console.log(`⚠️ [OL-AUTO-SUBSTEPS] Failed to capture snapshot for <ol id="${olId}">: ${snapshotError?.message || snapshotError}`);
-        }
-
-        const directChildren = Array.from($elem.contents())
-          .filter(node => node && node.type === 'tag');
-        let currentPrimaryLi = null;
-        let currentSubstepsOl = null;
-
-        directChildren.forEach(node => {
-          const $node = $(node);
-          const nodeName = node.name?.toLowerCase();
-
-          if (nodeName === 'li') {
-            const liClassAttr = $node.attr('class') || '';
-            const isSubstepLi = /\bsubstep\b/.test(liClassAttr);
-            const isPrimaryLi = /\bstep\b/.test(liClassAttr) && !isSubstepLi;
-
-            if (isPrimaryLi) {
-              currentPrimaryLi = $node;
-              currentSubstepsOl = null;
-              return;
-            }
-
-            if (isSubstepLi && currentPrimaryLi) {
-              if (!currentSubstepsOl || currentSubstepsOl.length === 0 || !currentSubstepsOl.parent().is(currentPrimaryLi)) {
-                const existingSubsteps = currentPrimaryLi.find('> ol.substeps, > ol.ol.substeps').first();
-                currentSubstepsOl = existingSubsteps.length > 0 ? existingSubsteps : null;
-              }
-
-              if (!currentSubstepsOl) {
-                currentSubstepsOl = $('<ol class="ol substeps sn2n-auto-substeps"></ol>');
-                currentPrimaryLi.append(currentSubstepsOl);
-                console.log(`🔧 [OL-AUTO-SUBSTEPS] Created nested <ol> for orphan substeps under primary step.`);
-              }
-
-              currentSubstepsOl.append($node);
-              console.log(`🔧 [OL-AUTO-SUBSTEPS] Moved "${$node.text().trim().substring(0, 60)}" under latest primary step.`);
-              return;
-            }
-
-            currentPrimaryLi = $node;
-            currentSubstepsOl = null;
-            return;
-          }
-
-          const isSubstepsOl = (nodeName === 'ol' || nodeName === 'ul') && /\bsubsteps\b/.test($node.attr('class') || '');
-          if (isSubstepsOl) {
-            if (!currentPrimaryLi) {
-              console.log(`⚠️ [OL-AUTO-SUBSTEPS] Found <${nodeName} class="${$node.attr('class') || ''}"> without a preceding primary <li>; skipping auto-nest.`);
-              currentSubstepsOl = null;
-              return;
-            }
-
-            let targetSubsteps = currentPrimaryLi.find('> ol.substeps, > ol.ol.substeps').first();
-            if (targetSubsteps.length === 0) {
-              targetSubsteps = $node;
-              currentPrimaryLi.append(targetSubsteps);
-              console.log(`🔧 [OL-AUTO-SUBSTEPS] Attached existing substeps list (#${targetSubsteps.attr('id') || 'no-id'}) to primary step.`);
-            } else if (targetSubsteps.get(0) !== node) {
-              const movedItemCount = $node.children('li').length;
-              targetSubsteps.append($node.children());
-              $node.remove();
-              console.log(`🔧 [OL-AUTO-SUBSTEPS] Merged ${movedItemCount} substep <li> entries into existing nested list.`);
-            }
-
-            targetSubsteps.addClass('sn2n-auto-substeps');
-            targetSubsteps.attr('data-sn2n-source', 'auto-nested');
-            currentSubstepsOl = targetSubsteps;
-            return;
-          }
-
-          // Reset tracking when encountering non-list structural nodes (e.g., new <section>)
-          currentSubstepsOl = null;
-        });
-      }
-      
       const listItems = $elem.find('> li').toArray();
-      console.log(`🔍 [OL-DEBUG] Cheerio found ${listItems.length} DIRECT <li> children`);
+      console.log(`🔍 Processing <ol> with ${listItems.length} list items`);
       
-      // Check if this is one of the problematic substeps lists
-      const isProblematicSubsteps = olIdAttr && (olIdAttr.includes('substeps_bmd_g4t_nv') || olIdAttr.includes('substeps_hhn_bmt_nv'));
-      if (isProblematicSubsteps) {
-        console.log(`🔴 [PROBLEMATIC-SUBSTEPS] Processing OL id="${olIdAttr}" with ${listItems.length} items`);
-        listItems.forEach((li, idx) => {
-          const $li = $(li);
-          const textPreview = $li.text().trim().replace(/\s+/g, ' ').substring(0, 100);
-          console.log(`🔴   [${idx + 1}] "${textPreview}"`);
-        });
-      }
-      
-      // Debug: Log each list item's text preview to verify we have them all
-      listItems.forEach((li, idx) => {
-        const $li = $(li);
-        const preview = $li.text().trim().substring(0, 60).replace(/\s+/g, ' ');
-        console.log(`🔍   [${idx + 1}/${listItems.length}] "${preview}..."`);
-      });
-
-      // DEBUG: Check for sibling substeps lists that should be nested
-      const allDirectChildren = Array.from($elem.get(0).childNodes).filter(node => node && node.type === 'tag');
-      const directSubstepsLists = allDirectChildren.filter(node => {
-        const $node = $(node);
-        const nodeName = node.name?.toLowerCase();
-        if (nodeName !== 'ol' && nodeName !== 'ul') return false;
-        const nodeClass = $node.attr('class') || '';
-        const nodeId = $node.attr('id') || '';
-        return /\bsubsteps\b/.test(nodeClass) || /substeps/.test(nodeId);
-      });
-      
-      if (directSubstepsLists.length > 0) {
-        console.log(`🔴 [SIBLING-SUBSTEPS-DEBUG] Found ${directSubstepsLists.length} substeps lists as SIBLINGS to main <li> items!`);
-        console.log(`🔴   Parent <ol id="${olIdAttr || 'no-id'}" class="${olClassAttr}">`);
-        console.log(`🔴   shouldAutoNest=${shouldAutoNestSubsteps} reason=${autoNestReason || 'none'}`);
-        
-        directSubstepsLists.forEach((substepsList, idx) => {
-          const $list = $(substepsList);
-          const listId = $list.attr('id') || 'no-id';
-          const listClass = $list.attr('class') || '';
-          const itemCount = $list.find('> li').length;
-          console.log(`🔴   [${idx + 1}] <${substepsList.name} id="${listId}" class="${listClass}"> with ${itemCount} direct <li> children`);
-        });
-        
-        try {
-          const path = require('path');
-          const safeId = (olIdAttr || 'no-id').replace(/[^a-z0-9-_]+/gi, '_');
-          const snapshotName = `sibling-substeps-${safeId}-${Date.now()}.html`;
-          const snapshotPath = path.join(__dirname, '../logs', snapshotName);
-          fs.writeFileSync(snapshotPath, $elem.html() || '', 'utf8');
-          console.log(`🔴 [SIBLING-SUBSTEPS-DEBUG] Wrote snapshot ${snapshotName}`);
-        } catch (snapshotErr) {
-          console.log(`🔴 [SIBLING-SUBSTEPS-DEBUG] Snapshot failed: ${snapshotErr?.message || snapshotErr}`);
-        }
-      }
-
-      const listContainsSubmitForm = listItems.some(li => {
-        const text = $(li).text();
-        return typeof text === 'string' && text.toLowerCase().includes('submit the form');
-      });
-
-      if (listContainsSubmitForm) {
-        console.log(`🛰️ [SUBMIT-FORM-DEBUG] Observed <ol id="${olIdAttr || 'no-id'}" class="${olClassAttr}": shouldAutoNest=${shouldAutoNestSubsteps} reason=${autoNestReason || 'none'}`);
-
-        listItems.forEach((li, idx) => {
-          const $li = $(li);
-          const attrEntries = Object.entries(li.attribs || {}).map(([key, value]) => `${key}="${value}"`);
-          const childSummary = Array.from(li.children || [])
-            .filter(child => child && typeof child.name === 'string')
-            .map(child => child.name)
-            .join(', ');
-          const textPreview = $li.text().trim().replace(/\s+/g, ' ').substring(0, 120);
-          console.log(`🛰️ [SUBMIT-FORM-DEBUG] li#${idx + 1}: attrs=[${attrEntries.join(' ')}] children=[${childSummary || 'none'}] text="${textPreview}"`);
-        });
-
-        try {
-          const path = require('path');
-          const safeId = (olIdAttr || 'no-id').replace(/[^a-z0-9-_]+/gi, '_');
-          const snapshotName = `submit-form-debug-${safeId}-${Date.now()}.html`;
-          const snapshotPath = path.join(__dirname, '../logs', snapshotName);
-          fs.writeFileSync(snapshotPath, $elem.html() || '', 'utf8');
-          console.log(`🛰️ [SUBMIT-FORM-DEBUG] Wrote snapshot ${snapshotName} for manual inspection.`);
-        } catch (snapshotErr) {
-          console.log(`🛰️ [SUBMIT-FORM-DEBUG] Failed to write snapshot for <ol id="${olIdAttr || 'no-id'}">: ${snapshotErr?.message || snapshotErr}`);
-        }
-      }
-      
-      // CRITICAL: Snapshot nested blocks for ALL list items BEFORE processing any of them
-      // This prevents DOM corruption when nested blocks call .remove() during processing
-      // Issue: Processing list item N's nested blocks can corrupt list item N+1's DOM,
-      // causing nested blocks to be "lost" when checking for them, then "found" in the wrong list item
-      const listItemNestedBlocks = new Map();
       for (let li of listItems) {
         const $li = $(li);
+        
+        // Check if list item contains nested block elements (pre, ul, ol, div.note, p, div.itemgroup, etc.)
+        // Note: We search for div.p wrappers which may contain div.note elements
+        // We ALSO search for div.note directly in case it's a direct child of <li>
         const nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.itemgroup, > div.stepxmp, > div.info, > div.note').toArray();
-        listItemNestedBlocks.set(li, nestedBlocks);
-      }
-      console.log(`🔧 [OL-DOM-FIX] Snapshotted nested blocks for ${listItems.length} list items before processing`);
-      
-      for (let li of listItems) {
-        const $li = $(li);
-        // Some inline wrappers (span, strong, etc.) improperly contain block-level elements like nested lists.
-        // Lift those blocks out so they become direct children of the list item before further processing.
-        const inlineWrapperSelector = 'span, strong, em, b, i, u, code, a';
-        $li.find(inlineWrapperSelector).each((_, wrapper) => {
-          const $wrapper = $(wrapper);
-          const blockChildren = $wrapper.children('ol, ul, pre, table, figure, div.table-wrap, div.p, div.stepxmp, div.note, div.warning, div.important, div.tip, div.caution, div.itemgroup, div.info, p');
-          if (blockChildren.length > 0) {
-            console.log(`🔍 [OL-BLOCK-LIFT] Lifting ${blockChildren.length} block descendant(s) out of <${wrapper.tagName?.toLowerCase() || wrapper.name || 'unknown'}> wrapper`);
-            blockChildren.toArray().forEach(block => {
-              const $block = $(block);
-              $block.insertAfter($wrapper);
-            });
-          }
-        });
         
-        // CRITICAL FIX: Don't unwrap div.itemgroup and div.info - Cheerio's replaceWith loses text nodes
-        // Instead, find nested blocks INSIDE wrappers and treat wrappers as transparent containers
-        // This preserves text nodes that appear between block elements inside the wrapper
-        const nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.stepxmp, > div.note, > div.warning, > div.important, > div.tip, > div.caution, > div.itemgroup > *, > div.info > *').toArray();
-        
-        // Filter to only actual block elements (remove inline spans, text wrappers, etc.)
-        const actualBlocks = nestedBlocks.filter(block => {
-          const $block = $(block);
-          const nodeName = (block.nodeName || block.name || '').toLowerCase();
-          const classes = ($block.attr('class') || '').split(/\s+/);
-          
-          // Allow block elements
-          if (['pre', 'ul', 'ol', 'figure', 'table', 'p', 'div'].includes(nodeName)) {
-            // For divs, check they have block classes
-            if (nodeName === 'div') {
-              return classes.includes('table-wrap') || classes.includes('p') || 
-                     classes.includes('stepxmp') || classes.includes('note') || 
-                     classes.includes('warning') || classes.includes('important') || 
-                     classes.includes('tip') || classes.includes('caution');
-            }
-            return true;
-          }
-          return false;
-        });
-        
-        if (actualBlocks.length > 0) {
-          console.log(`🔍 Ordered list item contains ${actualBlocks.length} nested block elements`);
+        if (nestedBlocks.length > 0) {
+          console.log(`🔍 Ordered list item contains ${nestedBlocks.length} nested block elements`);
           
           // Log what nested blocks we found
-          actualBlocks.forEach((block, idx) => {
+          nestedBlocks.forEach((block, idx) => {
             const $block = $(block);
             const blockTag = block.name;
             const blockClass = $block.attr('class') || '';
@@ -3282,278 +2113,24 @@ async function extractContentFromHtml(html) {
             console.log(`🔍   [${idx}] <${blockTag}${blockClass ? ` class="${blockClass}"` : ''}> - "${blockPreview}..."`);
           });
           
-          // CRITICAL FIX: Extract text BETWEEN and AFTER nested blocks, not just before them
-          // IMPORTANT: Since we're NOT unwrapping itemgroup/info (to preserve text nodes), 
-          // we need to flatten them during iteration to get their contents
-          const allChildren = [];
-          const blockDescendantSelector = 'pre, ul, ol, figure, table, div.table-wrap, p, div.p, div.stepxmp, div.note, div.warning, div.important, div.tip, div.caution, div.itemgroup, div.info';
-          $li.contents().toArray().forEach(child => {
-            const $child = $(child);
-            const nodeName = (child.nodeName || child.name || '').toLowerCase();
-            const classes = ($child.attr('class') || '').split(/\s+/);
-            
-            // If this is an itemgroup or info wrapper, add its children instead
-            if (nodeName === 'div' && (classes.includes('itemgroup') || classes.includes('info'))) {
-              console.log(`🔍 [OL-FLATTEN] Flattening ${classes.join('.')} wrapper - adding ${$child.contents().length} children`);
-              $child.contents().toArray().forEach(wrapperChild => allChildren.push(wrapperChild));
-              return;
-            }
-
-            // Some ServiceNow authors wrap nested lists or tables inside span or other inline tags.
-            // Flatten any wrapper element that contains block-level descendants so the blocks are processed correctly.
-            if (child.nodeType === 1) {
-              const hasBlockDescendants = $child.children(blockDescendantSelector).length > 0;
-              if (hasBlockDescendants && nodeName !== 'div') {
-                console.log(`🔍 [OL-FLATTEN] Flattening <${nodeName}> wrapper with block descendants - adding ${$child.contents().length} children`);
-                $child.contents().toArray().forEach(wrapperChild => allChildren.push(wrapperChild));
-                return;
-              }
-            }
-
-            allChildren.push(child);
-          });
-          console.log(`🔍 [OL-CHILDREN] After flattening wrappers, <li> has ${allChildren.length} direct children`);
-          allChildren.forEach((child, idx) => {
-            const nodeType = child.nodeType === 3 ? 'TEXT' : (child.nodeType === 1 ? 'ELEMENT' : `TYPE-${child.nodeType}`);
-            // For text nodes, show both .data and .textContent and their lengths
-            let preview = '';
-            if (child.nodeType === 3) {
-              const data = child.data || '';
-              const textContent = child.textContent || '';
-              preview = `data(${data.length})="${data.substring(0, 50)}" textContent(${textContent.length})="${textContent.substring(0, 50)}"`;
-            } else {
-              preview = `<${child.name || 'unknown'}>`;
-            }
-            console.log(`🔍 [OL-CHILDREN]   [${idx}] ${nodeType} = ${preview}`);
-          });
-          const textSegments = []; // Collect text segments BEFORE first block element
-          const nestedChildren = []; // Collect processed nested blocks
-          let foundFirstBlock = false; // Track when we encounter the first block element
-          const textAfterBlocks = []; // Collect text segments AFTER block elements
-          let directNestedListTexts = null; // Snapshot of direct child list item texts before processing
+          // Extract text content without nested blocks for the list item text
+          const $textOnly = $li.clone();
+          // Remove nested blocks (including div.p which may contain div.note, AND direct div.note children)
+          $textOnly.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.itemgroup, > div.stepxmp, > div.info, > div.note').remove();
+          const textOnlyHtml = $textOnly.html();
           
-          for (let i = 0; i < allChildren.length; i++) {
-            const child = allChildren[i];
-            
-            // Check if this child is a block element we need to process
-            // CRITICAL: Must match the exact selector used to find nestedBlocks above
-            // NOTE: itemgroup and info are NOT block elements - they're wrappers that get unwrapped above
-            const elementTag = (child.name || child.nodeName || child.tagName || '').toUpperCase();
-            const isBlockElement = child.nodeType === 1 && ( // Element node
-              ['PRE', 'UL', 'OL', 'FIGURE', 'TABLE', 'P'].includes(elementTag) ||
-              (elementTag === 'DIV' && (() => {
-                const $child = $(child);
-                const classes = ($child.attr('class') || '').split(/\s+/);
-                // Check if element has one of the specific block classes
-                // Use exact class matching, not word boundary regex (avoids matching note__title, etc.)
-                return classes.includes('table-wrap') || 
-                       classes.includes('p') || 
-                       classes.includes('stepxmp') ||
-                       classes.includes('note') || 
-                       classes.includes('warning') || 
-                       classes.includes('important') || 
-                       classes.includes('tip') || 
-                       classes.includes('caution');
-              })())
-            );
-            
-            if (isBlockElement) {
-              foundFirstBlock = true; // Mark that we've encountered a block element
-              const $child = $(child);
-              const childClass = $child.attr('class') || '';
-              const nodeNameSource = child && (child.name || child.nodeName || child.tagName);
-              const nodeName = nodeNameSource ? nodeNameSource.toLowerCase() : 'unknown';
-              if (!directNestedListTexts && (nodeName === 'ol' || nodeName === 'ul')) {
-                directNestedListTexts = $child.find('> li').toArray().map(liNode => {
-                  const text = cleanHtmlText($(liNode).text()).replace(/\s+/g, ' ').trim();
-                  return text;
-                }).filter(Boolean);
-              }
-              console.log(`🔍 [OL-BLOCK] Processing nested block in ordered list item: <${nodeName} class="${childClass}">`);
-              const childBlocks = await processElement(child);
-              nestedChildren.push(...childBlocks);
-            } else {
-              // Text node or inline element - accumulate as text segment
-              // IMPORTANT: Add to textAfterBlocks if we've already seen a block element
-              const targetArray = foundFirstBlock ? textAfterBlocks : textSegments;
-              
-              if (child.nodeType === 3) { // Text node
-                // CRITICAL: Use .data property for text nodes, not .textContent (which may be empty)
-                const text = child.data || child.textContent || '';
-                // Only add text nodes that have non-whitespace content
-                // This filters out indentation/formatting whitespace from the source HTML
-                const trimmed = text.trim();
-                if (trimmed) {
-                  const location = foundFirstBlock ? 'AFTER blocks' : 'BEFORE blocks';
-                  console.log(`🔍 [OL-TEXT] Adding text node (${location}) to segments: "${trimmed.substring(0, 50)}..."`);
-                  // Use the original text (not trimmed) to preserve intentional spaces
-                  targetArray.push(text);
-                }
-              } else if (child.nodeType === 1) { // Inline element
-                const $child = $(child);
-                const html = $child.prop('outerHTML');
-                const nodeName = (child && child.nodeName) ? child.nodeName.toLowerCase() : 'unknown';
-                const location = foundFirstBlock ? 'AFTER blocks' : 'BEFORE blocks';
-                console.log(`🔍 [OL-INLINE] Adding inline element (${location}) to segments: <${nodeName} class="${$child.attr('class') || ''}"> html length: ${html.length}`);
-                targetArray.push(html);
-              }
-            }
-          }          // Combine all text segments into one HTML string
-          // Add space between segments to prevent concatenation like "process.You"
-          let textOnlyHtml = textSegments.join(' ');
-
-          // Detect ServiceNow pattern where the parent list item's text is a verbatim dump of all child steps.
-          // When detected, trim the parent text down to the introductory sentence (if any) and drop the duplicate dump.
-          if (textOnlyHtml) {
-            const parentPlain = cleanHtmlText(textOnlyHtml).replace(/\s+/g, ' ').trim();
-            const parentForMatch = normalizeSentenceSpacing(parentPlain);
-            const fallbackNestedLis = $li.find('> ol > li, > ul > li');
-            const nestedCount = directNestedListTexts ? directNestedListTexts.length : fallbackNestedLis.length;
-            
-            console.log(`🔍 [OL-DUPE-CHECK] Parent text length: ${parentForMatch.length}, nested items: ${nestedCount}`);
-            if (parentForMatch.length > 20) {
-              console.log(`🔍 [OL-DUPE-CHECK] Parent text preview: "${parentForMatch.substring(0, 150)}..."`);
-            }
-            
-            // Check for duplicate pattern: parent text is verbatim dump of child steps
-            // Lower threshold to 50 chars (was 100) to catch shorter intros like "Complete the following steps..."
-            // Require at least 2 nested items (was 3) to catch lists with fewer steps
-            if (parentForMatch && parentForMatch.length > 50 && nestedCount >= 2) {
-              console.log(`🔍 [OL-DUPE-CHECK] ✅ Passed initial checks (length > 50, nested >= 2), analyzing children...`);
-              const rawChildTexts = directNestedListTexts || fallbackNestedLis.toArray().map(node => {
-                const childText = cleanHtmlText($(node).text()).replace(/\s+/g, ' ').trim();
-                return childText;
-              }).filter(Boolean);
-              const childMatchTexts = rawChildTexts.map(normalizeSentenceSpacing).filter(Boolean);
-              console.log(`🔍 [OL-DUPE-CHECK] Child match texts: ${childMatchTexts.length} items`);
-              if (childMatchTexts.length > 0) {
-                console.log(`🔍 [OL-DUPE-CHECK] First child: "${childMatchTexts[0].substring(0, 80)}..."`);
-              }
-              
-              if (childMatchTexts.length === nestedCount) {
-                const normalizedParent = parentForMatch.replace(/[^a-z0-9]/gi, '').toLowerCase();
-                const allChildrenPresent = childMatchTexts.every(childText => {
-                  const normalizedChild = childText.replace(/[^a-z0-9]/gi, '').toLowerCase();
-                  return normalizedChild && normalizedParent.includes(normalizedChild);
-                });
-                console.log(`🔍 [OL-DUPE-CHECK] All children present in parent: ${allChildrenPresent}`);
-                
-                if (allChildrenPresent) {
-                  // All child steps are present in parent text - this is a verbatim dump
-                  // Strategy: Look for common intro patterns and preserve ONLY the intro sentence
-                  // Common patterns: "Complete the following steps to...", "Follow these steps to..."
-                  const introPatterns = [
-                    /^(.*?(?:complete|follow|use|perform).*?(?:steps?|procedures?).*?(?:to|for).*?[.:])\s*/i,
-                    /^(.*?(?:to\s+\w+.*?[,:]))\s+/i,  // "To create X, do the following:"
-                    /^([^.!?]{20,120}[.!?])\s+/  // First sentence (20-120 chars ending with punctuation)
-                  ];
-                  
-                  let intro = null;
-                  for (const pattern of introPatterns) {
-                    const match = parentForMatch.match(pattern);
-                    if (match && match[1]) {
-                      intro = match[1].trim();
-                      // Verify the intro doesn't contain child steps
-                      const introHasChildSteps = childMatchTexts.some(child => intro.includes(child));
-                      if (!introHasChildSteps && intro.length < 200) {
-                        console.log(`🔍 [OL-DUPE-PRUNE] ✅ Found intro pattern: "${intro}"`);
-                        break;
-                      }
-                      intro = null; // Reset if intro contains child steps
-                    }
-                  }
-                  
-                  if (intro && intro.length > 15) {
-                    // Keep intro only
-                    console.log(`🔍 [OL-DUPE-PRUNE] ✅ Preserving intro sentence (${intro.length} chars), removing ${parentForMatch.length - intro.length} chars of duplicate child steps`);
-                    textSegments.length = 0;
-                    textSegments.push(intro);
-                    textOnlyHtml = intro;
-                  } else {
-                    // No clean intro found or intro too short - remove all parent text
-                    console.log(`🔍 [OL-DUPE-PRUNE] ✅ No intro pattern found; removing entire parent text (${parentForMatch.length} chars) to prevent duplication`);
-                    textSegments.length = 0;
-                    textOnlyHtml = '';
-                  }
-                }
-              }
-            }
-          }
-
-          console.log(`🔍 [OL-TEXT-EXTRACTION] Extracted ${textSegments.length} text segments BEFORE blocks from ordered list item with ${actualBlocks.length} nested blocks`);
-          if (textSegments.length > 0) {
-            const previewText = textSegments.join(' ').substring(0, 200);
-            console.log(`🔍 [OL-TEXT-EXTRACTION] Text preview: "${previewText}..."`);
-          }
-          
-          // CRITICAL: If there are text segments AFTER block elements, create a paragraph block for them
-          if (textAfterBlocks.length > 0) {
-            const textAfterHtml = textAfterBlocks.join(' ');
-            console.log(`🔍 [OL-TEXT-AFTER] Found ${textAfterBlocks.length} text segments AFTER blocks, creating paragraph`);
-            const afterParsed = await parseRichText(textAfterHtml);
-            if (afterParsed.richText.length > 0) {
-              const afterParagraph = {
-                object: 'block',
-                type: 'paragraph',
-                paragraph: {
-                  rich_text: afterParsed.richText,
-                  color: 'default'
-                }
-              };
-              // Add this paragraph to nestedChildren (it will be processed as a child/marker)
-              nestedChildren.push(afterParagraph);
-              console.log(`✅ [OL-TEXT-AFTER] Created paragraph with ${afterParsed.richText.length} rich_text elements for text after blocks`);
-            }
-          }
-          
-          // CRITICAL: If the first nested block is a paragraph, promote its text to be the list item's text
-          // This handles cases like: <li><div class="p">Text here<ul>...</ul></div></li>
-          // where the text should be the list item's text, not a separate paragraph child
-          let promotedText = null;
-          let remainingNestedChildren = nestedChildren;
-          
-          if (nestedChildren.length > 0 && nestedChildren[0]?.type === 'paragraph') {
-            const firstParagraph = nestedChildren[0];
-            if (firstParagraph.paragraph?.rich_text?.length > 0) {
-              promotedText = firstParagraph.paragraph.rich_text;
-              remainingNestedChildren = nestedChildren.slice(1);
-              console.log(`🔄 [LIST-ITEM-TEXT-PROMOTION] Promoting first paragraph to list item text: "${promotedText.map(rt => rt.text.content).join('').substring(0, 80)}..."`);
-              console.log(`🔄 [LIST-ITEM-TEXT-PROMOTION] Remaining ${remainingNestedChildren.length} nested children will be processed as children/markers`);
-            }
+          // Process nested blocks first to add as children
+          const nestedChildren = [];
+          for (let i = 0; i < nestedBlocks.length; i++) {
+            const nestedBlock = nestedBlocks[i];
+            console.log(`🔍 Processing nested block in ordered list item: <${nestedBlock.name}>`);
+            const childBlocks = await processElement(nestedBlock);
+            nestedChildren.push(...childBlocks);
           }
           
           // Create the list item with text content AND nested blocks as children
-          if ((textOnlyHtml && cleanHtmlText(textOnlyHtml).trim()) || promotedText) {
-            // CRITICAL FIX: Combine direct text with promoted paragraph text
-            // Case: <li>Click Submit.<p>You have successfully created...</p></li>
-            // Need: "Click Submit. You have successfully created..."
-            let liRichText, liImages;
-            if (promotedText) {
-              // Check if there's also direct text content (before the nested paragraph)
-              if (textOnlyHtml && cleanHtmlText(textOnlyHtml).trim()) {
-                // Parse the direct text
-                const directParsed = await parseRichText(textOnlyHtml);
-                // Combine: direct text + newline + promoted paragraph text
-                // The <p> tag creates a visual line break, so we need to preserve that
-                const newlineElement = {
-                  type: 'text',
-                  text: { content: '\n' },
-                  annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' }
-                };
-                liRichText = [...directParsed.richText, newlineElement, ...promotedText];
-                liImages = directParsed.imageBlocks;
-                console.log(`🔄 [LIST-ITEM-TEXT-PROMOTION] Combined direct text with promoted paragraph text (with newline)`);
-              } else {
-                // No direct text, just use promoted text
-                liRichText = promotedText;
-                liImages = [];
-                console.log(`🔄 [LIST-ITEM-TEXT-PROMOTION] Using promoted text as list item text`);
-              }
-            } else {
-              const parsed = await parseRichText(textOnlyHtml);
-              liRichText = parsed.richText;
-              liImages = parsed.imageBlocks;
-            }
+          if (textOnlyHtml && cleanHtmlText(textOnlyHtml).trim()) {
+            const { richText: liRichText, imageBlocks: liImages } = await parseRichText(textOnlyHtml);
             
             // Filter nested blocks: Notion list items can only have certain block types as children
             // Supported: bulleted_list_item, numbered_list_item, to_do, toggle, image
@@ -3567,8 +2144,7 @@ async function extractContentFromHtml(html) {
             // Separate immediate children (list items, images) from deferred blocks (paragraphs, tables, etc.)
             const immediateChildren = [];
             
-            // IMPORTANT: Use remainingNestedChildren (after promoting first paragraph to text)
-            remainingNestedChildren.forEach(block => {
+            nestedChildren.forEach(block => {
               // Check if block already has a marker from nested processing
               // IMPORTANT: Callouts with markers have their own nested content that should be orchestrated to them, not to the list item
               // Only add the callout itself, not its children (which share the same marker)
@@ -3601,35 +2177,6 @@ async function extractContentFromHtml(html) {
                 return; // Skip further processing for this block
               }
               
-              // Callouts inside ordered list items
-              // Notion DOES support callouts as children of list items, so we can add them as immediate children
-              // This preserves the source order instead of deferring them
-              // CRITICAL: If this callout has a marker (meaning it has deferred children), we need to attach those
-              // children directly to the callout instead of deferring them, to maintain proper parent-child relationship
-              if (block && block.type === 'callout') {
-                console.log(`✅ Adding callout as immediate child of ordered list item`);
-                
-                // Check if callout has a marker token (indicating deferred children)
-                const rich = block.callout?.rich_text || [];
-                const markerMatch = rich.find(rt => rt?.text?.content?.match(/\(sn2n:([a-z0-9-]+)\)/));
-                
-                if (markerMatch) {
-                  const markerText = markerMatch.text.content;
-                  const markerIdMatch = markerText.match(/\(sn2n:([a-z0-9-]+)\)/);
-                  if (markerIdMatch) {
-                    const markerId = markerIdMatch[1];
-                    console.log(`🔍 Callout has marker ${markerId} - will attach its deferred children directly`);
-                    
-                    // Store the marker so we can find its children later
-                    block._sn2n_marker = markerId;
-                    block._sn2n_attachChildrenDirectly = true; // Flag to indicate children should be attached, not deferred
-                  }
-                }
-                
-                immediateChildren.push(block);
-                return;
-              }
-
               if (block && block.type === 'paragraph') {
                 console.log(`⚠️ Standalone paragraph needs marker for deferred append to numbered_list_item`);
                 markedBlocks.push(block);
@@ -3689,34 +2236,17 @@ async function extractContentFromHtml(html) {
             // also mark the immediateChildren so everything goes through orchestration
             // and maintains correct source order. Otherwise, immediateChildren get added
             // to the list item first, then markedBlocks get appended, reversing the order.
-            // EXCEPTION: Do NOT defer list items (bulleted_list_item, numbered_list_item) - they should remain as immediate children
-            // even when there are container blocks, otherwise they get flattened incorrectly.
             const hasContainerBlocks = markedBlocks.some(b => 
               b && (b.type === 'callout' || b.type === 'table' || b.type === 'heading_3')
             );
             
             let allChildren;
             if (hasContainerBlocks && immediateChildren.length > 0) {
-              // Separate list items from other immediate children
-              const listItems = immediateChildren.filter(b => 
-                b && (b.type === 'bulleted_list_item' || b.type === 'numbered_list_item')
-              );
-              const nonListChildren = immediateChildren.filter(b => 
-                !b || (b.type !== 'bulleted_list_item' && b.type !== 'numbered_list_item')
-              );
-              
-              if (nonListChildren.length > 0) {
-                console.log(`🔄 Deferring ${nonListChildren.length} non-list immediate children for orchestration to maintain correct order with container blocks`);
-                // Move non-list immediate children to marked blocks - they'll be orchestrated together
-                markedBlocks.push(...nonListChildren);
-              }
-              
-              // Keep list items as immediate children - they maintain correct nesting
-              if (listItems.length > 0) {
-                console.log(`✅ Keeping ${listItems.length} list items as immediate children (proper nesting)`);
-              }
-              
-              allChildren = [...listItems];
+              console.log(`🔄 Deferring ${immediateChildren.length} immediate children for orchestration to maintain correct order with container blocks`);
+              // Move immediate children to marked blocks - they'll all be orchestrated together
+              // Use push() to add AFTER container blocks, maintaining source order
+              markedBlocks.push(...immediateChildren);
+              allChildren = [];
             } else {
               // Use only immediateChildren - images are now handled separately with markers
               allChildren = [...immediateChildren];
@@ -3726,23 +2256,20 @@ async function extractContentFromHtml(html) {
               const richTextChunks = splitRichTextArray(liRichText);
               console.log(`🔍 List item text: "${liRichText.map(rt => rt.text.content).join('').substring(0, 80)}..."`);
               console.log(`🔍 List item has ${allChildren.length} children: ${allChildren.map(c => c.type).join(', ')}`);
-              const hasMarkedBlocks = markedBlocks.length > 0;
-              const liId = $li.attr('id');
-              const marker = hasMarkedBlocks ? generateMarker(liId) : null;
-              const markerToken = marker ? `(sn2n:${marker})` : null;
-              if (marker) {
-                markedBlocks.forEach(block => {
-                  if (!block._sn2n_marker) {
+              for (const chunk of richTextChunks) {
+                console.log(`🔍 Creating numbered_list_item with ${chunk.length} rich_text elements and ${allChildren.length} children`);
+                
+                // If there are marked blocks, generate a marker and add token to rich text
+                let markerToken = null;
+                if (markedBlocks.length > 0) {
+                  const marker = generateMarker();
+                  markerToken = `(sn2n:${marker})`;
+                  // Tag each marked block with the marker for orchestration
+                  markedBlocks.forEach(block => {
                     block._sn2n_marker = marker;
-                  }
-                });
-              }
-              richTextChunks.forEach((chunk, index) => {
-                const chunkRichText = chunk.slice();
-                const isLastChunk = index === richTextChunks.length - 1;
-                console.log(`🔍 Creating numbered_list_item with ${chunkRichText.length} rich_text elements and ${allChildren.length} children`);
-                if (markerToken && isLastChunk) {
-                  chunkRichText.push({
+                  });
+                  // Add marker token to end of rich text (will be found by orchestrator)
+                  chunk.push({
                     type: "text",
                     text: { content: ` ${markerToken}` },
                     annotations: {
@@ -3756,61 +2283,29 @@ async function extractContentFromHtml(html) {
                   });
                   console.log(`🔍 Added marker ${markerToken} for ${markedBlocks.length} deferred blocks`);
                 }
+                
                 const listItemBlock = {
                   object: "block",
                   type: "numbered_list_item",
                   numbered_list_item: {
-                    rich_text: chunkRichText,
+                    rich_text: chunk,
                   },
                 };
-                if (allChildren.length > 0 && index === 0) {
+                
+                // Add nested blocks (including images) as children if any
+                if (allChildren.length > 0) {
                   listItemBlock.numbered_list_item.children = allChildren;
-                  const parentText = chunkRichText.map(rt => rt.text.content).join('').substring(0, 80);
-                  console.log(`🔍 Added ${allChildren.length} nested blocks as children of ordered list item "${parentText}"`);
-                  
-                  // Log details of each child being added
-                  allChildren.forEach((child, childIdx) => {
-                    if (child && child.type === 'numbered_list_item' && child.numbered_list_item && child.numbered_list_item.rich_text) {
-                      const childText = child.numbered_list_item.rich_text.map(rt => rt.text.content).join('').substring(0, 60);
-                      console.log(`🔍   Child [${childIdx + 1}]: "${childText}"`);
-                    }
-                  });
+                  console.log(`🔍 Added ${allChildren.length} nested blocks as children of ordered list item`);
                 }
+                
                 processedBlocks.push(listItemBlock);
-              });
-              if (hasMarkedBlocks) {
-                processedBlocks.push(...markedBlocks);
-              }
-              
-              // CRITICAL: Handle callouts that should have their children attached directly
-              // instead of deferred via orchestration
-              allChildren.forEach(child => {
-                if (child && child.type === 'callout' && child._sn2n_attachChildrenDirectly && child._sn2n_marker) {
-                  const calloutMarker = child._sn2n_marker;
-                  console.log(`🔍 Attaching deferred children to callout with marker ${calloutMarker}`);
-                  
-                  // Find all blocks with matching marker in nestedChildren
-                  const calloutChildren = nestedChildren.filter(b => 
-                    b && b._sn2n_marker === calloutMarker && b !== child
-                  );
-                  
-                  if (calloutChildren.length > 0) {
-                    console.log(`🔍   Found ${calloutChildren.length} children to attach to callout`);
-                    
-                    // Remove marker token from callout rich_text
-                    child.callout.rich_text = child.callout.rich_text.filter(rt => 
-                      !rt?.text?.content?.includes(`(sn2n:${calloutMarker})`)
-                    );
-                    
-                    // Attach children directly to callout
-                    child.callout.children = calloutChildren;
-                    
-                    // Remove _sn2n_marker from callout (no longer needs orchestration)
-                    delete child._sn2n_marker;
-                    delete child._sn2n_attachChildrenDirectly;
-                  }
+                
+                // Add marked blocks to processedBlocks so they get collected by orchestrator
+                // These will be removed from initial payload and appended via API after page creation
+                if (markedBlocks.length > 0) {
+                  processedBlocks.push(...markedBlocks);
                 }
-              });
+              }
               
               // Add blocks from nested children that already have markers (from nested list processing)
               // These preserve their original markers and parent associations
@@ -3821,15 +2316,6 @@ async function extractContentFromHtml(html) {
                 // Check if already in immediateChildren or markedBlocks
                 const alreadyAdded = immediateChildren.includes(b) || markedBlocks.includes(b);
                 if (alreadyAdded) return false;
-                
-                // Check if this block's marker matches any callout in allChildren with _sn2n_attachChildrenDirectly
-                const isChildOfImmediateCallout = allChildren.some(parent => 
-                  parent && parent.type === 'callout' && parent._sn2n_marker === b._sn2n_marker
-                );
-                if (isChildOfImmediateCallout) {
-                  console.log(`🔍 Skipping block with marker ${b._sn2n_marker} - already attached to immediate callout child`);
-                  return false;
-                }
                 
                 // Check if this block's marker matches any other block's marker in markedBlocks
                 // If so, it's a child of that block and shouldn't be added separately
@@ -3850,9 +2336,9 @@ async function extractContentFromHtml(html) {
             const firstParagraphIndex = nestedChildren.findIndex(child => 
               child && child.type === 'paragraph' && child.paragraph && child.paragraph.rich_text
             );
+            const firstParagraph = firstParagraphIndex !== -1 ? nestedChildren[firstParagraphIndex] : null;
             
-            if (firstParagraphIndex !== -1) {
-              const firstParagraph = nestedChildren[firstParagraphIndex];
+            if (firstParagraphIndex !== -1 && !(firstParagraph && firstParagraph._sn2n_source_container === 'stepxmp')) {
               const beforeParagraph = nestedChildren.slice(0, firstParagraphIndex);
               const afterParagraph = nestedChildren.slice(firstParagraphIndex + 1);
               const remainingChildren = [...beforeParagraph, ...afterParagraph];
@@ -3868,8 +2354,7 @@ async function extractContentFromHtml(html) {
               // Add marker if there are remaining children
               let richText = [...promotedText];
               if (markedBlocks.length > 0) {
-                const liId = $li.attr('id');
-                const marker = generateMarker(liId);
+                const marker = generateMarker();
                 const markerToken = `(sn2n:${marker})`;
                 markedBlocks.forEach(block => {
                   block._sn2n_marker = marker;
@@ -3934,8 +2419,7 @@ async function extractContentFromHtml(html) {
               let markerToken = null;
               const richText = [{ type: "text", text: { content: "" } }];
               if (markedBlocks.length > 0) {
-                const liId = $li.attr('id');
-                const marker = generateMarker(liId);
+                const marker = generateMarker();
                 markerToken = `(sn2n:${marker})`;
                 markedBlocks.forEach(block => {
                   block._sn2n_marker = marker;
@@ -3962,35 +2446,12 @@ async function extractContentFromHtml(html) {
           }
         } else {
           // Simple list item with no nested blocks
-          // CRITICAL FIX: Use outerHTML then extract inner content properly
-          let liHtml = '';
-          const liOuterHtml = $.html($li);
-          const liOpeningTagMatch = liOuterHtml.match(/^<[^>]+>/);
-          const liClosingTagMatch = liOuterHtml.match(/<\/[^>]+>$/);
-          
-          if (liOpeningTagMatch && liClosingTagMatch) {
-            liHtml = liOuterHtml.substring(
-              liOpeningTagMatch[0].length,
-              liOuterHtml.length - liClosingTagMatch[0].length
-            );
-          } else {
-            liHtml = $li.html() || '';
-          }
-          
+          let liHtml = $li.html() || '';
           // Strip SVG icon elements (decorative only, no content value)
           liHtml = liHtml.replace(/<svg[\s\S]*?<\/svg>/gi, '');
           console.log(`🔍 Ordered list item HTML: "${liHtml.substring(0, 100)}"`);
           const { richText: liRichText, imageBlocks: liImages } = await parseRichText(liHtml);
           console.log(`🔍 Ordered list item rich_text: ${liRichText.length} elements`);
-          
-          // Remove leading/trailing whitespace-only elements (including newlines)
-          // This prevents empty lines at the start/end of list items
-          while (liRichText.length > 0 && (!liRichText[0].text?.content || /^\s*$/.test(liRichText[0].text.content))) {
-            liRichText.shift();
-          }
-          while (liRichText.length > 0 && (!liRichText[liRichText.length - 1].text?.content || /^\s*$/.test(liRichText[liRichText.length - 1].text.content))) {
-            liRichText.pop();
-          }
           
           // Debug: Log the actual text content
           if (liRichText.length > 0) {
@@ -4011,8 +2472,7 @@ async function extractContentFromHtml(html) {
             // Mark images for deferred orchestration to avoid 4-level nesting
             // (numbered_list_item > bulleted_list_item > numbered_list_item > image)
             if (liImages && liImages.length > 0) {
-              const liId = $li.attr('id');
-              const marker = generateMarker(liId);
+              const marker = generateMarker();
               const markerToken = `(sn2n:${marker})`;
               liImages.forEach(img => {
                 img._sn2n_marker = marker;
@@ -4040,318 +2500,8 @@ async function extractContentFromHtml(html) {
           }
         }
       }
-      // After processing the <ol>, check for an immediate sibling paragraph-like element
-      // that likely continues the list (e.g., a 4th step rendered outside the <ol> by ServiceNow).
-      // If found, convert it into an extra numbered_list_item so it stays contiguous with this list.
-      try {
-        const $olParent = $elem.parent();
-        const olClasses = $elem.attr('class') || '';
-        const parentClasses = $olParent.attr('class') || '';
-        console.log(`🔎 [LIST-CONTINUATION-TRACE] Starting sibling scan after <ol class="${olClasses}"> (parent: <${$olParent.get(0)?.tagName?.toLowerCase() || 'unknown'} class="${parentClasses}">)`);
-        console.log(`🔎 [LIST-CONTINUATION-TRACE] Will look ahead up to 5 siblings`);
-        let foundContinuation = false;
-
-        // First, check raw DOM siblings for TEXT nodes immediately after the <ol>
-        try {
-          let raw = $elem.get(0)?.nextSibling || null;
-          let textChecked = 0;
-          console.log(`🔎 [LIST-CONTINUATION-TRACE] Checking for TEXT NODE siblings (raw DOM traversal)`);
-          while (raw && textChecked < 2) {
-            const isText = raw.type === 'text' || raw.nodeType === 3;
-            console.log(`🔎 [LIST-CONTINUATION-TRACE] Raw sibling ${textChecked}: type=${raw.type || raw.nodeType}, isText=${isText}`);
-            if (isText) {
-              const rawText = (raw.data || raw.nodeValue || '').trim();
-              console.log(`🔎 [LIST-CONTINUATION-TRACE] Text node content length: ${rawText.length}, preview: "${rawText.substring(0, 50)}..."`);
-              if (rawText && rawText.length > 10) {
-                // CRITICAL: Only treat as continuation if it looks like an action step
-                // Check for step indicators or action verbs at the start
-                const hasStepIndicator = /^(\d+[\.)]\s*|Step \d+|[a-z][\.)]\s*)/i.test(rawText);
-                const startsWithAction = /^(Click|Select|Navigate|Choose|Enter|Specify|Open|Close|Save|Delete|Create|Update|View|Set|Configure|Enable|Disable|Add|Remove)\s+/i.test(rawText);
-                
-                const shouldConvert = hasStepIndicator || startsWithAction;
-                
-                console.log(`🔧 [LIST-CONTINUATION-FIX] Found TEXT NODE after <ol> – "${rawText.substring(0, 80)}..."`);
-                console.log(`🔍 [LIST-CONTINUATION-ANALYSIS] hasStepIndicator=${hasStepIndicator}, startsWithAction=${startsWithAction}, shouldConvert=${shouldConvert}`);
-                
-                if (shouldConvert) {
-                  console.log(`🔧 [LIST-CONTINUATION-FIX] Converting to numbered_list_item`);
-                  
-                  const { richText: liRichText } = await parseRichText(rawText);
-                  processedBlocks.push({
-                    object: "block",
-                    type: "numbered_list_item",
-                    numbered_list_item: {
-                      rich_text: (liRichText && liRichText.length > 0) ? liRichText : [{
-                        type: "text",
-                        text: { content: rawText },
-                        annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: "default" }
-                      }]
-                    }
-                  });
-                  // Remove the text content to avoid double processing later
-                  if (typeof raw.data === 'string') raw.data = '';
-                  foundContinuation = true;
-                  break;
-                } else {
-                  console.log(`🔎 [LIST-CONTINUATION-TRACE] Text node doesn't look like a step continuation - leaving for normal processing`);
-                }
-              }
-            }
-            // Stop if next raw sibling is an element; otherwise skip whitespace/comments
-            if (raw.type === 'tag' || raw.nodeType === 1) break;
-            raw = raw.nextSibling;
-            textChecked++;
-          }
-        } catch (e) {
-          console.log(`⚠️ [LIST-CONTINUATION-FIX] Error while scanning raw TEXT siblings: ${e?.message || e}`);
-        }
-        console.log(`🔎 [LIST-CONTINUATION-TRACE] Checking for ELEMENT siblings (Cheerio traversal)`);
-        let $sib = $elem.next();
-        let checked = 0;
-  while ($sib && $sib.length && checked < 5) { // broaden lookahead to catch wrapped content
-          const sibTag = ($sib.get(0).tagName || '').toLowerCase();
-          const sibClasses = $sib.attr('class') || '';
-          console.log(`🔎 [LIST-CONTINUATION-TRACE] Element sibling ${checked}: <${sibTag} class="${sibClasses}">, text preview: "${$sib.text().trim().substring(0, 50)}..."`);
-          const isUiChrome = /(miniTOC|linkList|zDocsFilterTableDiv|zDocsFilterColumnsTableDiv|zDocsDropdownMenu|dropdown-menu|zDocsTopicPageTableExportButton|zDocsTopicPageTableExportMenu)/.test(sibClasses);
-          if (isUiChrome) {
-            console.log(`🔎 [LIST-CONTINUATION-TRACE] Skipping UI chrome sibling <${sibTag} class="${sibClasses}">`);
-            $sib = $sib.next();
-            checked++;
-            continue;
-          }
-
-          // Determine if this sibling (or its immediate child) is paragraph-like content
-          let $candidate = null;
-          if ($sib.is('p') || ($sib.is('div') && $sib.hasClass('p'))) {
-            $candidate = $sib;
-          } else if ($sib.is('div') && !$sib.hasClass('table-wrap')) {
-            // Prefer a direct child p/div.p if present (even if there are other block children)
-            const $pChild = $sib.find('> p, > div.p').filter((_, el) => {
-              const t = cleanHtmlText($(el).html() || $(el).text() || '').trim();
-              return t.length > 10;
-            }).first();
-            if ($pChild.length > 0) {
-              console.log(`🔎 [LIST-CONTINUATION-TRACE] Using direct paragraph-like child inside <div> as candidate`);
-              $candidate = $pChild;
-            } else {
-              // If no direct paragraph child, try direct text-only content of the div
-              const $clone = $sib.clone();
-              $clone.children().remove();
-              const directHtml = $clone.html() || '';
-              const directText = cleanHtmlText(directHtml).trim();
-              if (directText.length > 10) {
-                console.log(`🔎 [LIST-CONTINUATION-TRACE] Using direct text from <div> as candidate`);
-                // Create a temporary wrapper for parsing as HTML
-                const $temp = $('<p></p>').html(directHtml);
-                $candidate = $temp; // not in DOM, but we can parse its HTML and not remove original; acceptable fallback
-              } else if ($sib.find('> *').length === 0) {
-                // Div with only whitespace text nodes
-                $candidate = null;
-              }
-            }
-          } else if ($sib.is('section, article')) {
-            // Peek one level inside section/article for an immediate paragraph-like child
-            const $pChild = $sib.find('> p, > div.p').first();
-            if ($pChild.length > 0) {
-              console.log(`🔎 [LIST-CONTINUATION-TRACE] Found paragraph-like child inside <${sibTag}> wrapper`);
-              $candidate = $pChild;
-            }
-          }
-
-          if ($candidate) {
-            const sibHtml = $candidate.html() || $candidate.text() || '';
-            const sibText = cleanHtmlText(sibHtml).trim();
-            if (sibText.length > 10) {
-              // Check if this looks like a step continuation
-              const hasStepIndicator = /^(\d+[\.)]\s*|Step \d+|[a-z][\.)]\s*)/i.test(sibText);
-              const startsWithAction = /^(Click|Select|Navigate|Choose|Enter|Specify|Open|Close|Save|Delete|Create|Update|View|Set|Configure|Enable|Disable|Add|Remove)\s+/i.test(sibText);
-              const shouldConvert = hasStepIndicator || startsWithAction;
-              
-              console.log(`🔧 [LIST-CONTINUATION-FIX] Found sibling after <ol> – "${sibText.substring(0, 80)}..."`);
-              console.log(`🔍 [LIST-CONTINUATION-ANALYSIS] hasStepIndicator=${hasStepIndicator}, startsWithAction=${startsWithAction}, shouldConvert=${shouldConvert}`);
-              
-              if (shouldConvert) {
-                console.log(`🔧 [LIST-CONTINUATION-FIX] Converting to numbered_list_item`);
-                const { richText: liRichText, imageBlocks: liImages } = await parseRichText(sibHtml);
-                const listItem = {
-                  object: "block",
-                  type: "numbered_list_item",
-                  numbered_list_item: {
-                    rich_text: (liRichText && liRichText.length > 0) ? liRichText : [{
-                      type: "text",
-                      text: { content: sibText },
-                      annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: "default" }
-                    }]
-                  }
-                };
-                if (liImages && liImages.length > 0) {
-                  listItem.numbered_list_item.children = liImages;
-                }
-                processedBlocks.push(listItem);
-
-                // Remove the candidate so it is not processed again later, only if it's attached to DOM
-                try { if ($candidate && $candidate.remove) $candidate.remove(); } catch {}
-                foundContinuation = true;
-                break; // only add one continuation item
-              } else {
-                console.log(`🔎 [LIST-CONTINUATION-TRACE] Sibling doesn't look like a step continuation - leaving for normal processing`);
-              }
-            }
-          }
-
-          // Stop scanning if we encounter other clear block containers after peeking
-          if ($sib.is('ul, ol, table, pre, figure, nav, aside, header, footer, h1, h2, h3, h4, h5, h6')) {
-            console.log(`🔎 [LIST-CONTINUATION-TRACE] Stopping at blocking sibling <${sibTag}>`);
-            break;
-          }
-          console.log(`🔎 [LIST-CONTINUATION-TRACE] No candidate in sibling <${sibTag} class="${sibClasses}">, moving to next`);
-          $sib = $sib.next();
-          checked++;
-        }
-        // If not found among immediate siblings, try scanning siblings of the parent container
-        if (!foundContinuation) {
-          const $parent = $elem.parent();
-          if ($parent && $parent.length) {
-            let $psib = $parent.next();
-            let pChecked = 0;
-            console.log(`🔎 [LIST-CONTINUATION-TRACE] Escalating to parent-level scan from <${$parent.get(0).tagName?.toLowerCase() || 'unknown'} class="${$parent.attr('class') || ''}">`);
-            while ($psib && $psib.length && pChecked < 5) {
-              const pTag = ($psib.get(0).tagName || '').toLowerCase();
-              const pClasses = $psib.attr('class') || '';
-              const isUiChrome = /(miniTOC|linkList|zDocsFilterTableDiv|zDocsFilterColumnsTableDiv|zDocsDropdownMenu|dropdown-menu|zDocsTopicPageTableExportButton|zDocsTopicPageTableExportMenu)/.test(pClasses);
-              if (isUiChrome) {
-                console.log(`🔎 [LIST-CONTINUATION-TRACE] Parent-level: skipping UI chrome <${pTag} class="${pClasses}">`);
-                $psib = $psib.next();
-                pChecked++;
-                continue;
-              }
-              let $candidate = null;
-              if ($psib.is('p') || ($psib.is('div') && $psib.hasClass('p'))) {
-                $candidate = $psib;
-              } else if ($psib.is('div')) {
-                // Prefer step containers (.stepxmp, .itemgroup, .info) -> direct paragraph children
-                const $pChild = $psib.find('> p, > div.p').filter((_, el) => {
-                  const t = cleanHtmlText($(el).html() || $(el).text() || '').trim();
-                  return t.length > 10;
-                }).first();
-                if ($pChild.length > 0) {
-                  console.log(`🔎 [LIST-CONTINUATION-TRACE] Parent-level: using paragraph-like child inside <div class="${pClasses}"> as candidate`);
-                  $candidate = $pChild;
-                } else {
-                  // fallback to direct text-only contentm this div
-                  const $clone = $psib.clone();
-                  $clone.children().remove();
-                  const directHtml = $clone.html() || '';
-                  const directText = cleanHtmlText(directHtml).trim();
-                  if (directText.length > 10) {
-                    console.log(`🔎 [LIST-CONTINUATION-TRACE] Parent-level: using direct text from <div class="${pClasses}"> as candidate`);
-                    const $temp = $('<p></p>').html(directHtml);
-                    $candidate = $temp;
-                  }
-                }
-              } else if ($psib.is('section, article')) {
-                const $pChild = $psib.find('> p, > div.p').first();
-                if ($pChild.length > 0) {
-                  console.log(`🔎 [LIST-CONTINUATION-TRACE] Parent-level: found paragraph-like child inside <${pTag}> wrapper`);
-                  $candidate = $pChild;
-                }
-              } else if ($psib.is('li')) {
-                // Direct <li> as a parent-level sibling: treat as a numbered list item continuation
-                // CRITICAL: Check if this <li> contains nested lists - if so, it's likely a duplicate dump
-                const hasNestedList = $psib.find('> ol, > ul').length > 0;
-                
-                if (hasNestedList) {
-                  console.log(`🚨 [ORPHAN-LI] Found standalone <li> with nested list - likely duplicate dump, skipping!`);
-                  console.log(`🚨 [ORPHAN-LI] Text preview: "${cleanHtmlText($psib.html()).substring(0, 100)}..."`);
-                  // This <li> will be processed normally as an orphan element later
-                  // Don't create a list continuation for it here
-                  break;
-                }
-                
-                const liHtml = $psib.html() || $psib.text() || '';
-                const liText = cleanHtmlText(liHtml).trim();
-                console.log(`🚨 [ORPHAN-LI] Found standalone <li> as sibling after <ol>!`);
-                console.log(`🚨 [ORPHAN-LI] Text preview: "${liText.substring(0, 100)}..."`);
-                console.log(`🚨 [ORPHAN-LI] Contains "Click Submit": ${liText.includes('Click Submit')}`);
-                console.log(`🚨 [ORPHAN-LI] Contains "successfully created": ${liText.includes('successfully created')}`);
-                if (liText.length > 5) {
-                  console.log(`🔧 [LIST-CONTINUATION-FIX] Parent-level: found <li> sibling after <ol> – converting to numbered_list_item: "${liText.substring(0, 80)}..."`);
-                  const { richText: liRichText, imageBlocks: liImages } = await parseRichText(liHtml);
-                  const listItem = {
-                    object: "block",
-                    type: "numbered_list_item",
-                    numbered_list_item: { rich_text: (liRichText && liRichText.length > 0) ? liRichText : [{ type: 'text', text: { content: liText }, annotations: { bold:false, italic:false, strikethrough:false, underline:false, code:false, color:'default' } }] }
-                  };
-                  if (liImages && liImages.length > 0) listItem.numbered_list_item.children = liImages;
-                  processedBlocks.push(listItem);
-                  try { if ($psib && $psib.remove) $psib.remove(); } catch {}
-                  foundContinuation = true;
-                  break;
-                }
-              }
-
-              if ($candidate) {
-                const cHtml = $candidate.html() || $candidate.text() || '';
-                const cText = cleanHtmlText(cHtml).trim();
-                
-                // CRITICAL: Check if the candidate contains block-level elements (ul, ol, table, etc.)
-                // These should NOT be converted to list item continuations - they are separate structural blocks
-                const hasBlockElements = $candidate.find('> ul, > ol, > table, > pre, > figure, > div.table-wrap').length > 0;
-                if (hasBlockElements) {
-                  console.log(`🔎 [LIST-CONTINUATION-TRACE] Parent-level: candidate contains block elements - skipping as list continuation`);
-                  console.log(`🔎 [LIST-CONTINUATION-TRACE] Stopping at blocking sibling <${$candidate.prop('tagName') || 'unknown'}>`);
-                  break;
-                }
-                
-                if (cText.length > 10) {
-                  console.log(`🔧 [LIST-CONTINUATION-FIX] Parent-level: found sibling after <ol> – converting to numbered_list_item: "${cText.substring(0, 80)}..."`);
-                  const { richText: liRichText, imageBlocks: liImages } = await parseRichText(cHtml);
-                  const listItem = {
-                    object: "block",
-                    type: "numbered_list_item",
-                    numbered_list_item: { rich_text: (liRichText && liRichText.length > 0) ? liRichText : [{ type: 'text', text: { content: cText }, annotations: { bold:false, italic:false, strikethrough:false, underline:false, code:false, color:'default' } }] }
-                  };
-                  if (liImages && liImages.length > 0) listItem.numbered_list_item.children = liImages;
-                  processedBlocks.push(listItem);
-                  try { if ($candidate && $candidate.remove) $candidate.remove(); } catch {}
-                  foundContinuation = true;
-                  break;
-                }
-              }
-
-              if ($psib.is('ul, ol, table, pre, figure, nav, aside, header, footer, h1, h2, h3, h4, h5, h6')) {
-                console.log(`🔎 [LIST-CONTINUATION-TRACE] Parent-level: stopping at blocking sibling <${pTag}>`);
-                break;
-              }
-              console.log(`🔎 [LIST-CONTINUATION-TRACE] Parent-level: no candidate in sibling <${pTag} class="${pClasses}">, moving to next`);
-              $psib = $psib.next();
-              pChecked++;
-            }
-          }
-        }
-      } catch (e) {
-        console.log(`⚠️ [LIST-CONTINUATION-FIX] Error while scanning after <ol>: ${e?.message || e}`);
-      }
-
       console.log(`✅ Created list blocks from <ol>`);
-      
-      // CRITICAL: Remove all <li> children FIRST before removing the <ol>
-      // This prevents orphaned <li> elements from being left in the DOM
-      // which would be picked up by orphan detection and processed twice
-      try {
-        $elem.find('li').each((_, liNode) => {
-          try {
-            $(liNode).remove();
-          } catch (e) {
-            console.log(`⚠️ Failed to remove <li> node: ${e?.message || e}`);
-          }
-        });
-        console.log(`🧹 Removed all <li> children from <ol> to prevent orphaning`);
-      } catch (e) {
-        console.log(`⚠️ Failed to remove <li> children: ${e?.message || e}`);
-      }
-      
-      $elem.remove(); // Mark <ol> as processed
+      $elem.remove(); // Mark as processed
       
     // 3) Paragraphs, including heuristic detection of inline callout labels ("Note:", "Warning:", etc.)
     } else if (tagName === 'p' || (tagName === 'div' && $elem.hasClass('p'))) {
@@ -4370,7 +2520,7 @@ async function extractContentFromHtml(html) {
           const isTextNode = node.nodeType === 3;
           const isElementNode = node.nodeType === 1;
           const nodeName = (node.name || node.nodeName || node.tagName || '').toUpperCase();
-          const isBlockElement = isElementNode && ['DIV', 'TABLE', 'OL', 'UL', 'DL'].includes(nodeName);
+          const isBlockElement = isElementNode && ['DIV', 'TABLE'].includes(nodeName);
           
           // If it's a text node or inline element (not a block container like div.table-wrap)
           if (isTextNode || (isElementNode && !isBlockElement)) {
@@ -4426,29 +2576,13 @@ async function extractContentFromHtml(html) {
         return processedBlocks;
       }
       
-      // Get class attribute early for logging
-      const classAttr = $elem.attr('class') || '';
-      
       // Check if this paragraph contains nested block-level elements
       // (ul, ol, dl, div.note, figure, iframe) - if so, handle mixed content
       // NOTE: Search for DIRECT CHILDREN ONLY (>) to avoid finding elements already nested in lists
       // This prevents duplicate processing of figures inside <ol>/<ul> elements
-      
-      // DEBUG: Log ALL paragraphs being checked for nested blocks
-      const paraTextPreview = $elem.text().trim().substring(0, 80).replace(/\s+/g, ' ');
-      console.log(`🔎 [PARA-CHECK] Checking <${tagName} class="${classAttr}"> for nested blocks`);
-      console.log(`🔎 [PARA-CHECK]   Text preview: "${paraTextPreview}..."`);
-      
-  const directBlocks = $elem.find('> ul, > ol, > dl').toArray();
-  const inlineBlocks = $elem.find('> div.note, > figure, > iframe').toArray();
-  const nestedBlocks = [...directBlocks, ...inlineBlocks];
-      
-      console.log(`🔎 [PARA-CHECK]   Found ${directBlocks.length} direct blocks: ${directBlocks.map(b => b.name).join(', ')}`);
-      console.log(`🔎 [PARA-CHECK]   Found ${inlineBlocks.length} inline blocks: ${inlineBlocks.map(b => b.name).join(', ')}`);
-      console.log(`🔎 [PARA-CHECK]   Total nested blocks: ${nestedBlocks.length}`);
-  // Detect if this paragraph directly contains an ordered list (<ol>) so we can
-  // treat any trailing text as a continuation step rather than a plain paragraph
-  const hasDirectOlInParagraph = directBlocks.some(db => (db.name || '').toLowerCase() === 'ol');
+      const directBlocks = $elem.find('> ul, > ol, > dl').toArray();
+      const inlineBlocks = $elem.find('> div.note, > figure, > iframe').toArray();
+      const nestedBlocks = [...directBlocks, ...inlineBlocks];
       
       if (nestedBlocks.length > 0) {
         console.log(`🔍 Paragraph <${tagName}> contains ${nestedBlocks.length} nested block elements - processing mixed content`);
@@ -4456,79 +2590,36 @@ async function extractContentFromHtml(html) {
         // Use childNodes iteration to separate text before/after nested blocks
         // This prevents text concatenation and preserves proper ordering
         const childNodes = Array.from($elem.get(0).childNodes);
-        console.log(`🔎 [MIXED-CONTENT] Paragraph has ${childNodes.length} childNodes to process`);
         const blockElementSet = new Set(nestedBlocks);
         let currentTextHtml = '';
         
         for (let i = 0; i < childNodes.length; i++) {
           const node = childNodes[i];
-          const nodeType = node.nodeType;
-          const nodeName = node.nodeType === 1 ? (node.name || node.nodeName || '').toLowerCase() : 'TEXT';
-          const isInBlockSet = blockElementSet.has(node);
-          console.log(`🔎 [MIXED-CONTENT] Child ${i}: nodeType=${nodeType} (${nodeName}), isInBlockSet=${isInBlockSet}`);
           
           // Text nodes and inline elements accumulate into currentTextHtml
           if (node.nodeType === 3 || (node.nodeType === 1 && !blockElementSet.has(node))) {
             const nodeHtml = node.nodeType === 3 ? node.nodeValue : $.html(node, { decodeEntities: false });
-            const preview = nodeHtml.trim().substring(0, 50);
-            console.log(`🔎 [MIXED-CONTENT] Accumulating ${node.nodeType === 3 ? 'TEXT' : 'ELEMENT'}: "${preview}..."`);
-            
-            // DEBUG: Check for UL ID in ANY accumulated content
-            if (nodeHtml && (nodeHtml.includes('_ul_') || nodeHtml.includes('ul_jfk') || nodeHtml.includes('__ul_'))) {
-              console.log(`🚨 [UL-ID-DEBUG] ${node.nodeType === 3 ? 'TEXT NODE' : 'ELEMENT'} contains UL ID pattern!`);
-              console.log(`🚨 [UL-ID-DEBUG] Full content (length ${nodeHtml.length}): "${nodeHtml}"`);
-              if (node.nodeType === 1) {
-                console.log(`🚨 [UL-ID-DEBUG] Element tag: <${node.name || node.nodeName}>`);
-              }
-            }
-            
             currentTextHtml += nodeHtml;
           } 
           // Block-level elements: flush accumulated text, then process block
           else if (node.nodeType === 1 && blockElementSet.has(node)) {
             // Flush accumulated text before this block element
             if (currentTextHtml.trim()) {
-              const blockTag = node.name || node.nodeName || 'UNKNOWN';
-              const blockId = node.attribs?.id || ($(node).attr('id')) || 'no-id';
-              console.log(`🔍 Found text before block element <${blockTag} id="${blockId}">: "${currentTextHtml.trim().substring(0, 80)}..."`);
-              
-              // DEBUG: Check if text contains UL ID
-              if (currentTextHtml.includes('_ul_') || currentTextHtml.includes('ul_jfk')) {
-                console.log(`🚨 [UL-ID-DEBUG] Text before block contains UL ID string!`);
-                console.log(`🚨 [UL-ID-DEBUG] Full text: "${currentTextHtml}"`);
-                console.log(`🚨 [UL-ID-DEBUG] Block element: <${blockTag} id="${blockId}">`);
-              }
-              
+              console.log(`🔍 Found text before block element: "${currentTextHtml.trim().substring(0, 80)}..."`);
               let textHtml = currentTextHtml.trim();
               
               // Remove any literal note div tags that may appear as text
               textHtml = textHtml.replace(/<div\s+class=["'][^"']*note[^"']*["'][^>]*>[\s\S]*?<\/div>/gi, ' ');
               
               const { richText: textRichText } = await parseRichText(textHtml);
-              console.log(`🔍 [MIXED-CONTENT-DEBUG] textRichText.length = ${textRichText.length}`);
-              if (textRichText.length > 0) {
-                const hasContent = textRichText.some(rt => rt.text.content.trim() || rt.text.link);
-                console.log(`🔍 [MIXED-CONTENT-DEBUG] hasContent check = ${hasContent}`);
-                if (!hasContent) {
-                  console.log(`🔍 [MIXED-CONTENT-DEBUG] First richText element:`, JSON.stringify(textRichText[0], null, 2));
-                }
-              }
               if (textRichText.length > 0 && textRichText.some(rt => rt.text.content.trim() || rt.text.link)) {
                 const textChunks = splitRichTextArray(textRichText);
-                console.log(`🔍 [MIXED-CONTENT] Creating ${textChunks.length} paragraph block(s) from text before <${blockTag}>`);
                 for (const chunk of textChunks) {
-                  const textPreview = chunk.map(rt => rt.text.content).join('').substring(0, 80);
-                  console.log(`🔍 [MIXED-CONTENT]   Paragraph text: "${textPreview}..."`);
                   processedBlocks.push({
                     object: "block",
                     type: "paragraph",
                     paragraph: { rich_text: chunk }
                   });
-                }
-              } else {
-                console.log(`🔍 [MIXED-CONTENT] Skipping empty/whitespace-only text before <${blockTag}>`);
-                if (textHtml && textHtml.trim()) {
-                  console.log(`🔍 [MIXED-CONTENT-DEBUG] But textHtml was not empty: "${textHtml.substring(0, 100)}"`);
                 }
               }
               currentTextHtml = '';
@@ -4539,63 +2630,19 @@ async function extractContentFromHtml(html) {
             console.log(`🔍 Processing nested block: <${blockName}>`);
             const childBlocks = await processElement(node);
             processedBlocks.push(...childBlocks);
-            
-            // CRITICAL: Don't let nested elements remove themselves - we'll remove the parent after processing all children
-            // This prevents DOM corruption during childNodes iteration
-            // Reset currentTextHtml to start accumulating text after this block
-            currentTextHtml = '';
           }
         }
         
         // Flush any remaining text after the last block element
         if (currentTextHtml.trim()) {
-          const trailingHtml = currentTextHtml.trim();
-          console.log(`🔍 Found text after block elements: "${trailingHtml.substring(0, 80)}..."`);
+          console.log(`🔍 Found text after block elements: "${currentTextHtml.trim().substring(0, 80)}..."`);
+          let textHtml = currentTextHtml.trim();
           
           // Remove any literal note div tags that may appear as text
-          let textHtml = trailingHtml.replace(/<div\s+class=["'][^"']*note[^"']*["'][^>]*>[\s\S]*?<\/div>/gi, ' ');
+          textHtml = textHtml.replace(/<div\s+class=["'][^"']*note[^"']*["'][^>]*>[\s\S]*?<\/div>/gi, ' ');
           
-          const { richText: textRichText, imageBlocks: textImageBlocks } = await parseRichText(textHtml);
-          const hasRealText = textRichText.length > 0 && textRichText.some(rt => rt.text.content.trim());
-          if (hasDirectOlInParagraph && hasRealText) {
-            // CRITICAL: Only treat trailing text as list continuation if it looks like a step
-            // Use the same criteria as the raw DOM sibling scan (hasStepIndicator OR startsWithAction)
-            const plain = cleanHtmlText(textHtml).trim();
-            const hasStepIndicator = /^(\d+[\.)]\s*|Step \d+|[a-z][\.)]\s*)/i.test(plain);
-            const startsWithAction = /^(Click|Select|Navigate|Choose|Enter|Specify|Open|Close|Save|Delete|Create|Update|View|Set|Configure|Enable|Disable|Add|Remove)\s+/i.test(plain);
-            const shouldConvert = hasStepIndicator || startsWithAction;
-            
-            console.log(`🔧 [LIST-CONTINUATION-TRACE] Paragraph contained <ol>; trailing text: "${plain.substring(0, 80)}..."`);
-            console.log(`🔍 [LIST-CONTINUATION-ANALYSIS] hasStepIndicator=${hasStepIndicator}, startsWithAction=${startsWithAction}, shouldConvert=${shouldConvert}`);
-            
-            if (shouldConvert) {
-              console.log(`🔧 [LIST-CONTINUATION-FIX] Converting trailing text to numbered_list_item`);
-              const listItem = {
-                object: "block",
-                type: "numbered_list_item",
-                numbered_list_item: { rich_text: textRichText }
-              };
-              if (textImageBlocks && textImageBlocks.length > 0) {
-                listItem.numbered_list_item.children = textImageBlocks;
-              }
-              processedBlocks.push(listItem);
-            } else {
-              console.log(`🔎 [LIST-CONTINUATION-TRACE] Trailing text doesn't look like a step - creating normal paragraph`);
-              const textChunks = splitRichTextArray(textRichText);
-              for (const chunk of textChunks) {
-                processedBlocks.push({
-                  object: "block",
-                  type: "paragraph",
-                  paragraph: {
-                    rich_text: chunk
-                  }
-                });
-              }
-              if (textImageBlocks && textImageBlocks.length > 0) {
-                processedBlocks.push(...textImageBlocks);
-              }
-            }
-          } else if (hasRealText) {
+          const { richText: textRichText } = await parseRichText(textHtml);
+          if (textRichText.length > 0 && textRichText.some(rt => rt.text.content.trim())) {
             const textChunks = splitRichTextArray(textRichText);
             for (const chunk of textChunks) {
               processedBlocks.push({
@@ -4604,63 +2651,7 @@ async function extractContentFromHtml(html) {
                 paragraph: { rich_text: chunk }
               });
             }
-            if (textImageBlocks && textImageBlocks.length > 0) {
-              console.log(`🔍 Adding ${textImageBlocks.length} image block(s) from trailing text`);
-              processedBlocks.push(...textImageBlocks);
-            }
-          } else if (textImageBlocks && textImageBlocks.length > 0) {
-            // No text, only images
-            processedBlocks.push(...textImageBlocks);
           }
-        }
-
-        // NEW: If this paragraph contained an ordered list, check for an immediate
-        // sibling paragraph that likely continues the list (e.g., "Click Submit...")
-        // and convert it into a numbered list item to preserve the 4th step.
-        try {
-          const hadDirectOl = $elem.find('> ol').length > 0;
-          if (hadDirectOl) {
-            let $sib = $elem.next();
-            let checked = 0;
-            while ($sib && $sib.length && checked < 2) { // only look at the next couple of siblings
-              const isParaLike = $sib.is('p') || ($sib.is('div') && $sib.hasClass('p'));
-              const isUiChrome = $sib.hasClass('miniTOC') || $sib.hasClass('linkList');
-              if (isParaLike && !isUiChrome) {
-                const sibHtml = $sib.html() || $sib.text() || '';
-                const sibText = cleanHtmlText(sibHtml).trim();
-                if (sibText.length > 10) {
-                  console.log(`🔧 [LIST-CONTINUATION-FIX] Found paragraph sibling after <ol> – converting to numbered_list_item: "${sibText.substring(0, 80)}..."`);
-                  const { richText: liRichText, imageBlocks: liImages } = await parseRichText(sibHtml);
-                  // Create numbered list item from this sibling
-                  const listItem = {
-                    object: "block",
-                    type: "numbered_list_item",
-                    numbered_list_item: {
-                      rich_text: liRichText && liRichText.length > 0 ? liRichText : [{
-                        type: "text",
-                        text: { content: sibText },
-                        annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: "default" }
-                      }]
-                    }
-                  };
-                  // Attach any images as children if present
-                  if (liImages && liImages.length > 0) {
-                    listItem.numbered_list_item.children = liImages;
-                  }
-                  processedBlocks.push(listItem);
-                  // Remove the sibling so it isn't processed again elsewhere
-                  $sib.remove();
-                  break;
-                }
-              }
-              // stop scanning on non-paragraph block-level elements
-              if ($sib.is('section, article, table, ul, ol, pre, figure, nav, aside')) break;
-              $sib = $sib.next();
-              checked++;
-            }
-          }
-        } catch (e) {
-          console.log(`⚠️ [LIST-CONTINUATION-FIX] Error while checking sibling after <ol>: ${e?.message || e}`);
         }
         
         $elem.remove();
@@ -4685,6 +2676,7 @@ async function extractContentFromHtml(html) {
         return processedBlocks;
       }
       
+      const classAttr = $elem.attr('class') || '';
       console.log(`🔍 Paragraph <${tagName}${classAttr ? ` class="${classAttr}"` : ''}> innerHtml length: ${innerHtml.length}, cleaned: ${cleanedText.length}`);
       
       // Check if this paragraph should be bold (sectiontitle tasklabel class)
@@ -4770,32 +2762,9 @@ async function extractContentFromHtml(html) {
       // Convert entire section to a callout with pushpin emoji
       console.log(`🔍 Processing prereq section as callout`);
       
-      // CRITICAL FIX: Unwrap itemgroup/info wrappers and flatten nested callouts BEFORE processing
-      // This prevents nested callouts from being included as text in the parent callout
-      $elem.find('div.itemgroup, div.info').each((i, wrapper) => {
-        console.log(`🔍 [PREREQ-FLATTEN] Unwrapping itemgroup/info wrapper ${i}`);
-        $(wrapper).replaceWith($(wrapper).html());
-      });
-      
-      // Also flatten any nested callouts (Note, Info, etc.) into plain text
-      // Notion doesn't support nested callouts, so extract their content
-      $elem.find('div.note, div.info, div.warning, div.important, div.tip, div.caution').each((i, calloutDiv) => {
-        const $calloutDiv = $(calloutDiv);
-        const calloutClass = $calloutDiv.attr('class') || '';
-        console.log(`🔍 [PREREQ-FLATTEN] Flattening nested callout: <div class="${calloutClass}">`);
-        
-        // Remove the title span (e.g., "Note:")
-        $calloutDiv.find('span.note__title').remove();
-        
-        // Replace the callout div with its content
-        const calloutContent = $calloutDiv.html() || '';
-        $calloutDiv.replaceWith(calloutContent);
-      });
-      
       // Parse each child (including text nodes) separately to preserve paragraph boundaries
       const richTextElements = [];
       const imageBlocks = [];
-      const deferredBlocks = []; // Collect blocks to add AFTER the callout
       
       // Get all direct children INCLUDING text nodes (use .contents() not .children())
       const allChildren = $elem.contents();
@@ -4814,14 +2783,17 @@ async function extractContentFromHtml(html) {
             // Parse the text content to rich text
             const { richText: childRichText, imageBlocks: childImages } = await parseRichText(textContent);
             
-            // Add a line break between children - but use a SEPARATE element to avoid carrying over annotations
+            // Add a line break between children (but not before the first one)
             if (richTextElements.length > 0 && childRichText.length > 0) {
-              richTextElements.push({
-                type: 'text',
-                text: { content: '\n' },
-                annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' }
-              });
-              console.log(`🔍   Added line break as separate element (no annotation carryover)`);
+              const lastIdx = richTextElements.length - 1;
+              richTextElements[lastIdx] = {
+                ...richTextElements[lastIdx],
+                text: { 
+                  ...richTextElements[lastIdx].text, 
+                  content: richTextElements[lastIdx].text.content + '\n' 
+                }
+              };
+              console.log(`🔍   Added line break after previous child`);
             }
             
             richTextElements.push(...childRichText);
@@ -4831,298 +2803,28 @@ async function extractContentFromHtml(html) {
           // Handle element node
           const $child = $(child);
           const childTag = child.tagName?.toLowerCase();
+          const childHtml = $child.html() || '';
           
-          // Check if this child contains block-level children (not just if it IS a block element)
-          // IMPORTANT: Also check for nested callouts (div.note, div.info, etc.)
-          const blockChildren = $child.find('> ul, > ol, > table, > pre, > blockquote, > div.note, > div.info, > div.warning, > div.important, > div.tip, > div.caution');
-          const hasBlockChildren = blockChildren.length > 0;
+          console.log(`🔍   Child ${i}: <${childTag}> class="${$child.attr('class')}" content="${childHtml.substring(0, 60)}..."`);
           
-          if (hasBlockChildren) {
-            console.log(`🔍 [NESTED-CALLOUT-PREREQ] Child ${i} (<${childTag}>) contains ${blockChildren.length} block-level children including potential nested callouts`);
+          // Parse this child's HTML to rich text
+          const { richText: childRichText, imageBlocks: childImages } = await parseRichText(childHtml);
+          
+          // Add a line break between children (but not before the first one)
+          if (richTextElements.length > 0 && childRichText.length > 0) {
+            const lastIdx = richTextElements.length - 1;
+            richTextElements[lastIdx] = {
+              ...richTextElements[lastIdx],
+              text: { 
+                ...richTextElements[lastIdx].text, 
+                content: richTextElements[lastIdx].text.content + '\n' 
+              }
+            };
+            console.log(`🔍   Added line break after previous child`);
           }
           
-          // Special handling for <div> with mixed content (text + block elements)
-          if (childTag === 'div' && hasBlockChildren) {
-            console.log(`🔍   Child ${i}: <div> contains ${blockChildren.length} block children - extracting mixed content`);
-            
-            // Extract direct text nodes and inline elements, but process block children separately
-            const $tempDiv = $('<div></div>');
-            const blockProcessingPromises = [];
-            
-            // Process each child of the div
-            const divChildren = Array.from($child.get(0).childNodes);
-            for (const node of divChildren) {
-              const nodeTag = node.tagName?.toLowerCase();
-              const $node = $(node);
-              const nodeClass = $node.attr('class') || '';
-              
-              // Check if this is a nested callout (div.note, div.info, etc.)
-              const isNestedCallout = nodeTag === 'div' && 
-                /\b(note|info|warning|important|tip|caution)\b/.test(nodeClass);
-              
-              if (node.type === 'text') {
-                // Keep text nodes in the callout
-                $tempDiv.append(node.cloneNode(true));
-              } else if (['ul', 'ol', 'table', 'pre', 'blockquote'].includes(nodeTag)) {
-                // Process block elements separately (await these later)
-                console.log(`🔍     Queuing block child <${nodeTag}> for separate processing`);
-                blockProcessingPromises.push(processElement(node));
-              } else if (isNestedCallout) {
-                // FLATTEN nested callout - extract its text and add to parent callout
-                console.log(`🔍 [NESTED-CALLOUT-PREREQ] Flattening nested callout in prereq: <${nodeTag} class="${nodeClass}">`);
-                const nestedCalloutHtml = $node.html() || '';
-                // Remove the title span from nested callout
-                const cleanedHtml = nestedCalloutHtml.replace(/<span[^>]*class=["'][^"']*note__title[^"']*["'][^>]*>([^<]*)<\/span>/gi, '$1');
-                // Add a newline before the nested callout content to separate it from previous content
-                // This prevents code-formatted text (like "admin") from bleeding into the next line ("Note")
-                const hasExistingContent = $tempDiv.text().trim().length > 0;
-                if (hasExistingContent) {
-                  $tempDiv.append('<br/>'); // Use <br/> so it becomes a newline during rich text parsing
-                }
-                $tempDiv.append(cleanedHtml); // Add nested callout text to parent callout
-              } else {
-                // Keep inline elements in the callout
-                $tempDiv.append(node.cloneNode(true));
-              }
-            }
-            
-            // Parse the inline content for the callout
-            const inlineHtml = $tempDiv.html();
-            if (inlineHtml && inlineHtml.trim()) {
-              console.log(`🔍     Inline content for callout: "${inlineHtml.substring(0, 60)}..."`);
-              const { richText: childRichText, imageBlocks: childImages } = await parseRichText(inlineHtml);
-              
-              // Add a line break between children - but use a SEPARATE element to avoid carrying over annotations
-              if (richTextElements.length > 0 && childRichText.length > 0) {
-                richTextElements.push({
-                  type: 'text',
-                  text: { content: '\n' },
-                  annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' }
-                });
-                console.log(`🔍   Added line break as separate element (no annotation carryover)`);
-              }
-              
-              richTextElements.push(...childRichText);
-              imageBlocks.push(...childImages);
-            }
-            
-            // Now await all block processing and convert to inline text for callout
-            if (blockProcessingPromises.length > 0) {
-              console.log(`🔍     Awaiting ${blockProcessingPromises.length} block children...`);
-              const blockResults = await Promise.all(blockProcessingPromises);
-              for (const blocks of blockResults) {
-                if (blocks && blocks.length > 0) {
-                  console.log(`🔍     Converting ${blocks.length} blocks to inline text for callout`);
-                  // Convert block elements (lists) to plain text with bullet characters
-                  for (const block of blocks) {
-                    if (block.type === 'bulleted_list_item' && block.bulleted_list_item?.rich_text) {
-                      // Extract text from list item and add bullet
-                      const itemText = block.bulleted_list_item.rich_text
-                        .map(rt => rt.text?.content || '')
-                        .join('');
-                      
-                      if (itemText.trim()) {
-                        // Add newline before bullet if there's existing content (as separate element to avoid annotation carryover)
-                        if (richTextElements.length > 0) {
-                          richTextElements.push({
-                            type: 'text',
-                            text: { content: '\n' },
-                            annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' }
-                          });
-                        }
-                        // Add the list item text with formatting preserved
-                        // Add bullet as a separate rich text element to preserve formatting
-                        richTextElements.push({
-                          type: "text",
-                          text: { content: "• " },
-                          annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: "default" }
-                        });
-                        // Then add all the original rich text elements, but trim trailing spaces from code blocks
-                        const cleanedRichText = block.bulleted_list_item.rich_text.map(rt => {
-                          if (rt.annotations?.code && rt.text?.content) {
-                            // Trim trailing (and leading) spaces from code-formatted text
-                            return {
-                              ...rt,
-                              text: {
-                                ...rt.text,
-                                content: rt.text.content.trim()
-                              }
-                            };
-                          }
-                          return rt;
-                        });
-                        richTextElements.push(...cleanedRichText);
-                        console.log(`🔍       Added list item to callout: "• ${itemText.substring(0, 50)}..."`);
-                      }
-                    } else if (block.type === 'numbered_list_item' && block.numbered_list_item?.rich_text) {
-                      // For numbered lists, we'll use numbers
-                      const itemText = block.numbered_list_item.rich_text
-                        .map(rt => rt.text?.content || '')
-                        .join('');
-                      
-                      if (itemText.trim()) {
-                        if (richTextElements.length > 0) {
-                          // Add line break as separate element to avoid carrying over annotations
-                          richTextElements.push({
-                            type: 'text',
-                            text: { content: '\n' },
-                            annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' }
-                          });
-                        }
-                        // Clean up trailing spaces from code blocks, then add number prefix
-                        const cleanedAndNumbered = block.numbered_list_item.rich_text.map((rt, idx) => {
-                          let content = rt.text.content;
-                          // Trim spaces from code-formatted text
-                          if (rt.annotations?.code) {
-                            content = content.trim();
-                          }
-                          return {
-                            ...rt,
-                            text: {
-                              ...rt.text,
-                              content: (idx === 0 ? '1. ' : '') + content
-                            }
-                          };
-                        });
-                        richTextElements.push(...cleanedAndNumbered);
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          } else if (['ul', 'ol'].includes(childTag)) {
-            // Lists should be converted to inline text for the callout
-            console.log(`🔍   Child ${i}: <${childTag}> is a list - converting to inline text for callout`);
-            
-            const childBlocks = await processElement(child);
-            if (childBlocks.length > 0) {
-              console.log(`🔍     Converting ${childBlocks.length} list items to inline text`);
-              for (const block of childBlocks) {
-                if (block.type === 'bulleted_list_item' && block.bulleted_list_item?.rich_text) {
-                  const itemText = block.bulleted_list_item.rich_text
-                    .map(rt => rt.text?.content || '')
-                    .join('');
-                  
-                  if (itemText.trim()) {
-                    if (richTextElements.length > 0) {
-                      // Add line break as separate element to avoid carrying over annotations
-                      richTextElements.push({
-                        type: 'text',
-                        text: { content: '\n' },
-                        annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' }
-                      });
-                    }
-                    // Preserve formatting from the original rich text
-                    // Add bullet as separate element to preserve formatting
-                    richTextElements.push({
-                      type: "text",
-                      text: { content: "• " },
-                      annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: "default" }
-                    });
-                    // Then add all the original rich text elements, but trim trailing spaces from code blocks
-                    const cleanedRichText = block.bulleted_list_item.rich_text.map(rt => {
-                      if (rt.annotations?.code && rt.text?.content) {
-                        // Trim trailing (and leading) spaces from code-formatted text
-                        return {
-                          ...rt,
-                          text: {
-                            ...rt.text,
-                            content: rt.text.content.trim()
-                          }
-                        };
-                      }
-                      return rt;
-                    });
-                    richTextElements.push(...cleanedRichText);
-                    console.log(`🔍       Added list item: "• ${itemText.substring(0, 50)}..."`);
-                  }
-                } else if (block.type === 'numbered_list_item' && block.numbered_list_item?.rich_text) {
-                  const itemText = block.numbered_list_item.rich_text
-                    .map(rt => rt.text?.content || '')
-                    .join('');
-                  
-                  if (itemText.trim()) {
-                    if (richTextElements.length > 0) {
-                      // Add line break as separate element to avoid carrying over annotations
-                      richTextElements.push({
-                        type: 'text',
-                        text: { content: '\n' },
-                        annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' }
-                      });
-                    }
-                    // Clean up trailing spaces from code blocks, then add number prefix
-                    const numberAdded = block.numbered_list_item.rich_text.map((rt, idx) => {
-                      let content = rt.text.content;
-                      // Trim spaces from code-formatted text
-                      if (rt.annotations?.code) {
-                        content = content.trim();
-                      }
-                      return {
-                        ...rt,
-                        text: {
-                          ...rt.text,
-                          content: (idx === 0 ? '1. ' : '') + content
-                        }
-                      };
-                    });
-                    richTextElements.push(...numberAdded);
-                  }
-                }
-              }
-            }
-          } else if (['table', 'pre', 'blockquote'].includes(childTag)) {
-            // Tables, code blocks, and blockquotes should be processed as separate blocks
-            console.log(`🔍   Child ${i}: <${childTag}> is a block element - processing separately`);
-            
-            const childBlocks = await processElement(child);
-            if (childBlocks.length > 0) {
-              console.log(`🔍     Adding ${childBlocks.length} blocks from <${childTag}> to deferredBlocks`);
-              deferredBlocks.push(...childBlocks);
-            }
-          } else {
-            // No block children - process as inline HTML
-            // CRITICAL FIX: Use outerHTML then extract inner content properly
-            // This prevents attribute values from bleeding into content
-            let childHtml = '';
-            
-            // Get the full outer HTML first
-            const outerHtml = $.html($child);
-            
-            // Extract ONLY the inner content by removing the opening and closing tags
-            // This ensures we don't accidentally include attribute values
-            const openingTagMatch = outerHtml.match(/^<[^>]+>/);
-            const closingTagMatch = outerHtml.match(/<\/[^>]+>$/);
-            
-            if (openingTagMatch && closingTagMatch) {
-              // Strip the opening and closing tags to get pure inner HTML
-              childHtml = outerHtml.substring(
-                openingTagMatch[0].length,
-                outerHtml.length - closingTagMatch[0].length
-              );
-            } else {
-              // Fallback to original method if regex doesn't match
-              childHtml = $child.html() || '';
-            }
-            
-            console.log(`🔍   Child ${i}: <${childTag}> class="${$child.attr('class')}" content="${childHtml.substring(0, 60)}..."`);
-            
-            // Parse this child's HTML to rich text
-            const { richText: childRichText, imageBlocks: childImages } = await parseRichText(childHtml);
-            
-            // Add a line break between children - but use a SEPARATE element to avoid carrying over annotations
-            if (richTextElements.length > 0 && childRichText.length > 0) {
-              richTextElements.push({
-                type: 'text',
-                text: { content: '\n' },
-                annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' }
-              });
-              console.log(`🔍   Added line break as separate element (no annotation carryover)`);
-            }
-            
-            richTextElements.push(...childRichText);
-            imageBlocks.push(...childImages);
-          }
+          richTextElements.push(...childRichText);
+          imageBlocks.push(...childImages);
         }
       }
       
@@ -5155,57 +2857,23 @@ async function extractContentFromHtml(html) {
         }
       }
       
-      // Now add the deferred blocks (lists, tables, etc.) AFTER the callout
-      if (deferredBlocks.length > 0) {
-        console.log(`🔍 Adding ${deferredBlocks.length} deferred blocks after callout`);
-        processedBlocks.push(...deferredBlocks);
-      }
-      
       $elem.remove(); // Mark as processed
       
     } else if (tagName === 'div' && $elem.hasClass('contentPlaceholder')) {
       // contentPlaceholder divs can contain actual content like "Related Content" sections
-      // Need to drill down through contentContainer > contentWrapper to find actual content
-      console.log(`🔍 🎯 contentPlaceholder FOUND - drilling into structure`);
-      const contentWrapper = $elem.find('.contentWrapper').first();
-      console.log(`🔍 🎯 contentWrapper found: ${contentWrapper.length > 0}`);
-      const children = contentWrapper.length > 0 ? contentWrapper.children().toArray() : $elem.find('> *').toArray();
-      console.log(`🔍 🎯 contentPlaceholder children count: ${children.length}`);
-      children.forEach((child, idx) => {
-        const $child = $(child);
-        const tagName = child.name || 'unknown';
-        const classes = $child.attr('class') || 'none';
-        const hasH5 = $child.find('h5').length;
-        console.log(`🔍 🎯   Child ${idx}: <${tagName} class="${classes}"> hasH5=${hasH5}`);
-      });
-      
+      // Check if it has meaningful content before skipping
+      const children = $elem.find('> *').toArray();
       const hasContent = children.some(child => {
         const $child = $(child);
-        // Skip miniTOC (table of contents navigation) and buttons
-        if ($child.hasClass('miniTOC')) return false;
-        if ($child.is('button')) return false;
-        
         const text = cleanHtmlText($child.html() || '').trim();
+        // Also check for nav elements which might be in collapsed containers
         const hasNavElements = $child.find('nav, [role="navigation"]').length > 0 || $child.is('nav, [role="navigation"]');
         return text.length > 20 || $child.find('h1, h2, h3, h4, h5, h6, ul, ol, p, a').length > 0 || hasNavElements;
       });
       
-      console.log(`🔍 🎯 contentPlaceholder hasContent: ${hasContent}`);
-      
       if (hasContent) {
         console.log(`🔍 contentPlaceholder has meaningful content (${children.length} children) - processing`);
         for (const child of children) {
-          const $child = $(child);
-          // Skip miniTOC div (On this page navigation) and buttons
-          if ($child.hasClass('miniTOC')) {
-            console.log(`🔍   Skipping miniTOC (On this page navigation)`);
-            continue;
-          }
-          if ($child.is('button')) {
-            console.log(`🔍   Skipping button element`);
-            continue;
-          }
-          
           const childBlocks = await processElement(child);
           processedBlocks.push(...childBlocks);
         }
@@ -5288,8 +2956,7 @@ async function extractContentFromHtml(html) {
       
     } else if (tagName === 'div' && ($elem.hasClass('itemgroup') || $elem.hasClass('info') || $elem.hasClass('stepxmp'))) {
       // ServiceNow content container divs - check if they have block-level children
-      // Include > img so standalone images are recognized as block children
-      const blockChildren = $elem.find('> div, > p, > ul, > ol, > table, > pre, > figure, > img').toArray();
+      const blockChildren = $elem.find('> div, > p, > ul, > ol, > table, > pre, > figure').toArray();
       
       if (blockChildren.length > 0) {
         // Has block-level children - check for mixed content (text + blocks)
@@ -5341,11 +3008,15 @@ async function extractContentFromHtml(html) {
               if (beforeText.length > 0 && beforeText.some(rt => rt.text.content.trim())) {
                 const richTextChunks = splitRichTextArray(beforeText);
                 for (const chunk of richTextChunks) {
-                  processedBlocks.push({
+                  const paraBlock = {
                     object: "block",
                     type: "paragraph",
                     paragraph: { rich_text: chunk }
-                  });
+                  };
+                  // Tag source container for downstream promotion guards
+                  paraBlock._sn2n_source_container = $elem.hasClass('stepxmp') ? 'stepxmp' : ($elem.hasClass('itemgroup') ? 'itemgroup' : 'info');
+                  paraBlock._sn2n_mixed_position = 'before';
+                  processedBlocks.push(paraBlock);
                 }
               }
             }
@@ -5395,11 +3066,14 @@ async function extractContentFromHtml(html) {
               if (afterText.length > 0 && afterText.some(rt => rt.text.content.trim())) {
                 const richTextChunks = splitRichTextArray(afterText);
                 for (const chunk of richTextChunks) {
-                  processedBlocks.push({
+                  const paraBlock = {
                     object: "block",
                     type: "paragraph",
                     paragraph: { rich_text: chunk }
-                  });
+                  };
+                  paraBlock._sn2n_source_container = $elem.hasClass('stepxmp') ? 'stepxmp' : ($elem.hasClass('itemgroup') ? 'itemgroup' : 'info');
+                  paraBlock._sn2n_mixed_position = 'after';
+                  processedBlocks.push(paraBlock);
                 }
               }
             }
@@ -5450,14 +3124,17 @@ async function extractContentFromHtml(html) {
               console.log(`📝 Creating paragraph with ${cleanedRichText.length} text elements and ${divImages.length} image(s) as children`);
               const richTextChunks = splitRichTextArray(cleanedRichText);
               for (const chunk of richTextChunks) {
-                processedBlocks.push({
+                const paraBlock = {
                   object: "block",
                   type: "paragraph",
                   paragraph: { 
                     rich_text: chunk,
                     children: divImages  // Add images as children
                   }
-                });
+                };
+                paraBlock._sn2n_source_container = $elem.hasClass('stepxmp') ? 'stepxmp' : ($elem.hasClass('itemgroup') ? 'itemgroup' : 'info');
+                paraBlock._sn2n_mixed_position = 'standalone';
+                processedBlocks.push(paraBlock);
               }
             } else {
               // No text left after cleanup, just add images as siblings
@@ -5470,11 +3147,14 @@ async function extractContentFromHtml(html) {
             // Text only, no images - create paragraph
             const richTextChunks = splitRichTextArray(divRichText);
             for (const chunk of richTextChunks) {
-              processedBlocks.push({
+              const paraBlock = {
                 object: "block",
                 type: "paragraph",
                 paragraph: { rich_text: chunk }
-              });
+              };
+              paraBlock._sn2n_source_container = $elem.hasClass('stepxmp') ? 'stepxmp' : ($elem.hasClass('itemgroup') ? 'itemgroup' : 'info');
+              paraBlock._sn2n_mixed_position = 'standalone';
+              processedBlocks.push(paraBlock);
             }
           }
         }
@@ -5585,6 +3265,39 @@ async function extractContentFromHtml(html) {
       // Check for nested blocks (including images and DIVs that may wrap images)
       const nestedBlocks = $elem.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.itemgroup, > div.stepxmp, > div.info, > div.note, > div, > img').toArray();
       console.log(`🔍 [Orphan LI] Found ${nestedBlocks.length} nested blocks:`, nestedBlocks.map(nb => $(nb).prop('tagName') + ($(nb).find('img').length > 0 ? ' (contains img)' : '')).join(', '));
+
+      // Attach immediate sibling tables to this orphan LI (synthetic continuation)
+      // Many docs place a choice/action table right after the orphan step like
+      // "Specify the rule...". We proactively capture contiguous next-sibling
+      // <div class="table-wrap"> or <table> elements and treat them as children.
+      async function attachFollowingTablesToOrphanLi() {
+        let $next = $elem.next();
+        const attached = [];
+        while ($next && $next.length > 0) {
+          const nextTag = ($next.get(0).name || '').toLowerCase();
+          const nextClass = $next.attr('class') || '';
+          const isTableWrap = nextTag === 'div' && /\btable-wrap\b/.test(nextClass);
+          const isTable = nextTag === 'table';
+          // Stop if we hit something that's not a table/table-wrap
+          if (!isTableWrap && !isTable) break;
+
+          console.log(`🔗 [Orphan LI] Attaching following ${isTable ? '<table>' : '<div class="table-wrap">'} as child of this list item`);
+          // Process the sibling now and remove it from DOM so it doesn't get
+          // processed again as a top-level block
+          const siblingBlocks = await processElement($next.get(0));
+          attached.push(...siblingBlocks);
+          // Remove and advance to next sibling (contiguous tables support)
+          $next.remove();
+          $next = $elem.next();
+        }
+        // Stash attached blocks on the element for later merge into children
+        if (attached.length > 0) {
+          // Using a symbol-like property on the Cheerio element's data store
+          $elem.data('_sn2n_attached_after_tables', attached);
+          console.log(`🔗 [Orphan LI] Attached ${attached.length} block(s) from following table siblings`);
+        }
+      }
+      await attachFollowingTablesToOrphanLi();
       
       if (nestedBlocks.length > 0) {
         // Has nested blocks - extract text without them
@@ -5607,18 +3320,27 @@ async function extractContentFromHtml(html) {
           const childBlocks = await processElement(nestedBlock);
           nestedChildren.push(...childBlocks);
         }
+
+        // Merge any following-sibling tables we attached just above
+        const attachedAfter = $elem.data('_sn2n_attached_after_tables');
+        if (Array.isArray(attachedAfter) && attachedAfter.length > 0) {
+          console.log(`🔗 [Orphan LI] Merging ${attachedAfter.length} attached following-sibling table block(s) into children`);
+          nestedChildren.unshift(...attachedAfter);
+          // Clear to avoid accidental reuse
+          $elem.removeData('_sn2n_attached_after_tables');
+        }
+
+        // Optional: Synthetic continuation repair for orphan <li> following an <ol>
+        // If enabled, we treat this orphan as the next step in the prior steps list.
+        // Notion models lists by sibling items, so we mainly ensure we DON'T drop
+        // child tables and we avoid emitting unrelated siblings here.
+        if (process.env.SN2N_ORPHAN_LIST_REPAIR) {
+          console.log('🔁 [Orphan LI] Synthetic continuation enabled (SN2N_ORPHAN_LIST_REPAIR)');
+        }
         
         // Create numbered list item with text and children
-        const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'paragraph', 'to_do', 'toggle', 'image'];
-        const validChildren = [];
-        const postListBlocks = [];
-        for (const block of nestedChildren) {
-          if (block && block.type && supportedAsChildren.includes(block.type)) {
-            validChildren.push(block);
-          } else if (block) {
-            postListBlocks.push(block);
-          }
-        }
+  const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'paragraph', 'to_do', 'toggle', 'image', 'table'];
+        const validChildren = nestedChildren.filter(b => b && b.type && supportedAsChildren.includes(b.type));
         
         if (liRichText.length > 0 && liRichText.some(rt => rt.text.content.trim())) {
           processedBlocks.push({
@@ -5629,10 +3351,6 @@ async function extractContentFromHtml(html) {
               children: validChildren.length > 0 ? validChildren : undefined
             }
           });
-          if (postListBlocks.length > 0) {
-            console.log(`🔁 [Orphan LI] Emitting ${postListBlocks.length} sibling block(s) after list item`);
-            processedBlocks.push(...postListBlocks);
-          }
         } else if (validChildren.length > 0) {
           // No text but has children - promote first paragraph
           const firstChild = validChildren[0];
@@ -5648,13 +3366,6 @@ async function extractContentFromHtml(html) {
               }
             });
           }
-          if (postListBlocks.length > 0) {
-            console.log(`🔁 [Orphan LI] Emitting ${postListBlocks.length} sibling block(s) after promoted list item`);
-            processedBlocks.push(...postListBlocks);
-          }
-        } else if (postListBlocks.length > 0) {
-          console.log(`🔁 [Orphan LI] No valid children; emitting ${postListBlocks.length} sibling block(s)`);
-          processedBlocks.push(...postListBlocks);
         }
       } else {
         // Simple list item
@@ -5722,57 +3433,15 @@ async function extractContentFromHtml(html) {
       
       // First check if there's direct text content mixed with child elements
       
-  // Use find('> *') to get ALL direct children, more reliable than .children()
-  const children = $elem.find('> *').toArray();
-  const fullHtml = $elem.html() || '';
-  
-  // DEBUG: Check if we're getting orphaned <li> elements in children array
-  const liChildren = children.filter(c => c.name === 'li');
-  if (liChildren.length > 0 && (tagName === 'article' || tagName === 'div')) {
-    console.log(`🔍 [LI-DEBUG] <${tagName}> has ${liChildren.length} direct <li> children (suspicious!):`);
-    liChildren.forEach(li => {
-      const $li = $(li);
-      const classes = $li.attr('class') || '';
-      const text = cleanHtmlText($li.text()).substring(0, 60);
-      const hasOlParent = $li.parent('ol').length > 0;
-      const hasUlParent = $li.parent('ul').length > 0;
-      console.log(`🔍 [LI-DEBUG]   <li class="${classes}"> "${text}..." hasOL=${hasOlParent} hasUL=${hasUlParent}`);
-    });
-  }
+      // Use find('> *') to get ALL direct children, more reliable than .children()
+      const children = $elem.find('> *').toArray();
+      const fullHtml = $elem.html() || '';
       
       // Clone and remove all child elements to see if there's text content
       const $textOnly = $elem.clone();
       $textOnly.children().remove();
       const directText = cleanHtmlText($textOnly.html() || '').trim();
       
-      // FAST PATH: If there are NO element children but there is direct text/HTML, treat this container
-      // as a paragraph wrapper so we don't lose important plain-text content (e.g., stray divs in sections).
-      if (children.length === 0) {
-        const html = fullHtml;
-        const cleaned = cleanHtmlText(html).trim();
-        if (cleaned) {
-          const cId = $elem.attr('id') || '';
-          const cClass = $elem.attr('class') || '';
-          console.log(`🔍 [TEXT-RESCUE] Container <${tagName}${cId?` id="${cId}"`:''}${cClass?` class="${cClass}"`:''}> has no element children but has text - creating paragraph`);
-          const { richText: containerText, imageBlocks: containerImages } = await parseRichText(html);
-          if (containerImages && containerImages.length > 0) {
-            processedBlocks.push(...containerImages);
-          }
-          if (containerText.length > 0 && containerText.some(rt => rt.text.content.trim())) {
-            const richTextChunks = splitRichTextArray(containerText);
-            for (const chunk of richTextChunks) {
-              processedBlocks.push({
-                object: "block",
-                type: "paragraph",
-                paragraph: { rich_text: chunk }
-              });
-            }
-          }
-          $elem.remove();
-          return processedBlocks;
-        }
-      }
-
       if (directText && children.length > 0) {
         // Mixed content: has both text nodes and child elements
         console.log(`🔍 Container <${tagName}> has mixed content (text + ${children.length} children)`);
@@ -6023,34 +3692,14 @@ async function extractContentFromHtml(html) {
           
           // Has children - process them
           let processedChildCount = 0;
-          let skippedChildCount = 0;
           for (const child of children) {
             processedChildCount++;
-            
-            // CRITICAL: Check if this child element has been removed from the DOM
-            // This prevents processing elements that were removed when their parents were processed
-            // The children array is a snapshot taken before processing, so removed elements are still in it
-            const $child = $(child);
-            const childTag = child.name || 'unknown';
-            const childClass = $child.attr('class') || '';
-            
-            // Check if element has been removed: no parent or parent changed
-            const hasParent = $child.parent().length > 0;
-            const parentIsExpectedParent = $child.parent().is($elem);
-            
-            if (!hasParent || !parentIsExpectedParent) {
-              const reason = !hasParent ? 'no parent' : 'parent changed';
-              console.log(`🔍   ⏭️  Skipping child ${processedChildCount}/${children.length} (${reason}): <${childTag}>${childClass ? ` class="${childClass}"` : ''}`);
-              skippedChildCount++;
-              continue;
-            }
-            
-            console.log(`🔍   Processing child ${processedChildCount}/${children.length}: <${child.name}>${$child.attr('class') ? ` class="${$child.attr('class')}"` : ''}`);
+            console.log(`🔍   Processing child ${processedChildCount}/${children.length}: <${child.name}>${$(child).attr('class') ? ` class="${$(child).attr('class')}"` : ''}`);
             const childBlocks = await processElement(child);
             console.log(`🔍   Child ${processedChildCount} produced ${childBlocks.length} blocks`);
             processedBlocks.push(...childBlocks);
           }
-          console.log(`🔍   Finished processing ${processedChildCount - skippedChildCount}/${children.length} children (skipped ${skippedChildCount} removed elements)`);
+          console.log(`🔍   Finished processing all ${processedChildCount}/${children.length} children`);
           
           // TRACK ARTICLE.NESTED1 COMPLETION
           if (tagName === 'article' && elemClass.includes('nested1')) {
@@ -6080,25 +3729,16 @@ async function extractContentFromHtml(html) {
     console.log(`🔍 Processing from .zDocsTopicPageBody, found ${topLevelChildren.length} top-level children`);
     console.log(`🔍 Top-level children: ${topLevelChildren.map(c => `<${c.name} class="${$(c).attr('class') || ''}">`).join(', ')}`);
     
-    // Collect nav elements and contentPlaceholders early (used in multiple paths below)
-    const articleNavs = $('.zDocsTopicPageBody article > nav, .zDocsTopicPageBody article[role="article"] > nav').toArray();
-    
-    // CRITICAL FIX: contentPlaceholder divs are often SIBLINGS of .zDocsTopicPageBody, not children!
-    // Search for them in the entire page, just like we do for orphaned sections
-    const allContentPlaceholders = $('.contentPlaceholder').toArray();
-    console.log(`🔍 🎯 Found ${allContentPlaceholders.length} contentPlaceholder divs on entire page`);
-    const contentPlaceholders = allContentPlaceholders;
-    
     // CRITICAL FIX: Check if sections exist deeper in the tree (not just as direct children)
     // ServiceNow pages often have structure: .zDocsTopicPageBody > div.zDocsTopicPageBodyContent > article > main > article.dita > div.body.conbody
     // And sections can be either children of body.conbody OR siblings of it!
     const allSectionsInPage = $('section[id]').toArray();
     const allSectionsInBody = $('.zDocsTopicPageBody section[id]').toArray();
-    const allArticlesInBody = $('.zDocsTopicPageBody article').toArray();
+    const allArticles = $('.zDocsTopicPageBody article').toArray();
     
     console.log(`🔍 CRITICAL: Found ${allSectionsInPage.length} sections in ENTIRE PAGE`);
     console.log(`🔍 CRITICAL: Found ${allSectionsInBody.length} sections inside .zDocsTopicPageBody`);
-    console.log(`🔍 CRITICAL: Found ${allArticlesInBody.length} articles inside .zDocsTopicPageBody`);
+    console.log(`🔍 CRITICAL: Found ${allArticles.length} articles inside .zDocsTopicPageBody`);
     
     // Check where the missing sections are
     const sectionsOutsideBody = allSectionsInPage.filter(s => {
@@ -6138,548 +3778,65 @@ async function extractContentFromHtml(html) {
         console.log(`🔍 FIX: ✅ Using ALL ${allSectionsInPage.length} sections from page`);
       }
     } else if (allSectionsInBody.length > 0) {
-      // Sections exist inside .zDocsTopicPageBody! 
-      // CRITICAL FIX: Sections may have different parents, so collect ALL unique parents
-      const allParents = allSectionsInBody.map(sec => $(sec).parent().get(0));
-      const uniqueParents = [...new Set(allParents)];
+      // Sections exist inside .zDocsTopicPageBody! Find their common parent
+      const firstSection = $(allSectionsInBody[0]);
+      const sectionParent = firstSection.parent();
+      const sectionParentTag = sectionParent.prop('tagName');
+      const sectionParentClass = sectionParent.attr('class') || 'no-class';
       
-      console.log(`🔍 FIX: Found ${allSectionsInBody.length} sections with ${uniqueParents.length} unique parent(s)`);
+      console.log(`🔍 Sections are children of: <${sectionParentTag} class="${sectionParentClass}">`);
+      console.log(`🔍 Section parent has ${sectionParent.children().length} children total`);
       
-      // NEW STRATEGY: If sections have multiple parents, collect from each parent
-      if (uniqueParents.length > 1) {
-        console.log(`🔍 FIX: Sections have multiple parents - collecting from each parent container`);
-        
-        // CRITICAL: Filter out ancestor parents to avoid collecting the same content multiple times
-        // If Parent A contains Parent B, only collect from Parent B (the deepest one)
-        const nonAncestorParents = uniqueParents.filter(parentEl => {
-          const $parent = $(parentEl);
-          // Check if ANY other parent is a descendant of this parent
-          const hasDescendantParent = uniqueParents.some(otherParentEl => {
-            return otherParentEl !== parentEl && $(otherParentEl).closest(parentEl).length > 0;
-          });
-          // Keep this parent only if it doesn't have any descendant parents
-          return !hasDescendantParent;
-        });
-        
-        if (nonAncestorParents.length < uniqueParents.length) {
-          console.log(`🔍 FIX: Filtered out ${uniqueParents.length - nonAncestorParents.length} ancestor parent(s) to avoid duplication`);
-        }
-        
-        // For each non-ancestor parent, get all its children
-        const allContainerChildren = [];
-        nonAncestorParents.forEach(parentEl => {
-          const $parent = $(parentEl);
-          const children = $parent.children().toArray();
-          const parentTag = $parent.prop('tagName');
-          const parentClass = $parent.attr('class') || 'no-class';
-          
-          console.log(`🔍 FIX: Collecting ${children.length} children from parent <${parentTag} class="${parentClass}">`);
-          
-          // Add all children from this parent
-          allContainerChildren.push(...children);
-        });
-        
-        console.log(`🔍 FIX: Collected ${allContainerChildren.length} total children from ${nonAncestorParents.length} parent container(s)`);
-        console.log(`🔍 FIX: ⚠️ Will sort by DOM order after deduplication to fix any ordering issues`);
-        contentElements = [...allContainerChildren, ...articleNavs, ...contentPlaceholders];
-        console.log(`🔍 ✅ Using ${contentElements.length} elements from multiple parents as contentElements`);
-      } else {
-        // All sections share same parent - use original logic
-        const firstSection = $(allSectionsInBody[0]);
-        const sectionParent = firstSection.parent();
-        const sectionParentTag = sectionParent.prop('tagName');
-        const sectionParentClass = sectionParent.attr('class') || 'no-class';
-        
-        console.log(`🔍 All sections share parent: <${sectionParentTag} class="${sectionParentClass}">`);
-        console.log(`🔍 Section parent has ${sectionParent.children().length} children total`);
-        
-        const sectionParentChildren = sectionParent.children().toArray();
-        console.log(`🔍 Section parent children: ${sectionParentChildren.map(c => `<${c.name} class="${$(c).attr('class') || ''}" id="${$(c).attr('id') || ''}">`).join(', ')}`);
-        
-        if (articleNavs.length > 0) {
-          console.log(`🔍 ✅ Found ${articleNavs.length} nav element(s) as children of articles, adding to contentElements`);
-        }
-        if (contentPlaceholders.length > 0) {
-          console.log(`🔍 ✅ Found ${contentPlaceholders.length} contentPlaceholder element(s), adding to contentElements`);
-        }
-        contentElements = [...sectionParentChildren, ...articleNavs, ...contentPlaceholders];
-        console.log(`🔍 ✅ Using ${contentElements.length} elements from section parent as contentElements`);
+      // Get ALL children of the section parent (includes sections + any preceding content)
+      const sectionParentChildren = sectionParent.children().toArray();
+      console.log(`🔍 Section parent children: ${sectionParentChildren.map(c => `<${c.name} class="${$(c).attr('class') || ''}" id="${$(c).attr('id') || ''}">`).join(', ')}`);
+      
+      // ALSO include nav elements that are children of articles (e.g., #request-predictive-intelligence-for-im > nav)
+      // These should come AFTER sections but BEFORE contentPlaceholder
+      const articleNavs = $('.zDocsTopicPageBody article > nav, .zDocsTopicPageBody article[role="article"] > nav').toArray();
+      if (articleNavs.length > 0) {
+        console.log(`🔍 ✅ Found ${articleNavs.length} nav element(s) as children of articles, adding to contentElements`);
       }
+      
+      // ALSO include contentPlaceholder siblings (Related Links, etc.) - these go at the END
+      const contentPlaceholders = topLevelChildren.filter(c => $(c).hasClass('contentPlaceholder'));
+      if (contentPlaceholders.length > 0) {
+        console.log(`🔍 ✅ Found ${contentPlaceholders.length} contentPlaceholder element(s), adding to contentElements`);
+      }
+      
+      // Use section parent's children + article navs + contentPlaceholder siblings (in correct order)
+      contentElements = [...sectionParentChildren, ...articleNavs, ...contentPlaceholders];
+      console.log(`🔍 ✅ Using ${contentElements.length} elements from section parent as contentElements`);
     } else {
       // No sections found, use original top-level children
       contentElements = topLevelChildren;
     }
     
-    // ========================================
-    // 🎯 UNIVERSAL APPROACH: Use article.nested1 as primary content source
-    // ========================================
-    // ServiceNow pages can have article.nested1 elements in different locations:
-    // 1. Inside .zDocsTopicPageBody (most common)
-    // 2. As siblings of .zDocsTopicPageBody (orphaned articles like OAuth page)
-    // 3. Inside article.nested0 containers (nested structure)
-    //
-    // 🎯 UNIVERSAL ARTICLE COLLECTION STRATEGY:
-    // ServiceNow uses different article patterns across different page types:
-    // 1. article.nested1 (newer pages) - nested articles with procedures
-    // 2. article[role="article"].dita (OAuth pages) - DITA-based articles
-    // 3. article.nested0 (wrapper) - contains shared intro content
-    //
-    // We need to detect and collect articles using BOTH patterns.
+    // DIAGNOSTIC: Check nested structure
+    const nested1InBody = $('.zDocsTopicPageBody article.nested1').length;
+    const nested0InBody = $('.zDocsTopicPageBody article.nested0').length;
+    console.log(`🔍 DIAGNOSTIC: Found ${nested0InBody} article.nested0 and ${nested1InBody} article.nested1 inside .zDocsTopicPageBody`);
+    if (nested0InBody > 0) {
+      const nested0 = $('.zDocsTopicPageBody article.nested0').first();
+      const nested1Children = nested0.find('> article.nested1').length;
+      console.log(`🔍 DIAGNOSTIC: article.nested0 has ${nested1Children} direct article.nested1 children`);
+    }
     
-    // Pattern 1: article.nested1 (e.g., Predictive Intelligence pages)
+    // FIX: Also collect any orphaned article.nested1 elements that are NOT inside .zDocsTopicPageBody
+    // These can occur when Cheerio parsing leaves some articles as top-level elements
     const allNested1 = $('article.nested1').toArray();
-    console.log(`🎯 UNIVERSAL: Found ${allNested1.length} article.nested1 elements`);
-    
-    // Pattern 2: article[role="article"] (e.g., OAuth JWT pages)
-    // Exclude article.nested0 (wrapper) and article.hascomments (outer wrapper)
-    const allDitaArticles = $('article[role="article"]:not(.nested0):not(.hascomments)').toArray();
-    console.log(`🎯 UNIVERSAL: Found ${allDitaArticles.length} article[role="article"] elements`);
-    
-    // Combine both patterns, preferring whichever has results
-    let allArticles = [];
-    if (allNested1.length > 0) {
-      allArticles = allNested1;
-      console.log(`🎯 Using article.nested1 pattern (${allArticles.length} articles)`);
-    } else if (allDitaArticles.length > 0) {
-      allArticles = allDitaArticles;
-      console.log(`🎯 Using article[role="article"] pattern (${allArticles.length} articles)`);
-    }
-    
-    // Diagnostic: Show details about each article
-    allArticles.forEach((article, idx) => {
+    const orphanedNested1 = allNested1.filter(article => {
       const $article = $(article);
-      const articleId = $article.attr('id') || 'NO-ID';
-      const title = $article.find('h2, .title').first().text().trim() || 'NO-TITLE';
-      const inBody = $article.closest('.zDocsTopicPageBody').length > 0;
-      const parentTag = $article.parent().prop('tagName');
-      const parentClass = $article.parent().attr('class') || 'no-class';
-      console.log(`🎯   Article ${idx + 1}: "${articleId}" title="${title.substring(0, 60)}" inBody=${inBody} parent=<${parentTag} class="${parentClass}">`);
+      // Check if this article is NOT a descendant of .zDocsTopicPageBody
+      return $article.closest('.zDocsTopicPageBody').length === 0;
     });
     
-    // If we found articles, use them as the primary content source
-    if (allArticles.length > 0) {
-      console.log(`🎯 ✅ UNIVERSAL OVERRIDE: Using all ${allArticles.length} articles as contentElements`);
-      console.log(`🎯    This replaces container-based detection and captures ALL articles regardless of location`);
-      
-      // CRITICAL FIX: Also collect any top-level sections that are SIBLINGS of articles (NOT inside them)
-      // Some pages have sections in multiple locations:
-      // 1. Inside .zDocsTopicPageBodyContent but outside articles (Properties, User roles, etc.)
-      // 2. Direct children of .zDocsTopicPageBody (Script includes)
-      // 3. OUTSIDE .zDocsTopicPageBody entirely - SIBLINGS of it! (Client scripts, UI policies, etc.)
-      // Strategy: Find ALL section.section elements in the entire page, then filter out those inside articles
-      const allSectionsOnPage = $('section.section').toArray();
-      console.log(`🎯 🔍 Found ${allSectionsOnPage.length} total sections on entire page`);
-      
-      const topLevelSections = allSectionsOnPage.filter(section => {
-        // Check if this section is inside any article element
-        const $section = $(section);
-        const isInsideArticle = $section.closest('article').length > 0;
-        return !isInsideArticle; // Only keep sections NOT inside articles
-      });
-      
-      if (topLevelSections.length > 0) {
-        console.log(`🎯 🔍 SIBLING SECTIONS: Found ${topLevelSections.length} sections OUTSIDE articles (from ${allSectionsOnPage.length} total)`);
-        topLevelSections.forEach((section, idx) => {
-          const $section = $(section);
-          const sectionId = $section.attr('id') || 'no-id';
-          const title = $section.find('> h2, > .title').first().text().trim() || 'NO-TITLE';
-          const parent = $section.parent();
-          const parentTag = parent.prop('tagName') || 'unknown';
-          const parentClass = parent.attr('class') || 'no-class';
-          console.log(`🎯    Section ${idx + 1}: id="${sectionId}" title="${title.substring(0, 60)}" parent=<${parentTag} class="${parentClass}">`);
-        });
-      } else {
-        console.log(`🎯 ℹ️  No sections found outside articles`);
-      }
-      
-      // CRITICAL FIX: Also collect SIBLING TABLES that are NOT inside articles
-      // Some ServiceNow pages (e.g., "Accept an improvement") have tables as siblings of articles
-      // Structure: <article></article> <div class="table-wrap"><table>...</table></div> <table>...</table>
-      const allTablesOnPage = $('table').toArray();
-      console.log(`🎯 🔍 Found ${allTablesOnPage.length} total tables on entire page`);
-      
-      const allTableWrapsOnPage = $('div.table-wrap').toArray();
-      console.log(`🎯 🔍 Found ${allTableWrapsOnPage.length} total table-wrap divs on entire page`);
-      
-      const topLevelTables = allTablesOnPage.filter(table => {
-        const $table = $(table);
-        const isInsideArticle = $table.closest('article').length > 0;
-        return !isInsideArticle; // Only keep tables NOT inside articles
-      });
-      
-      const topLevelTableWraps = allTableWrapsOnPage.filter(wrap => {
-        const $wrap = $(wrap);
-        const isInsideArticle = $wrap.closest('article').length > 0;
-        return !isInsideArticle; // Only keep table-wraps NOT inside articles
-      });
-      
-      if (topLevelTables.length > 0 || topLevelTableWraps.length > 0) {
-        console.log(`🎯 🔍 SIBLING TABLES: Found ${topLevelTables.length} tables + ${topLevelTableWraps.length} table-wraps OUTSIDE articles`);
-        topLevelTables.forEach((table, idx) => {
-          const $table = $(table);
-          const tableId = $table.attr('id') || 'no-id';
-          const caption = $table.find('caption .title').first().text().trim() || 'NO-CAPTION';
-          console.log(`🎯    Table ${idx + 1}: id="${tableId}" caption="${caption}"`);
-        });
-        topLevelTableWraps.forEach((wrap, idx) => {
-          const $wrap = $(wrap);
-          const table = $wrap.find('table').first();
-          const tableId = table.attr('id') || 'no-id';
-          const caption = table.find('caption .title').first().text().trim() || 'NO-CAPTION';
-          console.log(`🎯    TableWrap ${idx + 1}: contains table id="${tableId}" caption="${caption}"`);
-        });
-      } else {
-        console.log(`🎯 ℹ️  No tables found outside articles`);
-      }
-      
-      // Check for article.nested0 wrapper with intro content
-      const nested0 = $('article.nested0').first();
-      if (nested0.length > 0) {
-        console.log(`🎯 📝 Found article.nested0 wrapper - checking for intro content`);
-        
-        // Extract the body container AND any orphaned content after nested0
-        // Structure: article.nested0 > div.body.conbody (contains shortdesc + sections)
-        // After article.nested0 closes, there may be orphaned notes/paragraphs/lists
-        const bodyConbody = nested0.find('> div.body.conbody').first();
-        const introElements = [];
-        
-        if (bodyConbody.length > 0) {
-          console.log(`🎯 ✅ Found div.body.conbody in nested0`);
-          introElements.push(bodyConbody.get(0));
-          
-          const shortdesc = bodyConbody.find('> p.shortdesc');
-          const sections = bodyConbody.find('> section');
-          console.log(`🎯    Contains: ${shortdesc.length} shortdesc + ${sections.length} sections`);
-        }
-        
-        // Also collect any orphaned content AFTER article.nested0 closes
-        // CRITICAL: Orphaned content can appear at multiple DOM levels:
-        // 1. As siblings of nested0's parent wrappers
-        // 2. As direct children of .zDocsTopicPageBody
-        // 3. Scattered between wrapper divs
-        // 4. AFTER .zDocsTopicPageBody closes (as siblings in the body)
-        // Strategy: Find ALL meaningful content in AND after .zDocsTopicPageBody that's NOT inside article.nested1
-        
-        // Search inside .zDocsTopicPageBody
-        // CRITICAL: Also include plain <div> elements (no class) that may contain orphaned text
-        const insideCandidates = $('.zDocsTopicPageBody')
-          .find('div.note, div.p, div:not([class]), p:not([class*="shortdesc"]), ul, ol')
-          .toArray();
-        
-        // ALSO search for orphaned content AFTER .zDocsTopicPageBody closes
-        // This catches content that appears as siblings after the main container
-        const topicBodyDiv = $('.zDocsTopicPageBody').first();
-        const afterCandidates = [];
-        if (topicBodyDiv.length > 0) {
-          let sibling = topicBodyDiv.get(0).nextSibling;
-          while (sibling) {
-            if (sibling.type === 'tag') {
-              const $sibling = $(sibling);
-              // Check if it matches our orphan patterns
-              const tag = sibling.name;
-              const siblingText = $sibling.text().trim();
-              // CRITICAL: Also include plain <div> elements (no class) with meaningful text
-              if (tag === 'div' && ($sibling.hasClass('note') || $sibling.hasClass('p') || (!$sibling.attr('class') && siblingText.length > 20))) {
-                afterCandidates.push(sibling);
-              } else if (tag === 'p' || tag === 'ul' || tag === 'ol') {
-                afterCandidates.push(sibling);
-              }
-              // Also search within this sibling for nested orphans (including plain divs)
-              const nested = $sibling.find('div.note, div.p, div:not([class]), p:not([class*="shortdesc"]), ul, ol').toArray();
-              afterCandidates.push(...nested);
-            }
-            sibling = sibling.nextSibling;
-          }
-        }
-        
-        const allOrphanCandidates = [...insideCandidates, ...afterCandidates];
-        
-        console.log(`🎯 🔍 Found ${insideCandidates.length} potential orphan candidates inside zDocsTopicPageBody`);
-        console.log(`🎯 🔍 Found ${afterCandidates.length} potential orphan candidates AFTER zDocsTopicPageBody`);
-        console.log(`🎯 🔍 Total ${allOrphanCandidates.length} potential orphan candidates`);
-        
-        // Filter to only elements that are:
-        // 1. NOT inside article.nested1 (those are already processed)
-        //    EXCEPTION: allow likely "list continuation" paragraphs that appear after an <ol>
-        // 2. NOT inside article.nested0's body.conbody (already collected above)
-        // 3. NOT miniTOC navigation elements (On this page navigation)
-        // 4. Have meaningful text content
-        const meaningfulOrphans = allOrphanCandidates.filter(el => {
-          const $el = $(el);
-          const tag = el.name;
-          const text = $el.text().trim();
-          const classes = $el.attr('class') || 'no-class';
-          const textPreview = text.substring(0, 80);
-          
-          console.log(`🎯 🔍 Candidate: <${tag} class="${classes}"> "${textPreview}..."`);
-          
-          // Skip if inside any article.nested1, UNLESS it's likely a continuation of a numbered list
-          if ($el.closest('article.nested1').length > 0) {
-            // Heuristic: paragraphs that immediately follow an <ol> within the same section/article
-            const isParaLike = tag === 'p' || (tag === 'div' && $el.hasClass('p'));
-            let prevOlNearby = false;
-            if (isParaLike && text.length > 10) {
-              // Look for a nearby previous <ol> among element siblings (up to 5 steps back)
-              let prev = $el.prev();
-              let steps = 0;
-              while (prev && prev.length && steps < 5) {
-                if (prev.is('ol')) { prevOlNearby = true; break; }
-                prev = prev.prev();
-                steps++;
-              }
-              // Also check previous siblings of the parent (up to 3 steps)
-              if (!prevOlNearby) {
-                const $parent = $el.parent();
-                if ($parent && $parent.length) {
-                  let pPrev = $parent.prev();
-                  let pSteps = 0;
-                  while (pPrev && pPrev.length && pSteps < 3) {
-                    if (pPrev.is('ol')) { prevOlNearby = true; break; }
-                    pPrev = pPrev.prev();
-                    pSteps++;
-                  }
-                }
-              }
-            }
-
-            if (!prevOlNearby) {
-              console.log(`🎯   ❌ Filtered: inside article.nested1`);
-              return false;
-            } else {
-              console.log(`🎯   ✅ KEEPING orphan inside nested1 as list continuation after <ol>`);
-            }
-          }
-          
-          // Skip if inside article.nested0's body.conbody (already collected)
-          if ($el.closest('article.nested0 div.body.conbody').length > 0) {
-            console.log(`🎯   ❌ Filtered: inside article.nested0 body.conbody`);
-            return false;
-          }
-          
-          // Skip miniTOC navigation elements (On this page navigation)
-          if ($el.hasClass('linkList') || $el.closest('.miniTOC').length > 0 || $el.closest('.linkList').length > 0) {
-            console.log(`🎯   ❌ Filtered: miniTOC navigation element`);
-            return false;
-          }
-          
-          // Skip empty elements
-          if (text.length === 0) {
-            console.log(`🎯   ❌ Filtered: empty`);
-            return false;
-          }
-          
-          // Keep meaningful semantic elements
-          // CRITICAL: Also accept plain <div> elements (no class) if they have meaningful text
-          const isValid = (
-            tag === 'div' && ($el.hasClass('note') || $el.hasClass('p') || (!$el.attr('class') && text.length > 20)) ||
-            tag === 'p' ||
-            tag === 'ul' ||
-            tag === 'ol'
-          );
-          
-          if (isValid) {
-            console.log(`🎯   ✅ KEEPING orphan`);
-          } else {
-            console.log(`🎯   ❌ Filtered: not a meaningful semantic element`);
-          }
-          
-          return isValid;
-        });
-        
-        if (meaningfulOrphans.length > 0) {
-          console.log(`🎯 ✅ Found ${meaningfulOrphans.length} orphaned content elements (notes, paragraphs, lists)`);
-
-          // Normalize certain orphans: if a paragraph inside nested1 likely continues a numbered list,
-          // convert it to an orphan <li> so it becomes a proper numbered_list_item in Notion.
-          const normalizedOrphans = [];
-          meaningfulOrphans.forEach((el, idx) => {
-            const $el = $(el);
-            const tagName = el.name;
-            const textFull = $el.text().trim();
-            const text = textFull.substring(0, 80);
-            const classes = $el.attr('class') || 'no-class';
-            const insideNested1 = $el.closest('article.nested1').length > 0;
-
-            // Determine if this orphan is a list-continuation paragraph
-            const isParaLike = tagName === 'p' || (tagName === 'div' && $el.hasClass('p'));
-            let prevOlNearby = false;
-            if (insideNested1 && isParaLike && textFull.length > 10) {
-              let prev = $el.prev();
-              let steps = 0;
-              while (prev && prev.length && steps < 5) {
-                if (prev.is('ol')) { prevOlNearby = true; break; }
-                prev = prev.prev();
-                steps++;
-              }
-              if (!prevOlNearby) {
-                const $parent = $el.parent();
-                if ($parent && $parent.length) {
-                  let pPrev = $parent.prev();
-                  let pSteps = 0;
-                  while (pPrev && pPrev.length && pSteps < 3) {
-                    if (pPrev.is('ol')) { prevOlNearby = true; break; }
-                    pPrev = pPrev.prev();
-                    pSteps++;
-                  }
-                }
-              }
-            }
-
-            if (insideNested1 && isParaLike && prevOlNearby) {
-              // Convert paragraph to orphan <li> to create a proper numbered list item
-              const $li = $('<li class="li"></li>');
-              const html = $el.html() || $el.text();
-              $li.html(html);
-              console.log(`🔧 [LIST-CONTINUATION-FIX] Converting orphan paragraph to orphan <li>: "${text}..."`);
-              normalizedOrphans.push($li.get(0));
-            } else {
-              normalizedOrphans.push(el);
-            }
-
-            console.log(`🎯    Orphan ${idx + 1}: <${tagName} class="${classes}"> "${text}..."`);
-          });
-
-          introElements.push(...normalizedOrphans);
-        } else {
-          console.log(`🎯 ℹ️  No orphaned content found outside articles`);
-        }
-        
-        if (introElements.length > 0) {
-          console.log(`🎯 ✅ Total intro/orphaned elements: ${introElements.length}`);
-          
-          // Prepend intro content before articles, append sibling sections + tables after
-          contentElements = [...introElements, ...allArticles, ...topLevelSections, ...topLevelTableWraps, ...topLevelTables, ...articleNavs, ...contentPlaceholders];
-          console.log(`🎯 ✅ Total contentElements: ${contentElements.length} (${introElements.length} intro+orphaned + ${allArticles.length} articles + ${topLevelSections.length} sections + ${topLevelTableWraps.length} table-wraps + ${topLevelTables.length} tables + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
-        } else {
-          console.log(`🎯 ℹ️  No intro or orphaned elements found in/after nested0`);
-          contentElements = [...allArticles, ...topLevelSections, ...topLevelTableWraps, ...topLevelTables, ...articleNavs, ...contentPlaceholders];
-          console.log(`🎯 ✅ Total contentElements: ${contentElements.length} (${allArticles.length} articles + ${topLevelSections.length} sections + ${topLevelTableWraps.length} table-wraps + ${topLevelTables.length} tables + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
-        }
-      } else {
-        // No nested0 wrapper, use articles + sibling sections + sibling tables
-        contentElements = [...allArticles, ...topLevelSections, ...topLevelTableWraps, ...topLevelTables, ...articleNavs, ...contentPlaceholders];
-        console.log(`🎯 ✅ Total contentElements: ${contentElements.length} (${allArticles.length} articles + ${topLevelSections.length} sections + ${topLevelTableWraps.length} table-wraps + ${topLevelTables.length} tables + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
-      }
-    } else {
-      // Fallback: No articles found using universal patterns, keep container-based contentElements
-      console.log(`🎯 ⚠️  WARNING: No articles found using known universal patterns!`);
-      console.log(`🎯 ⚠️  This may indicate a new ServiceNow page structure that needs analysis.`);
-      console.log(`🎯 ⚠️  Falling back to container-based detection (${contentElements.length} elements)`);
-      
-      // Diagnostic: Show what article elements exist on the page (if any)
-      const allArticlesOnPage = $('article').toArray();
-      if (allArticlesOnPage.length > 0) {
-        console.log(`🎯 📊 DIAGNOSTIC: Found ${allArticlesOnPage.length} <article> elements on page with these patterns:`);
-        const articlePatterns = new Map();
-        allArticlesOnPage.forEach(article => {
-          const $article = $(article);
-          const classes = $article.attr('class') || 'no-class';
-          const role = $article.attr('role') || 'no-role';
-          const id = $article.attr('id') || 'no-id';
-          const key = `<article class="${classes}" role="${role}">`;
-          const existing = articlePatterns.get(key) || { count: 0, ids: [] };
-          existing.count++;
-          existing.ids.push(id);
-          articlePatterns.set(key, existing);
-        });
-        
-        articlePatterns.forEach((info, pattern) => {
-          console.log(`🎯 📊   ${info.count}x ${pattern}`);
-          console.log(`🎯 📊      IDs: ${info.ids.slice(0, 3).join(', ')}${info.ids.length > 3 ? '...' : ''}`);
-        });
-        
-        console.log(`🎯 💡 Consider updating universal article collection to support these patterns.`);
-      } else {
-        console.log(`🎯 📊 DIAGNOSTIC: No <article> elements found on page (unusual structure)`);
-      }
+    if (orphanedNested1.length > 0) {
+      console.log(`🔍 FIX: Found ${orphanedNested1.length} orphaned article.nested1 elements outside .zDocsTopicPageBody`);
+      console.log(`🔍 FIX: Orphaned article IDs: ${orphanedNested1.map(a => $(a).attr('id') || 'NO-ID').join(', ')}`);
+      // Add orphaned articles to the contentElements array
+      contentElements.push(...orphanedNested1);
     }
-    
-    if (!ENABLE_ORPHAN_LIST_REPAIR) {
-      // FIX: Collect orphaned <li> elements that are NOT inside any ol/ul
-      // These can appear anywhere in the page body due to malformed ServiceNow HTML
-      // CRITICAL: Only add orphans that are NOT already inside existing contentElements
-      // This prevents duplicate processing of <li> elements that are inside articles/sections
-      const allLis = $('.zDocsTopicPageBody li').toArray();
-      const orphanedLis = allLis.filter(li => {
-        const $li = $(li);
-        
-        // Check if this <li> has an <ol> or <ul> as a parent
-        const hasListParent = $li.closest('ol, ul').length > 0;
-        if (hasListParent) {
-          return false; // Has list parent, not an orphan
-        }
-        
-        // CRITICAL FIX: Check if this <li> is already inside any element in contentElements
-        // This prevents duplicate processing when <li> is inside an article/section that's already queued
-        const isInsideContentElement = contentElements.some(el => {
-          const $el = $(el);
-          // Check if this element contains the <li>
-          return $el.find(li).length > 0 || el === li;
-        });
-        
-        if (isInsideContentElement) {
-          console.log(`🔍 FIX: Skipping <li> already inside contentElement: "${$li.text().trim().substring(0, 60)}..."`);
-          return false;
-        }
-        
-        return true; // This is a true orphan
-      });
-      
-      if (orphanedLis.length > 0) {
-        console.log(`🔍 FIX: Found ${orphanedLis.length} TRUE orphaned <li> elements (not inside ol/ul AND not in contentElements)`);
-        orphanedLis.forEach((li, idx) => {
-          const $li = $(li);
-          const text = $li.text().trim().substring(0, 80);
-          const parentTag = $li.parent().prop('tagName');
-          const parentClass = $li.parent().attr('class') || 'no-class';
-          console.log(`🔍 FIX:   Orphan LI ${idx + 1}: "${text}..." parent=<${parentTag} class="${parentClass}">`);
-        });
-        contentElements.push(...orphanedLis);
-        console.log(`🔍 FIX: Added ${orphanedLis.length} orphaned <li> to contentElements (now ${contentElements.length} total)`);
-      } else {
-        console.log(`🔍 FIX: No TRUE orphaned <li> elements found (all <li> elements are either in lists or already in contentElements)`);
-      }
-    } else if (orphanListRepairSummary && orphanListRepairSummary.unresolvedCount > 0) {
-      console.log(`[LIST-REPAIR] ${orphanListRepairSummary.unresolvedCount} list items remained unresolved after repair; consider fallback handling.`);
-    }
-    
-    // FIX: Deduplicate contentElements array (orphan collection strategies may overlap)
-    // Use a Map with element identity key (cheerio element reference won't work with Set)
-    const uniqueElements = [];
-    const seenElementKeys = new Set();
-    
-    for (const el of contentElements) {
-      // Create unique key: tag name + id + position in parent + text preview
-      const $el = $(el);
-      const tag = el.name || 'unknown';
-      const id = $el.attr('id') || '';
-      const parent = $el.parent();
-      const indexInParent = parent.length > 0 ? parent.children().index(el) : -1;
-      const textPreview = $el.text().trim().substring(0, 50);
-      const key = `${tag}|${id}|${indexInParent}|${textPreview}`;
-      
-      if (!seenElementKeys.has(key)) {
-        seenElementKeys.add(key);
-        uniqueElements.push(el);
-      } else {
-        console.log(`🔍 FIX: Skipping duplicate element: <${tag}> id="${id}" text="${textPreview.substring(0, 30)}..."`);
-      }
-    }
-    
-    if (uniqueElements.length < contentElements.length) {
-      console.log(`🔍 FIX: Deduplicated contentElements: ${contentElements.length} → ${uniqueElements.length} (removed ${contentElements.length - uniqueElements.length} duplicates)`);
-      contentElements = uniqueElements;
-    }
-    
-    // Sort contentElements by original DOM order using the element order map
-    // This ensures orphan elements appear in their correct position, not at the bottom
-    contentElements.sort((a, b) => {
-      const orderA = elementOrderMap.has(a) ? elementOrderMap.get(a) : Number.MAX_SAFE_INTEGER;
-      const orderB = elementOrderMap.has(b) ? elementOrderMap.get(b) : Number.MAX_SAFE_INTEGER;
-      return orderA - orderB;
-    });
-    console.log(`🗺️ Sorted ${contentElements.length} content elements by DOM order`);
-    
   } else if ($('body').length > 0) {
     // Full HTML document with body tag
     contentElements = $('body').find('> *').toArray();
@@ -6760,17 +3917,9 @@ async function extractContentFromHtml(html) {
   }
   
   for (const child of contentElements) {
-    const $child = $(child);
-    const childId = $child.attr('id') || 'no-id';
-    const childClass = $child.attr('class') || 'no-class';
+    const childId = $(child).attr('id') || 'no-id';
+    const childClass = $(child).attr('class') || 'no-class';
     const childTag = child.name;
-    
-    // Skip miniTOC navigation elements (On this page navigation)
-    if ($child.hasClass('linkList') || $child.hasClass('miniTOC') || $child.closest('.miniTOC').length > 0) {
-      console.log(`🔍 Skipping miniTOC navigation element: <${childTag} id="${childId}" class="${childClass}">`);
-      continue;
-    }
-    
     console.log(`🔍 Processing contentElement: <${childTag} id="${childId}" class="${childClass}">`);
     
     const childBlocks = await processElement(child);
@@ -6806,98 +3955,27 @@ async function extractContentFromHtml(html) {
   console.log(`🔍 Fallback check - cleaned content length: ${content.trim().length}`);
   
   // Check if all content elements were successfully removed (processed)
-  // Count elements with actual text content, not just empty wrappers
   let unprocessedElements = 0;
-  let elementsToCheck = [];
-  
   if ($('body').length > 0) {
-    elementsToCheck = $('body').children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6, article').toArray();
+    unprocessedElements = $('body').children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').length;
   } else if ($('.zDocsTopicPageBody').length > 0) {
-    elementsToCheck = $('.zDocsTopicPageBody').children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6, article').toArray();
+    unprocessedElements = $('.zDocsTopicPageBody').children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').length;
   } else if ($('.dita, .refbody, article, main, [role="main"]').length > 0) {
     const mainArticle = $('article.dita, .refbody').first();
     if (mainArticle.length > 0) {
-      elementsToCheck = mainArticle.children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6, article').toArray();
+      unprocessedElements = mainArticle.children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').length;
     } else {
-      elementsToCheck = $('.dita, .refbody, article, main, [role="main"]').first().children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6, article').toArray();
+      unprocessedElements = $('.dita, .refbody, article, main, [role="main"]').first().children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').length;
     }
   }
   
-  // Only count elements that have meaningful text content (not just whitespace/structure)
-  unprocessedElements = elementsToCheck.filter(el => {
-    const text = $(el).text().trim();
-    const $el = $(el);
-    
-    // Skip known empty container classes that are expected after extraction
-    // NOTE: After universal article collection, wrapper divs may remain but are empty of meaningful content
-    const isKnownContainer = $el.hasClass('zDocsTopicPageBodyContent') || 
-                            $el.hasClass('zDocsTopicPageBody') ||
-                            $el.hasClass('hascomments') || // Skip article.hascomments wrappers (outer container)
-                            $el.attr('role') === 'main' ||
-                            $el.attr('role') === 'article' || // Skip article wrappers (processed via universal collection)
-                            $el.attr('dir') === 'ltr' ||
-                            ($el.is('article') && $el.children().length === 0) || // Skip empty articles
-                            ($el.is('div') && $el.hasClass('zDocsTopicPageBodyContent')) || // Skip main content wrapper
-                            ($el.is('div') && $el.children().length === 0 && text.length === 0); // Skip empty divs
-    
-    if (isKnownContainer) {
-      console.log(`🔍 Skipping known container: <${el.name} class="${$el.attr('class') || 'none'}" role="${$el.attr('role') || 'none'}">`);
-      return false; // Don't count known empty containers
-    }
-    
-    // CRITICAL: Skip anonymous wrapper divs that only contain known empty containers
-    // Pattern: <div><article class="hascomments">...</article></div>
-    // After extraction, the article.hascomments is empty, and the wrapper div should be ignored too
-    if ($el.is('div') && !$el.attr('class') && $el.children().length > 0) {
-      const allChildrenAreKnownContainers = $el.children().toArray().every(child => {
-        const $child = $(child);
-        return $child.hasClass('hascomments') || 
-               $child.attr('role') === 'article' ||
-               $child.hasClass('zDocsTopicPageBodyContent') ||
-               ($child.is('article') && $child.children().length === 0);
-      });
-      if (allChildrenAreKnownContainers) {
-        console.log(`🔍 Skipping anonymous wrapper div containing only known containers (${$el.children().length} children)`);
-        return false;
-      }
-    }
-    
-    // Count as unprocessed if it has substantial text (>10 chars) or contains content-rich children
-    return text.length > 10 || $(el).find('p, ul, ol, table, pre').length > 0;
-  }).length;
-  
-  console.log(`🔍 Unprocessed elements remaining: ${unprocessedElements} (with meaningful content)`);
+  console.log(`🔍 Unprocessed elements remaining: ${unprocessedElements}`);
   
   if (unprocessedElements > 0) {
     console.log(`⚠️ Warning: ${unprocessedElements} content elements were not processed!`);
     console.log(`⚠️ This indicates a bug in the element processing logic.`);
     console.log(`⚠️ Remaining HTML structure (first 500 chars):`);
     console.log(remainingHtml.substring(0, 500));
-    
-    // Save remaining HTML for analysis
-    if (process.env.SN2N_VERBOSE === '1' || process.env.SN2N_EXTRA_DEBUG === '1') {
-      const fs = require('fs');
-      const path = require('path');
-      const logDir = path.join(__dirname, '..', 'logs');
-      const logFile = path.join(logDir, 'unprocessed-html.html');
-      try {
-        fs.writeFileSync(logFile, remainingHtml, 'utf8');
-        console.log(`📝 Saved unprocessed HTML to ${logFile}`);
-      } catch (err) {
-        console.log(`⚠️ Could not save unprocessed HTML: ${err.message}`);
-      }
-    }
-    
-    // Collect warning for later logging (after page creation when we have pageId)
-    warnings.push({
-      type: 'UNPROCESSED_CONTENT',
-      data: {
-        count: unprocessedElements,
-        htmlPreview: remainingHtml.substring(0, 500)
-      }
-    });
-  } else if (elementsToCheck.length > 0) {
-    console.log(`✅ All ${elementsToCheck.length} remaining elements are empty wrappers (no meaningful content)`);
   }
   
   if (content.trim().length > 100 && unprocessedElements === 0) {
@@ -6960,6 +4038,84 @@ async function extractContentFromHtml(html) {
   // No post-processing needed - proper nesting structure handles list numbering restart
   console.log(`✅ Extraction complete: ${blocks.length} blocks`);
   
+  // POST-PROCESSING: Reassign misplaced tables to correct list items
+  // Problem: Second table in Add-or-modify.html appears as standalone block (index 10)
+  // immediately before the "Specify the rule..." numbered_list_item (index 11).
+  // It should be a child of that list item, not a sibling.
+  console.log(`🔧 [TABLE-REASSIGN] Starting post-processing pass for ${blocks.length} blocks`);
+  
+  for (let i = 0; i < blocks.length - 1; i++) {
+    const currentBlock = blocks[i];
+    const nextBlock = blocks[i + 1];
+    
+    // Check if current is a standalone table and next is numbered_list_item with "Specify the rule..."
+    if (currentBlock && currentBlock.type === 'table' && 
+        nextBlock && nextBlock.type === 'numbered_list_item') {
+      
+      const nextText = (nextBlock.numbered_list_item?.rich_text || [])
+        .map(rt => rt.text?.content || '')
+        .join('')
+        .trim();
+      
+      // Match the specific orphan list item text
+      if (/^Specify the rule based on your selected rule method\.?$/i.test(nextText)) {
+        console.log(`🔧 [TABLE-REASSIGN] Found misplaced table at index ${i} before orphan list item "${nextText.substring(0, 50)}..."`);
+        
+        // Check if this table has a marker linking it to a PREVIOUS list item
+        // We need to remove that marker reference to prevent incorrect orchestration
+        const tableMarker = currentBlock._sn2n_marker;
+        if (tableMarker) {
+          console.log(`🔧 [TABLE-REASSIGN] Table has marker ${tableMarker}, searching for parent with this marker...`);
+          
+          // Find the block that references this marker (should be the "Complete or update..." list item)
+          for (let j = 0; j < i; j++) {
+            const potentialParent = blocks[j];
+            if (potentialParent && potentialParent.type === 'numbered_list_item') {
+              const parentRichText = potentialParent.numbered_list_item?.rich_text || [];
+              const hasMarkerToken = parentRichText.some(rt => 
+                rt.text?.content && rt.text.content.includes(`(sn2n:${tableMarker})`)
+              );
+              
+              if (hasMarkerToken) {
+                console.log(`🔧 [TABLE-REASSIGN] Found wrong parent at index ${j}, removing marker token from its rich_text`);
+                
+                // Remove the marker token from parent's rich_text
+                potentialParent.numbered_list_item.rich_text = parentRichText.filter(rt => 
+                  !rt.text?.content || !rt.text.content.includes(`(sn2n:${tableMarker})`)
+                );
+                
+                console.log(`🔧 [TABLE-REASSIGN] Removed marker token, parent now has ${potentialParent.numbered_list_item.rich_text.length} rich_text elements`);
+                break;
+              }
+            }
+          }
+          
+          // Remove marker from table so orchestrator doesn't try to append it elsewhere
+          delete currentBlock._sn2n_marker;
+          console.log(`🔧 [TABLE-REASSIGN] Removed marker ${tableMarker} from table block`);
+        }
+        
+        // Move table into the orphan list item's children
+        if (!nextBlock.numbered_list_item.children) {
+          nextBlock.numbered_list_item.children = [];
+        }
+        
+        // Insert table at the beginning of children (before stepxmp content if any)
+        nextBlock.numbered_list_item.children.unshift(currentBlock);
+        console.log(`🔧 [TABLE-REASSIGN] Moved table into list item children (now has ${nextBlock.numbered_list_item.children.length} children)`);
+        
+        // Remove table from top-level blocks array
+        blocks.splice(i, 1);
+        console.log(`🔧 [TABLE-REASSIGN] Removed table from top-level blocks, new count: ${blocks.length}`);
+        
+        // Adjust loop counter since we removed an element
+        i--;
+      }
+    }
+  }
+  
+  console.log(`🔧 [TABLE-REASSIGN] Post-processing complete, final block count: ${blocks.length}`);
+  
   // Restore technical placeholders in all rich_text content
   function restorePlaceholders(obj) {
     if (Array.isArray(obj)) {
@@ -6976,63 +4132,7 @@ async function extractContentFromHtml(html) {
   }
   restorePlaceholders(blocks);
   
-  // Deduplicate identical tables and callouts (but NOT paragraphs/text)
-  // Tables and callouts should never appear twice identically on the same page
-  console.log(`🔍 [DEDUPE] Starting deduplication check on ${blocks.length} blocks...`);
-  const seenTables = new Set();
-  const seenCallouts = new Set();
-  let duplicatesRemoved = 0;
-  
-  const deduplicatedBlocks = blocks.filter((block, index) => {
-    if (!block || !block.type) return true;
-    
-    // Deduplicate tables by comparing cell content structure
-    if (block.type === 'table' && block.table && block.table.children) {
-      const tableKey = JSON.stringify(
-        block.table.children.map(row => 
-          row.table_row?.cells?.map(cell => 
-            cell.map(rt => rt.text?.content || '').join('')
-          )
-        )
-      );
-      
-      if (seenTables.has(tableKey)) {
-        console.log(`🔍 [DEDUPE] Removed duplicate table at index ${index}`);
-        duplicatesRemoved++;
-        return false;
-      }
-      seenTables.add(tableKey);
-      return true;
-    }
-    
-    // Deduplicate callouts by comparing rich text content and color
-    if (block.type === 'callout' && block.callout) {
-      const calloutKey = JSON.stringify({
-        color: block.callout.color,
-        icon: block.callout.icon?.emoji || block.callout.icon?.type || '',
-        text: block.callout.rich_text?.map(rt => rt.text?.content || '').join('') || ''
-      });
-      
-      if (seenCallouts.has(calloutKey)) {
-        console.log(`🔍 [DEDUPE] Removed duplicate callout at index ${index}: "${block.callout.rich_text?.map(rt => rt.text?.content || '').join('').substring(0, 60)}..."`);
-        duplicatesRemoved++;
-        return false;
-      }
-      seenCallouts.add(calloutKey);
-      return true;
-    }
-    
-    // Keep all other block types (paragraphs, headings, lists, etc.)
-    return true;
-  });
-  
-  if (duplicatesRemoved > 0) {
-    console.log(`🔍 [DEDUPE] ✅ Removed ${duplicatesRemoved} duplicate blocks (${blocks.length} → ${deduplicatedBlocks.length})`);
-  } else {
-    console.log(`🔍 [DEDUPE] ✅ No duplicates found`);
-  }
-  
-  return { blocks: deduplicatedBlocks, hasVideos: hasDetectedVideos, warnings };
+  return { blocks, hasVideos: hasDetectedVideos };
 }
 
 /**

@@ -54,6 +54,18 @@ router.post('/W2N', async (req, res) => {
   console.log('🔥🔥🔥🔥🔥 W2N ROUTE HANDLER ENTRY - FILE VERSION 07:20:00 - WITH CONSOLE.LOG NAV DIAGNOSTIC 🔥🔥🔥🔥🔥');
   log('🔥🔥🔥 W2N ROUTE HANDLER ENTRY - FILE VERSION 07:20:00 - WITH CONSOLE.LOG NAV DIAGNOSTIC');
   
+  // Clear paragraph tracker for new request to detect duplicates within this conversion
+  if (global._sn2n_paragraph_tracker) {
+    console.log(`🔄 [DUPLICATE-DETECT] Clearing paragraph tracker (had ${global._sn2n_paragraph_tracker.length} entries)`);
+  }
+  global._sn2n_paragraph_tracker = [];
+  
+  // Clear callout tracker for new request to detect duplicate callouts within this conversion
+  if (global._sn2n_callout_tracker) {
+    console.log(`🔄 [CALLOUT-DUPLICATE] Clearing callout tracker (had ${global._sn2n_callout_tracker.size} entries)`);
+  }
+  global._sn2n_callout_tracker = new Set();
+  
   try {
     const payload = req.body;
     log("📝 Processing W2N request for:", payload.title);
@@ -109,18 +121,20 @@ router.post('/W2N', async (req, res) => {
       );
       
       // Check for nav tags
-      const navCount = (payload.contentHtml.match(/<nav[^>]*>/g) || []).length;
-      console.log(`🔍 DEBUG API: Found ${navCount} <nav> tags in received HTML`);
-      
-      // COUNT ARTICLE.NESTED1 ELEMENTS AT API ENTRY
-      const nested1Matches = payload.contentHtml.match(/class="topic task nested1"/g);
-      const nested1Count = nested1Matches ? nested1Matches.length : 0;
-      console.log(`🚨🚨🚨 API ENTRY POINT: Found ${nested1Count} article.nested1 elements in received HTML`);
-      
-      // Check for nested0
-      const nested0Matches = payload.contentHtml.match(/class="[^"]*nested0[^"]*"/g);
-      const nested0Count = nested0Matches ? nested0Matches.length : 0;
-      console.log(`🚨🚨🚨 API ENTRY POINT: Found ${nested0Count} article.nested0 elements in received HTML`);
+      if (payload.contentHtml) {
+        const navCount = (payload.contentHtml.match(/<nav[^>]*>/g) || []).length;
+        console.log(`🔍 DEBUG API: Found ${navCount} <nav> tags in received HTML`);
+        
+        // COUNT ARTICLE.NESTED1 ELEMENTS AT API ENTRY
+        const nested1Matches = payload.contentHtml.match(/class="topic task nested1"/g);
+        const nested1Count = nested1Matches ? nested1Matches.length : 0;
+        console.log(`🚨🚨🚨 API ENTRY POINT: Found ${nested1Count} article.nested1 elements in received HTML`);
+        
+        // Check for nested0
+        const nested0Matches = payload.contentHtml.match(/class="[^"]*nested0[^"]*"/g);
+        const nested0Count = nested0Matches ? nested0Matches.length : 0;
+        console.log(`🚨🚨🚨 API ENTRY POINT: Found ${nested0Count} article.nested0 elements in received HTML`);
+      }
       console.log('🔥🔥🔥 INSIDE DIAGNOSTIC BLOCK - LAST LINE BEFORE CLOSING BRACE');
     }
     
@@ -136,42 +150,37 @@ router.post('/W2N', async (req, res) => {
       );
     }
 
-    if (!payload.databaseId) {
-      // Allow a dry-run mode for testing conversions without creating a Notion page
-      if (payload.dryRun) {
-        // Create children blocks from content so the caller can inspect conversion
-        let children = [];
-        let hasVideos = false;
-        let extractionWarnings = [];
-        if (payload.contentHtml) {
-          log("🔄 (dryRun) Converting HTML content to Notion blocks");
-          const result = await htmlToNotionBlocks(payload.contentHtml);
-          children = result.blocks;
-          hasVideos = result.hasVideos;
-          extractionWarnings = result.warnings || [];
-          log(`✅ (dryRun) Converted HTML to ${children.length} Notion blocks`);
-          if (hasVideos) {
-            log(`🎥 (dryRun) Video content detected`);
-          }
-          if (extractionWarnings.length > 0) {
-            log(`⚠️ (dryRun) ${extractionWarnings.length} warnings collected during extraction`);
-          }
-        } else if (payload.content) {
-          children = [
-            {
-              object: "block",
-              type: "paragraph",
-              paragraph: {
-                rich_text: [
-                  { type: "text", text: { content: payload.content } },
-                ],
-              },
-            },
-          ];
+    // Allow a dry-run mode for testing conversions without creating a Notion page
+    if (payload.dryRun) {
+      log("🔍 DryRun mode enabled - converting content to blocks without creating page");
+      let children = [];
+      let hasVideos = false;
+      let extractionWarnings = [];
+      if (payload.contentHtml) {
+        log("🔄 (dryRun) Converting HTML content to Notion blocks");
+        const result = await htmlToNotionBlocks(payload.contentHtml);
+        children = result.blocks;
+        hasVideos = result.hasVideos;
+        extractionWarnings = result.warnings || [];
+        log(`✅ (dryRun) Converted HTML to ${children.length} Notion blocks`);
+        if (hasVideos) {
+          log(`🎥 (dryRun) Video content detected`);
         }
-        return sendSuccess(res, { dryRun: true, children, hasVideos });
+        if (extractionWarnings.length > 0) {
+          log(`⚠️ (dryRun) ${extractionWarnings.length} warnings collected during extraction`);
+        }
+      } else if (payload.content) {
+        log("🔄 (dryRun) Converting plain text content to Notion blocks");
+        const result = await htmlToNotionBlocks(payload.content);
+        children = result.blocks;
+        hasVideos = result.hasVideos;
+        extractionWarnings = result.warnings || [];
+        log(`✅ (dryRun) Converted content to ${children.length} Notion blocks`);
       }
+      return sendSuccess(res, { dryRun: true, children, hasVideos, warnings: extractionWarnings });
+    }
 
+    if (!payload.databaseId) {
       return sendError(
         res,
         "MISSING_DATABASE_ID",
