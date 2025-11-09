@@ -1914,12 +1914,13 @@ if (require.main === module) {
     }
   }
   
-  const server = app.listen(PORT, () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     // Always print a concise startup message; verbose logs use log()
     console.log(
       new Date().toISOString(),
       "[SN2N] SN2N proxy listening on port",
-      PORT
+      PORT,
+      "on all interfaces (0.0.0.0)"
     );
     console.log(
       new Date().toISOString(),
