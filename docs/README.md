@@ -55,6 +55,22 @@
 
 ---
 
+### FIXTURES_IMPLEMENTATION_SUMMARY.md
+**Purpose**: Automated capture and regression testing with HTML fixtures
+**Use When**:
+- Investigating validation failures
+- Reproducing conversion issues from saved HTML
+- Running dryRun verification on historical pages
+
+**Contains**:
+- Auto-capture flow and metadata format
+- Fixture runner usage (`tests/test-fixture.cjs`)
+- Environment variables (`SN2N_SAVE_VALIDATION_FAILURES`, `SN2N_FIXTURES_DIR`)
+
+**Related**: `server/utils/VALIDATION_README.md` (post-creation validation utility)
+
+---
+
 ## 📖 Technical Reference
 
 ### notion-blocks-reference.md
@@ -109,6 +125,14 @@
 - Validation results
 
 **Related**: `VERSION_9.2_FIXES.md` (comprehensive v9.2.x overview)
+
+---
+
+### Validation Utility (external reference)
+**File**: `server/utils/VALIDATION_README.md`
+**Purpose**: Post-creation Notion page validation (marker leaks, block counts, headings)
+**Quick Start**: Add `Error` (Checkbox) + `Validation` (Text) properties; set `SN2N_VALIDATE_OUTPUT=1` and restart server.
+**When to Use**: While modifying conversion, deep nesting, or marker orchestration logic.
 
 ---
 
@@ -209,6 +233,11 @@ Build verification and deployment reports (5 documents).
 - `module-organization.md` — Module structure report
 - `module-verification-report.md` — Module verification
 
+**Recently archived (2025-11-09):**
+- `html-formatting-processing-order.md` — superseded by `html-processing-order.md`
+- `content-verification-oauth-github-jwt.md` — point-in-time verification notes
+- `restart-server-commands.md` — replaced by VS Code tasks and scripts
+
 **When to Use**: Reference these for historical context about v9.2.0 deployment process and module organization decisions.
 
 ---
@@ -307,6 +336,12 @@ Build verification and deployment reports (5 documents).
 - Multiple fix docs consolidated into version summary
 - Build/verification reports superseded by release
 - Documentation reorganization (like this one!)
+
+### Documentation Maintenance (New)
+- Prefer updating an existing doc over creating near-duplicates (merge & archive older title).
+- Keep testing/fixtures docs under `docs/` and code-specific validation docs under `server/utils/`.
+- Link cross-cutting backend docs (e.g., validation) from Technical Reference with explicit path.
+- Archive one-off operational notes once replaced by tasks/scripts.
 
 ---
 
