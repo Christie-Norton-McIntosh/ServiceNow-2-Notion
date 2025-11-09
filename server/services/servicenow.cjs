@@ -3316,10 +3316,19 @@ async function extractContentFromHtml(html) {
         
         // Process nested blocks
         const nestedChildren = [];
-        for (const nestedBlock of nestedBlocks) {
+        for (let i = 0; i < nestedBlocks.length; i++) {
+          const nestedBlock = nestedBlocks[i];
+          const $nested = $(nestedBlock);
+          const blockTag = $nested.prop('tagName');
+          const blockClass = $nested.attr('class') || 'no-class';
+          console.log(`🔍 [Orphan LI] Processing nested block ${i+1}/${nestedBlocks.length}: <${blockTag} class="${blockClass}">`);
+          
           const childBlocks = await processElement(nestedBlock);
+          console.log(`🔍 [Orphan LI] Block ${i+1} produced ${childBlocks.length} blocks:`, childBlocks.map(b => b.type).join(', '));
           nestedChildren.push(...childBlocks);
         }
+        
+        console.log(`🔍 [Orphan LI] Total nestedChildren: ${nestedChildren.length} blocks`);
 
         // Merge any following-sibling tables we attached just above
         const attachedAfter = $elem.data('_sn2n_attached_after_tables');
@@ -3341,6 +3350,7 @@ async function extractContentFromHtml(html) {
         // Create numbered list item with text and children
   const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'paragraph', 'to_do', 'toggle', 'image', 'table'];
         const validChildren = nestedChildren.filter(b => b && b.type && supportedAsChildren.includes(b.type));
+        console.log(`🔍 [Orphan LI] validChildren: ${validChildren.length}/${nestedChildren.length} blocks (types: ${validChildren.map(b => b.type).join(', ')})`);
         
         if (liRichText.length > 0 && liRichText.some(rt => rt.text.content.trim())) {
           processedBlocks.push({
@@ -3498,10 +3508,61 @@ async function extractContentFromHtml(html) {
             }
           }
           
-          // Process only block-level children (inline elements are already in the paragraph)
-          for (const child of blockLevelChildren) {
+          // Process block-level children AND text between them
+          for (let i = 0; i < blockLevelChildren.length; i++) {
+            const child = blockLevelChildren[i];
             const childBlocks = await processElement(child);
             processedBlocks.push(...childBlocks);
+            
+            // Check for text AFTER this child and BEFORE the next child
+            if (i < blockLevelChildren.length - 1) {
+              const nextChild = blockLevelChildren[i + 1];
+              let betweenHtml = '';
+              let foundCurrent = false;
+              
+              for (const node of childNodes) {
+                // Start accumulating after current child
+                if (node.nodeType === 1 && node === child) {
+                  foundCurrent = true;
+                  continue;
+                }
+                
+                // Stop when we reach next child
+                if (node.nodeType === 1 && node === nextChild) {
+                  break;
+                }
+                
+                if (foundCurrent) {
+                  const isTextNode = node.nodeType === 3;
+                  const isElementNode = node.nodeType === 1;
+                  
+                  if (isTextNode) {
+                    betweenHtml += node.data || node.nodeValue || '';
+                  } else if (isElementNode) {
+                    // Add inline element HTML
+                    betweenHtml += $(node).prop('outerHTML');
+                  }
+                }
+              }
+              
+              if (betweenHtml && cleanHtmlText(betweenHtml).trim()) {
+                console.log(`🔍 Processing text between block-level children ${i} and ${i+1}`);
+                const { richText: betweenText, imageBlocks: betweenImages } = await parseRichText(betweenHtml);
+                if (betweenImages && betweenImages.length > 0) {
+                  processedBlocks.push(...betweenImages);
+                }
+                if (betweenText.length > 0 && betweenText.some(rt => rt.text.content.trim())) {
+                  const richTextChunks = splitRichTextArray(betweenText);
+                  for (const chunk of richTextChunks) {
+                    processedBlocks.push({
+                      object: "block",
+                      type: "paragraph",
+                      paragraph: { rich_text: chunk }
+                    });
+                  }
+                }
+              }
+            }
           }
           
           // Process any remaining text AFTER the last block-level child
@@ -3729,6 +3790,25 @@ async function extractContentFromHtml(html) {
     console.log(`🔍 Processing from .zDocsTopicPageBody, found ${topLevelChildren.length} top-level children`);
     console.log(`🔍 Top-level children: ${topLevelChildren.map(c => `<${c.name} class="${$(c).attr('class') || ''}">`).join(', ')}`);
     
+    // DIAGNOSTIC: Check if contentPlaceholder exists in DOM
+    const allContentPlaceholders = $('.contentPlaceholder').toArray();
+    console.log(`🔍 🎯 DIAGNOSTIC: Found ${allContentPlaceholders.length} total .contentPlaceholder elements in DOM`);
+    if (allContentPlaceholders.length > 0) {
+      allContentPlaceholders.forEach((cp, idx) => {
+        const $cp = $(cp);
+        const parent = $cp.parent();
+        const parentTag = parent.prop('tagName');
+        const parentClass = parent.attr('class') || 'no-class';
+          const isDirectChild = parent.hasClass('zDocsTopicPageBody');
+          const siblingsCount = $cp.siblings().length;
+          console.log(`🔍 🎯   contentPlaceholder ${idx}:`);
+          console.log(`🔍 🎯     - parent: <${parentTag} class="${parentClass}">`);
+          console.log(`🔍 🎯     - is direct child of .zDocsTopicPageBody: ${isDirectChild}`);
+          console.log(`🔍 🎯     - siblings: ${siblingsCount}`);
+          console.log(`🔍 🎯     - in topLevelChildren: ${topLevelChildren.includes(cp)}`);
+      });
+    }
+    
     // CRITICAL FIX: Check if sections exist deeper in the tree (not just as direct children)
     // ServiceNow pages often have structure: .zDocsTopicPageBody > div.zDocsTopicPageBodyContent > article > main > article.dita > div.body.conbody
     // And sections can be either children of body.conbody OR siblings of it!
@@ -3804,12 +3884,36 @@ async function extractContentFromHtml(html) {
         console.log(`🔍 ✅ Found ${contentPlaceholders.length} contentPlaceholder element(s), adding to contentElements`);
       }
       
+        // FALLBACK: If contentPlaceholders exist in DOM but not in topLevelChildren (malformed HTML), add them
+        const allContentPlaceholdersInBody = $('.zDocsTopicPageBody .contentPlaceholder').toArray();
+        if (allContentPlaceholdersInBody.length > contentPlaceholders.length) {
+          console.log(`🔍 ⚠️ FALLBACK: Found ${allContentPlaceholdersInBody.length} contentPlaceholders in DOM but only ${contentPlaceholders.length} in topLevelChildren`);
+          console.log(`🔍 ⚠️ Adding ${allContentPlaceholdersInBody.length - contentPlaceholders.length} missing contentPlaceholders to contentElements`);
+          // Add the missing ones
+          const missingPlaceholders = allContentPlaceholdersInBody.filter(cp => !contentPlaceholders.includes(cp));
+          contentPlaceholders.push(...missingPlaceholders);
+        }
+      
       // Use section parent's children + article navs + contentPlaceholder siblings (in correct order)
       contentElements = [...sectionParentChildren, ...articleNavs, ...contentPlaceholders];
       console.log(`🔍 ✅ Using ${contentElements.length} elements from section parent as contentElements`);
     } else {
       // No sections found, use original top-level children
       contentElements = topLevelChildren;
+      
+        // FALLBACK: Check for contentPlaceholders that exist in DOM but weren't in topLevelChildren
+        const allContentPlaceholdersInBody = $('.contentPlaceholder').toArray(); // Use global search since parent might be malformed
+        if (allContentPlaceholdersInBody.length > 0) {
+          const existingPlaceholders = contentElements.filter(el => $(el).hasClass('contentPlaceholder'));
+          console.log(`🔍 ⚠️ FALLBACK CHECK: Found ${allContentPlaceholdersInBody.length} contentPlaceholders globally, ${existingPlaceholders.length} already in contentElements`);
+          if (allContentPlaceholdersInBody.length > existingPlaceholders.length) {
+            console.log(`🔍 ⚠️ FALLBACK ACTIVE: Adding ${allContentPlaceholdersInBody.length - existingPlaceholders.length} missing contentPlaceholders`);
+            // Add missing placeholders to the END of contentElements
+            const missingPlaceholders = allContentPlaceholdersInBody.filter(cp => !existingPlaceholders.includes(cp));
+            contentElements.push(...missingPlaceholders);
+            console.log(`🔍 ⚠️ FALLBACK COMPLETE: contentElements now has ${contentElements.length} elements`);
+          }
+        }
     }
     
     // DIAGNOSTIC: Check nested structure
@@ -4038,83 +4142,6 @@ async function extractContentFromHtml(html) {
   // No post-processing needed - proper nesting structure handles list numbering restart
   console.log(`✅ Extraction complete: ${blocks.length} blocks`);
   
-  // POST-PROCESSING: Reassign misplaced tables to correct list items
-  // Problem: Second table in Add-or-modify.html appears as standalone block (index 10)
-  // immediately before the "Specify the rule..." numbered_list_item (index 11).
-  // It should be a child of that list item, not a sibling.
-  console.log(`🔧 [TABLE-REASSIGN] Starting post-processing pass for ${blocks.length} blocks`);
-  
-  for (let i = 0; i < blocks.length - 1; i++) {
-    const currentBlock = blocks[i];
-    const nextBlock = blocks[i + 1];
-    
-    // Check if current is a standalone table and next is numbered_list_item with "Specify the rule..."
-    if (currentBlock && currentBlock.type === 'table' && 
-        nextBlock && nextBlock.type === 'numbered_list_item') {
-      
-      const nextText = (nextBlock.numbered_list_item?.rich_text || [])
-        .map(rt => rt.text?.content || '')
-        .join('')
-        .trim();
-      
-      // Match the specific orphan list item text
-      if (/^Specify the rule based on your selected rule method\.?$/i.test(nextText)) {
-        console.log(`🔧 [TABLE-REASSIGN] Found misplaced table at index ${i} before orphan list item "${nextText.substring(0, 50)}..."`);
-        
-        // Check if this table has a marker linking it to a PREVIOUS list item
-        // We need to remove that marker reference to prevent incorrect orchestration
-        const tableMarker = currentBlock._sn2n_marker;
-        if (tableMarker) {
-          console.log(`🔧 [TABLE-REASSIGN] Table has marker ${tableMarker}, searching for parent with this marker...`);
-          
-          // Find the block that references this marker (should be the "Complete or update..." list item)
-          for (let j = 0; j < i; j++) {
-            const potentialParent = blocks[j];
-            if (potentialParent && potentialParent.type === 'numbered_list_item') {
-              const parentRichText = potentialParent.numbered_list_item?.rich_text || [];
-              const hasMarkerToken = parentRichText.some(rt => 
-                rt.text?.content && rt.text.content.includes(`(sn2n:${tableMarker})`)
-              );
-              
-              if (hasMarkerToken) {
-                console.log(`🔧 [TABLE-REASSIGN] Found wrong parent at index ${j}, removing marker token from its rich_text`);
-                
-                // Remove the marker token from parent's rich_text
-                potentialParent.numbered_list_item.rich_text = parentRichText.filter(rt => 
-                  !rt.text?.content || !rt.text.content.includes(`(sn2n:${tableMarker})`)
-                );
-                
-                console.log(`🔧 [TABLE-REASSIGN] Removed marker token, parent now has ${potentialParent.numbered_list_item.rich_text.length} rich_text elements`);
-                break;
-              }
-            }
-          }
-          
-          // Remove marker from table so orchestrator doesn't try to append it elsewhere
-          delete currentBlock._sn2n_marker;
-          console.log(`🔧 [TABLE-REASSIGN] Removed marker ${tableMarker} from table block`);
-        }
-        
-        // Move table into the orphan list item's children
-        if (!nextBlock.numbered_list_item.children) {
-          nextBlock.numbered_list_item.children = [];
-        }
-        
-        // Insert table at the beginning of children (before stepxmp content if any)
-        nextBlock.numbered_list_item.children.unshift(currentBlock);
-        console.log(`🔧 [TABLE-REASSIGN] Moved table into list item children (now has ${nextBlock.numbered_list_item.children.length} children)`);
-        
-        // Remove table from top-level blocks array
-        blocks.splice(i, 1);
-        console.log(`🔧 [TABLE-REASSIGN] Removed table from top-level blocks, new count: ${blocks.length}`);
-        
-        // Adjust loop counter since we removed an element
-        i--;
-      }
-    }
-  }
-  
-  console.log(`🔧 [TABLE-REASSIGN] Post-processing complete, final block count: ${blocks.length}`);
   
   // Restore technical placeholders in all rich_text content
   function restorePlaceholders(obj) {

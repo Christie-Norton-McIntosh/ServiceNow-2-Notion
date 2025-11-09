@@ -50,5 +50,9 @@ coverage/
 *.orig
 archived/
 
+# Test fixtures - auto-captured validation failures (can be large)
+# Keep manual-samples in git, but ignore auto-captured failures
+tests/fixtures/validation-failures/*.html
+
 # Allow tracking of dist if explicitly needed by unignoring
 # !/dist/README.md
