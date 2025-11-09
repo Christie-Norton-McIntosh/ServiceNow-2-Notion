@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      10.0.25
+// @version      10.0.26
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "10.0.25";
+    window.BUILD_VERSION = "10.0.26";
 (function () {
 
   // Configuration constants and default settings
@@ -1004,11 +1004,18 @@
           console.error("[NETWORK-ERROR] Full error object:", JSON.stringify(error, null, 2));
           console.error("[NETWORK-ERROR] Error keys:", Object.keys(error));
           console.error("[NETWORK-ERROR] Error type:", typeof error);
+          console.error("[NETWORK-ERROR] Status code:", error.status);
+          console.error("[NETWORK-ERROR] URL attempted:", url);
           
           // Extract meaningful error message
           let errorMsg = "Network error";
           if (error) {
-            if (typeof error === 'string') {
+            // Check for specific status codes
+            if (error.status === 408) {
+              errorMsg = "Request timeout - Server did not respond in time. The page may be too large or the proxy server may be busy.";
+            } else if (error.status === 0) {
+              errorMsg = "Cannot connect to proxy server. Please ensure:\n1. The proxy server is running (npm start in server/)\n2. Tampermonkey has permission to access localhost\n3. No firewall is blocking the connection";
+            } else if (typeof error === 'string') {
               errorMsg = error;
             } else if (error.error) {
               errorMsg = error.error;
