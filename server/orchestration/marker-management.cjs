@@ -33,12 +33,18 @@ function generateMarker(elementId = null) {
  * @param {Object} map - Existing marker map to build upon
  * @returns {Object} Updated marker map
  */
-function collectAndStripMarkers(blocks, map = {}, depth = 0) {
+function collectAndStripMarkers(blocks, map = {}, depth = 0, globalCollectionIndex = { counter: 0 }) {
   if (!Array.isArray(blocks)) return map;
   const indent = '  '.repeat(depth);
   for (let i = 0; i < blocks.length; i++) {
     const b = blocks[i];
     if (b && typeof b === "object") {
+      // Skip blocks that are already collected (attached directly to their parent)
+      if (b._sn2n_collected) {
+        console.log(`${indent}🔖 collectAndStripMarkers: Skipping block at depth ${depth}, index ${i}, type: ${b.type} - already collected (attached directly)`);
+        continue;
+      }
+      
       if (b._sn2n_marker) {
         const m = String(b._sn2n_marker);
         
@@ -74,31 +80,69 @@ function collectAndStripMarkers(blocks, map = {}, depth = 0) {
         
         if (isCalloutWithOwnMarker) {
           console.log(`${indent}🔖   This is a callout with its own marker token - NOT collecting (will be created in initial payload)`);
+          console.log(`${indent}🔖   Marker "${m}" will remain in callout's rich_text for orchestrator to find`);
           console.log(`${indent}🔖   The callout's children will be collected separately and orchestrated to it`);
           // Don't delete the marker - keep it so orchestrator can find this callout
           // Don't mark as collected - keep it in the initial payload
-          // Skip the rest of the collection logic
+          // IMPORTANT: Still need to recurse into children to collect them!
+          const type = b.type;
+          if (type && b[type] && Array.isArray(b[type].children)) {
+            console.log(`${indent}🔖   Recursing into callout's ${b[type].children.length} children to collect them`);
+            collectAndStripMarkers(b[type].children, map, depth + 1, globalCollectionIndex);
+          }
+          if (Array.isArray(b.children)) {
+            console.log(`${indent}🔖   Recursing into callout's ${b.children.length} .children to collect them`);
+            collectAndStripMarkers(b.children, map, depth + 1, globalCollectionIndex);
+          }
+          // Skip the rest of the collection logic (don't collect the callout itself)
         } else {
           // Collect markers at all depths for orchestration
           // Blocks will be appended to their marker location via API after page creation
           if (!map[m]) map[m] = [];
+          
+          // Track collection order for debugging
+          const collectionIndex = map[m].length;
+          const globalIndex = globalCollectionIndex.counter++;
+          console.log(`${indent}🔖   [ORDER-DEBUG] Adding block to marker "${m}" at collection index ${collectionIndex}, global index ${globalIndex}`);
+          
           map[m].push(b);
           // mark this block as collected so we can remove it from the
           // initial children before sending to Notion (avoids duplicates and 3+ level nesting)
           b._sn2n_collected = true;
+          b._sn2n_collection_order = collectionIndex; // Track original collection order within marker
+          b._sn2n_global_collection_index = globalIndex; // Track global collection order across all markers
           console.log(`${indent}🔖   Marked block as collected (will be removed from initial payload)`);
           delete b._sn2n_marker;
         }
       }
       const type = b.type;
       if (type && b[type] && Array.isArray(b[type].children)) {
-        collectAndStripMarkers(b[type].children, map, depth + 1);
+        collectAndStripMarkers(b[type].children, map, depth + 1, globalCollectionIndex);
       }
       if (Array.isArray(b.children)) {
-        collectAndStripMarkers(b.children, map, depth + 1);
+        collectAndStripMarkers(b.children, map, depth + 1, globalCollectionIndex);
       }
     }
   }
+  
+  // CRITICAL: Sort each marker's blocks by DOM order to preserve source sequence
+  // This ensures blocks with the same marker are appended in the correct order
+  for (const marker in map) {
+    const blocks = map[marker];
+    if (blocks.length > 1) {
+      // Check if blocks have DOM order tracking
+      const hasDomOrder = blocks.every(b => typeof b._sn2n_dom_order === 'number');
+      if (hasDomOrder) {
+        const beforeSort = blocks.map(b => `${b.type}(dom:${b._sn2n_dom_order})`).join(', ');
+        blocks.sort((a, b) => (a._sn2n_dom_order || 0) - (b._sn2n_dom_order || 0));
+        const afterSort = blocks.map(b => `${b.type}(dom:${b._sn2n_dom_order})`).join(', ');
+        console.log(`🔄 [DOM-ORDER] Sorted ${blocks.length} blocks for marker "${marker}"`);
+        console.log(`🔄   Before: [${beforeSort}]`);
+        console.log(`🔄   After:  [${afterSort}]`);
+      }
+    }
+  }
+  
   return map;
 }
 

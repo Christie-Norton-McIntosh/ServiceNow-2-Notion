@@ -4,6 +4,10 @@
 # Clear require cache and suppress warnings
 export NODE_OPTIONS="--no-warnings"
 
+# Enable verbose and extra debug logging
+export SN2N_VERBOSE=1
+export SN2N_EXTRA_DEBUG=1
+
 # Get absolute path to script directory
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 LOG_DIR="$SCRIPT_DIR/server/logs"

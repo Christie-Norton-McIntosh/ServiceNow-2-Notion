@@ -31,6 +31,7 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const fs = require("fs");
 const path = require("path");
+const util = require("util");
 const axios = require("axios");
 const FormData = require("form-data");
 
@@ -241,6 +242,107 @@ let SN2N_VERBOSE = !!(
 let SN2N_EXTRA_DEBUG = !!(
   process.env.SN2N_EXTRA_DEBUG && String(process.env.SN2N_EXTRA_DEBUG) === "1"
 );
+
+function getVerbose() {
+  return !!SN2N_VERBOSE;
+}
+
+function setVerbose(enabled) {
+  SN2N_VERBOSE = !!enabled;
+  try {
+    console.log(new Date().toISOString(), "[SN2N] Verbose set to", SN2N_VERBOSE);
+  } catch (_) {}
+  return SN2N_VERBOSE;
+}
+
+function setExtraDebug(enabled) {
+  SN2N_EXTRA_DEBUG = !!enabled;
+  try {
+    console.log(new Date().toISOString(), "[SN2N] ExtraDebug set to", SN2N_EXTRA_DEBUG);
+  } catch (_) {}
+  return SN2N_EXTRA_DEBUG;
+}
+
+// When verbose mode is enabled, tee all console output to a debug log file under /tmp
+// This ensures the "Start Server (Verbose)" task also produces a persistent log at /tmp/sn2n-debug.log
+let _sn2nDebugStream = null;
+if (SN2N_VERBOSE) {
+  try {
+    const DEBUG_LOG_FILE = process.env.SN2N_DEBUG_LOG_FILE || "/tmp/sn2n-debug.log";
+    _sn2nDebugStream = fs.createWriteStream(DEBUG_LOG_FILE, { flags: "a" });
+
+    const writeLine = (line) => {
+      try {
+        _sn2nDebugStream && _sn2nDebugStream.write(line + "\n");
+      } catch (_) {
+        // ignore file write errors to avoid crashing server
+      }
+    };
+
+    // Session header
+    writeLine("\n==================== SN2N SESSION START ====================");
+    writeLine(`${new Date().toISOString()} [SN2N] PID: ${process.pid}`);
+    writeLine(`${new Date().toISOString()} [SN2N] CWD: ${process.cwd()}`);
+    writeLine(`${new Date().toISOString()} [SN2N] Version: ${process.env.npm_package_version || "dev"}`);
+    writeLine(`${new Date().toISOString()} [SN2N] Verbose: ${SN2N_VERBOSE}  ExtraDebug: ${SN2N_EXTRA_DEBUG}`);
+    if (process.env.NOTION_TOKEN) writeLine(`${new Date().toISOString()} [SN2N] Notion token configured: true`);
+    writeLine("============================================================\n");
+
+    // Tee console methods to the debug file
+    const original = {
+      log: console.log,
+      info: console.info,
+      warn: console.warn,
+      error: console.error,
+    };
+
+    function toMessage(args) {
+      try {
+        return args
+          .map((a) =>
+            typeof a === "string"
+              ? a
+              : a instanceof Error
+              ? (a.stack || a.message || String(a))
+              : util.inspect(a, { depth: 4, colors: false })
+          )
+          .join(" ");
+      } catch (_) {
+        return args.map(String).join(" ");
+      }
+    }
+
+    function tee(level, args) {
+      const msg = toMessage(args);
+      writeLine(`${new Date().toISOString()} [${level.toUpperCase()}] ${msg}`);
+    }
+
+    console.log = function (...args) {
+      try { original.log.apply(console, args); } finally { tee("log", args); }
+    };
+    console.info = function (...args) {
+      try { original.info.apply(console, args); } finally { tee("info", args); }
+    };
+    console.warn = function (...args) {
+      try { original.warn.apply(console, args); } finally { tee("warn", args); }
+    };
+    console.error = function (...args) {
+      try { original.error.apply(console, args); } finally { tee("error", args); }
+    };
+
+    // Ensure stream is closed on exit
+    const cleanUp = () => {
+      try { _sn2nDebugStream && _sn2nDebugStream.end(); } catch (_) {}
+    };
+    process.on("exit", cleanUp);
+    process.on("SIGINT", () => { cleanUp(); process.exit(0); });
+    process.on("SIGTERM", () => { cleanUp(); process.exit(0); });
+  } catch (e) {
+    // If file logging fails, continue without crashing
+    // eslint-disable-next-line no-console
+    console.warn("[SN2N] Failed to initialize /tmp log tee:", e && e.message);
+  }
+}
 
 function log(...args) {
   if (!SN2N_VERBOSE) return;
@@ -1670,6 +1772,9 @@ global.sendError = sendError;
 global.hyphenateNotionId = hyphenateNotionId;
 global.htmlToNotionBlocks = htmlToNotionBlocks;
 global.ensureFileUploadAvailable = ensureFileUploadAvailable;
+global.getVerbose = getVerbose;
+global.setVerbose = setVerbose;
+global.setExtraDebug = setExtraDebug;
 global.collectAndStripMarkers = safeCollectAndStripMarkers;
 global.removeCollectedBlocks = safeRemoveCollectedBlocks;
 global.deepStripPrivateKeys = safeDeepStripPrivateKeys;

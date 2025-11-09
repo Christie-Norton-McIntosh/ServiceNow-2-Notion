@@ -215,7 +215,25 @@ async function orchestrateDeepNesting(pageId, markerMap) {
   if (!markerMap || Object.keys(markerMap).length === 0) return { appended: 0 };
   let totalAppended = 0;
   
-  for (const marker of Object.keys(markerMap)) {
+  // CRITICAL: Sort marker keys by the GLOBAL collection index of their first block
+  // This ensures markers are processed in DOM order, so sibling blocks appear in correct sequence
+  const markerKeys = Object.keys(markerMap).sort((a, b) => {
+    const blocksA = markerMap[a] || [];
+    const blocksB = markerMap[b] || [];
+    const indexA = blocksA[0]?._sn2n_global_collection_index ?? 999999;
+    const indexB = blocksB[0]?._sn2n_global_collection_index ?? 999999;
+    return indexA - indexB;
+  });
+  
+  log(`🔧 Orchestrator: Starting with ${markerKeys.length} markers in map (sorted by global collection index):`);
+  markerKeys.forEach(m => {
+    const blocks = markerMap[m] || [];
+    const firstBlockGlobalIndex = blocks[0]?._sn2n_global_collection_index;
+    const firstBlockLocalIndex = blocks[0]?._sn2n_collection_order;
+    log(`  🔖 Marker "${m}": ${blocks.length} block(s), global_index=${firstBlockGlobalIndex}, local_index=${firstBlockLocalIndex}`);
+  });
+  
+  for (const marker of markerKeys) {
     let blocksToAppend = markerMap[marker] || [];
     if (blocksToAppend.length === 0) continue;
     
@@ -229,8 +247,7 @@ async function orchestrateDeepNesting(pageId, markerMap) {
           `⚠️ Orchestrator: parent not found for marker sn2n:${marker}. Appending to page root instead.`
         );
         // Clean orphaned markers (preserve all markers in the map) and ensure no private keys
-        const allMarkers = Object.keys(markerMap);
-        blocksToAppend = cleanOrphanedMarkersFromBlocks(blocksToAppend, allMarkers);
+        blocksToAppend = cleanOrphanedMarkersFromBlocks(blocksToAppend, markerKeys);
         deepStripPrivateKeys(blocksToAppend);
         await appendBlocksToBlockId(pageId, blocksToAppend);
         totalAppended += blocksToAppend.length;
@@ -358,9 +375,48 @@ async function orchestrateDeepNesting(pageId, markerMap) {
       // but KEEPS markers that need to be found later as parents
       // Example: If appending callout with "(sn2n:XYZ)" where XYZ is also in markerMap,
       //          keep XYZ so it can be found as a parent later
-      log(`🧹 Orchestrator: cleaning orphaned markers from ${blocksToAppend.length} block(s) before append (preserving ${Object.keys(markerMap).length} map markers)`);
-      const allMarkers = Object.keys(markerMap);
-      blocksToAppend = cleanOrphanedMarkersFromBlocks(blocksToAppend, allMarkers);
+      log(`🧹 Orchestrator: cleaning orphaned markers from ${blocksToAppend.length} block(s) before append (preserving ${markerKeys.length} map markers)`);
+      blocksToAppend = cleanOrphanedMarkersFromBlocks(blocksToAppend, markerKeys);
+
+      // CRITICAL: Sort blocks by _sn2n_dom_order to preserve original DOM sequence
+      // This ensures "Tool ID" related paragraphs appear in the correct order
+      try {
+        // First, log what we received FROM the marker map
+        log(`🔢 [ORDER-DEBUG] Received ${blocksToAppend.length} blocks from markerMap[${marker}]`);
+        blocksToAppend.forEach((blk, idx) => {
+          const order = blk._sn2n_dom_order;
+          const collectionOrder = blk._sn2n_collection_order;
+          const allKeys = Object.keys(blk).filter(k => k.startsWith('_sn2n_'));
+          const preview = (() => {
+            try {
+              const rt = blk[blk.type]?.rich_text;
+              if (Array.isArray(rt)) return rt.map(r => r.text?.content || '').join('').substring(0, 60);
+            } catch (e) { /* ignore */ }
+            return '[no preview]';
+          })();
+          log(`🔢 [ORDER-DEBUG]   Block ${idx} BEFORE sort: dom_order=${order}, collection_order=${collectionOrder}, _sn2n_ keys=[${allKeys.join(', ')}], type=${blk.type}, preview="${preview}"`);
+        });
+        
+        blocksToAppend.sort((a, b) => {
+          const orderA = a._sn2n_dom_order ?? 999999;
+          const orderB = b._sn2n_dom_order ?? 999999;
+          return orderA - orderB;
+        });
+        log(`🔢 [ORDER-DEBUG] Sorted ${blocksToAppend.length} blocks by _sn2n_dom_order`);
+        blocksToAppend.forEach((blk, idx) => {
+          const order = blk._sn2n_dom_order;
+          const preview = (() => {
+            try {
+              const rt = blk[blk.type]?.rich_text;
+              if (Array.isArray(rt)) return rt.map(r => r.text?.content || '').join('').substring(0, 60);
+            } catch (e) { /* ignore */ }
+            return '[no preview]';
+          })();
+          log(`🔢 [ORDER-DEBUG]   Block ${idx} AFTER sort: order=${order}, type=${blk.type}, preview="${preview}"`);
+        });
+      } catch (e) {
+        log(`⚠️ [ORDER-DEBUG] Error sorting blocks by DOM order: ${e.message}`);
+      }
 
       // Ensure no private helper keys are present before appending under parent
       deepStripPrivateKeys(blocksToAppend);

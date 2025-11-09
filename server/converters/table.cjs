@@ -431,18 +431,22 @@ async function convertTableBlock(tableHtml, options = {}) {
   let rows = [];
 
   if ($tableElement.length > 0) {
+    console.log(`📊 [table.cjs] Found <table> element. Extracting rows with Cheerio...`);
     theadRows = await collectRows($tableElement.find('thead > tr').toArray());
     tbodyRows = await collectRows($tableElement.find('tbody > tr').toArray());
 
     if (theadRows.length > 0 || tbodyRows.length > 0) {
       rows = [...theadRows, ...tbodyRows];
     } else {
+      console.log(`📊 [table.cjs] No thead/tbody rows detected; falling back to all <tr>`);
       rows = await collectRows($tableElement.find('tr').toArray());
     }
+    console.log(`📊 [table.cjs] Row summary: thead=${theadRows.length}, tbody=${tbodyRows.length}, total=${rows.length}`);
   }
 
   // Fallback to legacy regex parsing if Cheerio did not yield rows (defensive)
   if (rows.length === 0) {
+    console.warn(`⚠️ [table.cjs] No rows found via Cheerio. Falling back to regex parsing.`);
     const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
     let rowMatch;
     while ((rowMatch = rowRegex.exec(cleanedTableHtml)) !== null) {
@@ -458,9 +462,11 @@ async function convertTableBlock(tableHtml, options = {}) {
         rows.push(cells);
       }
     }
+    console.warn(`⚠️ [table.cjs] Regex parsing produced ${rows.length} row(s).`);
   }
 
   const tableWidth = Math.max(...rows.map((row) => row.length), 0);
+  console.log(`📊 [table.cjs] Final table metrics: rows=${rows.length}, width=${tableWidth}`);
   if (tableWidth === 0) return blocks.length > 0 ? blocks : null;
 
   // Create Notion table block
