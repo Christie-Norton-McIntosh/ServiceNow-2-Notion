@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      10.0.24
+// @version      10.0.25
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "10.0.24";
+    window.BUILD_VERSION = "10.0.25";
 (function () {
 
   // Configuration constants and default settings
@@ -1000,7 +1000,26 @@
         },
         onerror: function (error) {
           debug("❌ API call failed:", error);
-          reject(new Error(`API call failed: ${error.error || "Network error"}`));
+          // Log full error object for debugging
+          console.error("[NETWORK-ERROR] Full error object:", JSON.stringify(error, null, 2));
+          console.error("[NETWORK-ERROR] Error keys:", Object.keys(error));
+          console.error("[NETWORK-ERROR] Error type:", typeof error);
+          
+          // Extract meaningful error message
+          let errorMsg = "Network error";
+          if (error) {
+            if (typeof error === 'string') {
+              errorMsg = error;
+            } else if (error.error) {
+              errorMsg = error.error;
+            } else if (error.statusText) {
+              errorMsg = error.statusText;
+            } else if (error.message) {
+              errorMsg = error.message;
+            }
+          }
+          
+          reject(new Error(`API call failed: ${errorMsg}`));
         },
         ontimeout: function () {
           debug("❌ API call timed out after 5 minutes");
