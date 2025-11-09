@@ -13,37 +13,44 @@ ServiceNow-2-Notion/
 ├── dist/                          # Built userscript
 ├── docs/                          # Project documentation
 ├── scripts/                       # Build and release scripts
-├── src/                          # Frontend userscript source
-├── server/                       # Backend proxy server
-│   ├── config/                   # Configuration modules
-│   ├── converters/               # Content conversion utilities
-│   ├── orchestration/            # Block processing orchestration
-│   ├── routes/                   # Express route handlers
-│   ├── services/                 # Core business logic services
-│   ├── utils/                    # Shared utility functions
-│   ├── logs/                     # Recent debug logs (cleaned)
-│   ├── martian-helper.cjs        # Markdown/HTML conversion
-│   └── sn2n-proxy.cjs           # Main server entry point
-├── backups/                      # Version and cleanup archives
-└── [standard project files]     # package.json, README.md, etc.
+├── src/                           # Frontend userscript source
+├── server/                        # Backend proxy server
+│   ├── config/                    # Configuration modules
+│   ├── converters/                # Content conversion utilities
+│   ├── orchestration/             # Block processing orchestration
+│   ├── routes/                    # Express route handlers
+│   ├── services/                  # Core business logic services
+│   ├── utils/                     # Shared utility functions
+│   ├── logs/                      # Recent debug logs (cleaned)
+│   ├── martian-helper.cjs         # Markdown/HTML conversion
+│   └── sn2n-proxy.cjs             # Main server entry point
+├── tests/                         # Test scripts & fixture system
+│   └── fixtures/                  # HTML fixtures (manual + auto-captured failures)
+├── archived/                      # Archived historical & cleanup artifacts
+│   └── cleanup-YYYY-MM-DD/        # Date-based cleanup snapshots
+├── backups/                       # Versioned full project backups
+└── [standard project files]       # package.json, README.md, etc.
 ```
 
-## 🗂️ Files Archived
+## 🗂️ Archival & Cleanup
 
-All obsolete files have been moved to `backups/modularization-cleanup-20251013/`:
+Recent cleanup (2025-11-09) moved obsolete & transient artifacts into `archived/cleanup-2025-11-09/` to reduce root clutter while preserving history.
 
-### Obsolete Development Files:
-- **Server backup files**: `sn2n-proxy.cjs.*backup*`
-- **Debug tools**: `snippet-test.cjs`, `debug-structure.cjs`, `create-minimal-test.cjs`
-- **Test utilities**: `dump-blocks.cjs`, `run-orchestrator.cjs`
-- **Sample data**: `sample*.html`, `sample.json`, `test-*.html`
-- **Old logs**: Various server and debug logs
-- **Debug artifacts**: orchestrator-result.json, parsed-blocks.json, etc.
+### Latest Cleanup Snapshot (`archived/cleanup-2025-11-09/`)
+- `docs/`: Historical point-in-time docs (older changelog slice, release notes, maintenance summary)
+- `logs/`: One-off debug and server logs (`debug-richtext.log`, `debug-url-extract.log`, dated log folders, etc.)
+- `workspace/`: Temporary working folders (`Smoke Test/`, `tmp/`) superseded by fixture/test system
 
-### Log Cleanup:
-- Moved logs older than 24 hours to archive
-- Kept recent debug logs for active development
-- Reduced `server/logs/` from 200+ files to ~90 recent files
+Older modularization cleanup remains in `backups/modularization-cleanup-20251013/` for full recovery.
+
+### Active vs Archived
+- Active development now favors `tests/fixtures/` over `Smoke Test/` for reproducible conversion validation.
+- Transient logs are no longer kept at root—prefer `server/logs/` and rotate or archive if large.
+
+### Adding Future Archives
+Create a new dated folder under `archived/` (e.g., `cleanup-2025-12-01/`) rather than modifying prior snapshots.
+
+See `archived/cleanup-2025-11-09/ARCHIVE_INDEX.md` for detailed manifest and rationale.
 
 ## ✨ Benefits of Cleanup
 
