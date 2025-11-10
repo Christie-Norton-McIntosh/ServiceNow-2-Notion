@@ -21,11 +21,11 @@ Quick, actionable guidance for AI coding agents working in this repo. Keep edits
   - Images: ServiceNow images must be downloaded+uploaded to Notion `file_uploads`; fallback to external URL only for non-ServiceNow images (`sn2n-proxy.cjs:createImageBlock`).
   - Dedupe/filter: filter gray info callouts; dedupe identical blocks and images by id/URL (`server/utils/dedupe.cjs` used in `w2n.cjs`).
   - Validation fixes (v11.0.0): 5 issues fixed in callout/table processing:
-    - Issue #1: Recursive block type detection (check children for tables/images, not just callout text)
-    - Issue #2: Multi-pass DataTables unwrapping (iterate until no changes to handle nested wrappers)
-    - Issue #3: Whitespace-only text node filtering (exclude blank nodes in block counting)
-    - Issue #4: Image extraction from nested tables (recursively search for `<img>` in `<table>` descendants)
-    - Issue #5: Table preservation priority (if table + single-image detected, keep table; don't downgrade to image)
+    - Issue 1: Recursive block type detection (check children for tables/images, not just callout text)
+    - Issue 2: Multi-pass DataTables unwrapping (iterate until no changes to handle nested wrappers)
+    - Issue 3: Whitespace-only text node filtering (exclude blank nodes in block counting)
+    - Issue 4: Image extraction from nested tables (recursively search for `<img>` in `<table>` descendants)
+    - Issue 5: Table preservation priority (if table + single-image detected, keep table; don't downgrade to image)
 - API surface: POST `/api/W2N` with `{ title, databaseId, contentHtml|content, properties?, url?, dryRun? }`. `dryRun` returns `{ children, hasVideos }` without creating a page. Health: `/health`, `/ping`, `/api/status`; DB: `/api/databases/:id`; logging: `/api/logging`.
 - Pitfalls: search for `w2n-` IDs before UI renames; wire modal injectors only in `src/main.js`; respect Notion nesting/100-block caps; use `Array.from()` with DOM; rebuild userscript after edits.
 
@@ -271,7 +271,7 @@ Note: If your edits change any client-side code (files under `src/` or the gener
   - Fixture-based: Load HTML from `tests/fixtures/`, verify block output
 - **Key Test Files:**
   - `server/test-run-extract.cjs` - Extract full pages from ServiceNow HTML fixtures
-  - `tests/test-callout-*.cjs` - Callout validation tests (Issue #1-5 fixes)
+  - `tests/test-callout-*.cjs` - Callout validation tests (Issue 1-5 fixes)
   - `tests/test-table-*.cjs` - Table formatting and image extraction tests
 
 ## 📋 Code-Edit Checklist
