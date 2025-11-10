@@ -1,0 +1,111 @@
+<!--
+  Page: Configure KPI participation
+  URL: https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/product/benchmarks/task/t_EnableABenchKPI.html
+  Captured: 2025-11-10T00:10:52.671Z
+  Validation Errors: Marker leak: 2 visible sn2n:marker token(s) found
+  Warnings: Block count high: expected at most 23, got 38; ⚠️ Paragraph count unusually high: expected ~4 (±2), got 9
+  Page ID: 2a7a89fe-dba5-81ec-a01f-ff1c5ed4ee15
+  Block Count (expected): 15
+  Block Count (actual): 38
+-->
+<div class="zDocsTopicPageBody" data-prismjs-copy="Copy" data-prismjs-copy-error="Text could not be copied. Try using keyboard shortcuts like Ctrl + C to copy instead." data-prismjs-copy-success="Copied!"><div dir="ltr" class="zDocsTopicPageBodyContent wide"><div><article class="hascomments" data-page="bundle:yokohama-it-service-management/enus/product/benchmarks/task/t_EnableABenchKPI.html" id="bundle:yokohama-it-service-management/enus/product/benchmarks/task/t_EnableABenchKPI.html"><main role="main"><article role="article" class="dita" id="t_EnableABenchKPI" aria-labelledby="title_t_EnableABenchKPI">
+   
+   
+   
+   <div class="body taskbody"><p class="shortdesc">Review and configure <span class="ph">Benchmarks</span> KPI participation by opting in or out of categorized KPIs.</p>
+      <section class="section prereq"><div class="tasklabel"><p class="sectiontitle tasklabel">Before you begin</p></div>Role required: sn_bm_client.benchmark_admin
+      </section>
+      <section><div class="tasklabel"><p class="sectiontitle tasklabel">Procedure</p></div><ol class="ol steps"><li class="li step stepexpand">
+            <span class="ph cmd">Opt in for <span class="ph">Benchmarks</span>.</span>
+            <div class="itemgroup info">For more information, see <a data-bundleid="yokohama-it-service-management" data-navpath="product/benchmarks/task/t_EnableBench.html" href="/docs/bundle/yokohama-it-service-management/page/product/benchmarks/task/t_EnableBench.html" class="xref" title="Configure the Benchmarks application for your company to enable your company to compare performance with industry peers. You can opt out of Benchmarks at any time.">Enable Benchmarks</a>.</div>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">On the <span class="ph">Benchmarks</span> configuration page, view the KPI categories in the KPI participation section.</span>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Select a category for which you want to view KPI details and select <span class="ph uicontrol">Review and configure</span>.</span>
+            <div class="itemgroup stepresult">On the respective category page, a summary of KPIs, current participation status, descriptions, formulas for KPI calculation, and conditions for contributing indicators are displayed.</div>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Opt in for KPI participation.</span>
+            <ol type="a" class="ol substeps" id="t_EnableABenchKPI__substeps_vpj_dxq_pfc">
+               <li class="li substep">
+                  <span class="ph cmd">Select the vertical ellipsis next to the KPI that you want to opt in to.</span>
+               </li>
+               <li class="li substep">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Opt in</span>.</span>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Opt out of KPI participation.</span>
+            <ol type="a" class="ol substeps" id="t_EnableABenchKPI__substeps_tdh_3xq_pfc">
+               <li class="li substep">
+                  <span class="ph cmd">Select the vertical ellipsis next to the KPI that you want to opt out of.</span>
+               </li>
+               <li class="li substep">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Opt out</span>.</span>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Modify KPI details.</span>
+            <ol type="a" class="ol substeps" id="t_EnableABenchKPI__substeps_kcy_qxq_pfc">
+               <li class="li substep">
+                  <span class="ph cmd">Select the vertical ellipsis next to the KPI that you want to modify.</span>
+               </li>
+               <li class="li substep">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Modify</span>.</span>
+               </li>
+               <li class="li substep">
+                  <span class="ph cmd">Modify KPI details such as the description, formula for KPI calculation, and conditions for contributing indicators.</span>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Create or schedule a <span class="ph">Benchmarks</span> historical data collection job for a newly enabled KPI.</span>
+            <div class="itemgroup info">For information about how to create or schedule a data collection job, see <a data-bundleid="yokohama-it-service-management" data-navpath="product/benchmarks/task//csh" href="/docs/csh?topicname=t_CreatASchedDataCollJob&amp;version=yokohama&amp;pubname=yokohama-now-intelligence" class="xref">Create or schedule a data collection job</a>. The recommended time interval to collect data for a new KPI is 60 days.</div>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Execute the <span class="ph">Benchmarks</span> historical data collection job to collect data for the new KPI.</span>
+            <ol type="a" class="ol substeps" id="t_EnableABenchKPI__substeps_sst_lwx_ffc">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Navigate to <span class="ph menucascade"><span class="ph uicontrol">Platform Analytics</span><abbr> &gt; </abbr><span class="ph uicontrol">Data Collector</span><abbr> &gt; </abbr><span class="ph uicontrol">Jobs</span></span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Find and open the historical data collection job that you created.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Execute</span>.</span>
+                  <div class="itemgroup info">The collected data scores are stored in the Platform Analytics Score (pa_scores) table.</div>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Upload the collected data to the centralized <span class="ph">Benchmarks</span> instance.</span>
+            <ol type="a" class="ol substeps" id="t_EnableABenchKPI__substeps_yfh_t5x_ffc">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">In the <span class="ph">Benchmarks</span> historical data collection job, navigate to the <span class="ph uicontrol">Job Logs</span> related list.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Make sure that the state for the historical data collection job is <span class="ph uicontrol">Collected</span>.</span>
+                  <div class="itemgroup info">This state indicates that the job is complete and all data for the set period is collected.</div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Navigate to <span class="ph menucascade"><span class="ph uicontrol">System Definition</span><abbr> &gt; </abbr><span class="ph uicontrol">Scheduled Jobs</span></span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Find and open the <span class="ph uicontrol">Copy historical scores from PA to Benchmarks table</span> job.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Execute Now</span>.</span>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">(Optional) 
+            <span class="ph cmd">Download the <span class="ph">Benchmarks</span> scores manually to your instance to view the scores before they are automatically downloaded.</span>
+            <ol type="a" class="ol substeps" id="t_EnableABenchKPI__substeps_x11_rny_ffc">
+               <li class="li substep">
+                  <span class="ph cmd">Navigate to <span class="ph menucascade"><span class="ph uicontrol">System Definition</span><abbr> &gt; </abbr><span class="ph uicontrol">Scheduled Jobs</span></span>.</span>
+               </li>
+               <li class="li substep">
+                  <span class="ph cmd">Find and open the <span class="ph uicontrol">Download the benchmark scores</span> job.</span>
+               </li>
+               <li class="li substep">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Execute Now</span>.</span>
+               </li>
+            </ol>
+         </li></ol></section>
+   </div>
+<nav role="navigation"><dt class="ullinks"></dt><dd class="ullinks"><ul class="ullinks"><li class="link ulchildlink"><a data-bundleid="yokohama-it-service-management" data-navpath="product/benchmarks/task/t_ConfigResIncBenchKPIs.html" href="/docs/bundle/yokohama-it-service-management/page/product/benchmarks/task/t_ConfigResIncBenchKPIs.html">Configure resolved incident Benchmarks KPIs</a><p class="shortdesc">The source for the KPIs containing resolved incident data is the             <span class="ph uicontrol">resolved_at</span> field in the Incident [incident] table, which may not         exist in some environments. In this case, additional configuration is required to use these         KPIs.</p></li></ul></dd></nav><nav role="navigation" class="tasksNavigation"></nav><nav role="navigation" class="related-links"></nav></article></main></article></div></div></div>

@@ -1,0 +1,163 @@
+<!--
+  Page: Benchmarks overview
+  URL: https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/product/benchmarks/concept/c_BenchOverview.html
+  Captured: 2025-11-10T00:09:06.396Z
+  Validation Errors: Callout count mismatch: expected 4, got 3; Heading count too low: expected 5, got 2
+  Warnings: Unordered list item count differs: expected 40, got 22 (18 fewer - may be counting methodology difference); ⚠️ Paragraph count unusually low: expected ~16 (±5), got 7
+  Page ID: 2a7a89fe-dba5-81be-bab5-d4f4cb990cd1
+  Block Count (expected): 33
+  Block Count (actual): 43
+-->
+<div class="zDocsTopicPageBody" data-prismjs-copy="Copy" data-prismjs-copy-error="Text could not be copied. Try using keyboard shortcuts like Ctrl + C to copy instead." data-prismjs-copy-success="Copied!"><div dir="ltr" class="zDocsTopicPageBodyContent"><div><article class="hascomments" data-page="bundle:yokohama-it-service-management/enus/product/benchmarks/concept/c_BenchOverview.html" id="bundle:yokohama-it-service-management/enus/product/benchmarks/concept/c_BenchOverview.html"><main role="main"><article role="article" class="dita" id="c_BenchOverview" aria-labelledby="title_c_BenchOverview">
+   
+   
+   
+   <div class="body conbody"><p class="shortdesc">The <span class="ph">ServiceNow</span>
+      <span class="ph">Benchmarks</span> application securely collects
+    daily data on your instance and then aggregates the data into monthly global benchmark reports.</p>
+      <section class="section" id="c_BenchOverview__section_dcn_rm3_31c">
+         <p class="p">This video provides an overview of how you can get started with <span class="ph">Benchmarks</span>.</p>
+         <p class="p"><iframe allowfullscreen="allowfullscreen" id="USG6oqRX4Mw" height="315" width="560" src="https://www.youtube.com/embed/USG6oqRX4Mw?" title="Getting started with Benchmarks">
+               
+            &#xa0;</iframe></p>
+         <p class="p"><span class="ph">Performance Analytics</span> collects daily data on customer instances. The data from the previous month is uploaded at the beginning of the following month via a scheduled job. If there are any errors, there are multiple retries.</p>
+         <p class="p">During the month the data is uploaded, the data is aggregated and monthly results (your instance results, global results, and your ranking) are downloaded to the customer instance mid month. Monthly recommendation candidates are
+            provided that you can implement to help improve your KPI performance. An email notification is sent when the global data is available.</p>
+         <div class="p"><span class="ph">ServiceNow</span> has over 2850 customers that have opted into the <span class="ph">Benchmarks</span> program. All <span class="ph">ServiceNow</span> customers are allowed to participate in the <span class="ph">Benchmarks</span> program by opting in from their <span class="ph">ServiceNow</span> production instance, except:<ul class="ul" id="c_BenchOverview__ul_eqz_x2c_v1b">
+               <li class="li">Express customers</li>
+               <li class="li">Federal customers</li>
+               <li class="li">Customers with on-premise instances</li>
+            </ul>
+            <div class="note note note_note"><span class="note__title">Note:</span> You must have a production instance to opt into the <span class="ph">Benchmarks</span> program.</div></div>
+         <div class="p">Managed Service Providers (MSPs) and MSP-managed instances are supported and have exclusive access to global MSP aggregate score data. All instances will support the following benchmarks that can be downloaded for comparison in
+            the <span class="ph">Benchmarks</span> dashboard:<ul class="ul" id="c_BenchOverview__ul_hc5_zqp_hvb">
+               <li class="li">Global, which applies to all customers</li>
+               <li class="li">Industry category</li>
+               <li class="li">User size, based on active user count</li>
+               <li class="li">Companies in your industry category and those that are of similar size to your company</li>
+               <li class="li">Geographical regions</li>
+            </ul>
+            <div class="note note note_note"><span class="note__title">Note:</span> <ul class="ul" id="c_BenchOverview__ul_dyc_m44_3xb">
+                  <li class="li">These benchmarks aren’t calculated using MSP data.</li>
+                  <li class="li">Along with the above Benchmarks, you will also receive the top performers in each of these categories.</li>
+               </ul></div></div>
+         <div class="p">Changing KPI configuration within the month requires one to two months of data collection before your monthly values reflect that change. <div class="note note note_note"><span class="note__title">Note:</span> The Benchmark Scheduler (bm.scheduler) user is added with <span class="ph">Benchmarks</span>. It’s required for <span class="ph">Benchmarks</span> data collection.</div></div>
+      </section>
+      <section class="section"><h2 id="d240430e157" class="title sectiontitle">Key features</h2>
+         
+         <ul class="ul" id="c_BenchOverview__ul_cgs_yxf_kz">
+            <li class="li">Available KPIs from other <span class="ph">ServiceNow</span> applications such as ITSM,
+          ITOM, Security Operations. For more information, see <a data-bundleid="yokohama-it-service-management" data-navpath="product/benchmarks/concept/c_BenchKPIConfig.html" href="/docs/bundle/yokohama-it-service-management/page/product/benchmarks/concept/c_BenchKPIConfig.html" class="xref" title="You can enable or disable a benchmark KPI, and customize KPI conditions. Integration with Performance Analytics provides daily data collection and drill down capabilities on KPI data.">Benchmark KPIs</a>.</li>
+            <li class="li">Ability to change KPI definitions to match customizations.</li>
+            <li class="li"><span class="ph">Benchmarks</span> dashboard in <span class="ph">Service Portal</span> (mobile friendly).</li>
+            <li class="li">Ability to download KPI reports.</li>
+            <li class="li">Ability to filter data based on the following parameters:<ul class="ul" id="c_BenchOverview__ul_n1t_ycf_lvb">
+                  <li class="li">Industry, number of users, or geographical region.</li>
+                  <li class="li">Companies in your industry category and of similar user size.</li>
+               </ul></li>
+            <li class="li">Email notification when new aggregate monthly data is available.</li>
+            <li class="li">Percentile ranking to indicate your standing within your participating peer group.</li>
+            <li class="li">Recommendation candidates with guided setup to help improve KPI performance.</li>
+            <li class="li">Product category-based roles to limit data access.</li>
+            <li class="li">Integration with <span class="ph">Performance Analytics</span> for daily data collection and drill-down on KPI
+          data.</li>
+         </ul>
+         <div class="p"><figure class="fig fignone" id="c_BenchOverview__fig_ptj_qdt_3z"><figcaption><span class="fig--title-label">Figure 1. </span>Benchmarks dashboard</figcaption>
+               
+               <img src="https://servicenow-be-prod.servicenow.com/bundle/yokohama-it-service-management/page/product/benchmarks/concept/../image/BenchITSMTileView.png?_LANG=enus" class="image expandable" id="c_BenchOverview__image_anh_rdt_3z" alt="Benchmarks dashboard" data-fancy="gallery" data-gallery="gallery" data-remote="https://servicenow-be-prod.servicenow.com/bundle/yokohama-it-service-management/page/product/benchmarks/image/BenchITSMTileView.png?_LANG=enus" data-title="Benchmarks dashboard" role="button" tabindex="0" aria-label="Open image in gallery mode" style="cursor: pointer;">
+            </figure></div>
+         <div class="table-wrap"><div id="c_BenchOverview__table_llt_zby_c1b_wrapper" class="dataTables_wrapper no-footer"><div id="c_BenchOverview__table_llt_zby_c1b_filter" class="dataTables_filter"></div><div class="zDocsFilterTableDiv zDocsFilterColumnsTableDiv"><div><button type="button" data-toggle="dropdown" aria-label="Export table to a file" class="zDocsTopicPageTableExportButton"><svg aria-hidden="true" class="ico-ellipsis-v"><use xlink:href="#ico-ellipsis-v"></use></svg></button><div class="dropdown-menu zDocsDropdownMenu zDocsTopicPageTableExportMenu"><button type="button" aria-label="Export to Excel" class="dropdown-item">Export to Excel</button><button type="button" aria-label="Export to CSV" class="dropdown-item">Export to CSV</button></div></div></div><table count-columns="2" class="table frame-all dataTable no-footer" id="c_BenchOverview__table_llt_zby_c1b"><caption><span class="table--title-label">Table 1. </span><span class="title">Benefits</span></caption><colgroup><col style="width:40.98360655737705%"><col style="width:59.01639344262295%"></colgroup><thead class="thead">
+                  <tr class="row"><th class="entry sorting" id="c_BenchOverview__table_llt_zby_c1b__entry__1" tabindex="0" aria-controls="c_BenchOverview__table_llt_zby_c1b" rowspan="1" colspan="1" aria-label="Benefit: activate to sort column ascending">Benefit</th><th class="entry sorting" id="c_BenchOverview__table_llt_zby_c1b__entry__2" tabindex="0" aria-controls="c_BenchOverview__table_llt_zby_c1b" rowspan="1" colspan="1" aria-label="Description: activate to sort column ascending">Description</th></tr>
+               </thead><tbody class="tbody">
+                  
+                  
+                  
+                  
+                  
+               <tr class="row odd">
+                     <td class="entry" headers="c_BenchOverview__table_llt_zby_c1b__entry__1">Global anonymity</td>
+                     <td class="entry" headers="c_BenchOverview__table_llt_zby_c1b__entry__2">Viewers in your organization have access benchmarks for your organization,
+                however the global benchmarks are anonymous, and don’t include any company
+                information.</td>
+                  </tr><tr class="row even">
+                     <td class="entry" headers="c_BenchOverview__table_llt_zby_c1b__entry__1">Industry comparison</td>
+                     <td class="entry" headers="c_BenchOverview__table_llt_zby_c1b__entry__2"><div class="p">Using the <span class="ph uicontrol">Compare with</span> drop-down in the <span class="ph">Benchmarks</span> dashboard, you can filter the benchmarks results by industry, <span class="ph">ServiceNow</span> user size, or geographical region to make the results more relevant to your organization.<ul class="ul" id="c_BenchOverview__ul_f13_y3h_v1b">
+                              <li class="li">Industry is determined based on the standard industry code in the account record for the company.</li>
+                              <li class="li">Number of users is determined by the number of <span class="ph">ServiceNow</span> active users within the company, so you can compare your company to similar-sized <span class="ph">ServiceNow</span> implementations to gain insight about your company.</li>
+                              <li class="li">Region is determined based on the <span class="ph uicontrol">Region</span> field in the company table.</li>
+                           </ul>If a filter category includes fewer than 20 participants, the corresponding data is shown in the <span class="ph uicontrol">Other</span> category.</div></td>
+                  </tr><tr class="row odd">
+                     <td class="entry" headers="c_BenchOverview__table_llt_zby_c1b__entry__1">Trends</td>
+                     <td class="entry" headers="c_BenchOverview__table_llt_zby_c1b__entry__2">You can see the results of all published KPIs as well as the previous six
+                months of history.<p class="p">You can then use the trend data to measure and report on
+                  service delivery progress over a period of time to determine what is working well
+                  and what needs improvement.</p></td>
+                  </tr><tr class="row even">
+                     <td class="entry" headers="c_BenchOverview__table_llt_zby_c1b__entry__1">Recommendations</td>
+                     <td class="entry" headers="c_BenchOverview__table_llt_zby_c1b__entry__2">Data is analyzed and recommendation candidates are provided to help improve the
+                performance of your KPIs. <p class="p">All recommendations are dynamic and are updated
+                  monthly, based on data from the previous month.</p></td>
+                  </tr><tr class="row odd">
+                     <td class="entry" headers="c_BenchOverview__table_llt_zby_c1b__entry__1">Reports</td>
+                     <td class="entry" headers="c_BenchOverview__table_llt_zby_c1b__entry__2"><p class="p"><span class="ph">Benchmarks</span> reports get refreshed monthly, which can be downloaded
+                  in PDF format. An email notification is sent to the customer when new data is
+                  available.</p></td>
+                  </tr></tbody></table></div></div>
+      </section>
+      <section class="section" id="c_BenchOverview__section_dml_ljy_c1b"><h2 id="d240430e353" class="title sectiontitle">Email notification</h2>
+         
+         <div class="p">Users with the <span class="ph">Benchmarks</span> admin (sn_bm_client.benchmark_admin) and
+        Benchmarks data viewer (sn_bm_client.benchmark_data_viewer) roles automatically receive
+        email notification regarding availability of monthly scores, historical data recalculation,
+        and new KPIs. You must have system admin (admin) role to modify the email recipient list.<ul class="ul" id="c_BenchOverview__ul_ekb_qps_fdb">
+               <li class="li">An email containing notification information is sent when the monthly global data is
+            available. Monthly results (your instance results, and global results) are downloaded to
+            the customer instance mid month.<div class="p"><ul class="ul" id="c_BenchOverview__ul_jdl_rps_fdb">
+                        <li class="li">Subject: New Monthly Benchmarks report is available now</li>
+                        <li class="li">Body: ServiceNow Benchmarks has been updated with &lt;month&gt; data. You can
+                  see the updated Benchmarks by viewing the Benchmarks Dashboard &lt;Benchmarks
+                  Dashboard Portal link&gt;.</li>
+                     </ul></div></li>
+               <li class="li">An email containing notification information is sent when historical data for the past
+            six months is recalculated.<div class="p"><ul class="ul" id="c_BenchOverview__ul_ysb_zps_fdb">
+                        <li class="li">Subject: Historical Global Benchmarks scores have been refreshed</li>
+                        <li class="li">Body: The global Benchmarks scores of last six months have been recalculated
+                  with improved data quality. You can see the updated Benchmarks by visiting
+                  Benchmarks Dashboard &lt;Benchmark Dashboard Portal Link&gt;.</li>
+                     </ul></div></li>
+               <li class="li">An email containing notification information is sent when an updated KPI version is
+            introduced (with some fixes, for example).<div class="p"><ul class="ul" id="c_BenchOverview__ul_tjm_4pv_fdb">
+                        <li class="li">Subject: One or more Benchmarks KPI versions have changed</li>
+                        <li class="li">Body: The latest Benchmarks scores have a new version of following KPIs with
+                  improved data quality.<p class="p">&lt; KPI name&gt;.</p>
+                           <p class="p">You can see the updated
+                    Benchmarks by visiting Benchmarks Dashboard &lt;Benchmark Dashboard Portal
+                    Link&gt;.</p></li>
+                     </ul></div></li>
+            </ul></div>
+         <p class="p"><span class="ph">Benchmarks</span> notification emails are
+        accessed using the <span class="ph menucascade"><span class="ph uicontrol">System Settings</span><abbr> &gt; </abbr><span class="ph uicontrol">Notifications</span></span> navigation menu.</p>
+      </section>
+      <section class="section" id="c_BenchOverview__section_cfk_3dw_ndb"><h2 id="d240430e422" class="title sectiontitle">Benchmarks data transfer</h2>
+         
+         <p class="p">Your Benchmarks score data is automatically uploaded to <span class="ph">ServiceNow</span> on
+        the third day of the month. Global scores are automatically downloaded to your instance on
+        the 11th day of the month.</p>
+         <div class="p">You can manually upload or download scores beyond those days of the month (on demand) by
+        executing the Benchmarks scores scheduled jobs through the <span class="ph menucascade"><span class="ph uicontrol">System Definition</span><abbr> &gt; </abbr><span class="ph uicontrol">Scheduled Jobs</span></span> navigation item.<ul class="ul" id="c_BenchOverview__ul_xbl_g2w_ndb">
+               <li class="li">Upload the benchmark scores (automatically runs on the first day of the month)</li>
+               <li class="li">Download the benchmark scores (automatically runs on the ninth day of the month)</li>
+            </ul></div>
+         <p class="p">These on-demand scheduled jobs are useful if, for any reason, there was a failure in the
+        automatic upload or download scores process and it is after the cutoff dates. You can also
+        run a scheduled job to generate six months of historical data.</p>
+      </section>
+      <section class="section"><h2 id="d240430e457" class="title sectiontitle"><span class="ph">Benchmarks</span> KPI categories</h2>
+         
+         <p class="p"><span class="ph">Benchmarks</span> supports KPIs from other <span class="ph">ServiceNow</span>
+        applications such as ITSM, ITOM, Security Operations, Conversational Interfaces, Success
+        Dashboard, and Strategic Portfolio Management. For more information, see <a data-bundleid="yokohama-it-service-management" data-navpath="product/benchmarks/concept/c_BenchKPIConfig.html" href="/docs/bundle/yokohama-it-service-management/page/product/benchmarks/concept/c_BenchKPIConfig.html" class="xref" title="You can enable or disable a benchmark KPI, and customize KPI conditions. Integration with Performance Analytics provides daily data collection and drill down capabilities on KPI data.">Benchmark KPIs</a>.</p>
+         <div class="note note note_note"><span class="note__title">Note:</span> The categories do not display on the <span class="ph">Benchmarks</span> dashboard unless, any KPI is opted in for tracking the metrics in <span class="ph">Benchmarks</span>.</div>
+      </section>
+   </div>
+<nav role="navigation"></nav><nav role="navigation" class="tasksNavigation"></nav><nav role="navigation" class="related-links"></nav></article></main></article></div></div><div class="contentPlaceholder" style="height: 393.5px;"><div class="contentContainer zDocsSideBoxes withExpandCollapse"><div class="contentWrapper" style="height: 393.5px;"><button aria-hidden="true" data-tooltip-id="zDocsMiniTocCollapseToolTip" data-tooltip-content="Hide Mini TOC" data-testid="expand-collapse-button" class="zDocsMiniTocCollapseButton" aria-label="Hide" aria-expanded="true"><svg aria-hidden="true" class="ico-angle-arrow-right"><use xlink:href="#ico-angle-arrow-right"></use></svg></button><div class="miniTOC d-none d-md-block"><div class="miniTOCHeader"><h5 class="miniTOCTitle css-g931ng">On this page</h5></div><ul class="linkList"><li class="linkItem"><a class="link  css-ettsdk" href="#d240430e157" id="miniTOC-d240430e157">Key features</a><ul id="miniTOC-collapse-d240430e157" class="level-2 linkList"></ul></li><li class="linkItem"><a class="link  css-ettsdk" href="#d240430e353" id="miniTOC-d240430e353">Email notification</a><ul id="miniTOC-collapse-d240430e353" class="level-2 linkList"></ul></li><li class="linkItem"><a class="link  css-ettsdk" href="#d240430e422" id="miniTOC-d240430e422">Benchmarks data transfer</a><ul id="miniTOC-collapse-d240430e422" class="level-2 linkList"></ul></li><li class="linkItem"><a class="link  css-ettsdk" href="#d240430e457" id="miniTOC-d240430e457">Benchmarks KPI categories</a><ul id="miniTOC-collapse-d240430e457" class="level-2 linkList"></ul></li></ul></div></div></div></div></div>

@@ -1,0 +1,469 @@
+<!--
+  Page: Benchmark KPIs
+  URL: https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/product/benchmarks/concept/c_BenchKPIConfig.html
+  Captured: 2025-11-10T00:10:09.604Z
+  Validation Errors: Table count mismatch: expected 12, got 4
+  Warnings: Block count high: expected at most 26, got 47; Unordered list item count differs: expected 31, got 0 (31 fewer - may be counting methodology difference); ⚠️ Paragraph count unusually low: expected ~10 (±3), got 5
+  Page ID: 2a7a89fe-dba5-818e-92bd-e2ab63606180
+  Block Count (expected): 17
+  Block Count (actual): 47
+-->
+<div class="zDocsTopicPageBody" data-prismjs-copy="Copy" data-prismjs-copy-error="Text could not be copied. Try using keyboard shortcuts like Ctrl + C to copy instead." data-prismjs-copy-success="Copied!"><div dir="ltr" class="zDocsTopicPageBodyContent"><div><article class="hascomments" data-page="bundle:yokohama-it-service-management/enus/product/benchmarks/concept/c_BenchKPIConfig.html" id="bundle:yokohama-it-service-management/enus/product/benchmarks/concept/c_BenchKPIConfig.html"><main role="main"><article role="article" class="dita" id="c_BenchKPIConfig" aria-labelledby="title_c_BenchKPIConfig">
+   
+   
+   
+   <div class="body conbody"><p class="shortdesc">You can enable or disable a benchmark KPI, and customize KPI conditions. Integration
+    with <span class="ph">Performance Analytics</span> provides daily data collection and drill down capabilities on KPI
+    data.</p>
+      <div class="p"><span class="ph">Benchmarks</span> offers ITSM, ITOM, Virtual Agent, Security Operations KPIs, Success
+      Dashboard, and <span class="ph">Strategic Portfolio Management</span>.<div class="note note note_note"><span class="note__title">Note:</span> Upgrading Benchmarks does not
+        change KPI status or configuration from the previous release. New KPIs are enabled by
+        default.</div></div>
+      <p class="p"><span class="ph">Benchmarks</span> uses anonymous, aggregated usage data from customers who have opted
+      in to calculate global and industry benchmarks. The KPIs in the <span class="ph">Benchmarks</span>
+      application are performance analytics indicators that only collect the usage count data, for
+      example, the total number of incidents in a month, based on the monthly aggregates. During
+      data collection, the <span class="ph">Benchmarks</span> application does not consider any other details
+      such as description of incidents, or information about requests, changes, or applications.</p>
+      <p class="p">The participating customer count for each cohort bucket in Industry Category, User Size, and
+      Three geo regions aggregates are large enough to calculate monthly benchmarks values and to
+      maintain full anonymity. To further ensure data anonymity, the Benchmarks user interface
+      allows you to use only one filter at a time.</p>
+      <section class="section"><h2 id="d214620e74" class="title sectiontitle">ITSM KPIs</h2>
+         
+         <div class="table-wrap"><table count-columns="2" class="table frame-all" id="c_BenchKPIConfig__table_ovv_mj4_gbb"><caption><span class="table--title-label">Table 1. </span><span class="title">Incident</span></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                  <tr class="row">
+                     <th class="entry" id="c_BenchKPIConfig__table_ovv_mj4_gbb__entry__1">KPI</th>
+                     <th class="entry" id="c_BenchKPIConfig__table_ovv_mj4_gbb__entry__2">Description</th>
+                  </tr>
+               </thead><tbody class="tbody">
+                  <tr class="row">
+                     <td class="entry" headers="c_BenchKPIConfig__table_ovv_mj4_gbb__entry__1 c_BenchKPIConfig__table_ovv_mj4_gbb__entry__2" colspan="2"><div class="note note note_note"><span class="note__title">Note:</span> In some environments, KPIs involving resolved incidents may require further
+                    <a data-bundleid="yokohama-it-service-management" data-navpath="product/benchmarks/task/t_ConfigResIncBenchKPIs.html" href="/docs/bundle/yokohama-it-service-management/page/product/benchmarks/task/t_ConfigResIncBenchKPIs.html" class="xref" title="The source for the KPIs containing resolved incident data is the resolved_at field in the Incident [incident] table, which may not exist in some environments. In this case, additional configuration is required to use these KPIs.">configuration</a> to
+                  retrieve resolved incident data.</div></td>
+                  </tr>
+                  <tr class="row">
+                     <td class="entry" headers="c_BenchKPIConfig__table_ovv_mj4_gbb__entry__1">% of high priority incidents resolved</td>
+                     <td class="entry" headers="c_BenchKPIConfig__table_ovv_mj4_gbb__entry__2"><p class="p">[Number of priority 1 (P1) and priority 2 (P2) incidents resolved during the month] / [Total number of incidents resolved during the same month]</p>
+                        <div class="p">Incident count is generated from the Incident table.<div class="note note note_note"><span class="note__title">Note:</span> The definition of P1 and P2 incidents is likely to vary per participant. Your P1 and P2 incidents may or may not be similar to the incidents of others. For
+                              comparison, the metrics provided in this report represent the average of all participants.</div></div></td>
+                  </tr>
+                  <tr class="row">
+                     <td class="entry" headers="c_BenchKPIConfig__table_ovv_mj4_gbb__entry__1">% of incidents resolved on first assignment</td>
+                     <td class="entry" headers="c_BenchKPIConfig__table_ovv_mj4_gbb__entry__2"><p class="p">[Number of incidents resolved on first assignment during the month] / [Total
+                  number of incidents resolved during the same month]</p>
+                        <p class="p">First assignment is when the <span class="ph uicontrol">Reassignment Count</span> field is 0
+                  for the incident.</p></td>
+                  </tr>
+                  <tr class="row">
+                     <td class="entry" headers="c_BenchKPIConfig__table_ovv_mj4_gbb__entry__1">% of incidents resolved within SLA</td>
+                     <td class="entry" headers="c_BenchKPIConfig__table_ovv_mj4_gbb__entry__2"><p class="p">[Number of incidents with met SLAs resolved during the month] / [Total number of
+                  incidents resolved during the same month]</p>
+                        <p class="p">Met SLAs are calculated from the task_sla table for incidents resolved during the
+                  month.</p></td>
+                  </tr>
+                  <tr class="row">
+                     <td class="entry" headers="c_BenchKPIConfig__table_ovv_mj4_gbb__entry__1">% of reopened incidents</td>
+                     <td class="entry" headers="c_BenchKPIConfig__table_ovv_mj4_gbb__entry__2"><p class="p">[Number of incidents resolved during the month that were reopened] / [Total
+                  number of incidents resolved during the same month].</p>
+                        <p class="p">Reopened is when the <span class="ph uicontrol">Reopen Count</span> field is greater than 0
+                  for the incident.</p></td>
+                  </tr>
+                  <tr class="row">
+                     <td class="entry" headers="c_BenchKPIConfig__table_ovv_mj4_gbb__entry__1">Average time to resolve a high priority incident</td>
+                     <td class="entry" headers="c_BenchKPIConfig__table_ovv_mj4_gbb__entry__2"><p class="p">[Sum of the duration of all high priority incidents resolved during the month] /
+                  [Total number of high priority incidents resolved during the same month]</p>
+                        <div class="p"><ul class="ul">
+                              <li class="li">Duration is the length of time from creation to resolution.</li>
+                              <li class="li">High priority incidents include priority 1 (P1) and priority 2 (P2).</li>
+                           </ul></div></td>
+                  </tr>
+                  <tr class="row">
+                     <td class="entry" headers="c_BenchKPIConfig__table_ovv_mj4_gbb__entry__1">Average time to resolve an incident</td>
+                     <td class="entry" headers="c_BenchKPIConfig__table_ovv_mj4_gbb__entry__2"><p class="p">[Sum of the duration of all incidents resolved during the month] / [Total number
+                  of incidents resolved during the same month]</p>
+                        <p class="p">Duration is the length of time from creation to resolution.</p></td>
+                  </tr>
+                  <tr class="row">
+                     <td class="entry" headers="c_BenchKPIConfig__table_ovv_mj4_gbb__entry__1">Number of incidents created per user</td>
+                     <td class="entry" headers="c_BenchKPIConfig__table_ovv_mj4_gbb__entry__2"><p class="p">Number of incidents per user created during the month.</p>
+                        <p class="p">Global value is the average of all participating customers per user.</p></td>
+                  </tr>
+               </tbody></table></div>
+         <div class="table-wrap"><table count-columns="2" class="table frame-all" id="c_BenchKPIConfig__table_zw4_jxn_b1b"><caption><span class="table--title-label">Table 2. </span><span class="title">Problem</span></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                  <tr class="row">
+                     <th class="entry" id="c_BenchKPIConfig__table_zw4_jxn_b1b__entry__1">KPI</th>
+                     <th class="entry" id="c_BenchKPIConfig__table_zw4_jxn_b1b__entry__2">Description</th>
+                  </tr>
+               </thead><tbody class="tbody">
+                  <tr class="row">
+                     <td class="entry" headers="c_BenchKPIConfig__table_zw4_jxn_b1b__entry__1">% of high priority problems</td>
+                     <td class="entry" headers="c_BenchKPIConfig__table_zw4_jxn_b1b__entry__2"><p class="p">[Number of high priority problems closed during the month] / [Total number of
+                  problems closed during the same month]</p>
+                        <p class="p">High priority problems include priority 1 (P1) and priority 2 (P2).</p></td>
+                  </tr>
+                  <tr class="row">
+                     <td class="entry" headers="c_BenchKPIConfig__table_zw4_jxn_b1b__entry__1">% of incidents resolved by problem</td>
+                     <td class="entry" headers="c_BenchKPIConfig__table_zw4_jxn_b1b__entry__2"><p class="p">[Number of incidents resolved during the month that are associated with a
+                  problem] / [Total number of incidents resolved during the same month]</p></td>
+                  </tr>
+                  <tr class="row">
+                     <td class="entry" headers="c_BenchKPIConfig__table_zw4_jxn_b1b__entry__1">Average time to close a problem</td>
+                     <td class="entry" headers="c_BenchKPIConfig__table_zw4_jxn_b1b__entry__2"><p class="p">[Sum of the duration of all problems closed during the month] / [Total number of
+                  problems closed during the same month]</p>
+                        <ul class="ul" id="c_BenchKPIConfig__ul_wb3_v21_r1c">
+                           <li class="li">Duration is the length of time from creating to closure.</li>
+                           <li class="li">Problems include priority 1 (P1) through priority 5 (P5).</li>
+                        </ul></td>
+                  </tr>
+               </tbody></table></div>
+         <div class="table-wrap"><table count-columns="2" class="table frame-all" id="c_BenchKPIConfig__table_ljl_nxn_b1b"><caption><span class="table--title-label">Table 3. </span><span class="title">Change</span></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                  <tr class="row">
+                     <th class="entry" id="c_BenchKPIConfig__table_ljl_nxn_b1b__entry__1">KPI</th>
+                     <th class="entry" id="c_BenchKPIConfig__table_ljl_nxn_b1b__entry__2">Description</th>
+                  </tr>
+               </thead><tbody class="tbody">
+                  <tr class="row">
+                     <td class="entry" headers="c_BenchKPIConfig__table_ljl_nxn_b1b__entry__1">% of emergency changes</td>
+                     <td class="entry" headers="c_BenchKPIConfig__table_ljl_nxn_b1b__entry__2"><p class="p">[Number of emergency changes closed during the month] / [Total number of all
+                  changes closed during the same month]</p>
+                        <p class="p">All changes include standard, normal, and emergency.</p></td>
+                  </tr>
+                  <tr class="row">
+                     <td class="entry" headers="c_BenchKPIConfig__table_ljl_nxn_b1b__entry__1">% of failed changes</td>
+                     <td class="entry" headers="c_BenchKPIConfig__table_ljl_nxn_b1b__entry__2"><p class="p">[Number of unsuccessful changes during the month] / [Total number of all changes
+                  closed during the same month]</p></td>
+                  </tr>
+                  <tr class="row">
+                     <td class="entry" headers="c_BenchKPIConfig__table_ljl_nxn_b1b__entry__1">Average time to close a change</td>
+                     <td class="entry" headers="c_BenchKPIConfig__table_ljl_nxn_b1b__entry__2"><p class="p">[Sum of the duration of all changes closed during the month] / [Total number of
+                  all changes closed during the same month]</p>
+                        <div class="p"><ul class="ul" id="c_BenchKPIConfig__ul_fd1_pxn_b1b">
+                              <li class="li">Duration is the length of time from creation to closure.</li>
+                              <li class="li">All changes include standard, normal, and emergency.</li>
+                           </ul></div></td>
+                  </tr>
+               </tbody></table></div>
+         <div class="table-wrap"><table count-columns="2" class="table frame-all" id="c_BenchKPIConfig__table_w3h_v5n_b1b"><caption><span class="table--title-label">Table 4. </span><span class="title">Service Catalog</span></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                  <tr class="row">
+                     <th class="entry" id="c_BenchKPIConfig__table_w3h_v5n_b1b__entry__1">KPI</th>
+                     <th class="entry" id="c_BenchKPIConfig__table_w3h_v5n_b1b__entry__2">Description</th>
+                  </tr>
+               </thead><tbody class="tbody">
+                  <tr class="row">
+                     <td class="entry" headers="c_BenchKPIConfig__table_w3h_v5n_b1b__entry__1">% of closed requests with breached SLAs</td>
+                     <td class="entry" headers="c_BenchKPIConfig__table_w3h_v5n_b1b__entry__2"><p class="p">[Number of closed requests with breached SLAs during the month] / [Total number
+                  of closed requests during the same month]</p>
+                        <p class="p">Breached SLAs are calculated from the task_sla table for requests closed during
+                  the month.</p></td>
+                  </tr>
+                  <tr class="row">
+                     <td class="entry" headers="c_BenchKPIConfig__table_w3h_v5n_b1b__entry__1">Average time to fulfill a request</td>
+                     <td class="entry" headers="c_BenchKPIConfig__table_w3h_v5n_b1b__entry__2"><p class="p">[Sum of the duration for Service Catalog requests fulfilled during the month] /
+                  [Total number of Service Catalog requests fulfilled in the same month]</p>
+                        <div class="p"><ul class="ul">
+                              <li class="li"><span class="ph uicontrol">Duration</span> is the length of time from creation to
+                      closure.</li>
+                              <li class="li"><span class="ph uicontrol">Number of Service Catalog requests fulfilled</span> is the
+                      count of the number of records in the sc_req_item table, which were closed
+                      within a month.</li>
+                           </ul></div></td>
+                  </tr>
+                  <tr class="row">
+                     <td class="entry" headers="c_BenchKPIConfig__table_w3h_v5n_b1b__entry__1">Number of requests created per user</td>
+                     <td class="entry" headers="c_BenchKPIConfig__table_w3h_v5n_b1b__entry__2"><p class="p">Number of requests per user created during the month.</p></td>
+                  </tr>
+               </tbody></table></div>
+         <div class="table-wrap"><table count-columns="2" class="table frame-all" id="c_BenchKPIConfig__table_dly_x5n_b1b"><caption><span class="table--title-label">Table 5. </span><span class="title">Knowledge</span></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                  <tr class="row">
+                     <th class="entry" id="c_BenchKPIConfig__table_dly_x5n_b1b__entry__1">KPI</th>
+                     <th class="entry" id="c_BenchKPIConfig__table_dly_x5n_b1b__entry__2">Description</th>
+                  </tr>
+               </thead><tbody class="tbody">
+                  <tr class="row">
+                     <td class="entry" headers="c_BenchKPIConfig__table_dly_x5n_b1b__entry__1">% of incidents resolved using KB articles</td>
+                     <td class="entry" headers="c_BenchKPIConfig__table_dly_x5n_b1b__entry__2"><p class="p">[Number of incidents with KB articles resolved during the month] /</p>
+                        <p class="p">[Total number of incidents resolved during the same month]</p></td>
+                  </tr>
+                  <tr class="row">
+                     <td class="entry" headers="c_BenchKPIConfig__table_dly_x5n_b1b__entry__1">Number of knowledge articles views per user</td>
+                     <td class="entry" headers="c_BenchKPIConfig__table_dly_x5n_b1b__entry__2"><div class="p">Number of knowledge article views per user during the month.<ul class="ul" id="c_BenchKPIConfig__ul_svd_z5n_b1b">
+                              <li class="li"><span class="ph uicontrol">Knowledge base views</span> are generated from the kb_use table.</li>
+                              <li class="li"><span class="ph uicontrol">Global</span> value is the average of all participating
+                      customers per user.</li>
+                           </ul></div></td>
+                  </tr>
+               </tbody></table></div>
+         <div class="table-wrap"><table count-columns="2" class="table frame-all" id="c_BenchKPIConfig__table_rsg_1f3_ktb"><caption><span class="table--title-label">Table 6. </span><span class="title">ITSM Virtual Agent</span></caption><colgroup><col style="width:50.73891625615763%"><col style="width:49.26108374384236%"></colgroup><thead class="thead">
+                  <tr class="row">
+                     <th class="entry colsep-1 rowsep-1" id="c_BenchKPIConfig__table_rsg_1f3_ktb__entry__1">KPI</th>
+                     <th class="entry colsep-1 rowsep-1" id="c_BenchKPIConfig__table_rsg_1f3_ktb__entry__2">Description</th>
+                  </tr>
+               </thead><tbody class="tbody">
+                  <tr class="row">
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_rsg_1f3_ktb__entry__1">% call deflection</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_rsg_1f3_ktb__entry__2"><p class="p">[The number of incidents and requests created using <span class="ph">Virtual Agent</span>
+                  ] / [Total numbers of incidents and requests created]</p>
+                        <p class="p">The number of times, in percentage, the incident, or request was submitted using
+                    <span class="ph">Virtual Agent</span>. This is determined by the <a data-bundleid="yokohama-it-service-management" data-navpath="product/benchmarks/concept//csh" href="/docs/csh?topicname=deflections-virtual-agent&amp;version=yokohama&amp;pubname=yokohama-conversational-interfaces" class="xref">deflection</a> pattern added in the <span class="ph">Virtual Agent</span> topic.</p></td>
+                  </tr>
+                  <tr class="row">
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_rsg_1f3_ktb__entry__1">% of incidents auto-resolved</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_rsg_1f3_ktb__entry__2"><p class="p">[The number of incidents auto-resolved by <span class="ph">Virtual Agent</span> ] / [Total
+                  number of incidents resolved]</p>
+                        <p class="p">The number of times, in percentage, incidents were automatically resolved using
+                  automated workflows or by <a data-bundleid="yokohama-it-service-management" data-navpath="product/benchmarks/concept//csh" href="/docs/csh?topicname=auto-resolution-va&amp;version=yokohama&amp;pubname=yokohama-conversational-interfaces" class="xref">Issue Auto
+                    Resolution</a>.</p></td>
+                  </tr>
+               </tbody></table></div>
+         <div class="table-wrap"><table count-columns="2" class="table frame-all" id="c_BenchKPIConfig__table_yws_1qy_fbb"><caption><span class="table--title-label">Table 7. </span><span class="title">Other</span></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                  <tr class="row">
+                     <th class="entry" id="c_BenchKPIConfig__table_yws_1qy_fbb__entry__1">KPI</th>
+                     <th class="entry" id="c_BenchKPIConfig__table_yws_1qy_fbb__entry__2">Description</th>
+                  </tr>
+               </thead><tbody class="tbody">
+                  <tr class="row">
+                     <td class="entry" headers="c_BenchKPIConfig__table_yws_1qy_fbb__entry__1">Average customer satisfaction</td>
+                     <td class="entry" headers="c_BenchKPIConfig__table_yws_1qy_fbb__entry__2"><p class="p">[Sum of normalized metric values of all survey instances taken during the month]
+                  /</p>
+                        <div class="p">[Total number of survey instances taken during the same month]<ul class="ul" id="c_BenchKPIConfig__ul_ncp_5vy_fbb">
+                              <li class="li">Table: asmt_metric_results.</li>
+                              <li class="li">Survey: Customer Satisfaction Survey.</li>
+                              <li class="li">Metric value is normalized as per category weights.</li>
+                           </ul>
+                           <div class="note note note_note"><span class="note__title">Note:</span> This KPI uses the base system Customer Satisfaction Survey. <p class="p">If you're using a different
+                      survey to collect user feedback, you can <a data-bundleid="yokohama-it-service-management" data-navpath="product/benchmarks/task/t_CustomBenchKPIConditions.html" href="/docs/bundle/yokohama-it-service-management/page/product/benchmarks/task/t_CustomBenchKPIConditions.html" class="xref" title="You can customize KPI conditions to fit the needs of your organization better.">customize the KPI definition</a>.</p></div></div></td>
+                  </tr>
+                  <tr class="row">
+                     <td class="entry" headers="c_BenchKPIConfig__table_yws_1qy_fbb__entry__1">Number of requests per fulfiller</td>
+                     <td class="entry" headers="c_BenchKPIConfig__table_yws_1qy_fbb__entry__2"><p class="p">[Number of active requester (non-ITIL) users during the month] /</p>
+                        <p class="p">[Total number of active ITIL users during the same month]</p></td>
+                  </tr>
+               </tbody></table></div>
+      </section>
+      <section class="section"><h2 id="d214620e663" class="title sectiontitle">ITOM KPIs</h2>
+         
+         <div class="table-wrap"><table count-columns="2" class="table frame-all" id="c_BenchKPIConfig__table_oh2_1vn_b1b"><caption><span class="table--title-label">Table 8. </span><span class="title">CMDB</span></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                  <tr class="row">
+                     <th class="entry" id="c_BenchKPIConfig__table_oh2_1vn_b1b__entry__1">KPI</th>
+                     <th class="entry" id="c_BenchKPIConfig__table_oh2_1vn_b1b__entry__2">Description</th>
+                  </tr>
+               </thead><tbody class="tbody">
+                  <tr class="row">
+                     <td class="entry" headers="c_BenchKPIConfig__table_oh2_1vn_b1b__entry__1">% of duplicate CIs</td>
+                     <td class="entry" headers="c_BenchKPIConfig__table_oh2_1vn_b1b__entry__2"><p class="p">Average % of duplicate CIs during the month.</p>
+                        <div class="p">Duplicate CIs are calculated using the cmdb_health_scorecard table.<div class="note note note_note"><span class="note__title">Note:</span> The
+                    definition of duplicate CIs is likely to vary per participant. Your duplicate
+                    CIs definition may or may not be similar to the definitions of others. For
+                    comparison, the metrics provided in this report represent the average of all
+                    participants.</div></div></td>
+                  </tr>
+                  <tr class="row">
+                     <td class="entry" headers="c_BenchKPIConfig__table_oh2_1vn_b1b__entry__1">% of non-compliant CIs</td>
+                     <td class="entry" headers="c_BenchKPIConfig__table_oh2_1vn_b1b__entry__2"><p class="p">Average % of non-compliant CIs during the month.</p>
+                        <div class="p">Non-compliant CIs are calculated using the cmdb_health_scorecard table.<div class="note note note_note"><span class="note__title">Note:</span> The
+                    definition of CI compliance audits is likely to vary per participant. Your CI
+                    compliance audit definition may or may not be similar to the definitions of
+                    others. For comparison, the metrics provided in this report represent the
+                    average of all participants.</div></div></td>
+                  </tr>
+                  <tr class="row">
+                     <td class="entry" headers="c_BenchKPIConfig__table_oh2_1vn_b1b__entry__1">% of stale CIs</td>
+                     <td class="entry" headers="c_BenchKPIConfig__table_oh2_1vn_b1b__entry__2"><p class="p">Average % of stale CIs during the month.</p>
+                        <div class="p">Stale CIs are calculated using the cmdb_health_scorecard table.<div class="note note note_note"><span class="note__title">Note:</span> The
+                    definition of stale CIs is likely to vary per participant. Your stale CIs
+                    definition may or may not be similar to the definitions of others. For
+                    comparison, the metrics provided in this report represent the average of all
+                    participants.</div></div></td>
+                  </tr>
+               </tbody></table></div>
+      </section>
+      <section class="section" id="c_BenchKPIConfig__section_ekt_bny_ktb"><h2 id="d214620e743" class="title sectiontitle"><span class="ph">Conversational Interfaces</span> KPIs</h2>
+         
+         <div class="p"><div class="table-wrap"><table count-columns="2" class="table frame-all" id="c_BenchKPIConfig__table_ow2_2ny_ktb"><caption><span class="table--title-label">Table 9. </span><span class="title">Virtual Agent</span></caption><colgroup><col style="width:51.92307692307693%"><col style="width:48.07692307692307%"></colgroup><thead class="thead">
+                     <tr class="row">
+                        <th class="entry colsep-1 rowsep-1" id="c_BenchKPIConfig__table_ow2_2ny_ktb__entry__1">KPI</th>
+                        <th class="entry colsep-1 rowsep-1" id="c_BenchKPIConfig__table_ow2_2ny_ktb__entry__2">Description</th>
+                     </tr>
+                  </thead><tbody class="tbody">
+                     <tr class="row">
+                        <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_ow2_2ny_ktb__entry__1">% of users using <span class="ph">Virtual Agent</span></td>
+                        <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_ow2_2ny_ktb__entry__2"><p class="p">[Total number of users using <span class="ph">Virtual Agent</span> ] / [Total number of
+                    active users]</p>
+                           <p class="p">Percentage of unique users who are using <span class="ph">Virtual Agent</span> to handle
+                    everyday tasks and requests.</p></td>
+                     </tr>
+                     <tr class="row">
+                        <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_ow2_2ny_ktb__entry__1">% conversation handed over to a live agent</td>
+                        <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_ow2_2ny_ktb__entry__2"><p class="p">[Number of conversations assigned to a live agent] / [Total number of
+                    conversations]</p>
+                           <p class="p">The percentage of virtual agent conversations that were redirected to handle
+                    everyday tasks and requests.</p></td>
+                     </tr>
+                     <tr class="row">
+                        <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_ow2_2ny_ktb__entry__1"><span class="ph">Virtual Agent</span> CSAT score</td>
+                        <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_ow2_2ny_ktb__entry__2"><p class="p">Uses the daily average score of the surveys conducted to analyze the quality of
+                    user interactions with <span class="ph">Virtual Agent</span> conversations.</p></td>
+                     </tr>
+                  </tbody></table></div></div>
+      </section>
+      <section class="section" id="c_BenchKPIConfig__section_emw_qr4_ndb"><h2 id="d214620e829" class="title sectiontitle">Security Operations KPIs</h2>
+         
+         <div class="table-wrap"><table count-columns="2" class="table frame-all" id="c_BenchKPIConfig__table_nlc_sr4_ndb"><caption><span class="table--title-label">Table 10. </span><span class="title">Security Incident Response</span></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                  <tr class="row">
+                     <th class="entry colsep-1 rowsep-1" id="c_BenchKPIConfig__table_nlc_sr4_ndb__entry__1">KPI</th>
+                     <th class="entry colsep-1 rowsep-1" id="c_BenchKPIConfig__table_nlc_sr4_ndb__entry__2">Description</th>
+                  </tr>
+               </thead><tbody class="tbody">
+                  <tr class="row">
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_nlc_sr4_ndb__entry__1">% of critical and high priority security incidents</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_nlc_sr4_ndb__entry__2"><p class="p">[Number of critical and high priority security incidents created during the
+                  month] / [Total number of all security incidents created during the same
+                  month]</p></td>
+                  </tr>
+               </tbody></table></div>
+         <div class="table-wrap"><div id="c_BenchKPIConfig__table_kgw_yrk_h2b_wrapper" class="dataTables_wrapper no-footer"><div id="c_BenchKPIConfig__table_kgw_yrk_h2b_filter" class="dataTables_filter"></div><div class="zDocsFilterTableDiv zDocsFilterColumnsTableDiv"><div><button type="button" data-toggle="dropdown" aria-label="Export table to a file" class="zDocsTopicPageTableExportButton"><svg aria-hidden="true" class="ico-ellipsis-v"><use xlink:href="#ico-ellipsis-v"></use></svg></button><div class="dropdown-menu zDocsDropdownMenu zDocsTopicPageTableExportMenu"><button type="button" aria-label="Export to Excel" class="dropdown-item">Export to Excel</button><button type="button" aria-label="Export to CSV" class="dropdown-item">Export to CSV</button></div></div></div><table count-columns="2" class="table frame-all dataTable no-footer" id="c_BenchKPIConfig__table_kgw_yrk_h2b"><caption><span class="table--title-label">Table 11. </span><span class="title">Vulnerability Response</span></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                  <tr class="row"><th class="entry colsep-1 rowsep-1 sorting" id="c_BenchKPIConfig__table_kgw_yrk_h2b__entry__1" tabindex="0" aria-controls="c_BenchKPIConfig__table_kgw_yrk_h2b" rowspan="1" colspan="1" aria-label="KPI: activate to sort column ascending">KPI</th><th class="entry colsep-1 rowsep-1 sorting" id="c_BenchKPIConfig__table_kgw_yrk_h2b__entry__2" tabindex="0" aria-controls="c_BenchKPIConfig__table_kgw_yrk_h2b" rowspan="1" colspan="1" aria-label="Description: activate to sort column ascending">Description</th></tr>
+               </thead><tbody class="tbody">
+                  
+                  
+                  
+                  
+                  
+               <tr class="row odd">
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_kgw_yrk_h2b__entry__1">Average critical vulnerability age</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_kgw_yrk_h2b__entry__2"><p class="p">[Summed age of critical vulnerable items] / [Number of critical vulnerable
+                  items]</p></td>
+                  </tr><tr class="row even">
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_kgw_yrk_h2b__entry__1">Average vulnerability age</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_kgw_yrk_h2b__entry__2"><p class="p">[Summed age of vulnerable items] / [Number of vulnerable items]</p></td>
+                  </tr><tr class="row odd">
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_kgw_yrk_h2b__entry__1">Average vulnerability per asset</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_kgw_yrk_h2b__entry__2"><p class="p">[Sum of active vulnerable items] / [Total number of scanned configuration
+                  items]</p></td>
+                  </tr><tr class="row even">
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_kgw_yrk_h2b__entry__1">VI mean time to remediate (MTTR)</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_kgw_yrk_h2b__entry__2"><p class="p">[Sum of duration of closed vulnerable items] / [Total number of closed vulnerable
+                  items displayed as a 30-day running average]</p></td>
+                  </tr><tr class="row odd">
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_kgw_yrk_h2b__entry__1">% of remediation efficiency</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_kgw_yrk_h2b__entry__2"><p class="p">[Number of vulnerable Items items closed during a month] / [Number of new or
+                  reopened vulnerable items in the same month]</p></td>
+                  </tr></tbody></table></div></div>
+      </section>
+      <section class="section" id="c_BenchKPIConfig__section_oxp_np3_1vb"><h2 id="d214620e951" class="title sectiontitle">Success Dashboard KPIs</h2>
+         
+         <div class="table-wrap"><div id="c_BenchKPIConfig__table_okv_rp3_1vb_wrapper" class="dataTables_wrapper no-footer"><div id="c_BenchKPIConfig__table_okv_rp3_1vb_filter" class="dataTables_filter"></div><div class="zDocsFilterTableDiv zDocsFilterColumnsTableDiv"><div><button type="button" data-toggle="dropdown" aria-label="Export table to a file" class="zDocsTopicPageTableExportButton"><svg aria-hidden="true" class="ico-ellipsis-v"><use xlink:href="#ico-ellipsis-v"></use></svg></button><div class="dropdown-menu zDocsDropdownMenu zDocsTopicPageTableExportMenu"><button type="button" aria-label="Export to Excel" class="dropdown-item">Export to Excel</button><button type="button" aria-label="Export to CSV" class="dropdown-item">Export to CSV</button></div></div></div><table count-columns="3" class="table frame-all dataTable no-footer" id="c_BenchKPIConfig__table_okv_rp3_1vb"><caption></caption><colgroup><col style="width:33.33333333333333%"><col style="width:33.33333333333333%"><col style="width:33.33333333333333%"></colgroup><thead class="thead">
+                  <tr class="row"><th class="entry colsep-1 rowsep-1 sorting" id="c_BenchKPIConfig__table_okv_rp3_1vb__entry__1" tabindex="0" aria-controls="c_BenchKPIConfig__table_okv_rp3_1vb" rowspan="1" colspan="1" aria-label="KPI: activate to sort column ascending">KPI</th><th class="entry colsep-1 rowsep-1 sorting" id="c_BenchKPIConfig__table_okv_rp3_1vb__entry__2" tabindex="0" aria-controls="c_BenchKPIConfig__table_okv_rp3_1vb" rowspan="1" colspan="1" aria-label="Formula: activate to sort column ascending">Formula</th><th class="entry colsep-1 rowsep-1 sorting" id="c_BenchKPIConfig__table_okv_rp3_1vb__entry__3" tabindex="0" aria-controls="c_BenchKPIConfig__table_okv_rp3_1vb" rowspan="1" colspan="1" aria-label="Description: activate to sort column ascending">Description</th></tr>
+               </thead><tbody class="tbody">
+                  
+                  
+                  
+                  
+                  
+                  
+                  
+                  
+                  
+                  
+                  
+                  
+                  
+                  
+                  
+                  
+                  
+               <tr class="row odd">
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__1">Self-solved %</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__2">[Self-solved (VA, KB, QnA, Proactive Engagement) + Automated resolutions] / [Total Tickets Resolution + Self-solved (VA, KB, QnA, Proactive Engagement) + Self service using Password Reset apps]*100</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__3">Self-solved percentage is calculated based on the daily average number of times your users achieved resolution without agent intervention. It includes numbers from the following items:<ul class="ul" id="c_BenchKPIConfig__ul_jbp_br3_1vb">
+                           <li class="li">Self-solved using <span class="ph">Virtual Agent</span>.</li>
+                           <li class="li">Self-solved using Knowledge articles.</li>
+                           <li class="li">Self-solved using QnA.</li>
+                           <li class="li">Self-solved using <span class="ph">PE</span></li>
+                           <li class="li">Self-solved using <span class="ph">DEX Self-service</span>.</li>
+                           <li class="li">Automated resolutions. This could be, for example, incidents that were auto-resolved using <span class="ph">Virtual Agent</span>.</li>
+                        </ul></td>
+                  </tr><tr class="row even">
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__1">Call deflection %</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__2">[Catalog ticket submissions + VA ticket submissions + Self-solved (VA, KB, QnA and Proactive Engagement) + Self service using Password Reset apps] / [Total tickets submitted + Self-solved (VA, KB, QnA and
+                        Proactive Engagement) + Self service using Password Reset apps]*100</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__3">Call deflection is calculated per day based on the number of times requestors performed the following actions without Tier 1 agent intervention:<ul class="ul" id="c_BenchKPIConfig__ul_fgy_mr3_1vb">
+                           <li class="li">Ticket submissions using Service Catalog</li>
+                           <li class="li">Ticket submissions using Virtual Agent</li>
+                           <li class="li">Self-solved using Virtual Agent</li>
+                           <li class="li">Self-solved using Knowledge articles</li>
+                           <li class="li">Call deflection using <span class="ph">DEX Self-service</span></li>
+                           <li class="li">Call deflection using <span class="ph">Proactive Engagement</span> for <span class="ph">DEX</span>.</li>
+                        </ul></td>
+                  </tr><tr class="row odd">
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__1">Structured tickets %</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__2">[Structured tickets completed]/[Total Ticket resolutions]*100</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__3">Count percentage of tickets that were completed and were structured. This could be, for example, a requested item fulfillment or an HR Case where payroll ambiguity was resolved.</td>
+                  </tr><tr class="row even">
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__1">Average CSAT (Customer satisfaction survey) scores</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__2">[ITSM Customer Satisfaction Score] + [Virtual agent Customer Satisfaction score]</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__3">Average of customer satisfaction scores based on the surveys conducted after the issue was resolved.<div class="note note note_note"><span class="note__title">Note:</span> Both ITSM Customer Satisfaction score and VA Customer Satisfaction score are normalized with the base as
+                           10.</div></td>
+                  </tr><tr class="row odd">
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__1">MTTR – Average mean time to resolution</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__2">[Time to resolve]/[Issues resolved]/24</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__3">Mean time to resolve (MTTR) is calculated from daily average of the time between the ticket creation and ticket closure. Card displays average MTTR for the report range.</td>
+                  </tr><tr class="row even">
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__1">Breached SLA %</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__2">[Issues resolved with breached SLAs]/[Issues resolved]*100</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__3">Breached Service Level Agreement (SLA) percentage is calculated from the daily average number of issues that were closed after having breached an SLA.</td>
+                  </tr><tr class="row odd">
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__1">First assignment resolution</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__2">[Tickets resolved without reassignment]/[Issues resolved]*100</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__3">Tickets resolved without having to reassign to an agent.</td>
+                  </tr><tr class="row even">
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__1">% Automated resolutions</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__2">([[Automated resolutions]]/[[Self solved - percentage (denominator)]])*100</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__3">Total number of tickets successfully completed and closed using the automated workflows, or by Issue Auto Resolution, or by Password Reset web/windows application.</td>
+                  </tr><tr class="row odd">
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__1">% KB - Self-solved (count)</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__2">([[KB - Self-solved (count)]]/[[Self solved - percentage (denominator)]])*100</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__3">Total number of tickets successfully completed and closed by reading the knowledge articles.  This is determined when users read knowledge article(s) and do not create a ticket in a 24-hour window.</td>
+                  </tr><tr class="row even">
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__1">% VA - Self-solved (count)</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__2">([[VA - Self-solved (count)]]/[[Self solved - percentage (denominator)]])*100</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__3">Total number of automated conversations that resolved the issue. This is determined by the deflection node instrumented in the Virtual Agent topic.</td>
+                  </tr><tr class="row odd">
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__1">% Call deflection when self-solved (count)</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__2">([[Call deflection when self-solved (count)]]/[[Call deflection - percentage (denominator)]])*100</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__3">Total number of issues or requests solved using the Virtual Agent and Knowledge Base articles that resulted in call deflection.</td>
+                  </tr><tr class="row even">
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__1">% VA ticket submissions (count)</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__2">([[VA ticket submissions (count)]]/[[Call deflection - percentage (denominator)]])*100</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__3">Total number of times the ticket was submitted using the Virtual Agent. This is determined by the deflection node instrumented in the Virtual Agent topic.</td>
+                  </tr><tr class="row odd">
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__1">% Catalog ticket submissions (count)</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__2">([[Catalog ticket submissions (count)]]/[[Call deflection - percentage (denominator)]])*100</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__3">Total number of tickets (cases, incidents, requested items and so on) submitted using the Service Catalog in Service Portal or NOW mobile.</td>
+                  </tr><tr class="row even">
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__1">Productivity moments - Productivity in search per user</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__2">[[Productivity in search (count)]] / [[Average number of active users]]</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__3">Instances where ServiceNow capabilities like NLU, LLM, Knowledge Article, Walk-up experience, etc, helped either the agent or requester in improving their productivity.</td>
+                  </tr><tr class="row odd">
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__1">Productivity moments - Productivity in routing per user</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__2">[[Productivity in routing (count)]] / [[Average number of active users]]</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__3">Instances where ServiceNow capabilities like NLU, LLM, Knowledge Article, Walk-up experience, etc, helped either the agent or requester in improving their productivity.</td>
+                  </tr><tr class="row even">
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__1">Productivity moments - Productivity in fulfilment per user</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__2">[[Productivity in fulfilment (count)]] / [[Average number of active users]]</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__3">Instances where ServiceNow capabilities like NLU, LLM, Knowledge Article, Walk-up experience, etc, helped either the agent or requester in improving their productivity.</td>
+                  </tr><tr class="row odd">
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__1">Productivity moments - Productivity in knowledge article generation</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__2">[[Productivity in knowledge article generation]] / [[Average number of active users]]</td>
+                     <td class="entry colsep-1 rowsep-1" headers="c_BenchKPIConfig__table_okv_rp3_1vb__entry__3">Instances where ServiceNow capabilities like NLU, LLM, Knowledge Article, Walk-up experience, etc, helped either the agent or requester in improving their productivity.</td>
+                  </tr></tbody></table></div></div>
+         <p class="p">For more information on Success Dashboard KPI definitions and formulas, see <a data-bundleid="yokohama-it-service-management" data-navpath="product/itsm-success-dashboard/concept/sd-kpi-formulae.html" href="/docs/bundle/yokohama-it-service-management/page/product/itsm-success-dashboard/concept/sd-kpi-formulae.html" class="xref" title="Enable ITSM Success Dashboard and configure settings to understand and use the Key Performance Indicators (KPIs) and formulas.">ITSM Success Dashboard indicators KPI definitions and formulas</a></p>
+      </section>
+      <section class="section" id="c_BenchKPIConfig__section_pwz_qf4_1vb"><h2 id="d214620e1268" class="title sectiontitle">Strategic Portfolio Management KPIs</h2>
+         
+         <p class="p"><span class="ph">Benchmarks</span> supports <span class="ph">Strategic Portfolio Management</span> KPIs. For more
+        information, see <a data-bundleid="yokohama-it-service-management" data-navpath="product/benchmarks/concept//csh" href="/docs/csh?topicname=spm-benchmarking-kpis&amp;version=yokohama&amp;pubname=yokohama-it-business-management" class="xref">SPM Benchmarking KPIs</a>.</p>
+      </section>
+   </div>
+<nav role="navigation"><dt class="ullinks"></dt><dd class="ullinks"><ul class="ullinks"><li class="link ulchildlink"><a data-bundleid="yokohama-it-service-management" data-navpath="product/benchmarks/task/t_EnableABenchKPI.html" href="/docs/bundle/yokohama-it-service-management/page/product/benchmarks/task/t_EnableABenchKPI.html">Configure KPI participation</a><p class="shortdesc">Review and configure <span class="ph">Benchmarks</span> KPI participation by opting in or out of categorized KPIs.</p></li><li class="link ulchildlink"><a data-bundleid="yokohama-it-service-management" data-navpath="product/benchmarks/task/t_CustomBenchKPIConditions.html" href="/docs/bundle/yokohama-it-service-management/page/product/benchmarks/task/t_CustomBenchKPIConditions.html">Link or customize a benchmark KPI</a><p class="shortdesc">You can customize KPI conditions to fit the needs of your organization         better.</p></li><li class="link ulchildlink"><a data-bundleid="yokohama-it-service-management" data-navpath="product/benchmarks/task/analyze-business-value-historical-data-benchmarks.html" href="/docs/bundle/yokohama-it-service-management/page/product/benchmarks/task/analyze-business-value-historical-data-benchmarks.html">Use Benchmarks data for value management analysis</a><p class="shortdesc">Manually collect historical <span class="ph">Benchmarks</span> data to analyze the benefits of         year-over-year growth when you use the <span class="ph">ServiceNow</span>       <span class="ph">Benchmarks</span> application.</p></li></ul></dd></nav><nav role="navigation" class="tasksNavigation"></nav><nav role="navigation" class="related-links"></nav></article></main></article></div></div><div class="contentPlaceholder" style="height: 393.5px;"><div class="contentContainer zDocsSideBoxes withExpandCollapse"><div class="contentWrapper" style="height: 393.5px;"><button aria-hidden="true" data-tooltip-id="zDocsMiniTocCollapseToolTip" data-tooltip-content="Hide Mini TOC" data-testid="expand-collapse-button" class="zDocsMiniTocCollapseButton" aria-label="Hide" aria-expanded="true"><svg aria-hidden="true" class="ico-angle-arrow-right"><use xlink:href="#ico-angle-arrow-right"></use></svg></button><div class="miniTOC d-none d-md-block"><div class="miniTOCHeader"><h5 class="miniTOCTitle css-g931ng">On this page</h5></div><ul class="linkList"><li class="linkItem"><a class="link  css-ettsdk" href="#d214620e74" id="miniTOC-d214620e74">ITSM KPIs</a><ul id="miniTOC-collapse-d214620e74" class="level-2 linkList"></ul></li><li class="linkItem"><a class="link  css-ettsdk" href="#d214620e663" id="miniTOC-d214620e663">ITOM KPIs</a><ul id="miniTOC-collapse-d214620e663" class="level-2 linkList"></ul></li><li class="linkItem"><a class="link  css-ettsdk" href="#d214620e743" id="miniTOC-d214620e743">Conversational Interfaces KPIs</a><ul id="miniTOC-collapse-d214620e743" class="level-2 linkList"></ul></li><li class="linkItem"><a class="link  css-ettsdk" href="#d214620e829" id="miniTOC-d214620e829">Security Operations KPIs</a><ul id="miniTOC-collapse-d214620e829" class="level-2 linkList"></ul></li><li class="linkItem"><a class="link  css-ettsdk" href="#d214620e951" id="miniTOC-d214620e951">Success Dashboard KPIs</a><ul id="miniTOC-collapse-d214620e951" class="level-2 linkList"></ul></li><li class="linkItem"><a class="link  css-ettsdk" href="#d214620e1268" id="miniTOC-d214620e1268">Strategic Portfolio Management KPIs</a><ul id="miniTOC-collapse-d214620e1268" class="level-2 linkList"></ul></li></ul></div></div></div></div></div>
