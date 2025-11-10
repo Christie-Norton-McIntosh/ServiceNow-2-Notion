@@ -215,6 +215,19 @@ function cleanHtmlText(html) {
     // Also remove any standalone buttons that might remain (in case div was already removed)
   text = text.replace(/<button\b[^>]*>.*?<\/button>/gis, '');
 
+  // CRITICAL: Replace block-level element boundaries with newline markers to preserve separation
+  // This ensures "Role required: sam_admin</span><div>Note: ..." becomes two separate lines
+  // Must be done BEFORE general tag removal to maintain block boundaries
+  
+  // Strategy: Replace closing tags of block elements, and opening tags when they follow inline content
+  // This prevents excessive newlines while maintaining proper separation
+  
+  // 1. Replace closing tags of block elements (always creates a boundary)
+  text = text.replace(/<\/(div|p|section|article|aside|header|footer|nav|main|blockquote|h[1-6]|li|dd|dt|pre|address)>/gi, '__BLOCK_END__');
+  
+  // 2. Replace opening tags of block elements (creates a boundary before new block)
+  text = text.replace(/<(?:div|p|section|article|aside|header|footer|nav|main|blockquote|h[1-6]|li|dd|dt|pre|address)(?:\s+[^>]*)?>/gi, '__BLOCK_START__');
+
   // NOW remove HTML tags (including any that were entity-encoded)
   // Match actual HTML tags but preserve technical placeholders like <instance-name> or <Tool ID>
   // HTML tags: <tagname>, <tagname attr="value">, </tagname>
@@ -234,10 +247,16 @@ function cleanHtmlText(html) {
 
   // Clean up whitespace - normalize ALL whitespace (including newlines from HTML formatting) to spaces
   // Intentional newlines from <br> tags are marked with __BR_NEWLINE__ and will be restored after
+  // Block boundaries are marked with __BLOCK_START__ and __BLOCK_END__ and will be restored as newlines
   // HTML formatting newlines (indentation) should become spaces
   text = text.replace(/\s+/g, " ");
   // Trim spaces from start and end
   text = text.trim();
+  
+  // Restore block-level element boundaries as newlines
+  // This ensures separate paragraphs, divs, sections, etc. appear on separate lines
+  text = text.replace(/__BLOCK_START__/g, '\n');
+  text = text.replace(/__BLOCK_END__/g, '\n');
   
   // Restore intentional newlines from <br> tags
   text = text.replace(/__BR_NEWLINE__/g, '\n');
