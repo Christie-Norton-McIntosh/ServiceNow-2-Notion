@@ -205,11 +205,21 @@ function cleanHtmlText(html) {
       String.fromCharCode(parseInt(hex, 16))
     ); // All hex entities
 
+  // CRITICAL: Remove collapsible content buttons (Expand/Collapse) and their containers
+  // These are UI chrome elements that should not appear in Notion content
+  // Must be done BEFORE general HTML tag removal to catch the structure
+  
+  // Remove collapseContentContainer divs and everything inside (includes the button)
+  text = text.replace(/<div\s+[^>]*collapseContentContainer[^>]*>.*?<\/div>/gis, '');
+  
+    // Also remove any standalone buttons that might remain (in case div was already removed)
+  text = text.replace(/<button\b[^>]*>.*?<\/button>/gis, '');
+
   // NOW remove HTML tags (including any that were entity-encoded)
   // Match actual HTML tags but preserve technical placeholders like <instance-name> or <Tool ID>
   // HTML tags: <tagname>, <tagname attr="value">, </tagname>
   // Preserved: <instance-name>, <Tool ID>, <file.txt>, <hostname>, etc.
-  text = text.replace(/<\/?(?:div|span|p|a|img|br|hr|b|i|u|strong|em|code|pre|ul|ol|li|table|tr|td|th|tbody|thead|tfoot|h[1-6]|font|center|small|big|sub|sup|abbr|cite|del|ins|mark|s|strike|blockquote|q|address|article|aside|footer|header|main|nav|section|details|summary|figure|figcaption|time|video|audio|source|canvas|svg|path|g|rect|circle|line|polyline|polygon)(?:\s+[^>]*)?>/gi, ' ');
+  text = text.replace(/<\/?(?:button|div|span|p|a|img|br|hr|b|i|u|strong|em|code|pre|ul|ol|li|table|tr|td|th|tbody|thead|tfoot|h[1-6]|font|center|small|big|sub|sup|abbr|cite|del|ins|mark|s|strike|blockquote|q|address|article|aside|footer|header|main|nav|section|details|summary|figure|figcaption|time|video|audio|source|canvas|svg|path|g|rect|circle|line|polyline|polygon)(?:\s+[^>]*)?>/gi, ' ');
   
   // Safety: Remove incomplete HTML tags that might have been truncated during chunking
   // Only match known HTML tag names at end of string
