@@ -2070,18 +2070,21 @@ async function extractContentFromHtml(html) {
                 console.log(`🔍 Added marker ${markerToken} for ${markedBlocks.length} deferred blocks (promoted paragraph children)`);
               }
               
-              processedBlocks.push({
+              const listItemBlock = {
                 object: "block",
                 type: "bulleted_list_item",
                 bulleted_list_item: {
                   rich_text: richText,
-                  children: undefined  // No direct children - all deferred
                 },
-              });
+              };
               
+              // Add marked blocks as children so collectAndStripMarkers can find them
               if (markedBlocks.length > 0) {
-                processedBlocks.push(...markedBlocks);
+                listItemBlock.bulleted_list_item.children = markedBlocks;
+                console.log(`🔍 Added ${markedBlocks.length} marked blocks to promoted paragraph list item's children`);
               }
+              
+              processedBlocks.push(listItemBlock);
             } else {
               // No paragraph to promote, create empty list item with children
               const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'paragraph', 'to_do', 'toggle', 'image'];
@@ -2125,18 +2128,22 @@ async function extractContentFromHtml(html) {
               }
               
               if (validChildren.length > 0 || markedBlocks.length > 0) {
-                processedBlocks.push({
+                const listItemBlock = {
                   object: "block",
                   type: "bulleted_list_item",
                   bulleted_list_item: {
                     rich_text: richText,
-                    children: validChildren.length > 0 ? validChildren : undefined
+                    children: validChildren.length > 0 ? validChildren : []
                   },
-                });
+                };
                 
+                // Add marked blocks as children so collectAndStripMarkers can find them
                 if (markedBlocks.length > 0) {
-                  processedBlocks.push(...markedBlocks);
+                  listItemBlock.bulleted_list_item.children.push(...markedBlocks);
+                  console.log(`🔍 Added ${markedBlocks.length} marked blocks to empty list item's children`);
                 }
+                
+                processedBlocks.push(listItemBlock);
               }
             }
           }
@@ -2497,18 +2504,21 @@ async function extractContentFromHtml(html) {
                 console.log(`🔍 Added marker ${markerToken} for ${markedBlocks.length} deferred blocks (promoted paragraph children)`);
               }
               
-              processedBlocks.push({
+              const listItemBlock = {
                 object: "block",
                 type: "numbered_list_item",
                 numbered_list_item: {
                   rich_text: richText,
-                  children: undefined  // No direct children - all deferred
                 },
-              });
+              };
               
+              // Add marked blocks as children so collectAndStripMarkers can find them
               if (markedBlocks.length > 0) {
-                processedBlocks.push(...markedBlocks);
+                listItemBlock.numbered_list_item.children = markedBlocks;
+                console.log(`🔍 Added ${markedBlocks.length} marked blocks to promoted paragraph numbered list item's children`);
               }
+              
+              processedBlocks.push(listItemBlock);
             } else {
               // No paragraph to promote, create empty list item with children
               const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'paragraph', 'to_do', 'toggle', 'image'];
@@ -2552,18 +2562,22 @@ async function extractContentFromHtml(html) {
               }
               
               if (validChildren.length > 0 || markedBlocks.length > 0) {
-                processedBlocks.push({
+                const listItemBlock = {
                   object: "block",
                   type: "numbered_list_item",
                   numbered_list_item: {
                     rich_text: richText,
-                    children: validChildren.length > 0 ? validChildren : undefined
+                    children: validChildren.length > 0 ? validChildren : []
                   },
-                });
+                };
                 
+                // Add marked blocks as children so collectAndStripMarkers can find them
                 if (markedBlocks.length > 0) {
-                  processedBlocks.push(...markedBlocks);
+                  listItemBlock.numbered_list_item.children.push(...markedBlocks);
+                  console.log(`🔍 Added ${markedBlocks.length} marked blocks to empty numbered list item's children`);
                 }
+                
+                processedBlocks.push(listItemBlock);
               }
             }
           }
