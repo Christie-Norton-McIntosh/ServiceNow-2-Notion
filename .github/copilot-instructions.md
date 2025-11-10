@@ -1,14 +1,16 @@
 
-# ServiceNow-2-Notion — Copilot Instructions (2025)
+# ServiceNow-2-Notion — Copilot Instructions (2025) — v11.0.0
 
 Quick, actionable guidance for AI coding agents working in this repo. Keep edits small, reference real files, and verify with a local build and proxy run.
 
 ## Agent quickstart (TL;DR)
+- **Version**: 11.0.0 (Navigation retry, rate limit protection, 5 validation fixes)
 - Big picture: ES6 userscript in `src/**` → bundled to `dist/ServiceNow-2-Notion.user.js` (Rollup IIFE). Local proxy in `server/**` converts ServiceNow HTML to Notion blocks and creates pages.
 - Build userscript: `npm run build` (or `build:prod`); dev watch: `npm run dev`. After any `src/**` change, rebuild and re-upload the userscript to Tampermonkey.
 - Versioning (REQUIRED before build): bump the version so Tampermonkey detects updates and Rollup injects the correct banner/runtime. Use `npm version patch|minor|major` (or `npm run release:patch|minor|major`).
 - Run proxy: `npm start` (nodemon, port 3004). `.env` in `server/` or root: `NOTION_TOKEN`, `NOTION_VERSION`, optional `SN2N_VERBOSE=1`, `SN2N_EXTRA_DEBUG=1`.
-- Key files: `src/main.js` (userscript wiring), `server/sn2n-proxy.cjs` (Express entry), `server/services/servicenow.cjs` (HTML→blocks), `server/converters/{rich-text,table}.cjs`, `server/routes/w2n.cjs`, `server/orchestration/*.cjs`.
+- Test: `npm run test:list` (list all tests), `npm run test:all` (run client tests), `npm run test:all:server` (run server tests). Test HTML fixtures in `tests/fixtures/`.
+- Key files: `src/main.js` (userscript wiring), `src/ui/main-panel.js` (AutoExtract + navigation retry), `server/sn2n-proxy.cjs` (Express entry), `server/services/servicenow.cjs` (HTML→blocks), `server/converters/{rich-text,table}.cjs`, `server/routes/w2n.cjs` (rate limit retry), `server/orchestration/*.cjs`.
 - Patterns:
   - Userscript UI: never auto-inject on import; provide `injectXxx()` + `setupXxx(el)` and wire injectors only in `src/main.js` (see `src/ui/property-mapping-modal.js`).
   - DOM iteration: always snapshot live NodeLists with `Array.from(node.childNodes)` before modifying (avoid skipped nodes).
@@ -18,6 +20,12 @@ Quick, actionable guidance for AI coding agents working in this repo. Keep edits
   - Notion limits: chunk children in 100-block batches; append remaining after page create (`w2n.cjs`).
   - Images: ServiceNow images must be downloaded+uploaded to Notion `file_uploads`; fallback to external URL only for non-ServiceNow images (`sn2n-proxy.cjs:createImageBlock`).
   - Dedupe/filter: filter gray info callouts; dedupe identical blocks and images by id/URL (`server/utils/dedupe.cjs` used in `w2n.cjs`).
+  - Validation fixes (v11.0.0): 5 issues fixed in callout/table processing:
+    - Issue #1: Recursive block type detection (check children for tables/images, not just callout text)
+    - Issue #2: Multi-pass DataTables unwrapping (iterate until no changes to handle nested wrappers)
+    - Issue #3: Whitespace-only text node filtering (exclude blank nodes in block counting)
+    - Issue #4: Image extraction from nested tables (recursively search for `<img>` in `<table>` descendants)
+    - Issue #5: Table preservation priority (if table + single-image detected, keep table; don't downgrade to image)
 - API surface: POST `/api/W2N` with `{ title, databaseId, contentHtml|content, properties?, url?, dryRun? }`. `dryRun` returns `{ children, hasVideos }` without creating a page. Health: `/health`, `/ping`, `/api/status`; DB: `/api/databases/:id`; logging: `/api/logging`.
 - Pitfalls: search for `w2n-` IDs before UI renames; wire modal injectors only in `src/main.js`; respect Notion nesting/100-block caps; use `Array.from()` with DOM; rebuild userscript after edits.
 
@@ -114,6 +122,29 @@ Note: If your edits change any client-side code (files under `src/` or the gener
 - **Global App Access:**
   - Use: `const app = window.ServiceNowToNotion?.app?.();`
 
+- **AutoExtract Navigation Retry (v11.0.0):**
+  - **Pattern**: Immediate retry loop when navigation fails (URL/pageId unchanged)
+  - **Implementation**: `src/ui/main-panel.js` lines 1570-1670
+  - **Logic**:
+    1. Detect unchanged URL/pageId after clicking next button
+    2. Increment `autoExtractState.navigationFailures` counter
+    3. Retry navigation up to 2 times (`maxNavigationRetries`)
+    4. Smart duplicate detection: expected (retry) vs unexpected (end-of-book)
+    5. Show confirmation dialog if still failing after retries
+  - **State**: `autoExtractState.navigationFailures` tracks consecutive failures
+  - **Debug**: Use `[NAV-RETRY]` bracketed keyword for filtering logs
+  - **Key Code**:
+    ```js
+    const maxNavigationRetries = 2;
+    let navigationRetryCount = 0;
+    while (navigationRetryCount < maxNavigationRetries && !navigationSucceeded) {
+      navigationRetryCount++;
+      // Re-click next button, wait for page load
+      const navigationOccurred = await verifyNavigation(previousUrl, previousPageId);
+      if (navigationOccurred) navigationSucceeded = true;
+    }
+    ```
+
 ### Server-Side (Proxy) Patterns
 
 - **Placeholder Marker Pattern** (protect newlines during normalization):
@@ -164,6 +195,33 @@ Note: If your edits change any client-side code (files under `src/` or the gener
     - `server/routes/w2n.cjs` - Calls orchestrator after page creation
   - **Important**: We preserve nesting depth through additional API calls, NOT by flattening list levels
 
+- **Rate Limit Protection (v11.0.0):**
+  - **Pattern**: Exponential backoff with separate retry counters for rate limits vs network errors
+  - **Implementation**: `server/routes/w2n.cjs` (page creation retry logic)
+  - **Logic**:
+    1. Detect 429 status code from Notion API
+    2. Use separate `rateLimitRetryCount` (max 5) vs `retryCount` (max 3)
+    3. Exponential backoff: 1s, 2s, 4s, max 5s delay
+    4. Preserve page creation attempts through rate limit errors
+  - **Key Code**:
+    ```js
+    const maxRateLimitRetries = 5;
+    let rateLimitRetryCount = 0;
+    while (retryCount <= maxRetries || rateLimitRetryCount <= maxRateLimitRetries) {
+      try {
+        const createdPage = await notion.pages.create(pageCreatePayload);
+        return createdPage;
+      } catch (error) {
+        if (error.status === 429) { // Rate limit
+          rateLimitRetryCount++;
+          const delay = Math.min(1000 * Math.pow(2, rateLimitRetryCount - 1), 5000);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+    ```
+  - **Also Applied**: Deep nesting orchestration (`server/orchestration/deep-nesting.cjs`) uses same exponential backoff pattern
+
 ## 🔍 Integration Points & Dependencies
 
 - **ServiceNow Integration:**
@@ -196,6 +254,26 @@ Note: If your edits change any client-side code (files under `src/` or the gener
 - Test HTML conversion edge cases (tables, lists, code blocks)
 - **Debug Logging Pattern**: When adding temporary debug logs for issue investigation, prefix ALL related logs with a shared keyword in brackets (e.g., `[DUPLICATE-DETECTION]`, `[NAV-VERIFICATION]`, `[MARKER-DEBUG]`). This allows easy console filtering (`/\[KEYWORD\]/`) and batch removal when issue is resolved. Apply to both client (`debug()`) and server (`console.log()`) logs.
 
+## 🧪 Testing Infrastructure
+
+- **Test Organization:**
+  - `tests/` - Client-side HTML parsing tests (run with `npm run test:all`)
+  - `server/tests/` - Server-side conversion tests (run with `npm run test:all:server`)
+  - `tests/fixtures/` - HTML test fixtures for validation
+- **Test Runner:**
+  - `scripts/run-tests.cjs` - Main test orchestrator
+  - `npm run test:list` - List all available tests
+  - `npm run test:all` - Run all client tests
+  - `npm run test:all:server` - Run all server tests
+- **Test Patterns:**
+  - HTTP server tests: Spin up proxy, POST to `/api/W2N` with `dryRun: true`
+  - Direct import tests: Import converter functions directly, call with mock HTML
+  - Fixture-based: Load HTML from `tests/fixtures/`, verify block output
+- **Key Test Files:**
+  - `server/test-run-extract.cjs` - Extract full pages from ServiceNow HTML fixtures
+  - `tests/test-callout-*.cjs` - Callout validation tests (Issue #1-5 fixes)
+  - `tests/test-table-*.cjs` - Table formatting and image extraction tests
+
 ## 📋 Code-Edit Checklist
 
 1. Search for `w2n-` ID references before renaming UI elements
@@ -204,10 +282,10 @@ Note: If your edits change any client-side code (files under `src/` or the gener
 4. Run `npm run build` and verify dist file
 5. Manual smoke test in Tampermonkey
 6. If client-side code changed, re-upload userscript
-6. Bump version with `npm version` for behavioral changes
-7. Strip private keys before Notion API calls
-8. Test HTML conversion edge cases
-9. For issue-specific debug logs, use bracketed keywords (e.g., `[ISSUE-NAME]`) for easy filtering/removal
+7. Bump version with `npm version` for behavioral changes
+8. Strip private keys before Notion API calls
+9. Test HTML conversion edge cases (run `npm run test:all` or `npm run test:all:server`)
+10. For issue-specific debug logs, use bracketed keywords (e.g., `[ISSUE-NAME]`) for easy filtering/removal
 
 ## 🎯 Where to Start Reading
 
