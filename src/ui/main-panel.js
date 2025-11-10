@@ -602,6 +602,7 @@ async function startAutoExtraction() {
     lastPageId: null, // Track last page ID to verify navigation
     failedPages: [], // Track pages that failed due to rate limiting or other errors for manual retry
     rateLimitHits: 0, // Track how many times we've hit rate limits
+    navigationFailures: 0, // Track consecutive navigation failures
   };
 
   // Set up beforeunload handler to save state if page is reloaded manually
@@ -1476,23 +1477,32 @@ async function continueAutoExtractionLoop(autoExtractState) {
       const currentPageId = getCurrentPageId();
       
       // Check for duplicate URL (same page being processed again)
+      // BUT: If we just had a navigation failure, this is expected (we're retrying navigation)
+      const isExpectedDuplicate = autoExtractState.navigationFailures > 0;
+      
       if (autoExtractState.processedUrls.has(currentUrl)) {
-        debug(`⚠️ DUPLICATE URL DETECTED: ${currentUrl}`);
-        debug(`❌ This URL was already processed in this session!`);
-        
-        // Increment duplicate counter
-        autoExtractState.duplicateCount = (autoExtractState.duplicateCount || 0) + 1;
-        
-        if (autoExtractState.duplicateCount >= 3) {
-          const errorMsg = `AutoExtract stopped: Same page detected ${autoExtractState.duplicateCount} times in a row.\n\nURL: ${currentUrl}\n\nThis usually means the "Next Page" button is not working correctly or you've reached a loop in the navigation.\n\nTotal pages processed: ${autoExtractState.totalProcessed}`;
-          alert(errorMsg);
-          stopAutoExtract(autoExtractState);
-          if (button) button.textContent = "Start AutoExtract";
-          return;
+        if (isExpectedDuplicate) {
+          debug(`⚠️ DUPLICATE URL DETECTED (Expected due to navigation failure): ${currentUrl}`);
+          debug(`   Navigation failures: ${autoExtractState.navigationFailures}`);
+          debug(`   This is normal after navigation retry - will skip processing and try to navigate again`);
+        } else {
+          debug(`⚠️ DUPLICATE URL DETECTED (Unexpected): ${currentUrl}`);
+          debug(`❌ This URL was already processed in this session!`);
+          
+          // Increment duplicate counter ONLY for unexpected duplicates
+          autoExtractState.duplicateCount = (autoExtractState.duplicateCount || 0) + 1;
+          
+          if (autoExtractState.duplicateCount >= 3) {
+            const errorMsg = `AutoExtract stopped: Same page detected ${autoExtractState.duplicateCount} times in a row.\n\nURL: ${currentUrl}\n\nThis usually means the "Next Page" button is not working correctly or you've reached a loop in the navigation.\n\nTotal pages processed: ${autoExtractState.totalProcessed}`;
+            alert(errorMsg);
+            stopAutoExtract(autoExtractState);
+            if (button) button.textContent = "Start AutoExtract";
+            return;
+          }
+          
+          // Skip processing this duplicate and try to navigate
+          debug(`⏭️ Skipping duplicate page (count: ${autoExtractState.duplicateCount})...`);
         }
-        
-        // Skip processing this duplicate and try to navigate
-        debug(`⏭️ Skipping duplicate page (count: ${autoExtractState.duplicateCount})...`);
       } else {
         // Reset duplicate counter for new pages
         autoExtractState.duplicateCount = 0;
@@ -1579,11 +1589,95 @@ async function continueAutoExtractionLoop(autoExtractState) {
         debug(`⚠️ WARNING: URL and Page ID did not change after clicking next button!`);
         debug(`   Before: ${beforeNavUrl} | ${beforeNavPageId}`);
         debug(`   After:  ${afterNavUrl} | ${afterNavPageId}`);
-        debug(`⚠️ Navigation may have failed - the same page will be detected as duplicate on next iteration`);
+        
+        // Increment navigation failure counter
+        autoExtractState.navigationFailures = (autoExtractState.navigationFailures || 0) + 1;
+        debug(`[NAV-RETRY] 🔢 Navigation failure count: ${autoExtractState.navigationFailures}`);
+        
+        // Navigation failed - retry a few times before giving up
+        const maxNavigationRetries = 2;
+        let navigationRetryCount = 0;
+        let navigationSucceeded = false;
+        
+        while (navigationRetryCount < maxNavigationRetries && !navigationSucceeded) {
+          navigationRetryCount++;
+          debug(`[NAV-RETRY] 🔄 Navigation failed, retrying ${navigationRetryCount}/${maxNavigationRetries}...`);
+          
+          showToast(
+            `⚠️ Navigation failed, retrying (${navigationRetryCount}/${maxNavigationRetries})...`,
+            3000
+          );
+          
+          if (button) {
+            button.textContent = `⚠️ Nav retry ${navigationRetryCount}/${maxNavigationRetries}...`;
+          }
+          
+          // Wait a bit before retrying
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          
+          // Find and click next button again
+          const retryNextButton = await findAndClickNextButton(
+            nextPageSelector,
+            autoExtractState,
+            button
+          );
+          
+          if (!retryNextButton) {
+            debug(`[NAV-RETRY] ❌ Could not find next button on retry ${navigationRetryCount}`);
+            break;
+          }
+          
+          // Wait for navigation
+          debug(`[NAV-RETRY] ⏳ Waiting for navigation (retry ${navigationRetryCount})...`);
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          
+          // Check if navigation succeeded this time
+          const retryAfterUrl = window.location.href;
+          const retryAfterPageId = getCurrentPageId();
+          
+          if (retryAfterUrl !== beforeNavUrl || retryAfterPageId !== beforeNavPageId) {
+            debug(`[NAV-RETRY] ✅ Navigation succeeded on retry ${navigationRetryCount}!`);
+            debug(`[NAV-RETRY]    New URL: ${retryAfterUrl}`);
+            navigationSucceeded = true;
+            
+            // Reset navigation failure counter on success
+            autoExtractState.navigationFailures = 0;
+            
+            showToast(
+              `✅ Navigation successful on retry ${navigationRetryCount}`,
+              2000
+            );
+          } else {
+            debug(`[NAV-RETRY] ❌ Navigation still failed on retry ${navigationRetryCount}`);
+            debug(`[NAV-RETRY]    URL still: ${retryAfterUrl}`);
+          }
+        }
+        
+        // If all retries failed, this might be end of book
+        if (!navigationSucceeded) {
+          debug(`[NAV-RETRY] ❌ Navigation failed after ${maxNavigationRetries} retries`);
+          debug(`[NAV-RETRY] 🤔 This might be the end of the book or a navigation issue`);
+          
+          // Show end-of-book confirmation dialog
+          const continueExtraction = await showEndOfBookConfirmation(autoExtractState);
+          
+          if (!continueExtraction) {
+            debug(`[NAV-RETRY] ⏹ User confirmed end of extraction`);
+            stopAutoExtract(autoExtractState);
+            if (button) button.textContent = "Start AutoExtract";
+            return;
+          }
+          
+          debug(`[NAV-RETRY] ▶️ User wants to continue - will try again next iteration`);
+        }
       } else {
         debug(`✅ Navigation verified: Page changed successfully`);
         debug(`   New URL: ${afterNavUrl}`);
         debug(`   New Page ID: ${afterNavPageId}`);
+        
+        // Reset navigation failure counter on successful navigation
+        autoExtractState.navigationFailures = 0;
       }
 
       debug(
