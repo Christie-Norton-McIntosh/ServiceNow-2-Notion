@@ -1850,33 +1850,40 @@ async function extractContentFromHtml(html) {
             const immediateChildren = [];
             
             nestedChildren.forEach(block => {
+              // Debug: Log every nested block to see its state
+              if (block) {
+                const blockType = block.type;
+                const hasMarker = !!block._sn2n_marker;
+                const richTextPreview = block[blockType]?.rich_text?.map(rt => rt.text?.content || '').join('').substring(0, 40);
+                console.log(`🔍 [NESTED-BLOCK-STATE-UL] Type: ${blockType}, hasMarker: ${hasMarker}, text: "${richTextPreview}..."`);
+              }
+              
+              // CRITICAL FIX: Check for marker tokens FIRST (parent blocks with own deferred children)
+              // These should be added as immediate children, regardless of whether they also have _sn2n_marker
+              const blockType = block.type;
+              const hasMarkerToken = block && ['bulleted_list_item', 'numbered_list_item', 'callout', 'to_do', 'toggle'].includes(blockType) &&
+                block[blockType]?.rich_text?.some(rt => rt.text?.content?.includes('(sn2n:'));
+              
+              if (hasMarkerToken) {
+                // This is a parent block with its own deferred children - add as immediate child
+                if (['bulleted_list_item', 'numbered_list_item', 'to_do', 'toggle'].includes(blockType)) {
+                  const preview = block[blockType]?.rich_text?.map(rt => rt.text?.content || '').join('').substring(0, 40);
+                  console.log(`🔍 [NESTING-FIX] "${blockType}" with marker token → IMMEDIATE CHILD: "${preview}..."`);
+                  immediateChildren.push(block);
+                }
+                return; // Don't re-mark - it has its own marker system
+              }
+              
               // Check if block already has a marker from nested processing
-              // IMPORTANT: Callouts with markers have their own nested content that should be orchestrated to them, not to the list item
+              // IMPORTANT: Callouts/blocks with markers have their own nested content that should be orchestrated to them, not to the list item
               // Only add the callout itself, not its children (which share the same marker)
               if (block && block._sn2n_marker) {
-                // CRITICAL FIX: Blocks with existing markers should preserve their original associations
-                // Check if this is a parent block (list item/callout with marker token = has own deferred children)
-                const blockType = block.type;
-                const hasMarkerToken = ['bulleted_list_item', 'numbered_list_item', 'callout', 'to_do', 'toggle'].includes(blockType) &&
-                  block[blockType]?.rich_text?.some(rt => rt.text?.content?.includes('(sn2n:'));
-                
-                if (hasMarkerToken) {
-                  // This is a parent block with its own deferred children - add as immediate child
-                  if (['bulleted_list_item', 'numbered_list_item', 'to_do', 'toggle'].includes(blockType)) {
-                    console.log(`🔍 Block "${blockType}" has marker token - adding as immediate child (preserves own nested content)`);
-                    immediateChildren.push(block);
-                  }
-                  return; // Don't re-mark - it has its own marker system
-                }
-                
                 // This is a deferred child block (has marker but no marker token)
                 // It belongs to a CHILD element and should NOT be re-marked with parent's marker
                 // Will be added separately via blocksWithExistingMarkers logic
-                console.log(`🔍 Block "${block.type}" has marker ${block._sn2n_marker} - preserving original association (not re-marking)`);
+                console.log(`🔍 [NESTING-FIX] "${block.type}" has marker ${block._sn2n_marker} - preserving original association`);
                 return; // Skip - preserve original marker association
-              }
-              
-              if (block && block.type === 'paragraph') {
+              }              if (block && block.type === 'paragraph') {
                 console.log(`⚠️ Standalone paragraph needs marker for deferred append to bulleted_list_item`);
                 markedBlocks.push(block);
                 // IMPORTANT: Return here so paragraph is NOT added to immediateChildren
@@ -2004,27 +2011,15 @@ async function extractContentFromHtml(html) {
                 }
               }
               
-              // Add blocks from nested children that already have markers (from nested list processing)
-              // These preserve their original markers and parent associations
-              // BUT only if they're not already being added as immediate children or marked blocks
-              // ALSO skip blocks whose marker matches a parent block's marker (they're children of that parent)
-              const blocksWithExistingMarkers = nestedChildren.filter(b => {
-                if (!b || !b._sn2n_marker) return false;
-                // Check if already in immediateChildren or markedBlocks
-                const alreadyAdded = immediateChildren.includes(b) || markedBlocks.includes(b);
-                if (alreadyAdded) return false;
-                
-                // Check if this block's marker matches any other block's marker in markedBlocks
-                // If so, it's a child of that block and shouldn't be added separately
-                const isChildOfMarkedBlock = markedBlocks.some(parent => 
-                  parent && parent._sn2n_marker === b._sn2n_marker
-                );
-                return !isChildOfMarkedBlock;
-              });
-              if (blocksWithExistingMarkers.length > 0) {
-                console.log(`🔍 Adding ${blocksWithExistingMarkers.length} blocks with existing markers from nested processing (bulleted)`);
-                processedBlocks.push(...blocksWithExistingMarkers);
-              }
+              // IMPORTANT: Blocks with existing markers (_sn2n_marker) from nested processing
+              // should NOT be pushed to processedBlocks here. They are already in the children
+              // array of their parent list item (via immediateChildren), and collectAndStripMarkers
+              // will find them there, move them to the marker map, and mark them as collected.
+              // Pushing them here would create duplicates in the initial payload.
+              // 
+              // Example: "Table labels renamed" (bulleted_list_item with marker token) is in
+              // immediateChildren of "Tables", so its child table (with _sn2n_marker) is in
+              // "Table labels renamed"'s children array. collectAndStripMarkers will handle it.
             }
           } else if (nestedChildren.length > 0) {
             // No text content, but has nested blocks
@@ -2270,29 +2265,30 @@ async function extractContentFromHtml(html) {
             const immediateChildren = [];
             
             nestedChildren.forEach(block => {
+              // CRITICAL FIX: Check for marker tokens FIRST (parent blocks with own deferred children)
+              // These should be added as immediate children, regardless of whether they also have _sn2n_marker
+              const blockType = block.type;
+              const hasMarkerToken = block && ['bulleted_list_item', 'numbered_list_item', 'callout', 'to_do', 'toggle'].includes(blockType) &&
+                block[blockType]?.rich_text?.some(rt => rt.text?.content?.includes('(sn2n:'));
+              
+              if (hasMarkerToken) {
+                // This is a parent block with its own deferred children - add as immediate child
+                if (['bulleted_list_item', 'numbered_list_item', 'to_do', 'toggle'].includes(blockType)) {
+                  const preview = block[blockType]?.rich_text?.map(rt => rt.text?.content || '').join('').substring(0, 40);
+                  console.log(`🔍 [NESTING-FIX] "${blockType}" with marker token → IMMEDIATE CHILD: "${preview}..."`);
+                  immediateChildren.push(block);
+                }
+                return; // Don't re-mark - it has its own marker system
+              }
+              
               // Check if block already has a marker from nested processing
-              // IMPORTANT: Callouts with markers have their own nested content that should be orchestrated to them, not to the list item
+              // IMPORTANT: Callouts/blocks with markers have their own nested content that should be orchestrated to them, not to the list item
               // Only add the callout itself, not its children (which share the same marker)
               if (block && block._sn2n_marker) {
-                // CRITICAL FIX: Blocks with existing markers should preserve their original associations
-                // Check if this is a parent block (list item/callout with marker token = has own deferred children)
-                const blockType = block.type;
-                const hasMarkerToken = ['bulleted_list_item', 'numbered_list_item', 'callout', 'to_do', 'toggle'].includes(blockType) &&
-                  block[blockType]?.rich_text?.some(rt => rt.text?.content?.includes('(sn2n:'));
-                
-                if (hasMarkerToken) {
-                  // This is a parent block with its own deferred children - add as immediate child
-                  if (['bulleted_list_item', 'numbered_list_item', 'to_do', 'toggle'].includes(blockType)) {
-                    console.log(`🔍 Block "${blockType}" has marker token - adding as immediate child (preserves own nested content)`);
-                    immediateChildren.push(block);
-                  }
-                  return; // Don't re-mark - it has its own marker system
-                }
-                
                 // This is a deferred child block (has marker but no marker token)
                 // It belongs to a CHILD element and should NOT be re-marked with parent's marker
                 // Will be added separately via blocksWithExistingMarkers logic
-                console.log(`🔍 Block "${block.type}" has marker ${block._sn2n_marker} - preserving original association (not re-marking)`);
+                console.log(`🔍 [NESTING-FIX] "${block.type}" has marker ${block._sn2n_marker} - preserving original association`);
                 return; // Skip - preserve original marker association
               }
               
