@@ -1866,6 +1866,12 @@ async function extractContentFromHtml(html) {
             // Separate immediate children (list items, images) from deferred blocks (paragraphs, tables, etc.)
             const immediateChildren = [];
             
+            // CRITICAL FIX: Add images extracted from text content as immediate children
+            if (liImages && liImages.length > 0) {
+              console.log(`🔍 [INLINE-IMAGE-FIX-UL] Adding ${liImages.length} image(s) from text content to bulleted list immediateChildren`);
+              immediateChildren.push(...liImages);
+            }
+            
             nestedChildren.forEach(block => {
               // Debug: Log every nested block to see its state
               if (block) {
@@ -2305,6 +2311,12 @@ async function extractContentFromHtml(html) {
             
             // Separate immediate children (list items, images) from deferred blocks (paragraphs, tables, etc.)
             const immediateChildren = [];
+            
+            // CRITICAL FIX: Add images extracted from text content as immediate children
+            if (liImages && liImages.length > 0) {
+              console.log(`🔍 [INLINE-IMAGE-FIX-OL] Adding ${liImages.length} image(s) from text content to numbered list immediateChildren`);
+              immediateChildren.push(...liImages);
+            }
             
             nestedChildren.forEach(block => {
               // CRITICAL FIX: Check for marker tokens FIRST (parent blocks with own deferred children)
