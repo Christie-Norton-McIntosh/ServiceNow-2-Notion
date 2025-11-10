@@ -2194,8 +2194,11 @@ async function extractContentFromHtml(html) {
               });
               console.log(`🔍 Creating bulleted_list_item with ${chunk.length} rich_text elements`);
               console.log(`🔍 Added marker ${markerToken} for ${liImages.length} deferred image(s)`);
+              
+              // Add images as children so collectAndStripMarkers can find them
+              listItemBlock.bulleted_list_item.children = liImages;
+              console.log(`🔍 Added ${liImages.length} inline images to simple list item's children (will be collected & orchestrated)`);
               processedBlocks.push(listItemBlock);
-              processedBlocks.push(...liImages);
             } else {
               console.log(`🔍 Creating bulleted_list_item with ${chunk.length} rich_text elements`);
               processedBlocks.push(listItemBlock);
@@ -2628,8 +2631,11 @@ async function extractContentFromHtml(html) {
               });
               console.log(`🔍 Creating numbered_list_item with ${chunk.length} rich_text elements`);
               console.log(`🔍 Added marker ${markerToken} for ${liImages.length} deferred image(s)`);
+              
+              // Add images as children so collectAndStripMarkers can find them
+              listItemBlock.numbered_list_item.children = liImages;
+              console.log(`🔍 Added ${liImages.length} inline images to simple numbered list item's children (will be collected & orchestrated)`);
               processedBlocks.push(listItemBlock);
-              processedBlocks.push(...liImages);
             } else {
               console.log(`🔍 Creating numbered_list_item with ${chunk.length} rich_text elements`);
               processedBlocks.push(listItemBlock);
