@@ -1,0 +1,150 @@
+<!--
+  Page: Create a Coupa integration profile
+  URL: https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/product/procurement/task/create-coupa-int-profile.html
+  Captured: 2025-11-10T00:01:34.634Z
+  Validation Errors: Table count mismatch: expected 2, got 0; Image count mismatch: expected 1, got 0; Callout count mismatch: expected 2, got 1
+  Warnings: Ordered list item count differs: expected 24, got 3 (21 fewer - may be counting methodology difference); Unordered list item count differs: expected 4, got 0 (4 fewer - may be counting methodology difference); ⚠️ Paragraph count unusually low: expected ~13 (±4), got 7
+  Page ID: 2a7a89fe-dba5-81a4-808f-f9ab29e81bac
+  Block Count (expected): 11
+  Block Count (actual): 11
+-->
+<div class="zDocsTopicPageBody" data-prismjs-copy="Copy" data-prismjs-copy-error="Text could not be copied. Try using keyboard shortcuts like Ctrl + C to copy instead." data-prismjs-copy-success="Copied!"><div dir="ltr" class="zDocsTopicPageBodyContent wide"><div><article class="hascomments" data-page="bundle:yokohama-it-service-management/enus/product/procurement/task/create-coupa-int-profile.html" id="bundle:yokohama-it-service-management/enus/product/procurement/task/create-coupa-int-profile.html"><main role="main"><article role="article" class="dita" id="create-coupa-int-profile" aria-labelledby="title_create-coupa-int-profile">
+    
+    
+    
+    <div class="body taskbody"><p class="shortdesc">Create a <span class="ph">Coupa</span> integration profile to verify the status of the procurement-scheduled jobs, entitlements, and entitlement import errors created through this profile.</p>
+        <section class="section prereq"><div class="tasklabel"><p class="sectiontitle tasklabel">Before you begin</p></div>
+            <p class="p">Role required: sam_admin</p>
+            <p class="p">Create an OAuth 2.0 connection with <span class="ph">Coupa</span> to get the Client ID and Client Secret. For more information, see <a class="xref true-external" href="https://compass.coupa.com/en-us/products/core-platform/integration-playbooks-and-resources/integration-knowledge-articles/oauth-2.0-getting-started-with-coupa-api" target="_blank">OAuth 2.0 Getting Started with Coupa API</a>. Save the Client ID and Client Secret in a secure location for later use.</p>
+            <div class="p">You must set the following scopes while creating an OAuth 2.0 connection with <span class="ph">Coupa</span>.<div class="collapseContentContainer" id="collapsed_content___0"><button class="btn btn-primary">Expand</button></div><div class="note note note_note"><span class="note__title">Note:</span> If these scopes aren't associated with the Client ID and Client Secret, the OAuth token flow fails on <span class="ph">ServiceNow</span>.</div></div>
+        </section>
+        <section><div class="tasklabel"><p class="sectiontitle tasklabel">Procedure</p></div><ol class="ol steps"><li class="li step stepexpand">
+                <span class="ph cmd">Navigate to <span class="ph menucascade"><span class="ph uicontrol">Software Asset Workspace</span><abbr> &gt; </abbr><span class="ph uicontrol">License operations</span><abbr> &gt; </abbr><span class="ph uicontrol">Purchasing</span><abbr> &gt; </abbr><span class="ph uicontrol">Procurement integrations</span></span>.</span>
+            </li><li class="li step stepexpand">
+                <span class="ph cmd">Select <span class="ph uicontrol">New</span>.</span>
+            </li><li class="li step stepexpand">
+                <span class="ph cmd">On the form, fill in the fields.</span>
+                <div class="itemgroup info">
+                    <div class="table-wrap"><div id="create-coupa-int-profile__table_oxb_lg4_pwb_wrapper" class="dataTables_wrapper no-footer"><div id="create-coupa-int-profile__table_oxb_lg4_pwb_filter" class="dataTables_filter"></div><div class="zDocsFilterTableDiv zDocsFilterColumnsTableDiv"><div><button type="button" data-toggle="dropdown" aria-label="Export table to a file" class="zDocsTopicPageTableExportButton"><svg aria-hidden="true" class="ico-ellipsis-v"><use xlink:href="#ico-ellipsis-v"></use></svg></button><div class="dropdown-menu zDocsDropdownMenu zDocsTopicPageTableExportMenu"><button type="button" aria-label="Export to Excel" class="dropdown-item">Export to Excel</button><button type="button" aria-label="Export to CSV" class="dropdown-item">Export to CSV</button></div></div></div><table count-columns="2" class="table frame-all dataTable no-footer" id="create-coupa-int-profile__table_oxb_lg4_pwb"><caption><span class="table--title-label">Table 1. </span><span class="title">Create New Procurement Integration Profile</span></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                                <tr class="row"><th class="entry sorting" id="create-coupa-int-profile__table_oxb_lg4_pwb__entry__1" tabindex="0" aria-controls="create-coupa-int-profile__table_oxb_lg4_pwb" rowspan="1" colspan="1" aria-label="Field: activate to sort column ascending">Field</th><th class="entry sorting" id="create-coupa-int-profile__table_oxb_lg4_pwb__entry__2" tabindex="0" aria-controls="create-coupa-int-profile__table_oxb_lg4_pwb" rowspan="1" colspan="1" aria-label="Description: activate to sort column ascending">Description</th></tr>
+                            </thead><tbody class="tbody">
+                                
+                                
+                                
+                                
+                                
+                            <tr class="row odd">
+                                    <td class="entry" headers="create-coupa-int-profile__table_oxb_lg4_pwb__entry__1">Display name</td>
+                                    <td class="entry" headers="create-coupa-int-profile__table_oxb_lg4_pwb__entry__2">Name of the procurement integration profile. For example, <kbd class="ph userinput">Coupa integration</kbd>.</td>
+                                </tr><tr class="row even">
+                                    <td class="entry" headers="create-coupa-int-profile__table_oxb_lg4_pwb__entry__1">Connection &amp; Credentials</td>
+                                    <td class="entry" headers="create-coupa-int-profile__table_oxb_lg4_pwb__entry__2">Connection and credential alias for <span class="ph">Coupa</span>. This field gets automatically populated to <span class="ph uicontrol">sn_coupa_spoke.Coupa_OAuth</span>.</td>
+                                </tr><tr class="row odd">
+                                    <td class="entry" headers="create-coupa-int-profile__table_oxb_lg4_pwb__entry__1">Profile type</td>
+                                    <td class="entry" headers="create-coupa-int-profile__table_oxb_lg4_pwb__entry__2">Type of integration profile. <p class="p">Select
+                                            <span class="ph uicontrol">Coupa integration</span>.</p></td>
+                                </tr><tr class="row even">
+                                    <td class="entry" headers="create-coupa-int-profile__table_oxb_lg4_pwb__entry__1">Status</td>
+                                    <td class="entry" headers="create-coupa-int-profile__table_oxb_lg4_pwb__entry__2">Status of the integration profile. <ul class="ul" id="create-coupa-int-profile__ul_mhy_4m4_pwb">
+                                            <li class="li">If you haven’t published the integration profile, this field is automatically set to Draft.</li>
+                                            <li class="li">If you’ve already published the integration profile, this field is automatically set to Published.</li>
+                                        </ul></td>
+                                </tr><tr class="row odd">
+                                    <td class="entry" headers="create-coupa-int-profile__table_oxb_lg4_pwb__entry__1">Active</td>
+                                    <td class="entry" headers="create-coupa-int-profile__table_oxb_lg4_pwb__entry__2"><p class="p">This field is visible and set to true only when the integration profile is published.</p>
+                                        <p class="p">If you set this field to false, the associated requisitions with this integration profile aren’t created and tracked.</p></td>
+                                </tr></tbody></table></div></div>
+                </div>
+            </li><li class="li step stepexpand">
+                <span class="ph cmd">Select <span class="ph uicontrol">Save</span>.</span>
+            </li><li class="li step stepexpand">
+                <span class="ph cmd">Select the Preview icon <img src="https://servicenow-be-prod.servicenow.com/bundle/yokohama-it-service-management/page/product/procurement/task/../../software-asset-management2/image/preview-icon.png?_LANG=enus" class="image icon" id="create-coupa-int-profile__image_rvr_q33_5wb" alt="Preview icon"> next to the Connection &amp; Credentials field.</span>
+                <div class="itemgroup stepresult">You get redirected to the Connection &amp; Credential Aliases form.</div>
+            </li><li class="li step stepexpand">
+                <span class="ph cmd">Select <span class="ph uicontrol">Create New Connection &amp; Credential</span> in the Related Links section to create connection credential.</span>
+            </li><li class="li step stepexpand">
+                <span class="ph cmd">In the dialog box, fill in the fields.</span>
+                <div class="itemgroup info">
+                    <div class="table-wrap"><div id="create-coupa-int-profile__table_tg3_2sh_pwb_wrapper" class="dataTables_wrapper no-footer"><div id="create-coupa-int-profile__table_tg3_2sh_pwb_filter" class="dataTables_filter"></div><div class="zDocsFilterTableDiv zDocsFilterColumnsTableDiv"><div><button type="button" data-toggle="dropdown" aria-label="Export table to a file" class="zDocsTopicPageTableExportButton"><svg aria-hidden="true" class="ico-ellipsis-v"><use xlink:href="#ico-ellipsis-v"></use></svg></button><div class="dropdown-menu zDocsDropdownMenu zDocsTopicPageTableExportMenu"><button type="button" aria-label="Export to Excel" class="dropdown-item">Export to Excel</button><button type="button" aria-label="Export to CSV" class="dropdown-item">Export to CSV</button></div></div></div><table count-columns="2" class="table frame-all dataTable no-footer" id="create-coupa-int-profile__table_tg3_2sh_pwb"><caption><span class="table--title-label">Table 2. </span><span class="title">Create Connection and Credential</span></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                                <tr class="row"><th class="entry sorting" id="create-coupa-int-profile__table_tg3_2sh_pwb__entry__1" tabindex="0" aria-controls="create-coupa-int-profile__table_tg3_2sh_pwb" rowspan="1" colspan="1" aria-label="Field: activate to sort column ascending">Field</th><th class="entry sorting" id="create-coupa-int-profile__table_tg3_2sh_pwb__entry__2" tabindex="0" aria-controls="create-coupa-int-profile__table_tg3_2sh_pwb" rowspan="1" colspan="1" aria-label="Description: activate to sort column ascending">Description</th></tr>
+                            </thead><tbody class="tbody">
+                                
+                                
+                                
+                                
+                                
+                                
+                            <tr class="row odd">
+                                    <td class="entry" headers="create-coupa-int-profile__table_tg3_2sh_pwb__entry__1">Name (Connection)</td>
+                                    <td class="entry" headers="create-coupa-int-profile__table_tg3_2sh_pwb__entry__2">Name to identify the connection uniquely. For example, <kbd class="ph userinput">Coupa OAuth connnection</kbd>.</td>
+                                </tr><tr class="row even">
+                                    <td class="entry" headers="create-coupa-int-profile__table_tg3_2sh_pwb__entry__1">Connection URL</td>
+                                    <td class="entry" headers="create-coupa-int-profile__table_tg3_2sh_pwb__entry__2">URL to make a connection to <span class="ph">Coupa</span>. Use the <span class="ph filepath">https://&lt;coupa-instance-url&gt;</span> format.<ul class="ul" id="create-coupa-int-profile__ul_njy_bvh_5wb">
+                                            <li class="li">For customer instances, use the <span class="ph filepath">https://{organization_name}.coupahost.com</span> format.</li>
+                                            <li class="li">For partner and demo instances, use the <span class="ph filepath">https://{organization_name}.coupacloud.com</span> format.</li>
+                                        </ul></td>
+                                </tr><tr class="row odd">
+                                    <td class="entry" headers="create-coupa-int-profile__table_tg3_2sh_pwb__entry__1">Name (Credential)</td>
+                                    <td class="entry" headers="create-coupa-int-profile__table_tg3_2sh_pwb__entry__2">Name to identify the credential uniquely. For example, <kbd class="ph userinput">Coupa OAuth credential</kbd>.</td>
+                                </tr><tr class="row even">
+                                    <td class="entry" headers="create-coupa-int-profile__table_tg3_2sh_pwb__entry__1">Token URL</td>
+                                    <td class="entry" headers="create-coupa-int-profile__table_tg3_2sh_pwb__entry__2">URL used to generate OAuth token. Use the <span class="ph filepath">https://&lt;coupa-instance-url&gt;/oauth2/token</span> format.</td>
+                                </tr><tr class="row odd">
+                                    <td class="entry" headers="create-coupa-int-profile__table_tg3_2sh_pwb__entry__1">OAuth Client ID</td>
+                                    <td class="entry" headers="create-coupa-int-profile__table_tg3_2sh_pwb__entry__2">Identifier (Client ID) generated in <span class="ph">Coupa</span>.</td>
+                                </tr><tr class="row even">
+                                    <td class="entry" headers="create-coupa-int-profile__table_tg3_2sh_pwb__entry__1">OAuth Client Secret</td>
+                                    <td class="entry" headers="create-coupa-int-profile__table_tg3_2sh_pwb__entry__2">Secret (Client Secret) generated in <span class="ph">Coupa</span>.</td>
+                                </tr></tbody></table></div></div>
+                </div>
+            </li><li class="li step stepexpand">
+                <span class="ph cmd">Select <span class="ph uicontrol">Create and Get OAuth Token</span>.</span>
+                <div class="itemgroup stepresult">Your <span class="ph">ServiceNow</span> instance creates an OAuth for <span class="ph">Coupa</span> and then automatically returns you to the Integration Profile form.</div>
+            </li><li class="li step stepexpand">(Optional) 
+                <span class="ph cmd">Create a child alias that can uniquely identify the connection and credentials for this integration profile.</span>
+                <div class="itemgroup info">The first <span class="ph">Coupa</span> integration profile that you create uses the default (parent) connection and credential alias for <span class="ph">Coupa</span>. Each additional <span class="ph">Coupa</span> integration profile that you create needs a unique child alias that helps differentiate the connection and credentials between each integration profile.</div>
+                <ol type="a" class="ol substeps" id="create-coupa-int-profile__substeps_fn2_xj3_5wb">
+                    <li class="li substep substepexpand">
+                        <span class="ph cmd">On the Connection &amp; Credential Aliases form, select the link under <span class="ph uicontrol">Child Aliases &gt; Parentalias=***</span> to add child aliases.</span>
+                    </li>
+                    <li class="li substep substepexpand">
+                        <span class="ph cmd">Select <span class="ph uicontrol">New</span>.</span>
+                    </li>
+                    <li class="li substep substepexpand">
+                        <span class="ph cmd">Enter a name for the child alias in the Name field.</span>
+                    </li>
+                    <li class="li substep substepexpand">
+                        <span class="ph cmd">Right-click the form header and then select <span class="ph uicontrol">Save</span>.</span>
+                    </li>
+                    <li class="li substep substepexpand">
+                        <span class="ph cmd">After the form reloads, select the <span class="ph uicontrol">Create New Connection &amp; Credential</span> related link.</span>
+                    </li>
+                    <li class="li substep substepexpand">
+                        <span class="ph cmd">Repeat steps 7 and 8.</span>
+                    </li>
+                    <li class="li substep substepexpand">
+                        <span class="ph cmd">In the Connection &amp; Credential field of the Integration Profile form, select the lookup icon to locate and select the child alias that you created.</span>
+                        <div class="itemgroup info">Selecting the child alias associates the alias with the integration profile. Your <span class="ph">ServiceNow</span> instance uses this alias to identify the connection and credentials for this integration profile.</div>
+                    </li>
+                </ol>
+            </li><li class="li step stepexpand">
+                <span class="ph cmd">Select <span class="ph uicontrol">Publish</span>.</span>
+            </li></ol></section>
+        <section class="section result" id="create-coupa-int-profile__result_fpr_ssj_qwb"><div class="tasklabel"><p class="sectiontitle tasklabel">Result</p></div>
+            <div class="p">After you publish the integration profile, the scheduled job <span class="keyword parmname">ITAM - Sync Coupa purchase orders</span> runs daily and fetches the status of the already created requisitions.<div class="note note note_note"><span class="note__title">Note:</span> If you haven't created any
+                    requisition, the scheduled job doesn't run.</div></div>
+            <p class="p">You can view this information by clicking the <span class="ph uicontrol">Procurement Integration Jobs</span> tab.</p>
+        </section>
+        <section class="section postreq" id="create-coupa-int-profile__postreq_khf_xgk_qwb"><div class="tasklabel"><p class="sectiontitle tasklabel">What to do next</p></div>
+            <div class="p">Verify if the scheduled job <span class="keyword parmname">ITAM - Sync Coupa purchase orders</span> has run successfully by selecting the <span class="ph uicontrol">Integration Scheduled Job Results</span> tab. If the job has failed, you can view the
+                list of errors by following these steps:<ol class="ol" id="create-coupa-int-profile__ol_vtq_rzr_2xb">
+                    <li class="li">On the Procurement integration profile form, select the <span class="ph uicontrol">Procurement Integration Job Log</span> related list.</li>
+                    <li class="li">Open the job log record where the displayed status shows as failed.</li>
+                    <li class="li">Select the related list <span class="ph uicontrol">Asset Job Log Details</span> to find out the reason for the job failure.</li>
+                </ol></div>
+            <p class="p">Create software requisitions directly on <span class="ph">Coupa</span> through the <span class="ph">ServiceNow</span>
+                <span class="ph">Procurement</span> application to purchase software.</p>
+            <p class="p">If you want to delete the <span class="ph">Coupa</span> integration profile, see <a data-bundleid="yokohama-it-service-management" data-navpath="product/procurement/concept/delete-ext-profile.html" href="/docs/bundle/yokohama-it-service-management/page/product/procurement/concept/delete-ext-profile.html" class="xref" title="If you want to stop using an external procurement application for creating software requisitions through Software Asset Management, you can delete the integration profile.">Deleting an external procurement application integration profile</a>.</p>
+        </section>
+    </div>
+</article></main></article></div></div></div>

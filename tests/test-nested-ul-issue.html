@@ -1,0 +1,39 @@
+<html>
+<head><title>Test Nested UL Issue</title></head>
+<body>
+<div id="content">
+  <h2>Test Nested Lists with Tables</h2>
+  <p>This tests deeply nested lists with tables and callouts</p>
+  
+  <ul id="outer-list">
+    <li>Tables
+      <ul id="nested-list">
+        <li>Table labels renamed
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Column 1</th><th>Column 2</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Data 1</td><td>Data 2</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </li>
+        <li>Adds new tables
+          <div class="note note-info">
+            <p>This is a callout inside a nested list item</p>
+          </div>
+        </li>
+        <li>Third nested item with plain text</li>
+      </ul>
+    </li>
+    <li>Field names and values
+      <ul>
+        <li>Another nested list item</li>
+      </ul>
+    </li>
+  </ul>
+</div>
+</body>
+</html>
