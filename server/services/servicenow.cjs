@@ -1220,9 +1220,9 @@ async function extractContentFromHtml(html) {
         // Remove div.p elements that contain nested blocks (these are processed as child blocks)
         $clone.find('> div.p').each((i, divP) => {
           const $divP = $(divP);
-          const hasNestedBlocks = $divP.find('> ul, > ol, > figure, > table, > pre').length > 0;
+          const hasNestedBlocks = $divP.find('> ul, > ol, > figure, > table, > pre, > div.note').length > 0;
           if (hasNestedBlocks) {
-            console.log(`🔍 Removing div.p with nested blocks from callout text (will be processed as child block)`);
+            console.log(`🔍 [CALLOUT-NESTED] Removing div.p with nested blocks from callout text (will be processed as child block)`);
             $divP.remove();
           }
         });
@@ -1640,6 +1640,13 @@ async function extractContentFromHtml(html) {
       
     } else if (tagName === 'img') {
       // Image (standalone)
+      // CRITICAL: Skip images that are inside list items - they'll be extracted by parseRichText
+      const isInsideListItem = $elem.closest('li').length > 0;
+      if (isInsideListItem) {
+        console.log(`🖼️ [INLINE-IMAGE] Skipping <img> inside list item (will be extracted by parseRichText)`);
+        return []; // Don't process or remove - let list item handle it
+      }
+      
       const src = $elem.attr('src');
       const alt = $elem.attr('alt') || '';
       console.log(`🖼️ Processing standalone <img>: src="${src ? src.substring(0, 80) : 'none'}", alt="${alt}"`);
