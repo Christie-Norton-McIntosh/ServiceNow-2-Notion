@@ -1198,14 +1198,18 @@ async function extractContentFromHtml(html) {
       
       // Check if any div.p elements contain nested blocks - if so, treat the entire div.p as a nested block
       const divPWithBlocks = $elem.find('> div.p').filter((i, divP) => {
-        return $(divP).find('> ul, > ol, > figure, > table, > pre').length > 0;
+        return $(divP).find('> ul, > ol, > figure, > table, > pre, > div.note').length > 0;
       });
       
       const allNestedBlocks = $([...directNestedBlocks.toArray(), ...divPWithBlocks.toArray()]);
       
-      console.log(`🔍 Callout nested blocks check: found ${directNestedBlocks.length} direct + ${divPWithBlocks.length} div.p with blocks = ${allNestedBlocks.length} total`);
-      
+      console.log(`🔍 [CALLOUT-NESTED] Found ${directNestedBlocks.length} direct + ${divPWithBlocks.length} div.p with blocks = ${allNestedBlocks.length} total`);
       if (allNestedBlocks.length > 0) {
+        const nestedTypes = allNestedBlocks.toArray().map(el => {
+          const className = $(el).attr('class');
+          return `<${el.name}${className ? ` class="${className}"` : ''}>`;
+        }).join(', ');
+        console.log(`🔍 [CALLOUT-NESTED] Types: ${nestedTypes}`);
         console.log(`🔍 Callout contains ${allNestedBlocks.length} nested block elements - processing with children`);
         
         // Clone and remove nested blocks to get just the text content
