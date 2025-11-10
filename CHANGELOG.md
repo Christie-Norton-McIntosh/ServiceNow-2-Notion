@@ -1,5 +1,107 @@
 # CHANGELOG — ServiceNow-2-Notion
 
+## Version: 11.0.0
+Date: 2025-11-09
+
+### Summary
+
+**Major Release**: Consolidates all v10.x improvements into a stable, production-ready release with intelligent navigation retry, comprehensive rate limit protection, and complete content extraction validation fixes.
+
+### Highlights
+
+- **Intelligent Navigation Retry System**: Auto-retry failed navigation up to 2 times with smart duplicate detection
+- **Comprehensive Rate Limit Protection**: Server-side exponential backoff + client-side pause with failed pages tracking
+- **5 Critical Validation Fixes**: Standalone images, table duplication, deeply nested tables, DataTables wrappers, callouts in lists
+- **Enhanced Error Handling**: Post-response logging, better error messages, improved recovery
+- **Full Backup System**: Versioned backups with detailed restoration instructions
+
+### Major Features
+
+#### Navigation Retry System (v10.0.38)
+- Detects navigation failures (URL/pageId unchanged after click)
+- Retries navigation immediately up to 2 times before confirming end-of-book
+- Smart duplicate URL detection distinguishes expected vs unexpected duplicates
+- End-of-book confirmation dialog prevents premature stops
+- navigationFailures counter tracks consecutive failures
+- Detailed debug logging with `[NAV-RETRY]` prefix
+
+**Commit**: `e3105a6` - Navigation retry logic
+
+#### Rate Limit Protection (v10.0.29)
+- **Server-side**: Exponential backoff retry (5 attempts, 10s → 60s wait)
+- **Client-side**: 60-second pause with automatic retry on rate limit hit
+- **Failed pages tracking**: Maintains list with URL, title, timestamp, reason
+- **Completion summary**: Shows successful vs failed pages breakdown
+- **GM storage persistence**: Failed pages saved for manual retry
+
+**Commit**: `e8fcf5d` - Rate limit protection and validation fixes
+
+#### Content Extraction Validation Fixes (Issues #1-5)
+
+**Issue #1: Standalone Images Not Extracted**
+- Fixed standalone `<img>` tags outside `<figure>` elements
+- Added external URL fallback when downloadAndUploadImage unavailable
+- Comprehensive diagnostic logging for image processing
+
+**Issue #2: Table Duplication**
+- Added diagnostics to track table processing through conversion
+- Enhanced logging shows when single table converts to multiple blocks
+- Table deduplication utility prevents consecutive identical tables
+
+**Issue #3: Tables in Deeply Nested Lists**
+- Recursive block detection in nested `<ul>` and `<ol>` structures (3+ levels)
+- Search inside wrapper divs for deeply nested tables
+- Maintains proper list item text separation from nested blocks
+
+**Issue #4: Complex DataTables Wrapper Nesting**
+- Multi-pass Cheerio unwrapping (up to 10 passes) handles deep nesting
+- Unwraps `dataTables_wrapper`, `dataTables_filter`, `zDocsFilterTableDiv`, etc.
+- Recursively processes nested wrapper divs before table extraction
+
+**Issue #5: Callouts in Lists Not Extracted**
+- Process block-level children (`<div class='note'>`) within `<li>` elements
+- Recursive search inside wrapper divs (`div.p`, `div.itemgroup`, etc.)
+- Maintains proper callout formatting and color in nested contexts
+
+**Commit**: `e8fcf5d` - Validation fixes implementation
+
+### Technical Improvements
+
+- **Enhanced Error Handling**: Post-response logging prevents client timeout
+- **Array.from() Pattern**: Prevents skipped nodes during DOM iteration
+- **Placeholder Markers**: Preserve newlines during whitespace normalization
+- **Global Validation**: Added `isValidNotionUrl` for URL validation
+- **Test Harness**: Enhanced `test-run-extract.cjs` with URL validation
+
+### Documentation
+
+- **RATE_LIMIT_PROTECTION.md**: Comprehensive rate limit guide with troubleshooting
+- **RELEASE_NOTES_11.0.0.md**: Full feature list and migration guide
+- **Backup System**: `backups/v10.0.38-20251109-202651/` with BACKUP_INFO.md
+- **Updated Copilot Instructions**: Latest patterns and project structure
+
+### Bug Fixes
+
+- Navigation failures no longer stop AutoExtract prematurely
+- Rate limiting doesn't cause content loss
+- Standalone images extracted correctly
+- Deeply nested tables no longer lost
+- Callouts in lists extracted properly
+- Post-response errors logged without crashing
+
+### Breaking Changes
+
+**None** - Version 11.0.0 is fully backward compatible with v10.x.
+
+### Migration Guide
+
+No action required. All v10.x features work identically in v11.0.0:
+- Configuration preserved (GM storage)
+- Property mappings maintained
+- Database selections carried over
+
+---
+
 ## Version: 10.0.0
 Date: 2025-11-02
 

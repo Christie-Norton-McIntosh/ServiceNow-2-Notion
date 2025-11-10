@@ -34,7 +34,7 @@ export const DEFAULT_SERVICENOW_COVER_URL =
 export const defaultConfig = {
   databaseId: "24ca89fe-dba5-806f-91a6-e831a6efe344",
   databaseName: "ServiceNow-2-Notion (API DB)",
-  proxyUrl: "http://localhost:3004",
+  proxyUrl: "http://127.0.0.1:3004",
   useMartian: true,
   directSDKImages: true,
   debugMode: true,

@@ -627,12 +627,14 @@ router.post('/W2N', async (req, res) => {
       };
     }
 
-    // Create the page with initial blocks (with retry for network errors)
+    // Create the page with initial blocks (with retry for network errors AND rate limiting)
     let response;
     let retryCount = 0;
     const maxRetries = 2;
+    const maxRateLimitRetries = 5; // Allow more retries for rate limiting
+    let rateLimitRetryCount = 0;
     
-    while (retryCount <= maxRetries) {
+    while (retryCount <= maxRetries || rateLimitRetryCount <= maxRateLimitRetries) {
       try {
         response = await notion.pages.create({
           parent: { database_id: payload.databaseId },
@@ -653,13 +655,39 @@ router.post('/W2N', async (req, res) => {
         });
         break; // Success, exit retry loop
       } catch (error) {
-        if (retryCount < maxRetries && (error.code === 'ECONNRESET' || error.message?.includes('socket hang up') || error.message?.includes('ETIMEDOUT'))) {
+        // Check for rate limiting error (429 Too Many Requests)
+        const isRateLimited = error.status === 429 || 
+                             error.code === 'rate_limited' || 
+                             error.message?.toLowerCase().includes('rate limit');
+        
+        if (isRateLimited && rateLimitRetryCount < maxRateLimitRetries) {
+          rateLimitRetryCount++;
+          // Extract retry-after header or use exponential backoff
+          const retryAfter = error.headers?.['retry-after'] || (rateLimitRetryCount * 10);
+          const waitSeconds = Math.min(parseInt(retryAfter) || (rateLimitRetryCount * 10), 60);
+          
+          log(`⚠️ 🚦 RATE LIMIT HIT (attempt ${rateLimitRetryCount}/${maxRateLimitRetries + 1})`);
+          log(`   Page: "${payload.title}"`);
+          log(`   Waiting ${waitSeconds} seconds before retry...`);
+          log(`   💡 Tip: Notion API has rate limits. AutoExtract will automatically retry.`);
+          
+          // Wait before retrying
+          await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
+          
+          log(`   ✅ Retry-after cooldown complete, attempting page creation again...`);
+        } else if (retryCount < maxRetries && (error.code === 'ECONNRESET' || error.message?.includes('socket hang up') || error.message?.includes('ETIMEDOUT'))) {
           retryCount++;
           log(`⚠️ Network error creating page (attempt ${retryCount}/${maxRetries + 1}): ${error.message}`);
           log(`   Retrying in ${retryCount * 2} seconds...`);
           await new Promise(resolve => setTimeout(resolve, retryCount * 2000));
         } else {
-          throw error; // Non-retryable error or max retries exceeded
+          // Non-retryable error or max retries exceeded
+          if (isRateLimited) {
+            log(`❌ Rate limit exceeded after ${rateLimitRetryCount} retries`);
+            log(`   💡 This page will be marked for manual retry`);
+            error.message = `Rate limit exceeded: ${error.message}. Page "${payload.title}" needs to be processed manually after cooldown.`;
+          }
+          throw error;
         }
       }
     }
@@ -965,7 +993,14 @@ router.post('/W2N', async (req, res) => {
         log("❌ Raw error body:", error.body);
       }
     }
-    return sendError(res, "PAGE_CREATION_FAILED", error.message, null, 500);
+    // Only send error if response hasn't been sent yet
+    // (Response is sent immediately after page creation, before validation)
+    if (!res.headersSent) {
+      return sendError(res, "PAGE_CREATION_FAILED", error.message, null, 500);
+    } else {
+      log("⚠️ Error occurred after response was sent to client - logging only");
+      log("⚠️ Page was created successfully, but post-processing failed");
+    }
   }
 });
 
