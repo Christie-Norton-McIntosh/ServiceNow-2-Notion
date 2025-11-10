@@ -1796,8 +1796,8 @@ async function extractContentFromHtml(html) {
         // Step 1: Find immediate block children
         let nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.stepxmp, > div.note').toArray();
         
-        // Step 2: Also look for blocks nested inside plain wrapper divs or div.p
-        $li.find('> div:not(.note):not(.table-wrap):not(.stepxmp), > div.p').each((i, wrapper) => {
+        // Step 2: Also look for blocks nested inside plain wrapper divs (NOT div.p, which is handled in step 1)
+        $li.find('> div:not(.note):not(.table-wrap):not(.stepxmp):not(.p)').each((i, wrapper) => {
           // Find blocks inside this wrapper
           const innerBlocks = $(wrapper).find('> table, > div.table-wrap, > div.note, > pre, > ul, > ol, > figure').toArray();
           if (innerBlocks.length > 0) {
@@ -2679,9 +2679,11 @@ async function extractContentFromHtml(html) {
               currentTextHtml = '';
             }
             
-            // Process the block element (table, etc.)
+            // Process the block element (table, div.note, etc.)
             const childBlocks = await processElement(node);
             processedBlocks.push(...childBlocks);
+            // Remove the processed node from DOM to prevent double-processing by parent elements
+            $(node).remove();
           }
         }
         
