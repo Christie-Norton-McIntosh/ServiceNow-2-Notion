@@ -1,0 +1,25 @@
+Port Monitor - Process Details
+Generated: 10/27/2025, 10:35:32 PM
+
+==== Port Information ====
+Host: localhost
+Port: 3004
+Label: SN2N-Proxy
+Group: localhost
+Status: IN USE
+
+==== Process Information ====
+Process Name: node
+PID: 91459
+Platform: darwin
+
+==== Available Actions ====
+• Click the status bar to refresh port status
+• Use the Quick Pick to select specific ports
+• Kill processes using the Kill Process action
+• Select different processes if multiple are available
+
+==== Notes ====
+Process information is only available for localhost connections.
+Server processes are automatically prioritized over client processes.
+Use 'portMonitor.showPortSelector' command to access port-specific actions.

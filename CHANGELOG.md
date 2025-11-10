@@ -1,5 +1,85 @@
 # CHANGELOG — ServiceNow-2-Notion
 
+## Version: 11.0.4
+Date: 2025-11-10
+
+### Summary
+
+**Critical Fix**: Context-aware deduplication prevents removal of intentionally repeated images and tables in procedural content.
+
+### Problem
+
+Two validation failures revealed that post-orchestration deduplication was too aggressive:
+1. **Images**: Same icon appearing in different procedural steps was deduplicated (expected 2, got 1)
+2. **Tables**: Identical tables in different procedural steps were deduplicated (expected 3, got 2)
+
+### Solution
+
+Modified post-orchestration deduplication to **preserve images and tables that are children of list items** (procedural steps). These often legitimately repeat:
+- Icons guide users through multiple steps
+- Tables with identical structure appear in different procedural contexts
+
+### Changes
+
+- **Context-Aware Deduplication** (`server/routes/w2n.cjs`):
+  - Detects parent block type (list item vs other)
+  - Skips deduplication for images and tables inside list items
+  - Preserves deduplication for callouts (true duplicates)
+  - Logs preserved blocks for debugging
+
+### Validation Results
+
+```
+Total files tested: 2
+✅ Passed: 2 (100.0%)
+❌ Failing: 0 (0.0%)
+```
+
+Both previously failing pages now pass validation.
+
+### Technical Details
+
+**Before**: All images/tables deduplicated by URL/content globally  
+**After**: Images/tables in list items exempted from deduplication  
+**Rationale**: Procedural content intentionally repeats visual guidance across steps
+
+**Files Modified**:
+- `server/routes/w2n.cjs`: Added context detection and skip logic
+- `docs/context-aware-deduplication-fix.md`: Full documentation
+
+---
+
+## Version: 11.0.3
+Date: 2025-11-10
+
+### Summary
+
+**UI Enhancement**: Added localStorage persistence for UI panel position to prevent blocking navigation buttons during AutoExtract operations.
+
+### Changes
+
+#### UI Panel Position Persistence
+- **Problem**: Panel always appeared at top-right corner (20px, 20px) after page reload, potentially covering ServiceNow navigation buttons
+- **Solution**: Position now persists across page reloads using localStorage
+- **Features**:
+  - Automatic save when dragging ends
+  - Automatic restore on page load with validation
+  - Off-screen position detection and cleanup
+  - New reset button (↗️) to restore default position
+  - Success toast notification on reset
+- **Benefits**: 
+  - Users can position panel away from navigation buttons
+  - Improves AutoExtract reliability
+  - Position persists throughout multi-page operations
+- **Technical**: Uses `localStorage` key `w2n-panel-position` with JSON value `{ left, top }`
+- **Validation**: Ensures restored position is on-screen (8px margin from all edges)
+
+**Files Modified**:
+- `src/ui/main-panel.js`: Added position save/restore logic, reset button
+- `docs/ui-panel-persistence.md`: Full documentation
+
+---
+
 ## Version: 11.0.0
 Date: 2025-11-09
 

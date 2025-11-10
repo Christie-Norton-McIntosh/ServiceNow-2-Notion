@@ -796,6 +796,7 @@ async function extractContentFromHtml(html) {
             file_upload: { id: uploadId },
             caption: alt ? [{ type: "text", text: { content: alt } }] : [],
           },
+          _sn2n_sourceUrl: src, // Store original URL for deduplication
         };
       } else {
         // Fallback to external URL if upload fails
@@ -808,6 +809,7 @@ async function extractContentFromHtml(html) {
             external: { url: src },
             caption: alt ? [{ type: "text", text: { content: alt } }] : [],
           },
+          _sn2n_sourceUrl: src, // Store original URL for deduplication
         };
       }
     } catch (error) {
@@ -824,6 +826,7 @@ async function extractContentFromHtml(html) {
             external: { url: src },
             caption: alt ? [{ type: "text", text: { content: alt } }] : [],
           },
+          _sn2n_sourceUrl: src, // Store original URL for deduplication
         };
       }
       return null;
@@ -1838,8 +1841,15 @@ async function extractContentFromHtml(html) {
           // First remove immediate block children
           $textOnly.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.stepxmp, > div.note').remove();
           // Then remove blocks nested inside wrapper divs
+          // CRITICAL: Also remove figure to prevent parseRichText from extracting images that were already processed
           $textOnly.find('table, div.table-wrap, div.note, pre, ul, ol, figure').remove();
           const textOnlyHtml = $textOnly.html();
+          
+          // DEBUG: Check if there are any img tags remaining in textOnlyHtml
+          const remainingImgs = (textOnlyHtml.match(/<img/gi) || []).length;
+          if (remainingImgs > 0) {
+            console.log(`🔍 [IMAGE-DEBUG-UL] After removing figures, ${remainingImgs} <img> tag(s) remain in textOnlyHtml`);
+          }
           
           // Process nested blocks first to add as children
           const nestedChildren = [];
@@ -1847,8 +1857,17 @@ async function extractContentFromHtml(html) {
             const nestedBlock = nestedBlocks[i];
             console.log(`🔍 Processing nested block in list item: <${nestedBlock.name}>`);
             const childBlocks = await processElement(nestedBlock);
+            // DEBUG: Log images in nestedChildren with FULL details
+            childBlocks.forEach((blk, idx) => {
+              if (blk.type === 'image') {
+                const imgUrl = blk.image?.file_upload?.id || blk.image?.external?.url || 'unknown';
+                console.log(`🔍 [NESTED-CHILDREN-UL] [${idx}] Image from <${nestedBlock.name}>: ${String(imgUrl).substring(0, 80)}`);
+                console.log(`🔍 [NESTED-CHILDREN-UL] Full image object:`, JSON.stringify(blk.image).substring(0, 300));
+              }
+            });
             nestedChildren.push(...childBlocks);
           }
+          console.log(`🔍 [UL-SUMMARY] Total nestedChildren: ${nestedChildren.length}, Images: ${nestedChildren.filter(b => b.type === 'image').length}`);
           
           // Create the list item with text content AND nested blocks as children
           if (textOnlyHtml && cleanHtmlText(textOnlyHtml).trim()) {
@@ -1867,8 +1886,16 @@ async function extractContentFromHtml(html) {
             const immediateChildren = [];
             
             // CRITICAL FIX: Add images extracted from text content as immediate children
+            // Track image SOURCE URLs to prevent duplicates (before upload generates unique IDs)
+            const seenImageSources = new Set();
             if (liImages && liImages.length > 0) {
-              console.log(`🔍 [INLINE-IMAGE-FIX-UL] Adding ${liImages.length} image(s) from text content to bulleted list immediateChildren`);
+              log(`Adding ${liImages.length} image(s) from text content to bulleted list`);
+              liImages.forEach((img) => {
+                const sourceUrl = img._sn2n_sourceUrl || img.image?.external?.url || null;
+                if (sourceUrl) {
+                  seenImageSources.add(String(sourceUrl));
+                }
+              });
               immediateChildren.push(...liImages);
             }
             
@@ -1941,8 +1968,17 @@ async function extractContentFromHtml(html) {
                   immediateChildren.push(block);
                 }
               } else if (block && block.type === 'image') {
-                // Images can be immediate children
-                immediateChildren.push(block);
+                // Images can be immediate children, but check for duplicates by SOURCE URL
+                const sourceUrl = block._sn2n_sourceUrl || block.image?.external?.url || null;
+                
+                if (sourceUrl && seenImageSources.has(String(sourceUrl))) {
+                  log(`Skipping duplicate image: ${String(sourceUrl).substring(0, 60)}...`);
+                } else {
+                  if (sourceUrl) {
+                    seenImageSources.add(String(sourceUrl));
+                  }
+                  immediateChildren.push(block);
+                }
               } else if (block && block.type) {
                 // Tables, headings, callouts, etc. need markers
                 console.log(`⚠️ Block type "${block.type}" needs marker for deferred append to list item`);
@@ -1984,7 +2020,7 @@ async function extractContentFromHtml(html) {
             if (liRichText.length > 0 && liRichText.some(rt => rt.text.content.trim())) {
               const richTextChunks = splitRichTextArray(liRichText);
               for (const chunk of richTextChunks) {
-                console.log(`🔍 Creating bulleted_list_item with ${chunk.length} rich_text elements and ${allChildren.length} children`);
+                console.log(`🔍 [UL-ITEM] Creating bulleted_list_item with ${chunk.length} rich_text elements and ${allChildren.length} children`);
                 
                 // If there are marked blocks, generate a marker and add token to rich text
                 let markerToken = null;
@@ -2287,14 +2323,29 @@ async function extractContentFromHtml(html) {
           $textOnly.find('table, div.table-wrap, div.note, pre, ul, ol, figure').remove();
           const textOnlyHtml = $textOnly.html();
           
+          // DEBUG: Check if there are any img tags remaining in textOnlyHtml
+          const remainingImgs = (textOnlyHtml.match(/<img/gi) || []).length;
+          if (remainingImgs > 0) {
+            console.log(`🔍 [IMAGE-DEBUG-OL] After removing figures, ${remainingImgs} <img> tag(s) remain in textOnlyHtml`);
+          }
+          
           // Process nested blocks first to add as children
           const nestedChildren = [];
           for (let i = 0; i < nestedBlocks.length; i++) {
             const nestedBlock = nestedBlocks[i];
             console.log(`🔍 Processing nested block in ordered list item: <${nestedBlock.name}>`);
             const childBlocks = await processElement(nestedBlock);
+            // DEBUG: Log images in nestedChildren with FULL details
+            childBlocks.forEach((blk, idx) => {
+              if (blk.type === 'image') {
+                const imgUrl = blk.image?.file_upload?.id || blk.image?.external?.url || 'unknown';
+                console.log(`🔍 [NESTED-CHILDREN-OL] [${idx}] Image from <${nestedBlock.name}>: ${String(imgUrl).substring(0, 80)}`);
+                console.log(`🔍 [NESTED-CHILDREN-OL] Full image object:`, JSON.stringify(blk.image).substring(0, 300));
+              }
+            });
             nestedChildren.push(...childBlocks);
           }
+          console.log(`🔍 [OL-SUMMARY] Total nestedChildren: ${nestedChildren.length}, Images: ${nestedChildren.filter(b => b.type === 'image').length}`);
           
           // Create the list item with text content AND nested blocks as children
           if (textOnlyHtml && cleanHtmlText(textOnlyHtml).trim()) {
@@ -2313,8 +2364,16 @@ async function extractContentFromHtml(html) {
             const immediateChildren = [];
             
             // CRITICAL FIX: Add images extracted from text content as immediate children
+            // Track image SOURCE URLs to prevent duplicates (before upload generates unique IDs)
+            const seenImageSources = new Set();
             if (liImages && liImages.length > 0) {
-              console.log(`🔍 [INLINE-IMAGE-FIX-OL] Adding ${liImages.length} image(s) from text content to numbered list immediateChildren`);
+              log(`Adding ${liImages.length} image(s) from text content to numbered list`);
+              liImages.forEach((img) => {
+                const sourceUrl = img._sn2n_sourceUrl || img.image?.external?.url || null;
+                if (sourceUrl) {
+                  seenImageSources.add(String(sourceUrl));
+                }
+              });
               immediateChildren.push(...liImages);
             }
             
@@ -2381,8 +2440,17 @@ async function extractContentFromHtml(html) {
                   immediateChildren.push(block);
                 }
               } else if (block && block.type === 'image') {
-                // Images can be immediate children
-                immediateChildren.push(block);
+                // Images can be immediate children, but check for duplicates by SOURCE URL
+                const sourceUrl = block._sn2n_sourceUrl || block.image?.external?.url || null;
+                
+                if (sourceUrl && seenImageSources.has(String(sourceUrl))) {
+                  log(`Skipping duplicate image: ${String(sourceUrl).substring(0, 60)}...`);
+                } else {
+                  if (sourceUrl) {
+                    seenImageSources.add(String(sourceUrl));
+                  }
+                  immediateChildren.push(block);
+                }
               } else if (block && block.type) {
                 // Tables, headings, callouts, etc. need markers
                 console.log(`⚠️ Block type "${block.type}" needs marker for deferred append to list item`);
