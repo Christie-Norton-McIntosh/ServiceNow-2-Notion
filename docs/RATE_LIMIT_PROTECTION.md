@@ -182,5 +182,5 @@ Potential improvements for rate limit handling:
 ---
 
 **Last Updated**: November 9, 2025  
-**Version**: 10.0.29  
+**Version**: 11.0.0  
 **Author**: ServiceNow-2-Notion Development Team
