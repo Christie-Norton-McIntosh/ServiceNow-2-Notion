@@ -600,6 +600,8 @@ async function startAutoExtraction() {
     duplicateCount: 0, // Count consecutive duplicates
     processedUrls: new Set(), // Track all processed URLs to prevent duplicates
     lastPageId: null, // Track last page ID to verify navigation
+    failedPages: [], // Track pages that failed due to rate limiting or other errors for manual retry
+    rateLimitHits: 0, // Track how many times we've hit rate limits
   };
 
   // Set up beforeunload handler to save state if page is reloaded manually
@@ -1140,6 +1142,62 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
             return;
           }
           
+          // Check if this is a rate limit error
+          const isRateLimited = error.message && (
+            error.message.toLowerCase().includes('rate limit') ||
+            error.message.includes('429') ||
+            error.message.includes('too many requests')
+          );
+          
+          if (isRateLimited) {
+            autoExtractState.rateLimitHits++;
+            
+            // Save the failed page info for manual retry if needed
+            const failedPageInfo = {
+              pageNumber: currentPageNum,
+              url: window.location.href,
+              title: document.title,
+              timestamp: new Date().toISOString(),
+              reason: 'rate_limit',
+              errorMessage: error.message
+            };
+            autoExtractState.failedPages.push(failedPageInfo);
+            
+            const waitSeconds = 60; // Default to 60 seconds if not specified in error
+            debug(`🚦 RATE LIMIT HIT during AutoExtract on page ${currentPageNum}`);
+            debug(`   Total rate limit hits this session: ${autoExtractState.rateLimitHits}`);
+            debug(`   Pausing AutoExtract for ${waitSeconds} seconds...`);
+            debug(`   Failed page saved for retry: ${failedPageInfo.title}`);
+            
+            showToast(
+              `⏸️ Rate limit hit! Pausing for ${waitSeconds}s before retrying...`,
+              5000
+            );
+            
+            if (button) {
+              button.textContent = `⏸️ Paused: Rate limit (${waitSeconds}s)...`;
+            }
+            
+            overlayModule.setMessage(`⏸️ Rate limit - waiting ${waitSeconds}s...`);
+            
+            // Wait for cooldown
+            await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
+            
+            debug(`✅ Rate limit cooldown complete, retrying page ${currentPageNum}...`);
+            showToast(
+              `✅ Cooldown complete, retrying page ${currentPageNum}...`,
+              3000
+            );
+            
+            // Remove from failed pages list since we're going to retry immediately
+            autoExtractState.failedPages.pop();
+            
+            // Retry the same page (don't increment page counter)
+            // Set captureAttempts to maxCaptureAttempts - 1 to allow one final retry
+            captureAttempts = maxCaptureAttempts - 1;
+            continue; // Continue capture loop to retry
+          }
+          
           // Check if this is a server offline error (connection refused, network error, etc.)
           const isServerOffline = error.message && (
             error.message.includes('Proxy server is not available') ||
@@ -1550,15 +1608,53 @@ async function continueAutoExtractionLoop(autoExtractState) {
   
   // Loop completed successfully - show completion overlay
   debug(`[AUTO-EXTRACT] 🎉 AutoExtract completed! Total pages processed: ${autoExtractState.totalProcessed}`);
+  
+  // Show summary of any failed pages
+  if (autoExtractState.failedPages && autoExtractState.failedPages.length > 0) {
+    debug(`⚠️ ${autoExtractState.failedPages.length} page(s) failed during AutoExtract:`);
+    autoExtractState.failedPages.forEach((failedPage, index) => {
+      debug(`  ${index + 1}. Page ${failedPage.pageNumber}: "${failedPage.title}"`);
+      debug(`     URL: ${failedPage.url}`);
+      debug(`     Reason: ${failedPage.reason}`);
+      debug(`     Time: ${failedPage.timestamp}`);
+    });
+    
+    // Save failed pages list to localStorage for manual retry
+    if (typeof GM_setValue === 'function') {
+      GM_setValue('w2n_failed_pages', JSON.stringify(autoExtractState.failedPages));
+      debug(`💾 Failed pages saved to storage for manual retry`);
+    }
+    
+    // Show warning to user
+    const failedPagesMessage = `⚠️ AutoExtract completed with warnings!\n\n` +
+      `✅ Successfully processed: ${autoExtractState.totalProcessed} pages\n` +
+      `❌ Failed/Skipped: ${autoExtractState.failedPages.length} pages\n` +
+      `🚦 Rate limit hits: ${autoExtractState.rateLimitHits}\n\n` +
+      `Failed pages list:\n` +
+      autoExtractState.failedPages.map((fp, i) => 
+        `${i + 1}. ${fp.title || 'Untitled'} (page ${fp.pageNumber})\n   Reason: ${fp.reason}`
+      ).join('\n') +
+      `\n\nFailed pages have been saved. You can manually retry them later.`;
+    
+    alert(failedPagesMessage);
+    
+    showToast(
+      `⚠️ Completed with ${autoExtractState.failedPages.length} failed pages. See console for details.`,
+      7000
+    );
+  } else {
+    showToast(
+      `✅ AutoExtract complete! Processed ${autoExtractState.totalProcessed} page(s)`,
+      5000
+    );
+  }
+  
   overlayModule.done({
     success: true,
     pageUrl: null,
     autoCloseMs: 5000,
   });
-  showToast(
-    `✅ AutoExtract complete! Processed ${autoExtractState.totalProcessed} page(s)`,
-    5000
-  );
+  
   stopAutoExtract(autoExtractState);
   if (button) button.textContent = "Start AutoExtract";
 }

@@ -6,12 +6,20 @@ const path = require('path');
 // required directly (outside the full proxy environment). In the normal
 // runtime, sn2n-proxy.cjs defines and assigns these to global. The lightweight
 // extract harness only needs a minimal image URL validator so block creation
-// doesn’t throw.
+// doesn't throw.
 if (!global.isValidImageUrl) {
   global.isValidImageUrl = function isValidImageUrl(url) {
     if (!url || typeof url !== 'string') return false;
     // Accept standard http/https + data URIs used by ServiceNow inline images.
     return /^(https?:\/\/|data:image\/)/i.test(url.trim());
+  };
+}
+
+if (!global.isValidNotionUrl) {
+  global.isValidNotionUrl = function isValidNotionUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+    // Basic validation for URLs acceptable by Notion
+    return /^https?:\/\/.+/i.test(url.trim());
   };
 }
 
