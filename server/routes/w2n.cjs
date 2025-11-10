@@ -378,23 +378,6 @@ router.post('/W2N', async (req, res) => {
 
     // Collect any in-memory markers that were attached to trailing blocks
     // These will be used by the orchestrator after the page is created
-    // DEBUG: Check if any blocks have _sn2n_marker before collection
-    let markerCount = 0;
-    function countMarkers(blocks, depth = 0) {
-      if (!Array.isArray(blocks)) return;
-      for (const b of blocks) {
-        if (b && b._sn2n_marker) {
-          markerCount++;
-          console.log(`[MARKER-DEBUG] Found block with marker at depth ${depth}: type=${b.type}, marker=${b._sn2n_marker}`);
-        }
-        const type = b.type;
-        if (type && b[type]?.children) countMarkers(b[type].children, depth + 1);
-        if (b.children) countMarkers(b.children, depth + 1);
-      }
-    }
-    countMarkers(children);
-    console.log(`[MARKER-DEBUG] Total blocks with _sn2n_marker before collection: ${markerCount}`);
-    
     const markerMap = collectAndStripMarkers(children, {});
     // Remove collected trailing blocks from the main children list so we don't
     // create duplicates on the page root. They'll be appended later by the
