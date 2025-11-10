@@ -2502,9 +2502,18 @@ async function extractContentFromHtml(html) {
                   const marker = generateMarker();
                   markerToken = `(sn2n:${marker})`;
                   // Tag each marked block with the marker for orchestration
-                  markedBlocks.forEach(block => {
+                  // CRITICAL: Don't overwrite existing markers from nested processing!
+                  const blocksNeedingMarker = markedBlocks.filter(b => !b._sn2n_marker);
+                  const blocksWithExistingMarker = markedBlocks.filter(b => b._sn2n_marker);
+                  
+                  blocksNeedingMarker.forEach(block => {
                     block._sn2n_marker = marker;
                   });
+                  
+                  if (blocksWithExistingMarker.length > 0) {
+                    console.log(`🔍 [MARKER-PRESERVE] ${blocksWithExistingMarker.length} blocks already have markers - preserving original associations`);
+                  }
+                  
                   // Add marker token to end of rich text (will be found by orchestrator)
                   chunk.push({
                     type: "text",
@@ -2518,7 +2527,7 @@ async function extractContentFromHtml(html) {
                       color: "default"
                     }
                   });
-                  console.log(`🔍 Added marker ${markerToken} for ${markedBlocks.length} deferred blocks`);
+                  console.log(`🔍 Added marker ${markerToken} for ${blocksNeedingMarker.length} deferred blocks (${blocksWithExistingMarker.length} already marked)`);
                 }
                 
                 const listItemBlock = {
@@ -2586,13 +2595,25 @@ async function extractContentFromHtml(html) {
               
               // Promote first paragraph's text to list item text
               console.log(`🔍 Promoting first paragraph text to numbered list item, ${remainingChildren.length} remaining children`);
+              console.log(`🔍 [PROMO-DEBUG] remainingChildren types: ${remainingChildren.map(b => b?.type).join(', ')}`);
               const promotedText = firstParagraph.paragraph.rich_text;
+              const promotedTextPreview = promotedText.map(rt => rt.text?.content || '').join('').substring(0, 80);
+              console.log(`🔍 [PROMO-DEBUG] Promoted text: "${promotedTextPreview}..."`);
               
-              // When promoting paragraphs, mark ALL remaining children for deferred orchestration
-              // to avoid creating 4+ levels of nesting (numbered > bulleted > numbered > paragraph/image)
+              // CRITICAL FIX v2: ALL remaining children (including images) need markers for orchestration
+              // because we may be at depth 2, making children depth 3 (exceeds Notion's limit).
+              // Mark ALL blocks for deferred orchestration.
               const markedBlocks = remainingChildren.filter(block => block && block.type);
               
-              // Add marker if there are remaining children
+              markedBlocks.forEach((block, idx) => {
+                const blockType = block.type;
+                const preview = blockType === 'image' 
+                  ? (block.image?.caption?.[0]?.text?.content || 'no caption')
+                  : (blockType === 'paragraph' ? block.paragraph?.rich_text?.[0]?.text?.content?.substring(0, 40) : blockType);
+                console.log(`🔍 [IMAGE-INLINE-FIX-V2] remainingChild[${idx}] (${blockType}): "${preview}" - marking for orchestration`);
+              });
+              
+              // Add marker token to rich text if there are blocks that need orchestration
               let richText = [...promotedText];
               if (markedBlocks.length > 0) {
                 const marker = generateMarker();
@@ -2612,7 +2633,7 @@ async function extractContentFromHtml(html) {
                     color: "default"
                   }
                 });
-                console.log(`🔍 Added marker ${markerToken} for ${markedBlocks.length} deferred blocks (promoted paragraph children)`);
+                console.log(`🔍 [IMAGE-INLINE-FIX-V2] Added marker ${markerToken} for ${markedBlocks.length} deferred blocks (including images)`);
               }
               
               const listItemBlock = {
@@ -2626,7 +2647,7 @@ async function extractContentFromHtml(html) {
               // Add marked blocks as children so collectAndStripMarkers can find them
               if (markedBlocks.length > 0) {
                 listItemBlock.numbered_list_item.children = markedBlocks;
-                console.log(`🔍 Added ${markedBlocks.length} marked blocks to promoted paragraph numbered list item's children`);
+                console.log(`🔍 [IMAGE-INLINE-FIX-V2] Added ${markedBlocks.length} marked blocks to promoted list item's children`);
               }
               
               processedBlocks.push(listItemBlock);

@@ -1,5 +1,46 @@
 # CHANGELOG — ServiceNow-2-Notion
 
+## Version: 11.0.6
+Date: 2025-11-10
+
+### Summary
+
+**Debugging Enhancement**: Added comprehensive logging to diagnose image orchestration failures where markers are visible during extraction but images aren't placed.
+
+### Issue
+For some pages (e.g., "Add a document to a contract"), child images with markers are not being placed at their marker locations. Markers appear during extraction but are removed without appending the images.
+
+### Enhanced Logging
+
+Added detailed logging at key orchestration points:
+
+1. **Image Block Detection**: Logs when markers contain image blocks
+2. **Parent Search Results**: Tracks whether parent is found or not for image markers
+3. **Image URL Logging**: Shows image URLs in append logs
+4. **BFS Search Tracking**: Logs marker search start and failure with visited blocks list
+
+### Debug Keywords
+- `[IMAGE-DEBUG]` - Image orchestration tracking
+- `[MARKER-SEARCH]` - BFS marker search results
+
+### Usage
+```bash
+SN2N_VERBOSE=1 npm start
+```
+
+Look for log patterns to diagnose:
+- Are images being marked and collected?
+- Is the marker being found during orchestration?
+- Where do images end up (parent vs page root)?
+
+See `docs/image-marker-debugging-v11.0.6.md` for complete debugging guide.
+
+**Files Modified**:
+- `server/orchestration/deep-nesting.cjs`: Enhanced logging for image orchestration
+- `docs/image-marker-debugging-v11.0.6.md`: Debugging guide
+
+---
+
 ## Version: 11.0.4
 Date: 2025-11-10
 

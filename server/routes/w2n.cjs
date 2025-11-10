@@ -1134,6 +1134,12 @@ router.post('/W2N', async (req, res) => {
       log(`   Errors: ${validationResult.issues.length}, Warnings: ${validationResult.warnings.length}`);
     }
     
+    // Final summary
+    log(`📋 Final page structure summary:`);
+    log(`   - Initial blocks sent: ${children.length}`);
+    log(`   - Markers orchestrated: ${Object.keys(markerMap || {}).length}`);
+    log(`   - Orchestrated blocks: ${Object.values(markerMap || {}).reduce((sum, arr) => sum + arr.length, 0)}`);
+    log(`🔗 Page URL: https://www.notion.so/${createdPage.id.replace(/-/g, '')}`);
     log("✅ Post-processing complete");
     return;
   } catch (error) {

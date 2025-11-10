@@ -81,6 +81,7 @@ async function findParentListItemByMarker(rootBlockId, marker) {
   log(`🔍 BFS START: Searching for marker ${token} starting from ${rootBlockId}`);
   log(`🔍 BFS: Full marker value: "${marker}"`);
   log(`🔍 BFS: Token format: "(${token})"`);
+  log(`🔍 [MARKER-SEARCH] Starting BFS for marker: sn2n:${marker}`);
 
   async function listChildren(blockId, cursor, retries = 3) {
     for (let attempt = 1; attempt <= retries; attempt++) {
@@ -201,6 +202,8 @@ async function findParentListItemByMarker(rootBlockId, marker) {
     } while (cursor);
   }
 
+  log(`❌ [MARKER-SEARCH] Marker NOT FOUND after searching ${visited.size} blocks: sn2n:${marker}`);
+  log(`❌ [MARKER-SEARCH] Searched blocks: ${Array.from(visited).join(', ')}`);
   return null;
 }
 
@@ -233,9 +236,15 @@ async function orchestrateDeepNesting(pageId, markerMap) {
     log(`  🔖 Marker "${m}": ${blocks.length} block(s), global_index=${firstBlockGlobalIndex}, local_index=${firstBlockLocalIndex}`);
   });
   
-  for (const marker of markerKeys) {
+    for (const marker of markerKeys) {
     let blocksToAppend = markerMap[marker] || [];
     if (blocksToAppend.length === 0) continue;
+    
+    // [IMAGE-DEBUG] Log if this marker has image blocks
+    const imageCount = blocksToAppend.filter(b => b && b.type === 'image').length;
+    if (imageCount > 0) {
+      log(`🖼️ [IMAGE-DEBUG] Marker "${marker}" has ${imageCount} image block(s) out of ${blocksToAppend.length} total`);
+    }
     
     try {
       const parentInfo = await findParentListItemByMarker(pageId, marker);
@@ -246,6 +255,9 @@ async function orchestrateDeepNesting(pageId, markerMap) {
         log(
           `⚠️ Orchestrator: parent not found for marker sn2n:${marker}. Appending to page root instead.`
         );
+        if (imageCount > 0) {
+          log(`🖼️ [IMAGE-DEBUG] Parent not found! ${imageCount} image(s) will be appended to page root as fallback`);
+        }
         // Clean orphaned markers (preserve all markers in the map) and ensure no private keys
         blocksToAppend = cleanOrphanedMarkersFromBlocks(blocksToAppend, markerKeys);
         deepStripPrivateKeys(blocksToAppend);
@@ -257,6 +269,10 @@ async function orchestrateDeepNesting(pageId, markerMap) {
       log(
         `✅ Orchestrator: Found parent ${parentId} for marker sn2n:${marker}. Will append ${blocksToAppend.length} block(s).`
       );
+      
+      if (imageCount > 0) {
+        log(`🖼️ [IMAGE-DEBUG] Parent found! Will append ${imageCount} image(s) to parent ${parentId}`);
+      }
       
       // Log marker details for debugging
       log(`🔖 Orchestrator: Marker details - marker="${marker}" (original format, may include element ID)`);
@@ -273,16 +289,15 @@ async function orchestrateDeepNesting(pageId, markerMap) {
             } else if (blockType === 'table' && block[blockType].children) {
               contentPreview = `[table: ${block[blockType].table_width} cols x ${block[blockType].children.length} rows]`;
             } else if (blockType === 'image') {
-              contentPreview = '[image]';
+              const imgUrl = block[blockType].external?.url || block[blockType].file?.url || '[no URL]';
+              contentPreview = `[image: ${imgUrl.substring(0, 80)}]`;
             }
           }
         } catch (e) {
           contentPreview = '[unable to extract]';
         }
         log(`  📦 Block ${idx + 1}: type=${block.type}, content="${contentPreview}${contentPreview.length >= 100 ? '...' : ''}"`);
-      });
-      
-      // Before appending, perform an append-time dedupe check for table blocks
+      });      // Before appending, perform an append-time dedupe check for table blocks
       // to avoid duplicating tables that may already exist under the parent.
       try {
         // helper: compute a lightweight signature for table blocks
