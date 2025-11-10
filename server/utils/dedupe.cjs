@@ -13,9 +13,11 @@ function computeBlockKey(blk) {
   try {
     if (blk.type === "callout" && blk.callout) {
       const txt = plainTextFromRich(blk.callout.rich_text || []);
+      // Strip marker tokens for deduplication (same callout may have different markers)
+      const normalizedTxt = txt.replace(/\(sn2n:[a-z0-9\-]+\)/gi, "").replace(/\s+/g, " ").trim();
       const emoji = blk.callout.icon?.type === "emoji" ? blk.callout.icon.emoji : "";
       const color = blk.callout.color || "";
-      return `callout:${txt}|${emoji}|${color}`;
+      return `callout:${normalizedTxt}|${emoji}|${color}`;
     }
     if (blk.type === "image" && blk.image) {
       const fileId = blk.image.file_upload && blk.image.file_upload.id;
@@ -111,16 +113,39 @@ function dedupeAndFilterBlocks(blockArray, options = {}) {
       
       // Never dedupe callouts with common STANDALONE patterns (title-only without content)
       // But DO dedupe callouts with full content (e.g., "Note: Any customizations...")
+      // NOTE: Even title-only callouts should be checked for ADJACENT duplicates
       if (blk && blk.type === 'callout') {
         const txt = plainTextFromRich(blk.callout?.rich_text || []);
         const trimmed = txt.trim();
         // Only exempt if it's JUST the title pattern with no additional content
         const isTitleOnly = /^(Before you begin|Role required:|Prerequisites?|Note:|Important:|Warning:)\s*$/i.test(trimmed);
         if (isTitleOnly) {
+          log(`✓ Title-only callout, checking for adjacent duplicates: "${trimmed}"`);
+          // Still check for adjacent duplicates even for title-only
+          const key = computeBlockKey(blk);
+          const adjacentDuplicate = recentBlocks.find(entry => {
+            const [entryKey, entryIndex] = entry;
+            const distance = i - entryIndex;
+            return entryKey === key && distance <= 1;
+          });
+          
+          if (adjacentDuplicate) {
+            log(`🚫 Deduping adjacent title-only callout at index ${i}: "${trimmed}" (duplicate of block ${adjacentDuplicate[1]})`);
+            removed++;
+            duplicates++;
+            continue;
+          }
+          
+          // Not a duplicate, add to recent blocks and output
+          recentBlocks.push([key, i]);
+          while (recentBlocks.length > 0 && (i - recentBlocks[0][1]) > PROXIMITY_WINDOW) {
+            recentBlocks.shift();
+          }
           out.push(blk);
           continue;
         }
         // For callouts with content after the title, use normal deduplication
+        log(`→ Callout with content will be deduped: "${trimmed.substring(0, 60)}..."`);
       }
       
       // Filter out gray info callouts only (keep blue notes)
@@ -160,10 +185,37 @@ function dedupeAndFilterBlocks(blockArray, options = {}) {
 
       const key = computeBlockKey(blk);
       
+      // Special handling for callouts: stricter deduplication for immediately adjacent duplicates
+      // Use different proximity windows based on block type and adjacency
+      let effectiveWindow = PROXIMITY_WINDOW;
+      
+      // For callouts (Note, Important, Warning, etc.), check for immediately adjacent duplicates (within 1 position)
+      // This catches duplicate callouts that appear right next to each other due to processing paths
+      if (blk && blk.type === 'callout') {
+        const calloutText = plainTextFromRich(blk.callout?.rich_text || []).substring(0, 60);
+        const calloutType = blk.callout?.icon?.emoji || 'unknown';
+        
+        const adjacentDuplicate = recentBlocks.find(entry => {
+          const [entryKey, entryIndex] = entry;
+          const distance = i - entryIndex;
+          return entryKey === key && distance <= 1; // Immediately adjacent (current or previous position)
+        });
+        
+        if (adjacentDuplicate) {
+          const distance = i - adjacentDuplicate[1];
+          log(`🚫 Deduping adjacent ${calloutType} callout at index ${i}: "${calloutText}..." (duplicate of block ${adjacentDuplicate[1]}, distance: ${distance})`);
+          removed++;
+          duplicates++;
+          continue;
+        }
+        // If not immediately adjacent, use normal window for callouts with content
+        effectiveWindow = PROXIMITY_WINDOW;
+      }
+      
       // Check if this block appears in the recent window
       const foundInWindow = recentBlocks.find(entry => {
         const [entryKey, entryIndex] = entry;
-        return entryKey === key && (i - entryIndex) <= PROXIMITY_WINDOW;
+        return entryKey === key && (i - entryIndex) <= effectiveWindow;
       });
       
       if (foundInWindow) {

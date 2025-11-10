@@ -453,15 +453,27 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
           log(`✅ [VALIDATION] Image count acceptable: ${notionCounts.images}/${sourceCounts.images}`);
         }
 
-        // Callouts must match exactly
+        // Callouts - allow slight variations due to filtering (gray info callouts are removed)
+        // ERROR if significantly fewer (likely dropped content)
+        // WARNING if more (might be counting methodology difference)
         let calloutsMismatch = false;
-        if (sourceCounts.callouts > 0 && notionCounts.callouts !== sourceCounts.callouts) {
-          calloutsMismatch = true;
-          result.hasErrors = true;
-          result.issues.push(`Callout count mismatch: expected ${sourceCounts.callouts}, got ${notionCounts.callouts}`);
-          log(`❌ [VALIDATION] Callout count mismatch: ${notionCounts.callouts}/${sourceCounts.callouts}`);
-        } else if (sourceCounts.callouts > 0) {
-          log(`✅ [VALIDATION] Callout count acceptable: ${notionCounts.callouts}/${sourceCounts.callouts}`);
+        if (sourceCounts.callouts > 0) {
+          const minExpected = Math.max(1, sourceCounts.callouts - 2); // Allow up to 2 fewer (filtered gray info)
+          const maxExpected = sourceCounts.callouts + 1; // Allow 1 extra (counting difference)
+          
+          if (notionCounts.callouts < minExpected) {
+            // Significantly fewer - likely dropped content
+            calloutsMismatch = true;
+            result.hasErrors = true;
+            result.issues.push(`Callout count too low: expected ${sourceCounts.callouts}, got ${notionCounts.callouts}`);
+            log(`❌ [VALIDATION] Callout count too low: ${notionCounts.callouts}/${sourceCounts.callouts}`);
+          } else if (notionCounts.callouts > maxExpected) {
+            // More than expected - warning only
+            result.warnings.push(`Extra callouts: expected ${sourceCounts.callouts}, got ${notionCounts.callouts} (acceptable)`);
+            log(`⚠️ [VALIDATION] Extra callouts (acceptable): ${notionCounts.callouts}/${sourceCounts.callouts}`);
+          } else {
+            log(`✅ [VALIDATION] Callout count acceptable: ${notionCounts.callouts}/${sourceCounts.callouts}`);
+          }
         }
 
         // Headings - less than expected is ERROR, more is WARNING

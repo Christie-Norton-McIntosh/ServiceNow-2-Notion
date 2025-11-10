@@ -28,22 +28,68 @@ export function injectMainPanel() {
 
   const panel = document.createElement("div");
   panel.id = "w2n-notion-panel";
-  panel.style.cssText = `
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    width: 320px;
-    background: white;
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.15);
-    z-index: 10000;
-    font-family: system-ui, -apple-system, sans-serif;
-    font-size: 14px;
-    user-select: none;
-    opacity: 0.95;
-    transition: opacity 0.2s ease;
-  `;
+  
+  // Try to restore saved position from localStorage
+  let savedPosition = null;
+  try {
+    const saved = localStorage.getItem('w2n-panel-position');
+    if (saved) {
+      savedPosition = JSON.parse(saved);
+      // Validate saved position is still on-screen
+      const margin = 8;
+      const panelWidth = 320;
+      const panelHeight = 200; // Estimated minimum height
+      
+      if (savedPosition.left < margin || 
+          savedPosition.top < margin ||
+          savedPosition.left + panelWidth > window.innerWidth - margin ||
+          savedPosition.top + panelHeight > window.innerHeight - margin) {
+        // Saved position is off-screen, reset it
+        savedPosition = null;
+        localStorage.removeItem('w2n-panel-position');
+      }
+    }
+  } catch (e) {
+    console.warn('[W2N] Failed to restore panel position:', e);
+  }
+  
+  // Apply position (either saved or default)
+  if (savedPosition) {
+    panel.style.cssText = `
+      position: fixed;
+      left: ${Math.round(savedPosition.left)}px;
+      top: ${Math.round(savedPosition.top)}px;
+      width: 320px;
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+      z-index: 10000;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+      user-select: none;
+      opacity: 0.95;
+      transition: opacity 0.2s ease;
+    `;
+  } else {
+    // Default position (top-right)
+    panel.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      width: 320px;
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+      z-index: 10000;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+      user-select: none;
+      opacity: 0.95;
+      transition: opacity 0.2s ease;
+    `;
+  }
 
   panel.addEventListener("mouseenter", () => (panel.style.opacity = "1"));
   panel.addEventListener("mouseleave", () => (panel.style.opacity = "0.95"));
@@ -62,6 +108,7 @@ export function injectMainPanel() {
           <span style="font-size:12px; color:#6b7280; font-weight:normal;">⇄ drag to move</span>
         </h3>
         <div style="display:flex; align-items:center; gap:8px;">
+          <button id="w2n-reset-position-btn" title="Reset panel position to top-right corner" style="background:none;border:none;font-size:16px;cursor:pointer;color:#6b7280;padding:4px;line-height:1;">↗️</button>
           <button id="w2n-advanced-settings-btn" title="Advanced Settings" style="background:none;border:none;font-size:16px;cursor:pointer;color:#6b7280;padding:4px;line-height:1;">⚙️</button>
           <button id="w2n-close" style="background:none;border:none;font-size:18px;cursor:pointer;color:#6b7280;padding:4px;line-height:1;">×</button>
         </div>
@@ -138,12 +185,30 @@ export function setupMainPanel(panel) {
   };
 
   const closeBtn = panel.querySelector("#w2n-close");
+  const resetPositionBtn = panel.querySelector("#w2n-reset-position-btn");
   const advancedBtn = panel.querySelector("#w2n-advanced-settings-btn");
   const captureBtn = panel.querySelector("#w2n-capture-page");
   const configureBtn = panel.querySelector("#w2n-configure-mapping");
   const iconCoverBtn = panel.querySelector("#w2n-open-icon-cover");
 
   closeBtn.onclick = () => panel.remove();
+  
+  if (resetPositionBtn) {
+    resetPositionBtn.onclick = (event) => {
+      event.stopPropagation();
+      try {
+        // Reset to default top-right position
+        panel.style.left = 'auto';
+        panel.style.right = '20px';
+        panel.style.top = '20px';
+        // Clear saved position
+        localStorage.removeItem('w2n-panel-position');
+        showToast("Panel position reset to top-right corner", "success");
+      } catch (e) {
+        debug("Failed to reset panel position:", e);
+      }
+    };
+  }
 
   if (advancedBtn) {
     advancedBtn.onclick = (event) => {
@@ -509,6 +574,18 @@ function enablePanelDrag(panel) {
     header.releasePointerCapture && header.releasePointerCapture(ev.pointerId);
     // restore transition
     panel.style.transition = "";
+    
+    // Save position to localStorage
+    try {
+      const rect = panel.getBoundingClientRect();
+      const position = {
+        left: rect.left,
+        top: rect.top
+      };
+      localStorage.setItem('w2n-panel-position', JSON.stringify(position));
+    } catch (e) {
+      console.warn('[W2N] Failed to save panel position:', e);
+    }
   };
 
   header.addEventListener("pointerdown", onPointerDown);

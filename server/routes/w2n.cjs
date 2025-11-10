@@ -536,6 +536,70 @@ router.post('/W2N', async (req, res) => {
 
     // Use central dedupe utility so unit tests can target it
     children = dedupeUtil.dedupeAndFilterBlocks(children, { log });
+    
+    // CRITICAL: Also dedupe children nested inside list items
+    // Callouts can appear as children of list items and need deduplication too
+    function dedupeNestedChildren(blocks, depth = 0) {
+      const indent = '  '.repeat(depth);
+      return blocks.map((block, idx) => {
+        if (block.type === 'numbered_list_item' && block.numbered_list_item?.children) {
+          const beforeCount = block.numbered_list_item.children.length;
+          log(`${indent}🔍 [NESTED-DEDUPE] numbered_list_item[${idx}] has ${beforeCount} children`);
+          
+          block.numbered_list_item.children = dedupeUtil.dedupeAndFilterBlocks(
+            block.numbered_list_item.children, 
+            { log }
+          );
+          
+          const afterCount = block.numbered_list_item.children.length;
+          if (beforeCount !== afterCount) {
+            log(`${indent}  🚫 Removed ${beforeCount - afterCount} duplicate(s) from numbered_list_item[${idx}]`);
+          }
+          
+          // Recursively dedupe nested list items
+          block.numbered_list_item.children = dedupeNestedChildren(block.numbered_list_item.children, depth + 1);
+        } else if (block.type === 'bulleted_list_item' && block.bulleted_list_item?.children) {
+          const beforeCount = block.bulleted_list_item.children.length;
+          log(`${indent}🔍 [NESTED-DEDUPE] bulleted_list_item[${idx}] has ${beforeCount} children`);
+          
+          block.bulleted_list_item.children = dedupeUtil.dedupeAndFilterBlocks(
+            block.bulleted_list_item.children, 
+            { log }
+          );
+          
+          const afterCount = block.bulleted_list_item.children.length;
+          if (beforeCount !== afterCount) {
+            log(`${indent}  🚫 Removed ${beforeCount - afterCount} duplicate(s) from bulleted_list_item[${idx}]`);
+          }
+          
+          // Recursively dedupe nested list items
+          block.bulleted_list_item.children = dedupeNestedChildren(block.bulleted_list_item.children, depth + 1);
+        } else if (block.type === 'toggle' && block.toggle?.children) {
+          const beforeCount = block.toggle.children.length;
+          log(`${indent}🔍 [NESTED-DEDUPE] toggle[${idx}] has ${beforeCount} children`);
+          block.toggle.children = dedupeUtil.dedupeAndFilterBlocks(block.toggle.children, { log });
+          const afterCount = block.toggle.children.length;
+          if (beforeCount !== afterCount) {
+            log(`${indent}  🚫 Removed ${beforeCount - afterCount} duplicate(s) from toggle[${idx}]`);
+          }
+          block.toggle.children = dedupeNestedChildren(block.toggle.children, depth + 1);
+        } else if (block.type === 'callout' && block.callout?.children) {
+          const beforeCount = block.callout.children.length;
+          log(`${indent}🔍 [NESTED-DEDUPE] callout[${idx}] has ${beforeCount} children`);
+          block.callout.children = dedupeUtil.dedupeAndFilterBlocks(block.callout.children, { log });
+          const afterCount = block.callout.children.length;
+          if (beforeCount !== afterCount) {
+            log(`${indent}  🚫 Removed ${beforeCount - afterCount} duplicate(s) from callout[${idx}]`);
+          }
+          block.callout.children = dedupeNestedChildren(block.callout.children, depth + 1);
+        }
+        return block;
+      });
+    }
+    
+    log(`🔧 Running nested deduplication on ${children.length} top-level blocks...`);
+    children = dedupeNestedChildren(children);
+    log(`✅ Deduplication complete (including nested children)`);
 
     // Create the page (handling Notion's 100-block limit)
     log(`� Creating Notion page with ${children.length} blocks`);
@@ -848,6 +912,98 @@ router.post('/W2N', async (req, res) => {
         log("🔧 Running deep-nesting orchestrator...");
         const orch = await orchestrateDeepNesting(response.id, markerMap);
         log("🔧 Orchestrator result:", orch);
+        
+        // CRITICAL: After orchestration adds children to list items, we need to deduplicate again
+        // The orchestrator may add duplicate callouts as children to list items
+        log("🔧 Running post-orchestration deduplication on page blocks...");
+        
+        try {
+          // Fetch the current page blocks
+          const pageBlocks = await notion.blocks.children.list({ block_id: response.id, page_size: 100 });
+          let allBlocks = pageBlocks.results || [];
+          
+          // Fetch remaining pages if needed
+          let cursor = pageBlocks.next_cursor;
+          while (cursor) {
+            const nextPage = await notion.blocks.children.list({ 
+              block_id: response.id, 
+              start_cursor: cursor,
+              page_size: 100 
+            });
+            allBlocks = allBlocks.concat(nextPage.results || []);
+            cursor = nextPage.next_cursor;
+          }
+          
+          log(`   Fetched ${allBlocks.length} blocks from page`);
+          
+          // For each block with children (list items, callouts, toggles), deduplicate its children
+          // The orchestration phase can add children to these block types
+          const blockTypesWithChildren = ['numbered_list_item', 'bulleted_list_item', 'callout', 'toggle', 'quote', 'column'];
+          
+          // Recursive function to deduplicate children at all nesting levels
+          async function deduplicateBlockChildren(blockId, blockType, depth = 0) {
+            const indent = '  '.repeat(depth);
+            const childrenResp = await notion.blocks.children.list({ block_id: blockId, page_size: 100 });
+            const children = childrenResp.results || [];
+            
+            if (children.length > 1) {
+              // Find duplicates using same key computation
+              const seenKeys = new Map(); // key -> first block id
+              const duplicateIds = [];
+              
+              // CONTEXT-AWARE DEDUPLICATION:
+              // For list items (procedural steps), don't deduplicate images or tables
+              // These often legitimately repeat (e.g., same icon in multiple steps)
+              const isListItem = blockType === 'numbered_list_item' || blockType === 'bulleted_list_item';
+              
+              for (const child of children) {
+                // Skip deduplication for images and tables inside list items
+                if (isListItem && (child.type === 'image' || child.type === 'table')) {
+                  log(`${indent}  ✓ Preserving ${child.type} in ${blockType} (procedural context)`);
+                  continue;
+                }
+                
+                const key = dedupeUtil.computeBlockKey(child);
+                if (seenKeys.has(key)) {
+                  duplicateIds.push(child.id);
+                } else {
+                  seenKeys.set(key, child.id);
+                }
+              }
+              
+              // Delete duplicates
+              for (const dupId of duplicateIds) {
+                try {
+                  await notion.blocks.delete({ block_id: dupId });
+                  log(`${indent}  🚫 Deleted duplicate child block: ${dupId}`);
+                } catch (deleteError) {
+                  log(`${indent}  ❌ Failed to delete duplicate ${dupId}: ${deleteError.message}`);
+                }
+              }
+              
+              if (duplicateIds.length > 0) {
+                log(`${indent}Removed ${duplicateIds.length} duplicate(s) from ${blockType}`);
+              }
+            }
+            
+            // Recursively check children of children (for nested structures)
+            for (const child of children) {
+              if (blockTypesWithChildren.includes(child.type) && child.has_children) {
+                await deduplicateBlockChildren(child.id, child.type, depth + 1);
+              }
+            }
+          }
+          
+          for (const block of allBlocks) {
+            if (blockTypesWithChildren.includes(block.type) && block.has_children) {
+              await deduplicateBlockChildren(block.id, block.type, 0);
+            }
+          }
+          
+          log("✅ Post-orchestration deduplication complete");
+        } catch (dedupError) {
+          log(`⚠️ Post-orchestration deduplication failed: ${dedupError.message}`);
+        }
       }
     } catch (e) {
       log("⚠️ Orchestrator failed:", e && e.message);
