@@ -109,14 +109,18 @@ function dedupeAndFilterBlocks(blockArray, options = {}) {
         }
       }
       
-      // Never dedupe callouts with common patterns like "Before you begin" or "Role required"
+      // Never dedupe callouts with common STANDALONE patterns (title-only without content)
+      // But DO dedupe callouts with full content (e.g., "Note: Any customizations...")
       if (blk && blk.type === 'callout') {
         const txt = plainTextFromRich(blk.callout?.rich_text || []);
-        const isCommonCallout = /^(Before you begin|Role required:|Prerequisites?|Note:|Important:|Warning:)/i.test(txt.trim());
-        if (isCommonCallout) {
+        const trimmed = txt.trim();
+        // Only exempt if it's JUST the title pattern with no additional content
+        const isTitleOnly = /^(Before you begin|Role required:|Prerequisites?|Note:|Important:|Warning:)\s*$/i.test(trimmed);
+        if (isTitleOnly) {
           out.push(blk);
           continue;
         }
+        // For callouts with content after the title, use normal deduplication
       }
       
       // Filter out gray info callouts only (keep blue notes)

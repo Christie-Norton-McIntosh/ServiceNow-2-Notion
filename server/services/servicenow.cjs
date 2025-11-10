@@ -348,6 +348,9 @@ async function extractContentFromHtml(html) {
     text = text.replace(/<\/?section[^>]*>/gi, ' ');
     text = text.replace(/<\/?article[^>]*>/gi, ' ');
     
+    // CRITICAL FIX: Strip button tags - UI chrome that shouldn't appear in content
+    text = text.replace(/<button\b[^>]*>.*?<\/button>/gis, ' ');
+    
     // CRITICAL FIX: Strip <p> tags - they cause unwanted line breaks in callouts and inline text
     // Replace with space to preserve word boundaries
     text = text.replace(/<\/?p[^>]*>/gi, ' ');
@@ -1195,14 +1198,18 @@ async function extractContentFromHtml(html) {
       
       // Check if any div.p elements contain nested blocks - if so, treat the entire div.p as a nested block
       const divPWithBlocks = $elem.find('> div.p').filter((i, divP) => {
-        return $(divP).find('> ul, > ol, > figure, > table, > pre').length > 0;
+        return $(divP).find('> ul, > ol, > figure, > table, > pre, > div.note').length > 0;
       });
       
       const allNestedBlocks = $([...directNestedBlocks.toArray(), ...divPWithBlocks.toArray()]);
       
-      console.log(`🔍 Callout nested blocks check: found ${directNestedBlocks.length} direct + ${divPWithBlocks.length} div.p with blocks = ${allNestedBlocks.length} total`);
-      
+      console.log(`🔍 [CALLOUT-NESTED] Found ${directNestedBlocks.length} direct + ${divPWithBlocks.length} div.p with blocks = ${allNestedBlocks.length} total`);
       if (allNestedBlocks.length > 0) {
+        const nestedTypes = allNestedBlocks.toArray().map(el => {
+          const className = $(el).attr('class');
+          return `<${el.name}${className ? ` class="${className}"` : ''}>`;
+        }).join(', ');
+        console.log(`🔍 [CALLOUT-NESTED] Types: ${nestedTypes}`);
         console.log(`🔍 Callout contains ${allNestedBlocks.length} nested block elements - processing with children`);
         
         // Clone and remove nested blocks to get just the text content
@@ -1213,9 +1220,15 @@ async function extractContentFromHtml(html) {
         // Remove div.p elements that contain nested blocks (these are processed as child blocks)
         $clone.find('> div.p').each((i, divP) => {
           const $divP = $(divP);
-          const hasNestedBlocks = $divP.find('> ul, > ol, > figure, > table, > pre').length > 0;
+          const nestedBlocksFound = $divP.find('> ul, > ol, > figure, > table, > pre, > div.note');
+          const hasNestedBlocks = nestedBlocksFound.length > 0;
           if (hasNestedBlocks) {
-            console.log(`🔍 Removing div.p with nested blocks from callout text (will be processed as child block)`);
+            const nestedTypes = nestedBlocksFound.toArray().map(el => {
+              const className = $(el).attr('class');
+              return `<${el.name}${className ? ` class="${className}"` : ''}>`;
+            }).join(', ');
+            console.log(`🔍 [CALLOUT-NESTED] Removing div.p with nested blocks from callout text: ${nestedTypes}`);
+            console.log(`🔍 [CALLOUT-NESTED] div.p HTML (first 200 chars): ${$divP.html().substring(0, 200)}`);
             $divP.remove();
           }
         });
@@ -1633,6 +1646,13 @@ async function extractContentFromHtml(html) {
       
     } else if (tagName === 'img') {
       // Image (standalone)
+      // CRITICAL: Skip images that are inside list items - they'll be extracted by parseRichText
+      const isInsideListItem = $elem.closest('li').length > 0;
+      if (isInsideListItem) {
+        console.log(`🖼️ [INLINE-IMAGE] Skipping <img> inside list item (will be extracted by parseRichText)`);
+        return []; // Don't process or remove - let list item handle it
+      }
+      
       const src = $elem.attr('src');
       const alt = $elem.attr('alt') || '';
       console.log(`🖼️ Processing standalone <img>: src="${src ? src.substring(0, 80) : 'none'}", alt="${alt}"`);
@@ -1793,8 +1813,8 @@ async function extractContentFromHtml(html) {
         // Step 1: Find immediate block children
         let nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.stepxmp, > div.note').toArray();
         
-        // Step 2: Also look for blocks nested inside plain wrapper divs or div.p
-        $li.find('> div:not(.note):not(.table-wrap):not(.stepxmp), > div.p').each((i, wrapper) => {
+        // Step 2: Also look for blocks nested inside plain wrapper divs (NOT div.p, which is handled in step 1)
+        $li.find('> div:not(.note):not(.table-wrap):not(.stepxmp):not(.p)').each((i, wrapper) => {
           // Find blocks inside this wrapper
           const innerBlocks = $(wrapper).find('> table, > div.table-wrap, > div.note, > pre, > ul, > ol, > figure').toArray();
           if (innerBlocks.length > 0) {
@@ -1846,40 +1866,47 @@ async function extractContentFromHtml(html) {
             // Separate immediate children (list items, images) from deferred blocks (paragraphs, tables, etc.)
             const immediateChildren = [];
             
+            // CRITICAL FIX: Add images extracted from text content as immediate children
+            if (liImages && liImages.length > 0) {
+              console.log(`🔍 [INLINE-IMAGE-FIX-UL] Adding ${liImages.length} image(s) from text content to bulleted list immediateChildren`);
+              immediateChildren.push(...liImages);
+            }
+            
             nestedChildren.forEach(block => {
-              // Check if block already has a marker from nested processing
-              // IMPORTANT: Callouts with markers have their own nested content that should be orchestrated to them, not to the list item
-              // Only add the callout itself, not its children (which share the same marker)
-              if (block && block._sn2n_marker) {
-                // Check if this is a callout with a marker token (meaning it has nested content)
-                const isCalloutWithMarker = block.type === 'callout' && 
-                  block.callout?.rich_text?.some(rt => rt.text?.content?.includes('(sn2n:'));
-                
-                if (isCalloutWithMarker) {
-                  // Callout with marker token - add it, but its children will be orchestrated to the callout separately
-                  console.log(`🔍 Block type "callout" has marker ${block._sn2n_marker} and marker token - adding to marked blocks (children orchestrated separately)`);
-                  markedBlocks.push(block);
-                  return;
-                }
-                
-                // For other blocks with markers, check if they're children of a callout (same marker ID)
-                // If so, skip them - they'll be orchestrated as children of the callout
-                const parentCalloutMarker = markedBlocks.find(b => 
-                  b.type === 'callout' && 
-                  b.callout?.rich_text?.some(rt => rt.text?.content?.includes(`(sn2n:${block._sn2n_marker})`))
-                );
-                
-                if (parentCalloutMarker) {
-                  console.log(`🔍 Block type "${block.type}" has marker ${block._sn2n_marker} - skipping (child of callout with same marker)`);
-                  return; // Skip - this block will be orchestrated as a child of the callout
-                }
-                
-                console.log(`🔍 Block type "${block.type}" already has marker ${block._sn2n_marker} - adding to marked blocks for this list item`);
-                markedBlocks.push(block);
-                return; // Skip further processing for this block
+              // Debug: Log every nested block to see its state
+              if (block) {
+                const blockType = block.type;
+                const hasMarker = !!block._sn2n_marker;
+                const richTextPreview = block[blockType]?.rich_text?.map(rt => rt.text?.content || '').join('').substring(0, 40);
+                console.log(`🔍 [NESTED-BLOCK-STATE-UL] Type: ${blockType}, hasMarker: ${hasMarker}, text: "${richTextPreview}..."`);
               }
               
-              if (block && block.type === 'paragraph') {
+              // CRITICAL FIX: Check for marker tokens FIRST (parent blocks with own deferred children)
+              // These should be added as immediate children, regardless of whether they also have _sn2n_marker
+              const blockType = block.type;
+              const hasMarkerToken = block && ['bulleted_list_item', 'numbered_list_item', 'callout', 'to_do', 'toggle'].includes(blockType) &&
+                block[blockType]?.rich_text?.some(rt => rt.text?.content?.includes('(sn2n:'));
+              
+              if (hasMarkerToken) {
+                // This is a parent block with its own deferred children - add as immediate child
+                if (['bulleted_list_item', 'numbered_list_item', 'to_do', 'toggle'].includes(blockType)) {
+                  const preview = block[blockType]?.rich_text?.map(rt => rt.text?.content || '').join('').substring(0, 40);
+                  console.log(`🔍 [NESTING-FIX] "${blockType}" with marker token → IMMEDIATE CHILD: "${preview}..."`);
+                  immediateChildren.push(block);
+                }
+                return; // Don't re-mark - it has its own marker system
+              }
+              
+              // Check if block already has a marker from nested processing
+              // IMPORTANT: Callouts/blocks with markers have their own nested content that should be orchestrated to them, not to the list item
+              // Only add the callout itself, not its children (which share the same marker)
+              if (block && block._sn2n_marker) {
+                // This is a deferred child block (has marker but no marker token)
+                // It belongs to a CHILD element and should NOT be re-marked with parent's marker
+                // Will be added separately via blocksWithExistingMarkers logic
+                console.log(`🔍 [NESTING-FIX] "${block.type}" has marker ${block._sn2n_marker} - preserving original association`);
+                return; // Skip - preserve original marker association
+              }              if (block && block.type === 'paragraph') {
                 console.log(`⚠️ Standalone paragraph needs marker for deferred append to bulleted_list_item`);
                 markedBlocks.push(block);
                 // IMPORTANT: Return here so paragraph is NOT added to immediateChildren
@@ -2000,34 +2027,26 @@ async function extractContentFromHtml(html) {
                 
                 processedBlocks.push(listItemBlock);
                 
-                // Add marked blocks to processedBlocks so they get collected by orchestrator
-                // These will be removed from initial payload and appended via API after page creation
+                // Add marked blocks as children of list item so collectAndStripMarkers can find them
+                // They will be collected into markerMap and orchestrated after page creation
                 if (markedBlocks.length > 0) {
-                  processedBlocks.push(...markedBlocks);
+                  if (!listItemBlock.bulleted_list_item.children) {
+                    listItemBlock.bulleted_list_item.children = [];
+                  }
+                  listItemBlock.bulleted_list_item.children.push(...markedBlocks);
+                  console.log(`🔍 Added ${markedBlocks.length} marked blocks to list item's children (will be collected & orchestrated)`);
                 }
               }
               
-              // Add blocks from nested children that already have markers (from nested list processing)
-              // These preserve their original markers and parent associations
-              // BUT only if they're not already being added as immediate children or marked blocks
-              // ALSO skip blocks whose marker matches a parent block's marker (they're children of that parent)
-              const blocksWithExistingMarkers = nestedChildren.filter(b => {
-                if (!b || !b._sn2n_marker) return false;
-                // Check if already in immediateChildren or markedBlocks
-                const alreadyAdded = immediateChildren.includes(b) || markedBlocks.includes(b);
-                if (alreadyAdded) return false;
-                
-                // Check if this block's marker matches any other block's marker in markedBlocks
-                // If so, it's a child of that block and shouldn't be added separately
-                const isChildOfMarkedBlock = markedBlocks.some(parent => 
-                  parent && parent._sn2n_marker === b._sn2n_marker
-                );
-                return !isChildOfMarkedBlock;
-              });
-              if (blocksWithExistingMarkers.length > 0) {
-                console.log(`🔍 Adding ${blocksWithExistingMarkers.length} blocks with existing markers from nested processing (bulleted)`);
-                processedBlocks.push(...blocksWithExistingMarkers);
-              }
+              // IMPORTANT: Blocks with existing markers (_sn2n_marker) from nested processing
+              // should NOT be pushed to processedBlocks here. They are already in the children
+              // array of their parent list item (via immediateChildren), and collectAndStripMarkers
+              // will find them there, move them to the marker map, and mark them as collected.
+              // Pushing them here would create duplicates in the initial payload.
+              // 
+              // Example: "Table labels renamed" (bulleted_list_item with marker token) is in
+              // immediateChildren of "Tables", so its child table (with _sn2n_marker) is in
+              // "Table labels renamed"'s children array. collectAndStripMarkers will handle it.
             }
           } else if (nestedChildren.length > 0) {
             // No text content, but has nested blocks
@@ -2074,18 +2093,21 @@ async function extractContentFromHtml(html) {
                 console.log(`🔍 Added marker ${markerToken} for ${markedBlocks.length} deferred blocks (promoted paragraph children)`);
               }
               
-              processedBlocks.push({
+              const listItemBlock = {
                 object: "block",
                 type: "bulleted_list_item",
                 bulleted_list_item: {
                   rich_text: richText,
-                  children: undefined  // No direct children - all deferred
                 },
-              });
+              };
               
+              // Add marked blocks as children so collectAndStripMarkers can find them
               if (markedBlocks.length > 0) {
-                processedBlocks.push(...markedBlocks);
+                listItemBlock.bulleted_list_item.children = markedBlocks;
+                console.log(`🔍 Added ${markedBlocks.length} marked blocks to promoted paragraph list item's children`);
               }
+              
+              processedBlocks.push(listItemBlock);
             } else {
               // No paragraph to promote, create empty list item with children
               const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'paragraph', 'to_do', 'toggle', 'image'];
@@ -2129,18 +2151,22 @@ async function extractContentFromHtml(html) {
               }
               
               if (validChildren.length > 0 || markedBlocks.length > 0) {
-                processedBlocks.push({
+                const listItemBlock = {
                   object: "block",
                   type: "bulleted_list_item",
                   bulleted_list_item: {
                     rich_text: richText,
-                    children: validChildren.length > 0 ? validChildren : undefined
+                    children: validChildren.length > 0 ? validChildren : []
                   },
-                });
+                };
                 
+                // Add marked blocks as children so collectAndStripMarkers can find them
                 if (markedBlocks.length > 0) {
-                  processedBlocks.push(...markedBlocks);
+                  listItemBlock.bulleted_list_item.children.push(...markedBlocks);
+                  console.log(`🔍 Added ${markedBlocks.length} marked blocks to empty list item's children`);
                 }
+                
+                processedBlocks.push(listItemBlock);
               }
             }
           }
@@ -2151,7 +2177,7 @@ async function extractContentFromHtml(html) {
           liHtml = liHtml.replace(/<svg[\s\S]*?<\/svg>/gi, '');
           console.log(`🔍 List item HTML: "${liHtml.substring(0, 100)}"`);
           const { richText: liRichText, imageBlocks: liImages } = await parseRichText(liHtml);
-          console.log(`🔍 List item rich_text: ${liRichText.length} elements`);
+          console.log(`🔍 [INLINE-IMAGE-CHECK] List item parsed: ${liRichText.length} rich_text elements, ${liImages ? liImages.length : 0} images`);
           
           // Debug: Log the actual text content
           if (liRichText.length > 0) {
@@ -2159,8 +2185,14 @@ async function extractContentFromHtml(html) {
             console.log(`🔍 List item text content: "${textPreview}"`);
           }
           
+          // Debug: Log if we found images
+          if (liImages && liImages.length > 0) {
+            console.log(`🔍 [INLINE-IMAGE-CHECK] Found ${liImages.length} image(s) in list item HTML`);
+          }
+          
           const richTextChunks = splitRichTextArray(liRichText);
-          for (const chunk of richTextChunks) {
+          for (let chunkIndex = 0; chunkIndex < richTextChunks.length; chunkIndex++) {
+            const chunk = richTextChunks[chunkIndex];
             const listItemBlock = {
               object: "block",
               type: "bulleted_list_item",
@@ -2171,7 +2203,8 @@ async function extractContentFromHtml(html) {
             
             // Mark images for deferred orchestration to avoid 4-level nesting
             // (numbered_list_item > bulleted_list_item > numbered_list_item > image)
-            if (liImages && liImages.length > 0) {
+            // CRITICAL: Only attach images to the FIRST chunk to avoid duplicate markers
+            if (liImages && liImages.length > 0 && chunkIndex === 0) {
               const marker = generateMarker();
               const markerToken = `(sn2n:${marker})`;
               liImages.forEach(img => {
@@ -2189,11 +2222,18 @@ async function extractContentFromHtml(html) {
                   color: "default"
                 }
               });
-              console.log(`🔍 Creating bulleted_list_item with ${chunk.length} rich_text elements`);
-              console.log(`🔍 Added marker ${markerToken} for ${liImages.length} deferred image(s)`);
+              console.log(`🔍 [INLINE-IMAGE-ATTACH] Creating bulleted_list_item with ${chunk.length} rich_text elements`);
+              console.log(`🔍 [INLINE-IMAGE-ATTACH] Added marker ${markerToken} for ${liImages.length} deferred image(s)`);
+              
+              // Add images as children so collectAndStripMarkers can find them
+              listItemBlock.bulleted_list_item.children = liImages;
+              console.log(`🔍 [INLINE-IMAGE-ATTACH] Added ${liImages.length} inline images to simple list item's children (will be collected & orchestrated)`);
+              console.log(`🔍 [INLINE-IMAGE-ATTACH] Children array: ${JSON.stringify(listItemBlock.bulleted_list_item.children.map(c => ({ type: c.type, hasMarker: !!c._sn2n_marker })))}`);
               processedBlocks.push(listItemBlock);
-              processedBlocks.push(...liImages);
             } else {
+              if (chunkIndex > 0 && liImages && liImages.length > 0) {
+                console.log(`🔍 [INLINE-IMAGE-SKIP] Skipping image attachment for chunk ${chunkIndex} (not first chunk)`);
+              }
               console.log(`🔍 Creating bulleted_list_item with ${chunk.length} rich_text elements`);
               processedBlocks.push(listItemBlock);
             }
@@ -2272,37 +2312,38 @@ async function extractContentFromHtml(html) {
             // Separate immediate children (list items, images) from deferred blocks (paragraphs, tables, etc.)
             const immediateChildren = [];
             
+            // CRITICAL FIX: Add images extracted from text content as immediate children
+            if (liImages && liImages.length > 0) {
+              console.log(`🔍 [INLINE-IMAGE-FIX-OL] Adding ${liImages.length} image(s) from text content to numbered list immediateChildren`);
+              immediateChildren.push(...liImages);
+            }
+            
             nestedChildren.forEach(block => {
+              // CRITICAL FIX: Check for marker tokens FIRST (parent blocks with own deferred children)
+              // These should be added as immediate children, regardless of whether they also have _sn2n_marker
+              const blockType = block.type;
+              const hasMarkerToken = block && ['bulleted_list_item', 'numbered_list_item', 'callout', 'to_do', 'toggle'].includes(blockType) &&
+                block[blockType]?.rich_text?.some(rt => rt.text?.content?.includes('(sn2n:'));
+              
+              if (hasMarkerToken) {
+                // This is a parent block with its own deferred children - add as immediate child
+                if (['bulleted_list_item', 'numbered_list_item', 'to_do', 'toggle'].includes(blockType)) {
+                  const preview = block[blockType]?.rich_text?.map(rt => rt.text?.content || '').join('').substring(0, 40);
+                  console.log(`🔍 [NESTING-FIX] "${blockType}" with marker token → IMMEDIATE CHILD: "${preview}..."`);
+                  immediateChildren.push(block);
+                }
+                return; // Don't re-mark - it has its own marker system
+              }
+              
               // Check if block already has a marker from nested processing
-              // IMPORTANT: Callouts with markers have their own nested content that should be orchestrated to them, not to the list item
+              // IMPORTANT: Callouts/blocks with markers have their own nested content that should be orchestrated to them, not to the list item
               // Only add the callout itself, not its children (which share the same marker)
               if (block && block._sn2n_marker) {
-                // Check if this is a callout with a marker token (meaning it has nested content)
-                const isCalloutWithMarker = block.type === 'callout' && 
-                  block.callout?.rich_text?.some(rt => rt.text?.content?.includes('(sn2n:'));
-                
-                if (isCalloutWithMarker) {
-                  // Callout with marker token - add it, but its children will be orchestrated to the callout separately
-                  console.log(`🔍 Block type "callout" has marker ${block._sn2n_marker} and marker token - adding to marked blocks (children orchestrated separately)`);
-                  markedBlocks.push(block);
-                  return;
-                }
-                
-                // For other blocks with markers, check if they're children of a callout (same marker ID)
-                // If so, skip them - they'll be orchestrated as children of the callout
-                const parentCalloutMarker = markedBlocks.find(b => 
-                  b.type === 'callout' && 
-                  b.callout?.rich_text?.some(rt => rt.text?.content?.includes(`(sn2n:${block._sn2n_marker})`))
-                );
-                
-                if (parentCalloutMarker) {
-                  console.log(`🔍 Block type "${block.type}" has marker ${block._sn2n_marker} - skipping (child of callout with same marker)`);
-                  return; // Skip - this block will be orchestrated as a child of the callout
-                }
-                
-                console.log(`🔍 Block type "${block.type}" already has marker ${block._sn2n_marker} - adding to marked blocks for this list item`);
-                markedBlocks.push(block);
-                return; // Skip further processing for this block
+                // This is a deferred child block (has marker but no marker token)
+                // It belongs to a CHILD element and should NOT be re-marked with parent's marker
+                // Will be added separately via blocksWithExistingMarkers logic
+                console.log(`🔍 [NESTING-FIX] "${block.type}" has marker ${block._sn2n_marker} - preserving original association`);
+                return; // Skip - preserve original marker association
               }
               
               if (block && block.type === 'paragraph') {
@@ -2428,10 +2469,14 @@ async function extractContentFromHtml(html) {
                 
                 processedBlocks.push(listItemBlock);
                 
-                // Add marked blocks to processedBlocks so they get collected by orchestrator
-                // These will be removed from initial payload and appended via API after page creation
+                // Add marked blocks as children of list item so collectAndStripMarkers can find them
+                // They will be collected into markerMap and orchestrated after page creation
                 if (markedBlocks.length > 0) {
-                  processedBlocks.push(...markedBlocks);
+                  if (!listItemBlock.numbered_list_item.children) {
+                    listItemBlock.numbered_list_item.children = [];
+                  }
+                  listItemBlock.numbered_list_item.children.push(...markedBlocks);
+                  console.log(`🔍 Added ${markedBlocks.length} marked blocks to ordered list item's children (will be collected & orchestrated)`);
                 }
               }
               
@@ -2502,18 +2547,21 @@ async function extractContentFromHtml(html) {
                 console.log(`🔍 Added marker ${markerToken} for ${markedBlocks.length} deferred blocks (promoted paragraph children)`);
               }
               
-              processedBlocks.push({
+              const listItemBlock = {
                 object: "block",
                 type: "numbered_list_item",
                 numbered_list_item: {
                   rich_text: richText,
-                  children: undefined  // No direct children - all deferred
                 },
-              });
+              };
               
+              // Add marked blocks as children so collectAndStripMarkers can find them
               if (markedBlocks.length > 0) {
-                processedBlocks.push(...markedBlocks);
+                listItemBlock.numbered_list_item.children = markedBlocks;
+                console.log(`🔍 Added ${markedBlocks.length} marked blocks to promoted paragraph numbered list item's children`);
               }
+              
+              processedBlocks.push(listItemBlock);
             } else {
               // No paragraph to promote, create empty list item with children
               const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'paragraph', 'to_do', 'toggle', 'image'];
@@ -2557,18 +2605,22 @@ async function extractContentFromHtml(html) {
               }
               
               if (validChildren.length > 0 || markedBlocks.length > 0) {
-                processedBlocks.push({
+                const listItemBlock = {
                   object: "block",
                   type: "numbered_list_item",
                   numbered_list_item: {
                     rich_text: richText,
-                    children: validChildren.length > 0 ? validChildren : undefined
+                    children: validChildren.length > 0 ? validChildren : []
                   },
-                });
+                };
                 
+                // Add marked blocks as children so collectAndStripMarkers can find them
                 if (markedBlocks.length > 0) {
-                  processedBlocks.push(...markedBlocks);
+                  listItemBlock.numbered_list_item.children.push(...markedBlocks);
+                  console.log(`🔍 Added ${markedBlocks.length} marked blocks to empty numbered list item's children`);
                 }
+                
+                processedBlocks.push(listItemBlock);
               }
             }
           }
@@ -2588,7 +2640,8 @@ async function extractContentFromHtml(html) {
           }
           
           const richTextChunks = splitRichTextArray(liRichText);
-          for (const chunk of richTextChunks) {
+          for (let chunkIndex = 0; chunkIndex < richTextChunks.length; chunkIndex++) {
+            const chunk = richTextChunks[chunkIndex];
             const listItemBlock = {
               object: "block",
               type: "numbered_list_item",
@@ -2599,7 +2652,8 @@ async function extractContentFromHtml(html) {
             
             // Mark images for deferred orchestration to avoid 4-level nesting
             // (numbered_list_item > bulleted_list_item > numbered_list_item > image)
-            if (liImages && liImages.length > 0) {
+            // CRITICAL: Only attach images to the FIRST chunk to avoid duplicate markers
+            if (liImages && liImages.length > 0 && chunkIndex === 0) {
               const marker = generateMarker();
               const markerToken = `(sn2n:${marker})`;
               liImages.forEach(img => {
@@ -2619,8 +2673,11 @@ async function extractContentFromHtml(html) {
               });
               console.log(`🔍 Creating numbered_list_item with ${chunk.length} rich_text elements`);
               console.log(`🔍 Added marker ${markerToken} for ${liImages.length} deferred image(s)`);
+              
+              // Add images as children so collectAndStripMarkers can find them
+              listItemBlock.numbered_list_item.children = liImages;
+              console.log(`🔍 Added ${liImages.length} inline images to simple numbered list item's children (will be collected & orchestrated)`);
               processedBlocks.push(listItemBlock);
-              processedBlocks.push(...liImages);
             } else {
               console.log(`🔍 Creating numbered_list_item with ${chunk.length} rich_text elements`);
               processedBlocks.push(listItemBlock);
@@ -2648,7 +2705,7 @@ async function extractContentFromHtml(html) {
           const isTextNode = node.nodeType === 3;
           const isElementNode = node.nodeType === 1;
           const nodeName = (node.name || node.nodeName || node.tagName || '').toUpperCase();
-          const isBlockElement = isElementNode && ['DIV', 'TABLE'].includes(nodeName);
+          const isBlockElement = isElementNode && ['DIV', 'TABLE', 'UL', 'OL', 'FIGURE', 'PRE'].includes(nodeName);
           
           // If it's a text node or inline element (not a block container like div.table-wrap)
           if (isTextNode || (isElementNode && !isBlockElement)) {
@@ -2676,9 +2733,11 @@ async function extractContentFromHtml(html) {
               currentTextHtml = '';
             }
             
-            // Process the block element (table, etc.)
+            // Process the block element (table, div.note, etc.)
             const childBlocks = await processElement(node);
             processedBlocks.push(...childBlocks);
+            // Remove the processed node from DOM to prevent double-processing by parent elements
+            $(node).remove();
           }
         }
         
@@ -2893,6 +2952,7 @@ async function extractContentFromHtml(html) {
       // Parse each child (including text nodes) separately to preserve paragraph boundaries
       const richTextElements = [];
       const imageBlocks = [];
+      const nestedBlocks = []; // Track child blocks (like nested div.note)
       
       // Get all direct children INCLUDING text nodes (use .contents() not .children())
       const allChildren = $elem.contents();
@@ -2935,24 +2995,62 @@ async function extractContentFromHtml(html) {
           
           console.log(`🔍   Child ${i}: <${childTag}> class="${$child.attr('class')}" content="${childHtml.substring(0, 60)}..."`);
           
-          // Parse this child's HTML to rich text
-          const { richText: childRichText, imageBlocks: childImages } = await parseRichText(childHtml);
-          
-          // Add a line break between children (but not before the first one)
-          if (richTextElements.length > 0 && childRichText.length > 0) {
-            const lastIdx = richTextElements.length - 1;
-            richTextElements[lastIdx] = {
-              ...richTextElements[lastIdx],
-              text: { 
-                ...richTextElements[lastIdx].text, 
-                content: richTextElements[lastIdx].text.content + '\n' 
+          // CRITICAL FIX: Check if this child contains nested div.note elements
+          // If it does, extract them as separate blocks instead of including their text
+          const nestedNotes = $child.find('div.note');
+          if (nestedNotes.length > 0) {
+            console.log(`🔍 [PREREQ-NESTED-NOTE] Found ${nestedNotes.length} nested div.note in <${childTag}>`);
+            
+            // Clone and remove the nested notes to get just the wrapper text
+            const $childClone = $child.clone();
+            $childClone.find('div.note').remove();
+            const textOnlyHtml = $childClone.html() || '';
+            
+            // Parse the text without the notes
+            if (textOnlyHtml.trim()) {
+              const { richText: childRichText, imageBlocks: childImages } = await parseRichText(textOnlyHtml);
+              
+              if (richTextElements.length > 0 && childRichText.length > 0) {
+                const lastIdx = richTextElements.length - 1;
+                richTextElements[lastIdx] = {
+                  ...richTextElements[lastIdx],
+                  text: { 
+                    ...richTextElements[lastIdx].text, 
+                    content: richTextElements[lastIdx].text.content + '\n' 
+                  }
+                };
               }
-            };
-            console.log(`🔍   Added line break after previous child`);
+              
+              richTextElements.push(...childRichText);
+              imageBlocks.push(...childImages);
+            }
+            
+            // Process each nested note as a separate block
+            for (const note of nestedNotes.toArray()) {
+              console.log(`🔍 [PREREQ-NESTED-NOTE] Processing nested div.note as child block`);
+              const noteBlocks = await processElement(note);
+              nestedBlocks.push(...noteBlocks);
+            }
+          } else {
+            // No nested notes - process normally
+            const { richText: childRichText, imageBlocks: childImages } = await parseRichText(childHtml);
+            
+            // Add a line break between children (but not before the first one)
+            if (richTextElements.length > 0 && childRichText.length > 0) {
+              const lastIdx = richTextElements.length - 1;
+              richTextElements[lastIdx] = {
+                ...richTextElements[lastIdx],
+                text: { 
+                  ...richTextElements[lastIdx].text, 
+                  content: richTextElements[lastIdx].text.content + '\n' 
+                }
+              };
+              console.log(`🔍   Added line break after previous child`);
+            }
+            
+            richTextElements.push(...childRichText);
+            imageBlocks.push(...childImages);
           }
-          
-          richTextElements.push(...childRichText);
-          imageBlocks.push(...childImages);
         }
       }
       
@@ -2971,9 +3069,12 @@ async function extractContentFromHtml(html) {
       if (richTextElements.length > 0 && richTextElements.some(rt => rt.text.content.trim())) {
         // Line breaks are already added between children, so we can use the rich text as-is
         const richTextChunks = splitRichTextArray(richTextElements);
-        console.log(`🔍 Creating ${richTextChunks.length} prereq callout block(s)`);
-        for (const chunk of richTextChunks) {
-          processedBlocks.push({
+        console.log(`🔍 Creating ${richTextChunks.length} prereq callout block(s) with ${nestedBlocks.length} nested blocks`);
+        
+        // If there are nested blocks, add them to the FIRST callout chunk using markers
+        for (let i = 0; i < richTextChunks.length; i++) {
+          const chunk = richTextChunks[i];
+          const calloutBlock = {
             object: "block",
             type: "callout",
             callout: {
@@ -2981,7 +3082,37 @@ async function extractContentFromHtml(html) {
               icon: { type: "emoji", emoji: "📍" },
               color: "default"
             }
-          });
+          };
+          
+          // Add nested blocks as children to the first callout
+          if (i === 0 && nestedBlocks.length > 0) {
+            const marker = generateMarker();
+            const markerToken = `(sn2n:${marker})`;
+            
+            // Add marker token to callout rich text
+            calloutBlock.callout.rich_text.push({
+              type: "text",
+              text: { content: ` ${markerToken}` },
+              annotations: {
+                bold: false,
+                italic: false,
+                strikethrough: false,
+                underline: false,
+                code: false,
+                color: "default"
+              }
+            });
+            
+            // Tag nested blocks with marker and add as children
+            nestedBlocks.forEach(block => {
+              block._sn2n_marker = marker;
+            });
+            calloutBlock.callout.children = nestedBlocks;
+            
+            console.log(`🔍 [PREREQ-NESTED-NOTE] Added ${nestedBlocks.length} nested blocks to prereq callout children with marker ${markerToken}`);
+          }
+          
+          processedBlocks.push(calloutBlock);
         }
       }
       
