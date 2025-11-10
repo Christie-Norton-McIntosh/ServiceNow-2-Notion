@@ -2163,7 +2163,8 @@ async function extractContentFromHtml(html) {
           }
           
           const richTextChunks = splitRichTextArray(liRichText);
-          for (const chunk of richTextChunks) {
+          for (let chunkIndex = 0; chunkIndex < richTextChunks.length; chunkIndex++) {
+            const chunk = richTextChunks[chunkIndex];
             const listItemBlock = {
               object: "block",
               type: "bulleted_list_item",
@@ -2174,7 +2175,8 @@ async function extractContentFromHtml(html) {
             
             // Mark images for deferred orchestration to avoid 4-level nesting
             // (numbered_list_item > bulleted_list_item > numbered_list_item > image)
-            if (liImages && liImages.length > 0) {
+            // CRITICAL: Only attach images to the FIRST chunk to avoid duplicate markers
+            if (liImages && liImages.length > 0 && chunkIndex === 0) {
               const marker = generateMarker();
               const markerToken = `(sn2n:${marker})`;
               liImages.forEach(img => {
@@ -2600,7 +2602,8 @@ async function extractContentFromHtml(html) {
           }
           
           const richTextChunks = splitRichTextArray(liRichText);
-          for (const chunk of richTextChunks) {
+          for (let chunkIndex = 0; chunkIndex < richTextChunks.length; chunkIndex++) {
+            const chunk = richTextChunks[chunkIndex];
             const listItemBlock = {
               object: "block",
               type: "numbered_list_item",
@@ -2611,7 +2614,8 @@ async function extractContentFromHtml(html) {
             
             // Mark images for deferred orchestration to avoid 4-level nesting
             // (numbered_list_item > bulleted_list_item > numbered_list_item > image)
-            if (liImages && liImages.length > 0) {
+            // CRITICAL: Only attach images to the FIRST chunk to avoid duplicate markers
+            if (liImages && liImages.length > 0 && chunkIndex === 0) {
               const marker = generateMarker();
               const markerToken = `(sn2n:${marker})`;
               liImages.forEach(img => {
