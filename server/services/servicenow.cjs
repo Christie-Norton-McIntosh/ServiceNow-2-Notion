@@ -2002,13 +2002,18 @@ async function extractContentFromHtml(html) {
                   console.log(`🔍 Added ${allChildren.length} nested blocks as children of list item`);
                 }
                 
-                processedBlocks.push(listItemBlock);
-                
-                // Add marked blocks to processedBlocks so they get collected by orchestrator
-                // These will be removed from initial payload and appended via API after page creation
+                // CRITICAL: Add marked blocks to list item's children array, not to processedBlocks
+                // This ensures collectAndStripMarkers can find them in the hierarchy and collect them
+                // The blocks have _sn2n_marker property and will be moved to markerMap during collection
                 if (markedBlocks.length > 0) {
-                  processedBlocks.push(...markedBlocks);
+                  if (!listItemBlock.bulleted_list_item.children) {
+                    listItemBlock.bulleted_list_item.children = [];
+                  }
+                  listItemBlock.bulleted_list_item.children.push(...markedBlocks);
+                  console.log(`🔍 Added ${markedBlocks.length} marked blocks to list item's children (will be collected & orchestrated)`);
                 }
+                
+                processedBlocks.push(listItemBlock);
               }
               
               // IMPORTANT: Blocks with existing markers (_sn2n_marker) from nested processing
@@ -2413,36 +2418,25 @@ async function extractContentFromHtml(html) {
                   console.log(`🔍 Added ${allChildren.length} nested blocks as children of ordered list item`);
                 }
                 
-                processedBlocks.push(listItemBlock);
-                
-                // Add marked blocks to processedBlocks so they get collected by orchestrator
-                // These will be removed from initial payload and appended via API after page creation
+                // CRITICAL: Add marked blocks to list item's children array, not to processedBlocks
+                // This ensures collectAndStripMarkers can find them in the hierarchy and collect them
+                // The blocks have _sn2n_marker property and will be moved to markerMap during collection
                 if (markedBlocks.length > 0) {
-                  processedBlocks.push(...markedBlocks);
+                  if (!listItemBlock.numbered_list_item.children) {
+                    listItemBlock.numbered_list_item.children = [];
+                  }
+                  listItemBlock.numbered_list_item.children.push(...markedBlocks);
+                  console.log(`🔍 Added ${markedBlocks.length} marked blocks to ordered list item's children (will be collected & orchestrated)`);
                 }
+                
+                processedBlocks.push(listItemBlock);
               }
               
-              // Add blocks from nested children that already have markers (from nested list processing)
-              // These preserve their original markers and parent associations
-              // BUT only if they're not already being added as immediate children or marked blocks
-              // ALSO skip blocks whose marker matches a parent block's marker (they're children of that parent)
-              const blocksWithExistingMarkers = nestedChildren.filter(b => {
-                if (!b || !b._sn2n_marker) return false;
-                // Check if already in immediateChildren or markedBlocks
-                const alreadyAdded = immediateChildren.includes(b) || markedBlocks.includes(b);
-                if (alreadyAdded) return false;
-                
-                // Check if this block's marker matches any other block's marker in markedBlocks
-                // If so, it's a child of that block and shouldn't be added separately
-                const isChildOfMarkedBlock = markedBlocks.some(parent => 
-                  parent && parent._sn2n_marker === b._sn2n_marker
-                );
-                return !isChildOfMarkedBlock;
-              });
-              if (blocksWithExistingMarkers.length > 0) {
-                console.log(`🔍 Adding ${blocksWithExistingMarkers.length} blocks with existing markers from nested processing (ordered)`);
-                processedBlocks.push(...blocksWithExistingMarkers);
-              }
+              // IMPORTANT: Blocks with existing markers (_sn2n_marker) from nested processing
+              // should NOT be pushed to processedBlocks here. They are already in the children
+              // array of their parent list item (via immediateChildren), and collectAndStripMarkers
+              // will find them there, move them to the marker map, and mark them as collected.
+              // Pushing them here would create duplicates in the initial payload.
             }
           } else if (nestedChildren.length > 0) {
             // No text content, but has nested blocks
