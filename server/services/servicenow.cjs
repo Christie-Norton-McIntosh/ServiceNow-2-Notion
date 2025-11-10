@@ -348,6 +348,9 @@ async function extractContentFromHtml(html) {
     text = text.replace(/<\/?section[^>]*>/gi, ' ');
     text = text.replace(/<\/?article[^>]*>/gi, ' ');
     
+    // CRITICAL FIX: Strip button tags - UI chrome that shouldn't appear in content
+    text = text.replace(/<button\b[^>]*>.*?<\/button>/gis, ' ');
+    
     // CRITICAL FIX: Strip <p> tags - they cause unwanted line breaks in callouts and inline text
     // Replace with space to preserve word boundaries
     text = text.replace(/<\/?p[^>]*>/gi, ' ');
@@ -2648,7 +2651,7 @@ async function extractContentFromHtml(html) {
           const isTextNode = node.nodeType === 3;
           const isElementNode = node.nodeType === 1;
           const nodeName = (node.name || node.nodeName || node.tagName || '').toUpperCase();
-          const isBlockElement = isElementNode && ['DIV', 'TABLE'].includes(nodeName);
+          const isBlockElement = isElementNode && ['DIV', 'TABLE', 'UL', 'OL', 'FIGURE', 'PRE'].includes(nodeName);
           
           // If it's a text node or inline element (not a block container like div.table-wrap)
           if (isTextNode || (isElementNode && !isBlockElement)) {
