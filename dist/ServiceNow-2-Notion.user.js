@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.1
+// @version      11.0.2
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.1";
+    window.BUILD_VERSION = "11.0.2";
 (function () {
 
   // Configuration constants and default settings
@@ -4151,11 +4151,16 @@
         // BUT: If we just had a navigation failure, this is expected (we're retrying navigation)
         const isExpectedDuplicate = autoExtractState.navigationFailures > 0;
         
+        // Flag to skip extraction and go straight to navigation
+        let skipExtraction = false;
+        
         if (autoExtractState.processedUrls.has(currentUrl)) {
           if (isExpectedDuplicate) {
-            debug(`⚠️ DUPLICATE URL DETECTED (Expected due to navigation failure): ${currentUrl}`);
-            debug(`   Navigation failures: ${autoExtractState.navigationFailures}`);
-            debug(`   This is normal after navigation retry - will skip processing and try to navigate again`);
+            debug(`[NAV-RETRY] ⚠️ DUPLICATE URL DETECTED (Expected due to navigation failure): ${currentUrl}`);
+            debug(`[NAV-RETRY]    Navigation failures: ${autoExtractState.navigationFailures}`);
+            debug(`[NAV-RETRY]    Skipping extraction and going straight to navigation retry`);
+            // Skip all extraction and processing, go straight to navigation
+            skipExtraction = true;
           } else {
             debug(`⚠️ DUPLICATE URL DETECTED (Unexpected): ${currentUrl}`);
             debug(`❌ This URL was already processed in this session!`);
@@ -4173,46 +4178,53 @@
             
             // Skip processing this duplicate and try to navigate
             debug(`⏭️ Skipping duplicate page (count: ${autoExtractState.duplicateCount})...`);
+            skipExtraction = true;
           }
         } else {
           // Reset duplicate counter for new pages
           autoExtractState.duplicateCount = 0;
         }
         
-        // Extract current page data using the app instance
-        debug(`[AUTO-EXTRACT] 📝 Step 1: Extracting content from page ${currentPageNum}...`);
-        overlayModule.setMessage(`Extracting content from page ${currentPageNum}...`);
-        const extractedData = await app.extractCurrentPageData();
+        // Only extract if this is not a duplicate that we're skipping
+        let extractedData = null;
+        if (!skipExtraction) {
+          // Extract current page data using the app instance
+          debug(`[AUTO-EXTRACT] 📝 Step 1: Extracting content from page ${currentPageNum}...`);
+          overlayModule.setMessage(`Extracting content from page ${currentPageNum}...`);
+          extractedData = await app.extractCurrentPageData();
 
-        if (!extractedData) {
-          throw new Error("No content extracted from page");
-        }
+          if (!extractedData) {
+            throw new Error("No content extracted from page");
+          }
 
-        // Skip processing if this is a duplicate URL
-        if (autoExtractState.processedUrls.has(currentUrl)) {
-          debug(`⏭️ Skipping Notion processing for duplicate URL`);
+          // Skip processing if this is a duplicate URL
+          if (autoExtractState.processedUrls.has(currentUrl)) {
+            debug(`⏭️ Skipping Notion processing for duplicate URL`);
+          } else {
+            // Add URL to processed set
+            autoExtractState.processedUrls.add(currentUrl);
+            autoExtractState.lastPageId = currentPageId;
+            
+            // Process and save to Notion
+            debug(`[AUTO-EXTRACT] 📤 Saving page ${currentPageNum} to Notion...`);
+            overlayModule.setMessage(`Processing page ${currentPageNum}...`);
+          
+            // Process the content using the app's processWithProxy method
+            // This will internally show more detailed messages like:
+            // - "Checking proxy connection..."
+            // - "Converting content to Notion blocks..."
+            // - "Page created successfully!"
+            await app.processWithProxy(extractedData);
+            
+            // If we get here without throwing, it succeeded
+            const result = { success: true };
+
+            autoExtractState.totalProcessed++;
+            debug(`[AUTO-EXTRACT] ✅ Page ${currentPageNum} saved to Notion`);
+            overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
+          }
         } else {
-          // Add URL to processed set
-          autoExtractState.processedUrls.add(currentUrl);
-          autoExtractState.lastPageId = currentPageId;
-          
-          // Process and save to Notion
-          debug(`[AUTO-EXTRACT] 📤 Saving page ${currentPageNum} to Notion...`);
-          overlayModule.setMessage(`Processing page ${currentPageNum}...`);
-        
-          // Process the content using the app's processWithProxy method
-          // This will internally show more detailed messages like:
-          // - "Checking proxy connection..."
-          // - "Converting content to Notion blocks..."
-          // - "Page created successfully!"
-          await app.processWithProxy(extractedData);
-          
-          // If we get here without throwing, it succeeded
-          const result = { success: true };
-
-          autoExtractState.totalProcessed++;
-          debug(`[AUTO-EXTRACT] ✅ Page ${currentPageNum} saved to Notion`);
-          overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
+          debug(`[NAV-RETRY] ⏩ Skipped extraction for expected duplicate, proceeding to navigation...`);
         }
 
         // Navigate to next page
