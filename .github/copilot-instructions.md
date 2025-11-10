@@ -271,7 +271,7 @@ Note: If your edits change any client-side code (files under `src/` or the gener
   - Fixture-based: Load HTML from `tests/fixtures/`, verify block output
 - **Key Test Files:**
   - `server/test-run-extract.cjs` - Extract full pages from ServiceNow HTML fixtures
-  - `tests/test-callout-*.cjs` - Callout validation tests (Issue 1-5 fixes)
+  - `tests/test-callout-*.cjs` - Callout validation tests (Issues 1 through 5 fixes)
   - `tests/test-table-*.cjs` - Table formatting and image extraction tests
 
 ## 📋 Code-Edit Checklist
