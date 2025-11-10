@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Install deps
+        run: npm ci
+      - name: Run unit tests
+        run: npm run test:unit
+      - name: Start proxy server (background)
+        run: |
+          # Start the SN2N proxy in background
+          node server/sn2n-proxy.cjs &
+          PID=$!
+          echo "Started server with PID $PID"
+          # Wait for port 3004 to be open (timeout 30s)
+          MAX_WAIT=30
+          COUNT=0
+          until (</dev/tcp/127.0.0.1/3004) >/dev/null 2>&1; do
+            sleep 1
+            COUNT=$((COUNT + 1))
+            if [ "$COUNT" -ge "$MAX_WAIT" ]; then
+              echo "Timeout waiting for port 3004";
+              kill $PID || true;
+              exit 1;
+            fi
+          done
+          echo "Port 3004 is open"
+      - name: Run smoke tests (dryRun)
+        run: npm run test:smoke

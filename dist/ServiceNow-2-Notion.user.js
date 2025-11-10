@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      10.0.29
+// @version      11.0.1
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "10.0.29";
+    window.BUILD_VERSION = "11.0.1";
 (function () {
 
   // Configuration constants and default settings
@@ -3272,6 +3272,9 @@
       duplicateCount: 0, // Count consecutive duplicates
       processedUrls: new Set(), // Track all processed URLs to prevent duplicates
       lastPageId: null, // Track last page ID to verify navigation
+      failedPages: [], // Track pages that failed due to rate limiting or other errors for manual retry
+      rateLimitHits: 0, // Track how many times we've hit rate limits
+      navigationFailures: 0, // Track consecutive navigation failures
     };
 
     // Set up beforeunload handler to save state if page is reloaded manually
@@ -3811,6 +3814,62 @@
               return;
             }
             
+            // Check if this is a rate limit error
+            const isRateLimited = error.message && (
+              error.message.toLowerCase().includes('rate limit') ||
+              error.message.includes('429') ||
+              error.message.includes('too many requests')
+            );
+            
+            if (isRateLimited) {
+              autoExtractState.rateLimitHits++;
+              
+              // Save the failed page info for manual retry if needed
+              const failedPageInfo = {
+                pageNumber: currentPageNum,
+                url: window.location.href,
+                title: document.title,
+                timestamp: new Date().toISOString(),
+                reason: 'rate_limit',
+                errorMessage: error.message
+              };
+              autoExtractState.failedPages.push(failedPageInfo);
+              
+              const waitSeconds = 60; // Default to 60 seconds if not specified in error
+              debug(`🚦 RATE LIMIT HIT during AutoExtract on page ${currentPageNum}`);
+              debug(`   Total rate limit hits this session: ${autoExtractState.rateLimitHits}`);
+              debug(`   Pausing AutoExtract for ${waitSeconds} seconds...`);
+              debug(`   Failed page saved for retry: ${failedPageInfo.title}`);
+              
+              showToast(
+                `⏸️ Rate limit hit! Pausing for ${waitSeconds}s before retrying...`,
+                5000
+              );
+              
+              if (button) {
+                button.textContent = `⏸️ Paused: Rate limit (${waitSeconds}s)...`;
+              }
+              
+              overlayModule.setMessage(`⏸️ Rate limit - waiting ${waitSeconds}s...`);
+              
+              // Wait for cooldown
+              await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
+              
+              debug(`✅ Rate limit cooldown complete, retrying page ${currentPageNum}...`);
+              showToast(
+                `✅ Cooldown complete, retrying page ${currentPageNum}...`,
+                3000
+              );
+              
+              // Remove from failed pages list since we're going to retry immediately
+              autoExtractState.failedPages.pop();
+              
+              // Retry the same page (don't increment page counter)
+              // Set captureAttempts to maxCaptureAttempts - 1 to allow one final retry
+              captureAttempts = maxCaptureAttempts - 1;
+              continue; // Continue capture loop to retry
+            }
+            
             // Check if this is a server offline error (connection refused, network error, etc.)
             const isServerOffline = error.message && (
               error.message.includes('Proxy server is not available') ||
@@ -4089,23 +4148,32 @@
         const currentPageId = getCurrentPageId();
         
         // Check for duplicate URL (same page being processed again)
+        // BUT: If we just had a navigation failure, this is expected (we're retrying navigation)
+        const isExpectedDuplicate = autoExtractState.navigationFailures > 0;
+        
         if (autoExtractState.processedUrls.has(currentUrl)) {
-          debug(`⚠️ DUPLICATE URL DETECTED: ${currentUrl}`);
-          debug(`❌ This URL was already processed in this session!`);
-          
-          // Increment duplicate counter
-          autoExtractState.duplicateCount = (autoExtractState.duplicateCount || 0) + 1;
-          
-          if (autoExtractState.duplicateCount >= 3) {
-            const errorMsg = `AutoExtract stopped: Same page detected ${autoExtractState.duplicateCount} times in a row.\n\nURL: ${currentUrl}\n\nThis usually means the "Next Page" button is not working correctly or you've reached a loop in the navigation.\n\nTotal pages processed: ${autoExtractState.totalProcessed}`;
-            alert(errorMsg);
-            stopAutoExtract(autoExtractState);
-            if (button) button.textContent = "Start AutoExtract";
-            return;
+          if (isExpectedDuplicate) {
+            debug(`⚠️ DUPLICATE URL DETECTED (Expected due to navigation failure): ${currentUrl}`);
+            debug(`   Navigation failures: ${autoExtractState.navigationFailures}`);
+            debug(`   This is normal after navigation retry - will skip processing and try to navigate again`);
+          } else {
+            debug(`⚠️ DUPLICATE URL DETECTED (Unexpected): ${currentUrl}`);
+            debug(`❌ This URL was already processed in this session!`);
+            
+            // Increment duplicate counter ONLY for unexpected duplicates
+            autoExtractState.duplicateCount = (autoExtractState.duplicateCount || 0) + 1;
+            
+            if (autoExtractState.duplicateCount >= 3) {
+              const errorMsg = `AutoExtract stopped: Same page detected ${autoExtractState.duplicateCount} times in a row.\n\nURL: ${currentUrl}\n\nThis usually means the "Next Page" button is not working correctly or you've reached a loop in the navigation.\n\nTotal pages processed: ${autoExtractState.totalProcessed}`;
+              alert(errorMsg);
+              stopAutoExtract(autoExtractState);
+              if (button) button.textContent = "Start AutoExtract";
+              return;
+            }
+            
+            // Skip processing this duplicate and try to navigate
+            debug(`⏭️ Skipping duplicate page (count: ${autoExtractState.duplicateCount})...`);
           }
-          
-          // Skip processing this duplicate and try to navigate
-          debug(`⏭️ Skipping duplicate page (count: ${autoExtractState.duplicateCount})...`);
         } else {
           // Reset duplicate counter for new pages
           autoExtractState.duplicateCount = 0;
@@ -4192,11 +4260,95 @@
           debug(`⚠️ WARNING: URL and Page ID did not change after clicking next button!`);
           debug(`   Before: ${beforeNavUrl} | ${beforeNavPageId}`);
           debug(`   After:  ${afterNavUrl} | ${afterNavPageId}`);
-          debug(`⚠️ Navigation may have failed - the same page will be detected as duplicate on next iteration`);
+          
+          // Increment navigation failure counter
+          autoExtractState.navigationFailures = (autoExtractState.navigationFailures || 0) + 1;
+          debug(`[NAV-RETRY] 🔢 Navigation failure count: ${autoExtractState.navigationFailures}`);
+          
+          // Navigation failed - retry a few times before giving up
+          const maxNavigationRetries = 2;
+          let navigationRetryCount = 0;
+          let navigationSucceeded = false;
+          
+          while (navigationRetryCount < maxNavigationRetries && !navigationSucceeded) {
+            navigationRetryCount++;
+            debug(`[NAV-RETRY] 🔄 Navigation failed, retrying ${navigationRetryCount}/${maxNavigationRetries}...`);
+            
+            showToast(
+              `⚠️ Navigation failed, retrying (${navigationRetryCount}/${maxNavigationRetries})...`,
+              3000
+            );
+            
+            if (button) {
+              button.textContent = `⚠️ Nav retry ${navigationRetryCount}/${maxNavigationRetries}...`;
+            }
+            
+            // Wait a bit before retrying
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            
+            // Find and click next button again
+            const retryNextButton = await findAndClickNextButton(
+              nextPageSelector,
+              autoExtractState,
+              button
+            );
+            
+            if (!retryNextButton) {
+              debug(`[NAV-RETRY] ❌ Could not find next button on retry ${navigationRetryCount}`);
+              break;
+            }
+            
+            // Wait for navigation
+            debug(`[NAV-RETRY] ⏳ Waiting for navigation (retry ${navigationRetryCount})...`);
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+            
+            // Check if navigation succeeded this time
+            const retryAfterUrl = window.location.href;
+            const retryAfterPageId = getCurrentPageId();
+            
+            if (retryAfterUrl !== beforeNavUrl || retryAfterPageId !== beforeNavPageId) {
+              debug(`[NAV-RETRY] ✅ Navigation succeeded on retry ${navigationRetryCount}!`);
+              debug(`[NAV-RETRY]    New URL: ${retryAfterUrl}`);
+              navigationSucceeded = true;
+              
+              // Reset navigation failure counter on success
+              autoExtractState.navigationFailures = 0;
+              
+              showToast(
+                `✅ Navigation successful on retry ${navigationRetryCount}`,
+                2000
+              );
+            } else {
+              debug(`[NAV-RETRY] ❌ Navigation still failed on retry ${navigationRetryCount}`);
+              debug(`[NAV-RETRY]    URL still: ${retryAfterUrl}`);
+            }
+          }
+          
+          // If all retries failed, this might be end of book
+          if (!navigationSucceeded) {
+            debug(`[NAV-RETRY] ❌ Navigation failed after ${maxNavigationRetries} retries`);
+            debug(`[NAV-RETRY] 🤔 This might be the end of the book or a navigation issue`);
+            
+            // Show end-of-book confirmation dialog
+            const continueExtraction = await showEndOfBookConfirmation(autoExtractState);
+            
+            if (!continueExtraction) {
+              debug(`[NAV-RETRY] ⏹ User confirmed end of extraction`);
+              stopAutoExtract(autoExtractState);
+              if (button) button.textContent = "Start AutoExtract";
+              return;
+            }
+            
+            debug(`[NAV-RETRY] ▶️ User wants to continue - will try again next iteration`);
+          }
         } else {
           debug(`✅ Navigation verified: Page changed successfully`);
           debug(`   New URL: ${afterNavUrl}`);
           debug(`   New Page ID: ${afterNavPageId}`);
+          
+          // Reset navigation failure counter on successful navigation
+          autoExtractState.navigationFailures = 0;
         }
 
         debug(
@@ -4221,15 +4373,53 @@
     
     // Loop completed successfully - show completion overlay
     debug(`[AUTO-EXTRACT] 🎉 AutoExtract completed! Total pages processed: ${autoExtractState.totalProcessed}`);
+    
+    // Show summary of any failed pages
+    if (autoExtractState.failedPages && autoExtractState.failedPages.length > 0) {
+      debug(`⚠️ ${autoExtractState.failedPages.length} page(s) failed during AutoExtract:`);
+      autoExtractState.failedPages.forEach((failedPage, index) => {
+        debug(`  ${index + 1}. Page ${failedPage.pageNumber}: "${failedPage.title}"`);
+        debug(`     URL: ${failedPage.url}`);
+        debug(`     Reason: ${failedPage.reason}`);
+        debug(`     Time: ${failedPage.timestamp}`);
+      });
+      
+      // Save failed pages list to localStorage for manual retry
+      if (typeof GM_setValue === 'function') {
+        GM_setValue('w2n_failed_pages', JSON.stringify(autoExtractState.failedPages));
+        debug(`💾 Failed pages saved to storage for manual retry`);
+      }
+      
+      // Show warning to user
+      const failedPagesMessage = `⚠️ AutoExtract completed with warnings!\n\n` +
+        `✅ Successfully processed: ${autoExtractState.totalProcessed} pages\n` +
+        `❌ Failed/Skipped: ${autoExtractState.failedPages.length} pages\n` +
+        `🚦 Rate limit hits: ${autoExtractState.rateLimitHits}\n\n` +
+        `Failed pages list:\n` +
+        autoExtractState.failedPages.map((fp, i) => 
+          `${i + 1}. ${fp.title || 'Untitled'} (page ${fp.pageNumber})\n   Reason: ${fp.reason}`
+        ).join('\n') +
+        `\n\nFailed pages have been saved. You can manually retry them later.`;
+      
+      alert(failedPagesMessage);
+      
+      showToast(
+        `⚠️ Completed with ${autoExtractState.failedPages.length} failed pages. See console for details.`,
+        7000
+      );
+    } else {
+      showToast(
+        `✅ AutoExtract complete! Processed ${autoExtractState.totalProcessed} page(s)`,
+        5000
+      );
+    }
+    
     overlayModule.done({
       success: true,
       pageUrl: null,
       autoCloseMs: 5000,
     });
-    showToast(
-      `✅ AutoExtract complete! Processed ${autoExtractState.totalProcessed} page(s)`,
-      5000
-    );
+    
     stopAutoExtract(autoExtractState);
     if (button) button.textContent = "Start AutoExtract";
   }
@@ -4618,6 +4808,133 @@
       })`
       );
     }
+  }
+
+  // Show end-of-book confirmation dialog
+  async function showEndOfBookConfirmation(autoExtractState) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement("div");
+      overlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 10001;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    `;
+
+      overlay.innerHTML = `
+      <div style="
+        background: white;
+        padding: 30px;
+        border-radius: 12px;
+        max-width: 500px;
+        width: 90%;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        text-align: center;
+      ">
+        <div style="font-size: 24px; margin-bottom: 15px; color: #f59e0b;">⚠️</div>
+
+        <h3 style="
+          margin: 0 0 15px 0;
+          font-size: 18px;
+          font-weight: 600;
+          color: #111827;
+        ">AutoExtract: Next Page Not Found</h3>
+
+        <p style="
+          margin: 0 0 25px 0;
+          color: #6b7280;
+          line-height: 1.5;
+          font-size: 14px;
+        ">The "Next Page" button/element could not be found on this page. This typically means you've reached the end of the book.</p>
+
+        <div style="
+          background: #f3f4f6;
+          padding: 15px;
+          border-radius: 8px;
+          margin-bottom: 25px;
+          font-size: 13px;
+          color: #374151;
+          text-align: left;
+        ">
+          <strong>Processed so far:</strong> ${autoExtractState.totalProcessed} pages<br>
+          <strong>Current page:</strong> ${autoExtractState.currentPage}
+        </div>
+
+        <p style="
+          margin: 0 0 25px 0;
+          color: #374151;
+          line-height: 1.4;
+          font-size: 14px;
+          font-weight: 500;
+        ">What would you like to do?</p>
+
+        <div style="display: flex; gap: 10px; justify-content: center;">
+          <button id="end-of-book-confirm" style="
+            padding: 12px 20px;
+            background: #dc2626;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 14px;
+            flex: 1;
+            max-width: 150px;
+          ">End of Book</button>
+
+          <button id="continue-autoextract" style="
+            padding: 12px 20px;
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 14px;
+            flex: 1;
+            max-width: 150px;
+          ">Select New Element</button>
+        </div>
+
+        <p style="
+          margin: 20px 0 0 0;
+          color: #9ca3af;
+          font-size: 12px;
+          line-height: 1.4;
+        ">Choose "End of Book" if this is the last page, or "Select New Element" if you want to continue with a different element.</p>
+      </div>
+    `;
+
+      document.body.appendChild(overlay);
+
+      const endButton = overlay.querySelector("#end-of-book-confirm");
+      const continueButton = overlay.querySelector("#continue-autoextract");
+
+      endButton.onclick = () => {
+        overlay.remove();
+        resolve(false);
+      };
+
+      continueButton.onclick = () => {
+        overlay.remove();
+        resolve(true);
+      };
+
+      // Auto-close after 60 seconds (defaults to end of book)
+      setTimeout(() => {
+        if (document.body.contains(overlay)) {
+          overlay.remove();
+          resolve(false);
+        }
+      }, 60000);
+    });
   }
 
   function diagnoseAutoExtraction() {
