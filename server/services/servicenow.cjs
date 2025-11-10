@@ -2952,6 +2952,7 @@ async function extractContentFromHtml(html) {
       // Parse each child (including text nodes) separately to preserve paragraph boundaries
       const richTextElements = [];
       const imageBlocks = [];
+      const nestedBlocks = []; // Track child blocks (like nested div.note)
       
       // Get all direct children INCLUDING text nodes (use .contents() not .children())
       const allChildren = $elem.contents();
@@ -2994,24 +2995,62 @@ async function extractContentFromHtml(html) {
           
           console.log(`🔍   Child ${i}: <${childTag}> class="${$child.attr('class')}" content="${childHtml.substring(0, 60)}..."`);
           
-          // Parse this child's HTML to rich text
-          const { richText: childRichText, imageBlocks: childImages } = await parseRichText(childHtml);
-          
-          // Add a line break between children (but not before the first one)
-          if (richTextElements.length > 0 && childRichText.length > 0) {
-            const lastIdx = richTextElements.length - 1;
-            richTextElements[lastIdx] = {
-              ...richTextElements[lastIdx],
-              text: { 
-                ...richTextElements[lastIdx].text, 
-                content: richTextElements[lastIdx].text.content + '\n' 
+          // CRITICAL FIX: Check if this child contains nested div.note elements
+          // If it does, extract them as separate blocks instead of including their text
+          const nestedNotes = $child.find('div.note');
+          if (nestedNotes.length > 0) {
+            console.log(`🔍 [PREREQ-NESTED-NOTE] Found ${nestedNotes.length} nested div.note in <${childTag}>`);
+            
+            // Clone and remove the nested notes to get just the wrapper text
+            const $childClone = $child.clone();
+            $childClone.find('div.note').remove();
+            const textOnlyHtml = $childClone.html() || '';
+            
+            // Parse the text without the notes
+            if (textOnlyHtml.trim()) {
+              const { richText: childRichText, imageBlocks: childImages } = await parseRichText(textOnlyHtml);
+              
+              if (richTextElements.length > 0 && childRichText.length > 0) {
+                const lastIdx = richTextElements.length - 1;
+                richTextElements[lastIdx] = {
+                  ...richTextElements[lastIdx],
+                  text: { 
+                    ...richTextElements[lastIdx].text, 
+                    content: richTextElements[lastIdx].text.content + '\n' 
+                  }
+                };
               }
-            };
-            console.log(`🔍   Added line break after previous child`);
+              
+              richTextElements.push(...childRichText);
+              imageBlocks.push(...childImages);
+            }
+            
+            // Process each nested note as a separate block
+            for (const note of nestedNotes.toArray()) {
+              console.log(`🔍 [PREREQ-NESTED-NOTE] Processing nested div.note as child block`);
+              const noteBlocks = await processElement(note);
+              nestedBlocks.push(...noteBlocks);
+            }
+          } else {
+            // No nested notes - process normally
+            const { richText: childRichText, imageBlocks: childImages } = await parseRichText(childHtml);
+            
+            // Add a line break between children (but not before the first one)
+            if (richTextElements.length > 0 && childRichText.length > 0) {
+              const lastIdx = richTextElements.length - 1;
+              richTextElements[lastIdx] = {
+                ...richTextElements[lastIdx],
+                text: { 
+                  ...richTextElements[lastIdx].text, 
+                  content: richTextElements[lastIdx].text.content + '\n' 
+                }
+              };
+              console.log(`🔍   Added line break after previous child`);
+            }
+            
+            richTextElements.push(...childRichText);
+            imageBlocks.push(...childImages);
           }
-          
-          richTextElements.push(...childRichText);
-          imageBlocks.push(...childImages);
         }
       }
       
@@ -3030,9 +3069,12 @@ async function extractContentFromHtml(html) {
       if (richTextElements.length > 0 && richTextElements.some(rt => rt.text.content.trim())) {
         // Line breaks are already added between children, so we can use the rich text as-is
         const richTextChunks = splitRichTextArray(richTextElements);
-        console.log(`🔍 Creating ${richTextChunks.length} prereq callout block(s)`);
-        for (const chunk of richTextChunks) {
-          processedBlocks.push({
+        console.log(`🔍 Creating ${richTextChunks.length} prereq callout block(s) with ${nestedBlocks.length} nested blocks`);
+        
+        // If there are nested blocks, add them to the FIRST callout chunk using markers
+        for (let i = 0; i < richTextChunks.length; i++) {
+          const chunk = richTextChunks[i];
+          const calloutBlock = {
             object: "block",
             type: "callout",
             callout: {
@@ -3040,7 +3082,37 @@ async function extractContentFromHtml(html) {
               icon: { type: "emoji", emoji: "📍" },
               color: "default"
             }
-          });
+          };
+          
+          // Add nested blocks as children to the first callout
+          if (i === 0 && nestedBlocks.length > 0) {
+            const marker = generateMarker();
+            const markerToken = `(sn2n:${marker})`;
+            
+            // Add marker token to callout rich text
+            calloutBlock.callout.rich_text.push({
+              type: "text",
+              text: { content: ` ${markerToken}` },
+              annotations: {
+                bold: false,
+                italic: false,
+                strikethrough: false,
+                underline: false,
+                code: false,
+                color: "default"
+              }
+            });
+            
+            // Tag nested blocks with marker and add as children
+            nestedBlocks.forEach(block => {
+              block._sn2n_marker = marker;
+            });
+            calloutBlock.callout.children = nestedBlocks;
+            
+            console.log(`🔍 [PREREQ-NESTED-NOTE] Added ${nestedBlocks.length} nested blocks to prereq callout children with marker ${markerToken}`);
+          }
+          
+          processedBlocks.push(calloutBlock);
         }
       }
       
