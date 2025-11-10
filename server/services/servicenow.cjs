@@ -1220,9 +1220,15 @@ async function extractContentFromHtml(html) {
         // Remove div.p elements that contain nested blocks (these are processed as child blocks)
         $clone.find('> div.p').each((i, divP) => {
           const $divP = $(divP);
-          const hasNestedBlocks = $divP.find('> ul, > ol, > figure, > table, > pre, > div.note').length > 0;
+          const nestedBlocksFound = $divP.find('> ul, > ol, > figure, > table, > pre, > div.note');
+          const hasNestedBlocks = nestedBlocksFound.length > 0;
           if (hasNestedBlocks) {
-            console.log(`🔍 [CALLOUT-NESTED] Removing div.p with nested blocks from callout text (will be processed as child block)`);
+            const nestedTypes = nestedBlocksFound.toArray().map(el => {
+              const className = $(el).attr('class');
+              return `<${el.name}${className ? ` class="${className}"` : ''}>`;
+            }).join(', ');
+            console.log(`🔍 [CALLOUT-NESTED] Removing div.p with nested blocks from callout text: ${nestedTypes}`);
+            console.log(`🔍 [CALLOUT-NESTED] div.p HTML (first 200 chars): ${$divP.html().substring(0, 200)}`);
             $divP.remove();
           }
         });
@@ -2165,12 +2171,17 @@ async function extractContentFromHtml(html) {
           liHtml = liHtml.replace(/<svg[\s\S]*?<\/svg>/gi, '');
           console.log(`🔍 List item HTML: "${liHtml.substring(0, 100)}"`);
           const { richText: liRichText, imageBlocks: liImages } = await parseRichText(liHtml);
-          console.log(`🔍 List item rich_text: ${liRichText.length} elements`);
+          console.log(`🔍 [INLINE-IMAGE-CHECK] List item parsed: ${liRichText.length} rich_text elements, ${liImages ? liImages.length : 0} images`);
           
           // Debug: Log the actual text content
           if (liRichText.length > 0) {
             const textPreview = liRichText.map(rt => rt.text?.content || '').join('').substring(0, 100);
             console.log(`🔍 List item text content: "${textPreview}"`);
+          }
+          
+          // Debug: Log if we found images
+          if (liImages && liImages.length > 0) {
+            console.log(`🔍 [INLINE-IMAGE-CHECK] Found ${liImages.length} image(s) in list item HTML`);
           }
           
           const richTextChunks = splitRichTextArray(liRichText);
@@ -2205,14 +2216,18 @@ async function extractContentFromHtml(html) {
                   color: "default"
                 }
               });
-              console.log(`🔍 Creating bulleted_list_item with ${chunk.length} rich_text elements`);
-              console.log(`🔍 Added marker ${markerToken} for ${liImages.length} deferred image(s)`);
+              console.log(`🔍 [INLINE-IMAGE-ATTACH] Creating bulleted_list_item with ${chunk.length} rich_text elements`);
+              console.log(`🔍 [INLINE-IMAGE-ATTACH] Added marker ${markerToken} for ${liImages.length} deferred image(s)`);
               
               // Add images as children so collectAndStripMarkers can find them
               listItemBlock.bulleted_list_item.children = liImages;
-              console.log(`🔍 Added ${liImages.length} inline images to simple list item's children (will be collected & orchestrated)`);
+              console.log(`🔍 [INLINE-IMAGE-ATTACH] Added ${liImages.length} inline images to simple list item's children (will be collected & orchestrated)`);
+              console.log(`🔍 [INLINE-IMAGE-ATTACH] Children array: ${JSON.stringify(listItemBlock.bulleted_list_item.children.map(c => ({ type: c.type, hasMarker: !!c._sn2n_marker })))}`);
               processedBlocks.push(listItemBlock);
             } else {
+              if (chunkIndex > 0 && liImages && liImages.length > 0) {
+                console.log(`🔍 [INLINE-IMAGE-SKIP] Skipping image attachment for chunk ${chunkIndex} (not first chunk)`);
+              }
               console.log(`🔍 Creating bulleted_list_item with ${chunk.length} rich_text elements`);
               processedBlocks.push(listItemBlock);
             }
