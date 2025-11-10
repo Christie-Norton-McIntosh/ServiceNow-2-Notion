@@ -6,26 +6,37 @@ This directory contains versioned backups of the ServiceNow-2-Notion project.
 
 ## Latest Backup
 
-**Version**: 9.2.44  
-**Date**: October 28, 2025 23:16:18  
-**Directory**: `v9.2.44-20251028-231618/`  
+**Version**: 10.0.38 (Pre-v11.0.0)  
+**Date**: November 9, 2025 20:26:51  
+**Directory**: `v10.0.38-20251109-202651/`  
 **Files**: Complete source backup  
-**Size**: ~1.2 MB  
+**Size**: ~1.5 MB  
 
-### Key Changes in v9.2.44
-- Role name inline code formatting in "Role required:" text
-- Pattern matching added to `servicenow.cjs` for single-word roles (admin, sam, asset)
-- Final formatting fix completing ServiceNow extraction enhancement series
+### Key Changes in v10.0.38
+- **Navigation retry logic**: Auto-retry failed navigation up to 2 times
+- **Smart duplicate detection**: Distinguishes navigation failures from true duplicates
+- **End-of-book confirmation**: Prevents premature AutoExtract stops
+- **navigationFailures counter**: Tracks consecutive navigation failures
+- Complete pre-v11.0.0 snapshot with all v10.x features
+
+### Purpose
+Full backup before major version bump to v11.0.0. Contains all v10.x improvements including rate limit protection, validation fixes, and navigation retry system.
 
 ---
 
 ## Backup History
 
+### v10.0.38 (November 9, 2025) - Pre-v11.0.0
+- **Directory**: `v10.0.38-20251109-202651/`
+- **Changes**: Navigation retry system, pre-major version bump
+- **Release Notes**: `BACKUP_INFO.md` in directory
+- **Status**: ✅ Current
+
 ### v9.2.44 (October 28, 2025)
 - **Directory**: `v9.2.44-20251028-231618/`
 - **Changes**: Role name formatting as inline code
 - **Release Notes**: `release_notes_9.2.44.md`
-- **Status**: ✅ Current
+- **Status**: ✅ Previous
 
 ### v9.2.25 (October 25, 2025)
 - **Directory**: `v9.2.25-20251025-130627/`
@@ -151,7 +162,8 @@ Example: `backup-v9.2.0-20251016-223113/`
 
 | Version | Date | Files | Size | Status |
 |---------|------|-------|------|--------|
-| 9.2.44 | 2025-10-28 | Complete | ~1.2 MB | ✅ Current |
+| 10.0.38 | 2025-11-09 | Complete | ~1.5 MB | ✅ Current (Pre-v11) |
+| 9.2.44 | 2025-10-28 | Complete | ~1.2 MB | ✅ Previous |
 | 9.2.25 | 2025-10-25 | Complete | ~1.2 MB | ✅ Previous |
 | 9.2.4 | 2025-10-21 | Complete | ~1.1 MB | ✅ Previous |
 | 9.2.1 | 2025-10-18 | Complete | ~1.1 MB | ✅ Previous |
@@ -162,5 +174,5 @@ Example: `backup-v9.2.0-20251016-223113/`
 
 ---
 
-**Last Updated**: October 28, 2025  
+**Last Updated**: November 9, 2025  
 **Maintained By**: Christie Norton-McIntosh

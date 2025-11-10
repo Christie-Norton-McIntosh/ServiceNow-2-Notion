@@ -1,0 +1,42 @@
+name: Auto build dist (userscript)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-commit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install --no-audit --prefer-offline; fi
+
+      - name: Build userscript
+        run: npm run build
+
+      - name: Commit built dist if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist/ServiceNow-2-Notion.user.js || true
+          if ! git diff --staged --quiet --; then
+            git commit -m "chore: build dist/ServiceNow-2-Notion.user.js [skip ci]"
+            git push origin HEAD:main
+          else
+            echo "No changes to commit"
+          fi

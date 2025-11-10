@@ -2,18 +2,9 @@
 
 ## ✅ Latest Release
 
-__Current release: 11.0.0 (2025-11-09)__
+__Current release: 10.0.1 (2025-11-02)__
 
-**Major Release**: Intelligent navigation retry system, comprehensive rate limit protection, and 5 critical validation fixes. Production-ready with complete content extraction and enhanced error handling.
-
-**Key Features**:
-- 🔄 Auto-retry navigation failures (up to 2 attempts)
-- 🚦 Rate limit protection with exponential backoff
-- 📄 Complete content extraction (images, tables, callouts in lists)
-- ✅ 5 validation fixes for edge cases
-- 💾 Failed pages tracking and reporting
-
-See [RELEASE_NOTES_11.0.0.md](./RELEASE_NOTES_11.0.0.md) for full details.
+**Major Update**: Complete overhaul of inline code formatting with global space cleanup. All code-formatted text now has spaces properly preserved as plain text between code blocks.
 
 ## 📁 Current Clean Project Structure
 
