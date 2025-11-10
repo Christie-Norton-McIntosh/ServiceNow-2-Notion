@@ -1854,32 +1854,26 @@ async function extractContentFromHtml(html) {
               // IMPORTANT: Callouts with markers have their own nested content that should be orchestrated to them, not to the list item
               // Only add the callout itself, not its children (which share the same marker)
               if (block && block._sn2n_marker) {
-                // Check if this is a callout with a marker token (meaning it has nested content)
-                const isCalloutWithMarker = block.type === 'callout' && 
-                  block.callout?.rich_text?.some(rt => rt.text?.content?.includes('(sn2n:'));
+                // CRITICAL FIX: Blocks with existing markers should preserve their original associations
+                // Check if this is a parent block (list item/callout with marker token = has own deferred children)
+                const blockType = block.type;
+                const hasMarkerToken = ['bulleted_list_item', 'numbered_list_item', 'callout', 'to_do', 'toggle'].includes(blockType) &&
+                  block[blockType]?.rich_text?.some(rt => rt.text?.content?.includes('(sn2n:'));
                 
-                if (isCalloutWithMarker) {
-                  // Callout with marker token - add it, but its children will be orchestrated to the callout separately
-                  console.log(`🔍 Block type "callout" has marker ${block._sn2n_marker} and marker token - adding to marked blocks (children orchestrated separately)`);
-                  markedBlocks.push(block);
-                  return;
+                if (hasMarkerToken) {
+                  // This is a parent block with its own deferred children - add as immediate child
+                  if (['bulleted_list_item', 'numbered_list_item', 'to_do', 'toggle'].includes(blockType)) {
+                    console.log(`🔍 Block "${blockType}" has marker token - adding as immediate child (preserves own nested content)`);
+                    immediateChildren.push(block);
+                  }
+                  return; // Don't re-mark - it has its own marker system
                 }
                 
-                // For other blocks with markers, check if they're children of a callout (same marker ID)
-                // If so, skip them - they'll be orchestrated as children of the callout
-                const parentCalloutMarker = markedBlocks.find(b => 
-                  b.type === 'callout' && 
-                  b.callout?.rich_text?.some(rt => rt.text?.content?.includes(`(sn2n:${block._sn2n_marker})`))
-                );
-                
-                if (parentCalloutMarker) {
-                  console.log(`🔍 Block type "${block.type}" has marker ${block._sn2n_marker} - skipping (child of callout with same marker)`);
-                  return; // Skip - this block will be orchestrated as a child of the callout
-                }
-                
-                console.log(`🔍 Block type "${block.type}" already has marker ${block._sn2n_marker} - adding to marked blocks for this list item`);
-                markedBlocks.push(block);
-                return; // Skip further processing for this block
+                // This is a deferred child block (has marker but no marker token)
+                // It belongs to a CHILD element and should NOT be re-marked with parent's marker
+                // Will be added separately via blocksWithExistingMarkers logic
+                console.log(`🔍 Block "${block.type}" has marker ${block._sn2n_marker} - preserving original association (not re-marking)`);
+                return; // Skip - preserve original marker association
               }
               
               if (block && block.type === 'paragraph') {
@@ -2280,32 +2274,26 @@ async function extractContentFromHtml(html) {
               // IMPORTANT: Callouts with markers have their own nested content that should be orchestrated to them, not to the list item
               // Only add the callout itself, not its children (which share the same marker)
               if (block && block._sn2n_marker) {
-                // Check if this is a callout with a marker token (meaning it has nested content)
-                const isCalloutWithMarker = block.type === 'callout' && 
-                  block.callout?.rich_text?.some(rt => rt.text?.content?.includes('(sn2n:'));
+                // CRITICAL FIX: Blocks with existing markers should preserve their original associations
+                // Check if this is a parent block (list item/callout with marker token = has own deferred children)
+                const blockType = block.type;
+                const hasMarkerToken = ['bulleted_list_item', 'numbered_list_item', 'callout', 'to_do', 'toggle'].includes(blockType) &&
+                  block[blockType]?.rich_text?.some(rt => rt.text?.content?.includes('(sn2n:'));
                 
-                if (isCalloutWithMarker) {
-                  // Callout with marker token - add it, but its children will be orchestrated to the callout separately
-                  console.log(`🔍 Block type "callout" has marker ${block._sn2n_marker} and marker token - adding to marked blocks (children orchestrated separately)`);
-                  markedBlocks.push(block);
-                  return;
+                if (hasMarkerToken) {
+                  // This is a parent block with its own deferred children - add as immediate child
+                  if (['bulleted_list_item', 'numbered_list_item', 'to_do', 'toggle'].includes(blockType)) {
+                    console.log(`🔍 Block "${blockType}" has marker token - adding as immediate child (preserves own nested content)`);
+                    immediateChildren.push(block);
+                  }
+                  return; // Don't re-mark - it has its own marker system
                 }
                 
-                // For other blocks with markers, check if they're children of a callout (same marker ID)
-                // If so, skip them - they'll be orchestrated as children of the callout
-                const parentCalloutMarker = markedBlocks.find(b => 
-                  b.type === 'callout' && 
-                  b.callout?.rich_text?.some(rt => rt.text?.content?.includes(`(sn2n:${block._sn2n_marker})`))
-                );
-                
-                if (parentCalloutMarker) {
-                  console.log(`🔍 Block type "${block.type}" has marker ${block._sn2n_marker} - skipping (child of callout with same marker)`);
-                  return; // Skip - this block will be orchestrated as a child of the callout
-                }
-                
-                console.log(`🔍 Block type "${block.type}" already has marker ${block._sn2n_marker} - adding to marked blocks for this list item`);
-                markedBlocks.push(block);
-                return; // Skip further processing for this block
+                // This is a deferred child block (has marker but no marker token)
+                // It belongs to a CHILD element and should NOT be re-marked with parent's marker
+                // Will be added separately via blocksWithExistingMarkers logic
+                console.log(`🔍 Block "${block.type}" has marker ${block._sn2n_marker} - preserving original association (not re-marking)`);
+                return; // Skip - preserve original marker association
               }
               
               if (block && block.type === 'paragraph') {
