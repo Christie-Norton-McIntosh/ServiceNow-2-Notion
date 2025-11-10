@@ -1297,9 +1297,17 @@ async function extractContentFromHtml(html) {
             const marker = generateMarker();
             
             // Tag each child block with the marker for orchestration
-            childBlocks.forEach(block => {
+            // CRITICAL: Don't overwrite existing markers from nested processing!
+            const blocksNeedingMarker = childBlocks.filter(b => !b._sn2n_marker);
+            const blocksWithExistingMarker = childBlocks.filter(b => b._sn2n_marker);
+            
+            blocksNeedingMarker.forEach(block => {
               block._sn2n_marker = marker;
             });
+            
+            if (blocksWithExistingMarker.length > 0) {
+              console.log(`🔍 [MARKER-PRESERVE-CALLOUT] ${blocksWithExistingMarker.length} blocks already have markers - preserving`);
+            }
             
             // Add marker text to end of callout rich_text (will be found by orchestrator)
             const markerToken = `(sn2n:${marker})`;
@@ -2028,9 +2036,18 @@ async function extractContentFromHtml(html) {
                   const marker = generateMarker();
                   markerToken = `(sn2n:${marker})`;
                   // Tag each marked block with the marker for orchestration
-                  markedBlocks.forEach(block => {
+                  // CRITICAL: Don't overwrite existing markers from nested processing!
+                  const blocksNeedingMarker = markedBlocks.filter(b => !b._sn2n_marker);
+                  const blocksWithExistingMarker = markedBlocks.filter(b => b._sn2n_marker);
+                  
+                  blocksNeedingMarker.forEach(block => {
                     block._sn2n_marker = marker;
                   });
+                  
+                  if (blocksWithExistingMarker.length > 0) {
+                    console.log(`🔍 [MARKER-PRESERVE-UL] ${blocksWithExistingMarker.length} blocks already have markers - preserving original associations`);
+                  }
+                  
                   // Add marker token to end of rich text (will be found by orchestrator)
                   chunk.push({
                     type: "text",
@@ -2102,8 +2119,8 @@ async function extractContentFromHtml(html) {
               console.log(`🔍 Promoting first paragraph text to bulleted list item, ${remainingChildren.length} remaining children`);
               const promotedText = firstParagraph.paragraph.rich_text;
               
-              // When promoting paragraphs, mark ALL remaining children for deferred orchestration
-              // to avoid creating 4+ levels of nesting
+              // CRITICAL FIX: Mark ALL remaining children (including images) for orchestration
+              // Don't overwrite existing markers from nested processing!
               const markedBlocks = remainingChildren.filter(block => block && block.type);
               
               // Add marker if there are remaining children
@@ -2111,9 +2128,18 @@ async function extractContentFromHtml(html) {
               if (markedBlocks.length > 0) {
                 const marker = generateMarker();
                 const markerToken = `(sn2n:${marker})`;
-                markedBlocks.forEach(block => {
+                
+                const blocksNeedingMarker = markedBlocks.filter(b => !b._sn2n_marker);
+                const blocksWithExistingMarker = markedBlocks.filter(b => b._sn2n_marker);
+                
+                blocksNeedingMarker.forEach(block => {
                   block._sn2n_marker = marker;
                 });
+                
+                if (blocksWithExistingMarker.length > 0) {
+                  console.log(`🔍 [MARKER-PRESERVE-UL-PROMO] ${blocksWithExistingMarker.length} blocks already have markers - preserving`);
+                }
+                
                 richText.push({
                   type: "text",
                   text: { content: ` ${markerToken}` },
@@ -2179,11 +2205,20 @@ async function extractContentFromHtml(html) {
               if (markedBlocks.length > 0) {
                 const marker = generateMarker();
                 markerToken = `(sn2n:${marker})`;
-                markedBlocks.forEach(block => {
+                
+                const blocksNeedingMarker = markedBlocks.filter(b => !b._sn2n_marker);
+                const blocksWithExistingMarker = markedBlocks.filter(b => b._sn2n_marker);
+                
+                blocksNeedingMarker.forEach(block => {
                   block._sn2n_marker = marker;
                 });
+                
+                if (blocksWithExistingMarker.length > 0) {
+                  console.log(`🔍 [MARKER-PRESERVE-UL-NOTEXT] ${blocksWithExistingMarker.length} blocks already have markers - preserving`);
+                }
+                
                 richText[0].text.content = markerToken;
-                console.log(`🔍 Added marker ${markerToken} for ${markedBlocks.length} deferred blocks`);
+                console.log(`🔍 Added marker ${markerToken} for ${blocksNeedingMarker.length} deferred blocks (${blocksWithExistingMarker.length} already marked)`);
               }
               
               if (validChildren.length > 0 || markedBlocks.length > 0) {
@@ -2686,11 +2721,20 @@ async function extractContentFromHtml(html) {
               if (markedBlocks.length > 0) {
                 const marker = generateMarker();
                 markerToken = `(sn2n:${marker})`;
-                markedBlocks.forEach(block => {
+                
+                const blocksNeedingMarker = markedBlocks.filter(b => !b._sn2n_marker);
+                const blocksWithExistingMarker = markedBlocks.filter(b => b._sn2n_marker);
+                
+                blocksNeedingMarker.forEach(block => {
                   block._sn2n_marker = marker;
                 });
+                
+                if (blocksWithExistingMarker.length > 0) {
+                  console.log(`🔍 [MARKER-PRESERVE-OL-NOTEXT] ${blocksWithExistingMarker.length} blocks already have markers - preserving`);
+                }
+                
                 richText[0].text.content = markerToken;
-                console.log(`🔍 Added marker ${markerToken} for ${markedBlocks.length} deferred blocks`);
+                console.log(`🔍 Added marker ${markerToken} for ${blocksNeedingMarker.length} deferred blocks (${blocksWithExistingMarker.length} already marked)`);
               }
               
               if (validChildren.length > 0 || markedBlocks.length > 0) {
@@ -3193,12 +3237,21 @@ async function extractContentFromHtml(html) {
             });
             
             // Tag nested blocks with marker and add as children
-            nestedBlocks.forEach(block => {
+            // CRITICAL: Don't overwrite existing markers from nested processing!
+            const blocksNeedingMarker = nestedBlocks.filter(b => !b._sn2n_marker);
+            const blocksWithExistingMarker = nestedBlocks.filter(b => b._sn2n_marker);
+            
+            blocksNeedingMarker.forEach(block => {
               block._sn2n_marker = marker;
             });
+            
+            if (blocksWithExistingMarker.length > 0) {
+              console.log(`🔍 [MARKER-PRESERVE-PREREQ] ${blocksWithExistingMarker.length} blocks already have markers - preserving`);
+            }
+            
             calloutBlock.callout.children = nestedBlocks;
             
-            console.log(`🔍 [PREREQ-NESTED-NOTE] Added ${nestedBlocks.length} nested blocks to prereq callout children with marker ${markerToken}`);
+            console.log(`🔍 [PREREQ-NESTED-NOTE] Added ${blocksNeedingMarker.length} nested blocks to prereq callout children with marker ${markerToken} (${blocksWithExistingMarker.length} already marked)`);
           }
           
           processedBlocks.push(calloutBlock);
