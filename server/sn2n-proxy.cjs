@@ -878,7 +878,7 @@ let hasDetectedVideos = false;
 // Helper function to check if an iframe URL is from a known video platform
 // Import URL utilities
 const { isVideoIframeUrl, isValidNotionUrl } = require("./utils/url.cjs");
-const { cleanHtmlText } = require("./utils/notion-format.cjs");
+const { cleanHtmlText, cleanInvalidBlocks } = require("./utils/notion-format.cjs");
 
 // HTML to Notion blocks conversion function
 async function htmlToNotionBlocks(html) {
@@ -1795,8 +1795,10 @@ global.normalizeUrl = normalizeUrl;
 global.isValidImageUrl = isValidImageUrl;
 global.isValidNotionUrl = isValidNotionUrl;
 global.appendBlocksToBlockId = safeAppendBlocksToBlockId;
+global.createImageBlock = createImageBlock;
 global.downloadAndUploadImage = downloadAndUploadImage;
 global.normalizeCodeLanguage = normalizeCodeLanguage;
+global.cleanInvalidBlocks = cleanInvalidBlocks;
 
 // Main API routes with fallback for legacy monolith usage (loaded after global context)
 try {
@@ -1836,7 +1838,35 @@ try {
     });
   });
   
-  console.log('✅ W2N router configured with HOT-RELOAD wrapper');
+  // HOT-RELOAD FIX for PATCH endpoint: Same pattern as POST
+  app.patch("/api/W2N/:pageId", (req, res, next) => {
+    console.log('🔥🔥🔥 PATCH HOT-RELOAD WRAPPER HIT! Method:', req.method, 'URL:', req.url, 'at', new Date().toISOString());
+    
+    // Resolve path and clear cache on EVERY W2N request
+    const w2nPath = require.resolve('./routes/w2n.cjs');
+    delete require.cache[w2nPath];
+    
+    // Also clear servicenow.cjs cache since w2n depends on it
+    const servicenowPath = require.resolve('./services/servicenow.cjs');
+    delete require.cache[servicenowPath];
+    
+    const freshRouter = require('./routes/w2n.cjs');
+    
+    console.log('🔥 Reloaded w2n.cjs + servicenow.cjs for PATCH, delegating to freshly loaded router');
+    
+    // The router expects the request path to be /W2N/:pageId (without /api prefix)
+    // So we strip /api from req.url before delegating to the router
+    const originalUrl = req.url;
+    req.url = req.url.replace(/^\/api/, '');
+    
+    // Directly invoke the router (it handles PATCH /W2N/:pageId internally)
+    freshRouter(req, res, (err) => {
+      req.url = originalUrl; // Restore original URL
+      if (err) next(err);
+    });
+  });
+  
+  console.log('✅ W2N router configured with HOT-RELOAD wrapper (POST + PATCH)');
   app.use("/api", require('./routes/databases.cjs'));
   app.use("/api", require('./routes/upload.cjs'));
 } catch (e) {

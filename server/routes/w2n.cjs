@@ -41,14 +41,15 @@ function getGlobals() {
     getExtraDebug: global.getExtraDebug,
     normalizeAnnotations: global.normalizeAnnotations,
     normalizeUrl: global.normalizeUrl,
-    isValidImageUrl: global.isValidImageUrl
+    isValidImageUrl: global.isValidImageUrl,
+    cleanInvalidBlocks: global.cleanInvalidBlocks
   };
 }
 
 router.post('/W2N', async (req, res) => {
   const { notion, log, sendSuccess, sendError, htmlToNotionBlocks, ensureFileUploadAvailable, 
           collectAndStripMarkers, removeCollectedBlocks, deepStripPrivateKeys, 
-          orchestrateDeepNesting, getExtraDebug, normalizeAnnotations, normalizeUrl, 
+          orchestrateDeepNesting, getExtraDebug, normalizeAnnotations, normalizeUrl, cleanInvalidBlocks, 
           isValidImageUrl } = getGlobals();
   
   console.log('🔥🔥🔥🔥🔥 W2N ROUTE HANDLER ENTRY - FILE VERSION 07:20:00 - WITH CONSOLE.LOG NAV DIAGNOSTIC 🔥🔥🔥🔥🔥');
@@ -394,6 +395,12 @@ router.post('/W2N', async (req, res) => {
           Object.keys(markerMap).length
         } marker(s) to orchestrate after create`
       );
+      // Log each marker and its block count for debugging
+      Object.keys(markerMap).forEach(marker => {
+        const blocks = markerMap[marker] || [];
+        const blockTypes = blocks.map(b => b.type).join(', ');
+        log(`🔖   Marker "${marker}": ${blocks.length} block(s) [${blockTypes}]`);
+      });
     }
 
     // Before creating the page, strip any internal helper keys from blocks
@@ -479,26 +486,10 @@ router.post('/W2N', async (req, res) => {
       const seen = new Set();
       const out = [];
       let removed = 0;
-      let filteredCallouts = 0;
       let duplicates = 0;
       
       for (const blk of blockArray) {
         try {
-          // Filter out gray info callouts only (keep blue notes)
-          if (
-            blk &&
-            blk.type === "callout" &&
-            blk.callout &&
-            blk.callout.color === "gray_background" &&
-            blk.callout.icon?.type === "emoji" &&
-            String(blk.callout.icon.emoji).includes("ℹ")
-          ) {
-            log(`🚫 Filtering gray callout: emoji="${blk.callout.icon?.emoji}", color="${blk.callout.color}"`);
-            removed++;
-            filteredCallouts++;
-            continue;
-          }
-
           // Special-case image dedupe by file_upload id or external URL
           if (blk && blk.type === 'image' && blk.image) {
             const fileId = blk.image.file_upload && blk.image.file_upload.id;
@@ -528,7 +519,7 @@ router.post('/W2N', async (req, res) => {
       }
 
       if (removed > 0) {
-        log(`🔧 dedupeAndFilterBlocks: removed ${removed} total (${filteredCallouts} callouts, ${duplicates} duplicates)`);
+        log(`🔧 dedupeAndFilterBlocks: removed ${removed} duplicate(s)`);
       }
 
       return out;
@@ -915,7 +906,8 @@ router.post('/W2N', async (req, res) => {
         
         // CRITICAL: After orchestration adds children to list items, we need to deduplicate again
         // The orchestrator may add duplicate callouts as children to list items
-        log("🔧 Running post-orchestration deduplication on page blocks...");
+        // IMPORTANT: Do NOT deduplicate siblings at page root! Only deduplicate children of blocks.
+        log("🔧 Running post-orchestration deduplication on nested block children...");
         
         try {
           // Fetch the current page blocks
@@ -934,10 +926,11 @@ router.post('/W2N', async (req, res) => {
             cursor = nextPage.next_cursor;
           }
           
-          log(`   Fetched ${allBlocks.length} blocks from page`);
+          log(`   Fetched ${allBlocks.length} blocks from page (will NOT deduplicate these siblings)`);
           
           // For each block with children (list items, callouts, toggles), deduplicate its children
           // The orchestration phase can add children to these block types
+          // IMPORTANT: We DO NOT deduplicate the page root blocks themselves - those are legitimate siblings
           const blockTypesWithChildren = ['numbered_list_item', 'bulleted_list_item', 'callout', 'toggle', 'quote', 'column'];
           
           // Recursive function to deduplicate children at all nesting levels
@@ -947,27 +940,73 @@ router.post('/W2N', async (req, res) => {
             const children = childrenResp.results || [];
             
             if (children.length > 1) {
-              // Find duplicates using same key computation
-              const seenKeys = new Map(); // key -> first block id
+              // Find CONSECUTIVE/ADJACENT duplicates only
+              // Preserve identical blocks that appear in different parts of the document
+              // (e.g., same table in repeated process steps)
               const duplicateIds = [];
               
               // CONTEXT-AWARE DEDUPLICATION:
-              // For list items (procedural steps), don't deduplicate images or tables
-              // These often legitimately repeat (e.g., same icon in multiple steps)
+              // 1. For list items (procedural steps), don't deduplicate images or tables
+              //    These often legitimately repeat (e.g., same icon in multiple steps)
+              // 2. At page root, deduplicate consecutive tables/images/callouts but NOT list items
+              //    List items from different lists are siblings and should NOT be compared
               const isListItem = blockType === 'numbered_list_item' || blockType === 'bulleted_list_item';
+              const isPageRoot = blockType === 'page';
+              
+              let prevChild = null;
+              let prevKey = null;
               
               for (const child of children) {
-                // Skip deduplication for images and tables inside list items
-                if (isListItem && (child.type === 'image' || child.type === 'table')) {
+                // Skip deduplication for images and tables ONLY inside list items
+                if (isListItem && !isPageRoot && (child.type === 'image' || child.type === 'table')) {
                   log(`${indent}  ✓ Preserving ${child.type} in ${blockType} (procedural context)`);
+                  prevChild = child;
+                  prevKey = null; // Don't track key for comparison
+                  continue;
+                }
+                
+                // Skip deduplication for list items at page root (they're from different lists)
+                if (isPageRoot && (child.type === 'numbered_list_item' || child.type === 'bulleted_list_item')) {
+                  log(`${indent}  ✓ Preserving ${child.type} at page root (different lists)`);
+                  prevChild = child;
+                  prevKey = null;
+                  continue;
+                }
+                
+                // For tables at page root, only check consecutive duplicates if we have few tables
+                // If there are only 1-2 tables total, they might be genuine orchestration duplicates
+                // Notion API returns tables without their children, so all tables look identical by structure
+                if (isPageRoot && child.type === 'table') {
+                  const tableCount = children.filter(c => c.type === 'table').length;
+                  if (tableCount > 2) {
+                    log(`${indent}  ✓ Preserving table at page root (${tableCount} tables, likely different sections)`);
+                    prevChild = child;
+                    prevKey = null;
+                    continue;
+                  } else {
+                    // With 1-2 tables, allow consecutive deduplication to catch orchestration duplicates
+                    log(`${indent}  🔍 Checking table for consecutive deduplication (only ${tableCount} table(s) at root)`);
+                  }
+                }
+                
+                // Skip deduplication for images at page root (they're in different sections, not duplicates)
+                // Images in different sections legitimately show different content
+                if (isPageRoot && child.type === 'image') {
+                  log(`${indent}  ✓ Preserving image at page root (different sections)`);
+                  prevChild = child;
+                  prevKey = null;
                   continue;
                 }
                 
                 const key = dedupeUtil.computeBlockKey(child);
-                if (seenKeys.has(key)) {
+                
+                // Only mark as duplicate if IMMEDIATELY PREVIOUS block has the same key
+                if (prevKey && key === prevKey && prevChild) {
                   duplicateIds.push(child.id);
+                  log(`${indent}  🔎 Found consecutive duplicate ${child.type}: ${child.id}`);
                 } else {
-                  seenKeys.set(key, child.id);
+                  prevChild = child;
+                  prevKey = key;
                 }
               }
               
@@ -994,6 +1033,12 @@ router.post('/W2N', async (req, res) => {
             }
           }
           
+          // First, deduplicate at the PAGE ROOT LEVEL (most important!)
+          // This catches duplicate tables/images/callouts at the top level
+          log(`🔍 Deduplicating page root level...`);
+          await deduplicateBlockChildren(response.id, 'page', 0);
+          
+          // Then deduplicate children of specific block types
           for (const block of allBlocks) {
             if (blockTypesWithChildren.includes(block.type) && block.has_children) {
               await deduplicateBlockChildren(block.id, block.type, 0);
@@ -1015,7 +1060,12 @@ router.post('/W2N', async (req, res) => {
     
     if (shouldValidate) {
       try {
-        log("� Running post-creation validation...");
+        // Delay to allow Notion's API to fully process page creation and deduplication
+        // Increased from 500ms to 2000ms to prevent "got 0 blocks" false positives
+        // Notion's eventual consistency can take 1-2 seconds for complex pages
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        log("🔍 Running post-creation validation...");
         
         // Estimate expected block count range (±30% tolerance)
         const expectedBlocks = children.length;
@@ -1033,34 +1083,74 @@ router.post('/W2N', async (req, res) => {
           log
         );
         
-        // Update page properties with validation results
-        const propertyUpdates = {};
+        log(`✅ Validation function completed`);
         
-        // Set Error checkbox if validation failed
-        if (validationResult.hasErrors) {
-          propertyUpdates["Error"] = { checkbox: true };
-          log(`⚠️ Validation failed - setting Error checkbox`);
+      } catch (validationError) {
+        log(`⚠️ Validation failed with error: ${validationError.message}`);
+        log(`⚠️ Stack trace: ${validationError.stack}`);
+        // Create a placeholder result to ensure we log the validation attempt
+        validationResult = {
+          success: false,
+          hasErrors: true,
+          issues: [`Validation error: ${validationError.message}`],
+          warnings: [],
+          stats: null,
+          summary: `❌ Validation encountered an error: ${validationError.message}`
+        };
+        // Don't fail the entire request if validation fails
+      }
+      
+      // Update page properties with validation results (moved outside try/catch)
+      // This ensures properties are ALWAYS updated, even if validation errors
+      if (validationResult) {
+        try {
+          const propertyUpdates = {};
+          
+          // Set Error checkbox if validation failed
+          if (validationResult.hasErrors) {
+            propertyUpdates["Error"] = { checkbox: true };
+            log(`⚠️ Validation failed - setting Error checkbox`);
+          }
+          
+          // Set Validation property with results summary (without stats)
+          // Using rich_text property type (multi-line text)
+          propertyUpdates["Validation"] = {
+            rich_text: [
+              {
+                type: "text",
+                text: { content: validationResult.summary }
+              }
+            ]
+          };
+          
+          // Set Stats property with detailed statistics
+          // Using rich_text property type (multi-line text)
+          if (validationResult.stats) {
+            const statsText = JSON.stringify(validationResult.stats, null, 2);
+            propertyUpdates["Stats"] = {
+              rich_text: [
+                {
+                  type: "text",
+                  text: { content: statsText }
+                }
+              ]
+            };
+            log(`📊 Setting Stats property with validation statistics`);
+          }
+          
+          // Update the page properties
+          await notion.pages.update({
+            page_id: response.id,
+            properties: propertyUpdates
+          });
+          
+          log(`✅ Validation properties updated successfully`);
+        } catch (propError) {
+          log(`❌ Failed to update validation properties: ${propError.message}`);
+          // Don't throw - page was created successfully, just property update failed
         }
         
-        // Set Validation property with results summary
-        // Using rich_text property type (multi-line text)
-        propertyUpdates["Validation"] = {
-          rich_text: [
-            {
-              type: "text",
-              text: { content: validationResult.summary }
-            }
-          ]
-        };
-        
-        // Update the page properties
-        await notion.pages.update({
-          page_id: response.id,
-          properties: propertyUpdates
-        });
-        
-        log(`✅ Validation complete and properties updated`);
-        
+        // Log validation errors and warnings (moved outside property update)
         if (validationResult.hasErrors) {
           log(`❌ Validation found ${validationResult.issues.length} error(s):`);
           validationResult.issues.forEach((issue, idx) => {
@@ -1071,7 +1161,7 @@ router.post('/W2N', async (req, res) => {
           const shouldSaveFixtures = process.env.SN2N_SAVE_VALIDATION_FAILURES !== 'false' && process.env.SN2N_SAVE_VALIDATION_FAILURES !== '0';
           if (shouldSaveFixtures && payload.contentHtml) {
             try {
-              const fixturesDir = process.env.SN2N_FIXTURES_DIR || path.join(__dirname, '../../tests/fixtures/validation-failures');
+              const fixturesDir = process.env.SN2N_FIXTURES_DIR || path.join(__dirname, '../../patch/pages-to-update');
               
               // Ensure directory exists
               if (!fs.existsSync(fixturesDir)) {
@@ -1112,17 +1202,16 @@ router.post('/W2N', async (req, res) => {
             }
           }
         }
+        
         if (validationResult.warnings.length > 0) {
           log(`⚠️ Validation found ${validationResult.warnings.length} warning(s):`);
           validationResult.warnings.forEach((warning, idx) => {
             log(`   ${idx + 1}. ${warning}`);
           });
         }
-        
-      } catch (validationError) {
-        log(`⚠️ Validation failed with error: ${validationError.message}`);
-        // Don't fail the entire request if validation fails
       }
+    } else {
+      log(`ℹ️ Validation skipped (SN2N_VALIDATE_OUTPUT not enabled)`);
     }
 
     log("🔗 Page URL:", response.url);
@@ -1139,7 +1228,7 @@ router.post('/W2N', async (req, res) => {
     log(`   - Initial blocks sent: ${children.length}`);
     log(`   - Markers orchestrated: ${Object.keys(markerMap || {}).length}`);
     log(`   - Orchestrated blocks: ${Object.values(markerMap || {}).reduce((sum, arr) => sum + arr.length, 0)}`);
-    log(`🔗 Page URL: https://www.notion.so/${createdPage.id.replace(/-/g, '')}`);
+    log(`🔗 Page URL: https://www.notion.so/${response.id.replace(/-/g, '')}`);
     log("✅ Post-processing complete");
     return;
   } catch (error) {
@@ -1163,6 +1252,407 @@ router.post('/W2N', async (req, res) => {
       log("⚠️ Error occurred after response was sent to client - logging only");
       log("⚠️ Page was created successfully, but post-processing failed");
     }
+  }
+});
+
+/**
+ * PATCH endpoint to update an existing Notion page with fresh content.
+ * Strategy: Delete all existing blocks, then upload fresh extracted content.
+ * This is simpler and safer than surgical patching (no complex diffing, correct ordering).
+ * 
+ * Request body:
+ * - pageId (in URL): The Notion page ID to update
+ * - title: Page title (optional, for logging)
+ * - contentHtml or content: The ServiceNow HTML to extract and upload
+ * - properties: Page properties to update (optional)
+ * - dryRun: If true, return extracted blocks without updating page
+ * 
+ * Response:
+ * - success: true/false
+ * - pageId: The updated page ID
+ * - blocksDeleted: Number of blocks deleted
+ * - blocksAdded: Number of blocks added
+ * - validation: Validation results (if enabled)
+ */
+router.patch('/W2N/:pageId', async (req, res) => {
+  const { notion, log, sendSuccess, sendError, htmlToNotionBlocks, ensureFileUploadAvailable, 
+          collectAndStripMarkers, removeCollectedBlocks, deepStripPrivateKeys, 
+          orchestrateDeepNesting, getExtraDebug, normalizeAnnotations, normalizeUrl, 
+          isValidImageUrl, cleanInvalidBlocks } = getGlobals();
+  
+  const { pageId } = req.params;
+  log(`🔧 PATCH W2N: Updating page ${pageId}`);
+  
+  // Clear trackers for new request
+  if (global._sn2n_paragraph_tracker) {
+    console.log(`🔄 [DUPLICATE-DETECT] Clearing paragraph tracker (had ${global._sn2n_paragraph_tracker.length} entries)`);
+  }
+  global._sn2n_paragraph_tracker = [];
+  
+  if (global._sn2n_callout_tracker) {
+    console.log(`🔄 [CALLOUT-DUPLICATE] Clearing callout tracker (had ${global._sn2n_callout_tracker.size} entries)`);
+  }
+  global._sn2n_callout_tracker = new Set();
+  
+  try {
+    const payload = req.body;
+    const pageTitle = payload.title || 'Untitled';
+    log(`📝 Processing PATCH request for: ${pageTitle}`);
+    
+    // Validate page ID format
+    if (!pageId || pageId.length !== 32) {
+      return sendError(res, "INVALID_PAGE_ID", "Page ID must be a 32-character UUID", null, 400);
+    }
+    
+    // Extract fresh content from HTML
+    const html = payload.contentHtml || payload.content;
+    if (!html) {
+      return sendError(res, "MISSING_CONTENT", "contentHtml or content required", null, 400);
+    }
+    
+    log(`📄 HTML content length: ${html.length} characters`);
+    
+    // Extract blocks from HTML (same as POST endpoint)
+    const extractionResult = await htmlToNotionBlocks(html);
+    
+    if (!extractionResult || !extractionResult.blocks) {
+      return sendError(res, "EXTRACTION_FAILED", "Failed to extract content from HTML", null, 500);
+    }
+    
+    let { blocks: extractedBlocks, hasVideos } = extractionResult;
+    log(`✅ Extracted ${extractedBlocks.length} blocks from HTML`);
+    
+    if (hasVideos) {
+      log("⚠️ Warning: Videos detected but not supported by Notion API");
+    }
+    
+    // If dryRun, return extracted blocks without updating
+    if (payload.dryRun) {
+      log("🧪 Dry run mode - returning extracted blocks without updating page");
+      
+      // Count block types for reporting
+      const blockTypes = {};
+      extractedBlocks.forEach(block => {
+        blockTypes[block.type] = (blockTypes[block.type] || 0) + 1;
+      });
+      
+      return sendSuccess(res, {
+        dryRun: true,
+        pageId,
+        blocksExtracted: extractedBlocks.length,
+        blockTypes,
+        children: extractedBlocks,
+        hasVideos
+      });
+    }
+    
+    // Strip private keys before deduplication
+    deepStripPrivateKeys(extractedBlocks);
+    
+    // Deduplicate blocks
+    const beforeDedupeCount = extractedBlocks.length;
+    extractedBlocks = dedupeUtil.dedupeAndFilterBlocks(extractedBlocks);
+    const afterDedupeCount = extractedBlocks.length;
+    
+    if (beforeDedupeCount !== afterDedupeCount) {
+      log(`🔄 Deduplication: ${beforeDedupeCount} → ${afterDedupeCount} blocks (removed ${beforeDedupeCount - afterDedupeCount})`);
+    }
+    
+    // Collect markers for deep nesting (same as POST endpoint pattern)
+    const markerMap = collectAndStripMarkers(extractedBlocks, {});
+    const removedCount = removeCollectedBlocks(extractedBlocks);
+    
+    if (Object.keys(markerMap).length > 0) {
+      log(`🔖 Collected ${Object.keys(markerMap).length} markers for deep nesting orchestration`);
+    }
+    
+    if (removedCount > 0) {
+      log(`🗑️ Removed ${removedCount} collected blocks from top-level (will be appended by orchestrator)`);
+    }
+    
+    // Validate and clean invalid blocks before upload
+    const beforeCleanCount = extractedBlocks.length;
+    extractedBlocks = cleanInvalidBlocks(extractedBlocks);
+    const afterCleanCount = extractedBlocks.length;
+    
+    if (beforeCleanCount !== afterCleanCount) {
+      log(`🧹 Block cleaning: ${beforeCleanCount} → ${afterCleanCount} blocks (removed ${beforeCleanCount - afterCleanCount} invalid)`);
+    } else {
+      log(`🧹 Block cleaning: No invalid blocks removed (checked ${beforeCleanCount} blocks)`);
+    }
+    
+    // Normalize rich_text annotations
+    normalizeAnnotations(extractedBlocks);
+    
+    // Prepare blocks for upload (split into initial + remaining)
+    const MAX_BLOCKS_PER_REQUEST = 100;
+    const initialBlocks = extractedBlocks.slice(0, MAX_BLOCKS_PER_REQUEST);
+    const remainingBlocks = extractedBlocks.slice(MAX_BLOCKS_PER_REQUEST);
+    
+    log(`📦 Prepared ${initialBlocks.length} initial blocks, ${remainingBlocks.length} remaining`);
+    
+    // STEP 1: Delete all existing blocks from the page
+    log(`🗑️ STEP 1: Deleting all existing blocks from page ${pageId}`);
+    
+    let existingBlocks = [];
+    let cursor = undefined;
+    let pageNum = 1;
+    
+    // Fetch all existing blocks (paginated)
+    do {
+      const listOptions = {
+        block_id: pageId,
+        page_size: 100
+      };
+      
+      // Only add start_cursor if we have one
+      if (cursor) {
+        listOptions.start_cursor = cursor;
+      }
+      
+      const response = await notion.blocks.children.list(listOptions);
+      
+      existingBlocks = existingBlocks.concat(response.results || []);
+      cursor = response.has_more ? response.next_cursor : undefined;
+      
+      if (cursor) {
+        log(`   Fetched page ${pageNum}, ${existingBlocks.length} blocks so far...`);
+        pageNum++;
+      }
+    } while (cursor);
+    
+    log(`   Found ${existingBlocks.length} existing blocks to delete`);
+    
+    // Delete all blocks with rate limit protection
+    let deletedCount = 0;
+    const maxRateLimitRetries = 5;
+    
+    for (let i = 0; i < existingBlocks.length; i++) {
+      const block = existingBlocks[i];
+      let rateLimitRetryCount = 0;
+      let deleted = false;
+      
+      while (!deleted && rateLimitRetryCount <= maxRateLimitRetries) {
+        try {
+          await notion.blocks.delete({ block_id: block.id });
+          deletedCount++;
+          deleted = true;
+          
+          // Rate limit protection: delay every 10 deletions
+          if ((i + 1) % 10 === 0) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+        } catch (error) {
+          if (error.status === 429) {
+            rateLimitRetryCount++;
+            const delay = Math.min(1000 * Math.pow(2, rateLimitRetryCount - 1), 5000);
+            log(`   ⏳ Rate limit hit on delete ${i + 1}, retry ${rateLimitRetryCount}/${maxRateLimitRetries} after ${delay}ms`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          } else {
+            log(`   ⚠️ Failed to delete block ${block.id}: ${error.message}`);
+            break; // Skip this block and continue
+          }
+        }
+      }
+    }
+    
+    log(`✅ Deleted ${deletedCount} blocks from page`);
+    
+    // STEP 2: Upload fresh content
+    log(`📤 STEP 2: Uploading ${extractedBlocks.length} fresh blocks`);
+    
+    // Upload initial batch (up to 100 blocks) with retry logic
+    const maxRetries = 3;
+    let retryCount = 0;
+    let uploadSuccess = false;
+    let rateLimitRetryCount = 0;
+    
+    while (!uploadSuccess && (retryCount <= maxRetries || rateLimitRetryCount <= maxRateLimitRetries)) {
+      try {
+        await notion.blocks.children.append({
+          block_id: pageId,
+          children: initialBlocks
+        });
+        uploadSuccess = true;
+        log(`✅ Uploaded ${initialBlocks.length} initial blocks`);
+      } catch (error) {
+        if (error.status === 429) {
+          rateLimitRetryCount++;
+          const delay = Math.min(1000 * Math.pow(2, rateLimitRetryCount - 1), 5000);
+          log(`   ⏳ Rate limit hit on upload, retry ${rateLimitRetryCount}/${maxRateLimitRetries} after ${delay}ms`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        } else {
+          retryCount++;
+          if (retryCount <= maxRetries) {
+            log(`   ⚠️ Upload failed (attempt ${retryCount}/${maxRetries}), retrying: ${error.message}`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          } else {
+            throw error;
+          }
+        }
+      }
+    }
+    
+    // Upload remaining blocks in chunks
+    if (remainingBlocks.length > 0) {
+      log(`📝 Uploading ${remainingBlocks.length} remaining blocks in chunks...`);
+      
+      const chunks = [];
+      for (let i = 0; i < remainingBlocks.length; i += MAX_BLOCKS_PER_REQUEST) {
+        chunks.push(remainingBlocks.slice(i, i + MAX_BLOCKS_PER_REQUEST));
+      }
+      
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        log(`   Uploading chunk ${i + 1}/${chunks.length} (${chunk.length} blocks)...`);
+        
+        deepStripPrivateKeys(chunk);
+        await notion.blocks.children.append({
+          block_id: pageId,
+          children: chunk
+        });
+        
+        // Rate limit protection
+        if (i < chunks.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+      
+      log(`✅ All ${remainingBlocks.length} remaining blocks uploaded`);
+    }
+    
+    // STEP 3: Run orchestration for deep nesting
+    if (markerMap && Object.keys(markerMap).length > 0) {
+      log(`🔧 STEP 3: Running deep-nesting orchestration for ${Object.keys(markerMap).length} markers`);
+      
+      try {
+        const orchResult = await orchestrateDeepNesting(pageId, markerMap);
+        log(`✅ Orchestration complete: ${JSON.stringify(orchResult)}`);
+      } catch (orchError) {
+        log(`⚠️ Orchestration failed (non-fatal): ${orchError.message}`);
+      }
+    }
+    
+    // STEP 4: Update page properties if provided
+    if (payload.properties) {
+      log(`📝 STEP 4: Updating page properties`);
+      
+      try {
+        await notion.pages.update({
+          page_id: pageId,
+          properties: payload.properties
+        });
+        log(`✅ Properties updated`);
+      } catch (propError) {
+        log(`⚠️ Property update failed (non-fatal): ${propError.message}`);
+      }
+    }
+    
+    // STEP 5: Optional validation
+    let validationResult = null;
+    if (process.env.SN2N_VALIDATE_OUTPUT === '1') {
+      log(`🔍 STEP 5: Validating updated page`);
+      
+      try {
+        validationResult = await validateNotionPage(notion, pageId, {
+          sourceHtml: html,
+          expectedTitle: pageTitle,
+          verbose: true
+        });
+        
+        if (validationResult.valid) {
+          log(`✅ Validation passed`);
+        } else {
+          log(`⚠️ Validation warnings detected`);
+        }
+      } catch (valError) {
+        log(`⚠️ Validation failed (non-fatal): ${valError.message}`);
+      }
+    }
+    
+    // STEP 6: Update Validation property with PATCH indicator
+    if (validationResult) {
+      try {
+        const propertyUpdates = {};
+        
+        // Set Error checkbox if validation failed
+        if (validationResult.hasErrors) {
+          propertyUpdates["Error"] = { checkbox: true };
+          log(`⚠️ Validation failed - setting Error checkbox`);
+        } else {
+          // Clear Error checkbox on successful validation
+          propertyUpdates["Error"] = { checkbox: false };
+        }
+        
+        // Set Validation property with PATCH indicator and results summary
+        const patchIndicator = "🔄 PATCH\n\n";
+        propertyUpdates["Validation"] = {
+          rich_text: [
+            {
+              type: "text",
+              text: { content: patchIndicator + validationResult.summary }
+            }
+          ]
+        };
+        
+        // Set Stats property with detailed statistics
+        if (validationResult.stats) {
+          const statsText = JSON.stringify(validationResult.stats, null, 2);
+          propertyUpdates["Stats"] = {
+            rich_text: [
+              {
+                type: "text",
+                text: { content: statsText }
+              }
+            ]
+          };
+          log(`📊 Setting Stats property with validation statistics`);
+        }
+        
+        // Update the page properties
+        await notion.pages.update({
+          page_id: pageId,
+          properties: propertyUpdates
+        });
+        
+        log(`✅ Validation properties updated with PATCH indicator`);
+      } catch (propError) {
+        log(`⚠️ Failed to update validation properties: ${propError.message}`);
+        // Don't throw - page was updated successfully, just property update failed
+      }
+    }
+    
+    // Success response
+    const result = {
+      success: true,
+      pageId,
+      pageUrl: `https://notion.so/${pageId.replace(/-/g, '')}`,
+      blocksDeleted: deletedCount,
+      blocksAdded: extractedBlocks.length,
+      hasVideos
+    };
+    
+    if (validationResult) {
+      result.validation = validationResult;
+    }
+    
+    log(`✅ Page update complete`);
+    return sendSuccess(res, result);
+    
+  } catch (error) {
+    log(`❌ PATCH W2N Error:`, error.message);
+    
+    if (error.body) {
+      try {
+        const parsed = JSON.parse(error.body);
+        log("❌ Notion error body:", JSON.stringify(parsed, null, 2));
+      } catch (parseErr) {
+        log("❌ Failed to parse Notion error body:", parseErr.message);
+        log("❌ Raw error body:", error.body);
+      }
+    }
+    
+    return sendError(res, "PAGE_UPDATE_FAILED", error.message, null, 500);
   }
 });
 
