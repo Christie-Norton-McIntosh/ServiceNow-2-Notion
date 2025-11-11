@@ -1813,7 +1813,10 @@ async function extractContentFromHtml(html) {
         // IMPORTANT: div.itemgroup and div.info are NOT block elements - they're just wrappers
         // We need to look INSIDE them for actual block elements (div.note, pre, ul, etc.)
         // First, unwrap div.itemgroup and div.info so we can find nested blocks properly
-        $li.find('> div.itemgroup, > div.info').each((i, wrapper) => {
+        // FIX: Use attribute selectors to match elements with these classes (handles multi-class elements like "itemgroup info")
+        $li.find('> div[class*="itemgroup"], > div[class*="info"]').each((i, wrapper) => {
+          const classes = $(wrapper).attr('class') || '';
+          console.log(`🔧 [UNWRAP-FIX] Unwrapping <div class="${classes}"> to expose nested content`);
           $(wrapper).replaceWith($(wrapper).html());
         });
         
@@ -2080,14 +2083,12 @@ async function extractContentFromHtml(html) {
                 
                 processedBlocks.push(listItemBlock);
                 
-                // Add marked blocks as children of list item so collectAndStripMarkers can find them
+                // Add marked blocks as TOP-LEVEL blocks (NOT as children) so collectAndStripMarkers can find them
+                // Adding them as children would place them at depth 3, violating Notion's 2-level limit
                 // They will be collected into markerMap and orchestrated after page creation
                 if (markedBlocks.length > 0) {
-                  if (!listItemBlock.bulleted_list_item.children) {
-                    listItemBlock.bulleted_list_item.children = [];
-                  }
-                  listItemBlock.bulleted_list_item.children.push(...markedBlocks);
-                  console.log(`🔍 Added ${markedBlocks.length} marked blocks to list item's children (will be collected & orchestrated)`);
+                  console.log(`🔍 Adding ${markedBlocks.length} marked blocks as top-level blocks (NOT children) for collection & orchestration`);
+                  processedBlocks.push(...markedBlocks);
                 }
               }
               
@@ -2322,16 +2323,68 @@ async function extractContentFromHtml(html) {
       for (let li of listItems) {
         const $li = $(li);
         
+        // First, unwrap div.itemgroup and div.info so we can find nested blocks properly
+        // FIX: Use attribute selectors to match elements with these classes (handles multi-class elements like "itemgroup info")
+        const wrappersToUnwrap = $li.find('> div[class*="itemgroup"], > div[class*="info"]');
+        if (wrappersToUnwrap.length > 0) {
+          wrappersToUnwrap.each((i, wrapper) => {
+            const classes = $(wrapper).attr('class') || '';
+            const hasTable = $(wrapper).find('table').length > 0;
+            const hasTableWrap = $(wrapper).find('div.table-wrap').length > 0;
+            console.log(`🔧 [UNWRAP-FIX-OL] Unwrapping <div class="${classes}"> (tables: ${hasTable ? 'YES' : 'no'}, table-wrap: ${hasTableWrap ? 'YES' : 'no'})`);
+            $(wrapper).replaceWith($(wrapper).html());
+          });
+        }
+        
         // Check if list item contains nested block elements (pre, ul, ol, div.note, p, div.itemgroup, etc.)
         // Note: We search for div.p wrappers which may contain div.note elements
         // We ALSO search for div.note directly in case it's a direct child of <li>
         // FIX ISSUE #3 & #5: Also look inside wrapper divs for deeply nested blocks
-        let nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.itemgroup, > div.stepxmp, > div.info, > div.note').toArray();
+        // CRITICAL: Must query AFTER unwrapping to see the newly exposed elements
+        // NOTE: Include '> figure' for direct children after unwrapping; duplicate filter will catch figures inside div.p
+        let nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.stepxmp, > div.note').toArray();
+        
+        // DUPLICATE FIX: Filter out nested blocks that are INSIDE other nested blocks
+        // Example: <div class="p"><figure>...</figure></div> should only process the div, not both
+        console.log(`🔍 [DUPLICATE-FIX] Checking ${nestedBlocks.length} nested blocks for parent-child relationships...`);
+        nestedBlocks = nestedBlocks.filter((block, index, arr) => {
+          // Check if any parent of this block (up to the list item) is another block in the array
+          const blockName = block.name;
+          const blockId = $(block).attr('id') || 'no-id';
+          const blockClass = $(block).attr('class') || 'no-class';
+          
+          let currentParent = block.parent;
+          const isInsideOther = arr.some((otherBlock, otherIndex) => {
+            if (index === otherIndex) return false; // Don't compare with self
+            // Walk up from current block to the list item, checking if any parent IS the otherBlock
+            let checkParent = block.parent;
+            while (checkParent && checkParent.name !== 'li') {
+              if (checkParent === otherBlock) {
+                console.log(`🔍 [DUPLICATE-FIX] <${blockName} id="${blockId}"> IS inside <${otherBlock.name}>`);
+                return true;
+              }
+              checkParent = checkParent.parent;
+            }
+            return false;
+          });
+          
+          if (isInsideOther) {
+            console.log(`🔧 [DUPLICATE-FIX] ✂️ Filtering out nested <${blockName} id="${blockId}" class="${blockClass}"> (inside another nested block)`);
+          }
+          return !isInsideOther;
+        });
+        
+        // DEBUG: Log what we found
+        if (nestedBlocks.length > 0) {
+          const blockTypes = nestedBlocks.map(b => b.name + ($(b).attr('class') ? '.' + $(b).attr('class').split(' ')[0] : '')).join(', ');
+          console.log(`🔍 [OL-DEBUG] Found ${nestedBlocks.length} nested blocks: ${blockTypes}`);
+        }
         
         // Also look for blocks nested inside plain wrapper divs or div.p
         $li.find('> div:not(.note):not(.table-wrap):not(.stepxmp), > div.p, > div.itemgroup, > div.info').each((i, wrapper) => {
           // Find blocks inside this wrapper
-          const innerBlocks = $(wrapper).find('> table, > div.table-wrap, > div.note, > pre, > ul, > ol, > figure').toArray();
+          // NOTE: Removed '> figure' and '> div.table-wrap' - these should only be processed when their parent div.p is processed
+          const innerBlocks = $(wrapper).find('> table, > div.note, > pre, > ul, > ol').toArray();
           if (innerBlocks.length > 0) {
             console.log(`🔍 Found ${innerBlocks.length} blocks nested inside ordered list wrapper div`);
             nestedBlocks.push(...innerBlocks);
@@ -2581,14 +2634,12 @@ async function extractContentFromHtml(html) {
                 
                 processedBlocks.push(listItemBlock);
                 
-                // Add marked blocks as children of list item so collectAndStripMarkers can find them
+                // Add marked blocks as TOP-LEVEL blocks (NOT as children) so collectAndStripMarkers can find them
+                // Adding them as children would place them at depth 3, violating Notion's 2-level limit
                 // They will be collected into markerMap and orchestrated after page creation
                 if (markedBlocks.length > 0) {
-                  if (!listItemBlock.numbered_list_item.children) {
-                    listItemBlock.numbered_list_item.children = [];
-                  }
-                  listItemBlock.numbered_list_item.children.push(...markedBlocks);
-                  console.log(`🔍 Added ${markedBlocks.length} marked blocks to ordered list item's children (will be collected & orchestrated)`);
+                  console.log(`🔍 Adding ${markedBlocks.length} marked blocks as top-level blocks (NOT children) for collection & orchestration`);
+                  processedBlocks.push(...markedBlocks);
                 }
               }
               
@@ -2931,7 +2982,14 @@ async function extractContentFromHtml(html) {
               // Remove any literal note div tags that may appear as text
               textHtml = textHtml.replace(/<div\s+class=["'][^"']*note[^"']*["'][^>]*>[\s\S]*?<\/div>/gi, ' ');
               
-              const { richText: textRichText } = await parseRichText(textHtml);
+              const { richText: textRichText, imageBlocks: textImages } = await parseRichText(textHtml);
+              
+              // Add any image blocks found in the text before block elements
+              if (textImages && textImages.length > 0) {
+                console.log(`🔍 Adding ${textImages.length} image blocks from text before block elements`);
+                processedBlocks.push(...textImages);
+              }
+              
               if (textRichText.length > 0 && textRichText.some(rt => rt.text.content.trim() || rt.text.link)) {
                 const textChunks = splitRichTextArray(textRichText);
                 for (const chunk of textChunks) {
@@ -2961,7 +3019,14 @@ async function extractContentFromHtml(html) {
           // Remove any literal note div tags that may appear as text
           textHtml = textHtml.replace(/<div\s+class=["'][^"']*note[^"']*["'][^>]*>[\s\S]*?<\/div>/gi, ' ');
           
-          const { richText: textRichText } = await parseRichText(textHtml);
+          const { richText: textRichText, imageBlocks: textImages } = await parseRichText(textHtml);
+          
+          // Add any image blocks found in the text
+          if (textImages && textImages.length > 0) {
+            console.log(`🔍 Adding ${textImages.length} image blocks from text after block elements`);
+            processedBlocks.push(...textImages);
+          }
+          
           if (textRichText.length > 0 && textRichText.some(rt => rt.text.content.trim())) {
             const textChunks = splitRichTextArray(textRichText);
             for (const chunk of textChunks) {
@@ -4050,17 +4115,25 @@ async function extractContentFromHtml(html) {
         
         // TRACK ARTICLE.NESTED1 PROCESSING
         let articleTitle = null;
+        let processedHeadingNode = null; // Track which heading we've processed
         if (tagName === 'article' && elemClass.includes('nested1')) {
           // Try to find the heading for this article
           const $heading = $elem.find('> h1, > h2').first();
           if ($heading.length > 0) {
             articleTitle = cleanHtmlText($heading.text()).trim().substring(0, 80);
+            const headingTag = $heading.get(0).name;
+            const headingType = headingTag === 'h1' ? 'heading_1' : 'heading_2';
+            
+            // Article.nested1 processing - extract h2 heading
+            console.log(`� Article.nested1#${elemId}: Processing <${headingTag}> as ${headingType}`);
+            
+            // Process the heading as a block
+            const headingBlocks = await processElement($heading.get(0));
+            processedBlocks.push(...headingBlocks);
+            
+            // Track the heading node so we don't process it again in the children loop
+            processedHeadingNode = $heading.get(0);
           }
-          console.log(`\n📘 ========== ARTICLE.NESTED1 START ==========`);
-          console.log(`📘 Article ID: ${elemId || 'NO ID'}`);
-          console.log(`📘 Article Title: "${articleTitle || 'NO TITLE'}"`);
-          console.log(`📘 Children count: ${children.length}`);
-          console.log(`📘 ============================================\n`);
         }
         
         if (elemClass.includes('nested0')) {
@@ -4155,6 +4228,12 @@ async function extractContentFromHtml(html) {
           // Has children - process them
           let processedChildCount = 0;
           for (const child of children) {
+            // Skip if this is the heading we already processed for article.nested1
+            if (processedHeadingNode && child === processedHeadingNode) {
+              console.log(`🔍   ⏭️  Skipping child (already processed as article heading): <${child.name}>`);
+              continue;
+            }
+            
             processedChildCount++;
             console.log(`🔍   Processing child ${processedChildCount}/${children.length}: <${child.name}>${$(child).attr('class') ? ` class="${$(child).attr('class')}"` : ''}`);
             const childBlocks = await processElement(child);
@@ -4163,13 +4242,9 @@ async function extractContentFromHtml(html) {
           }
           console.log(`🔍   Finished processing all ${processedChildCount}/${children.length} children`);
           
-          // TRACK ARTICLE.NESTED1 COMPLETION
-          if (tagName === 'article' && elemClass.includes('nested1')) {
-            console.log(`\n📘 ========== ARTICLE.NESTED1 END ==========`);
-            console.log(`📘 Article ID: ${elemId || 'NO ID'}`);
-            console.log(`📘 Article Title: "${articleTitle || 'NO TITLE'}"`);
-            console.log(`📘 Total blocks produced: ${processedBlocks.length}`);
-            console.log(`📘 ==========================================\n`);
+          // Article.nested1 processing complete
+          if (tagName === 'article' && elemClass.includes('nested1') && articleTitle) {
+            console.log(`� Article.nested1#${elemId}: Complete, produced ${processedBlocks.length} blocks`);
           }
         }
         
@@ -4213,11 +4288,12 @@ async function extractContentFromHtml(html) {
     // CRITICAL FIX: Check if sections exist deeper in the tree (not just as direct children)
     // ServiceNow pages often have structure: .zDocsTopicPageBody > div.zDocsTopicPageBodyContent > article > main > article.dita > div.body.conbody
     // And sections can be either children of body.conbody OR siblings of it!
-    const allSectionsInPage = $('section[id]').toArray();
-    const allSectionsInBody = $('.zDocsTopicPageBody section[id]').toArray();
+    // IMPORTANT: Include sections WITHOUT IDs - many procedural sections (with tables/images) don't have IDs
+    const allSectionsInPage = $('section').toArray();
+    const allSectionsInBody = $('.zDocsTopicPageBody section').toArray();
     const allArticles = $('.zDocsTopicPageBody article').toArray();
     
-    console.log(`🔍 CRITICAL: Found ${allSectionsInPage.length} sections in ENTIRE PAGE`);
+    console.log(`🔍 CRITICAL: Found ${allSectionsInPage.length} sections in ENTIRE PAGE (including those without IDs)`);
     console.log(`🔍 CRITICAL: Found ${allSectionsInBody.length} sections inside .zDocsTopicPageBody`);
     console.log(`🔍 CRITICAL: Found ${allArticles.length} articles inside .zDocsTopicPageBody`);
     
@@ -4259,18 +4335,43 @@ async function extractContentFromHtml(html) {
         console.log(`🔍 FIX: ✅ Using ALL ${allSectionsInPage.length} sections from page`);
       }
     } else if (allSectionsInBody.length > 0) {
-      // Sections exist inside .zDocsTopicPageBody! Find their common parent
-      const firstSection = $(allSectionsInBody[0]);
-      const sectionParent = firstSection.parent();
-      const sectionParentTag = sectionParent.prop('tagName');
-      const sectionParentClass = sectionParent.attr('class') || 'no-class';
+      // Sections exist inside .zDocsTopicPageBody!
+      // CRITICAL FIX: Sections may be spread across multiple articles/divs, not just one parent
+      // Instead of using first section's parent children, collect ALL sections and their parents' children
+      console.log(`🔍 Collecting content from ${allSectionsInBody.length} sections spread across multiple parents`);
       
-      console.log(`🔍 Sections are children of: <${sectionParentTag} class="${sectionParentClass}">`);
-      console.log(`🔍 Section parent has ${sectionParent.children().length} children total`);
+      // Strategy: For each section, get its parent's children (siblings), but dedupe to avoid processing same content multiple times
+      const allParentChildren = new Set();
+      const seenParents = new Set();
+      const articlesToInclude = new Set(); // Track article.nested1 containers
       
-      // Get ALL children of the section parent (includes sections + any preceding content)
-      const sectionParentChildren = sectionParent.children().toArray();
-      console.log(`🔍 Section parent children: ${sectionParentChildren.map(c => `<${c.name} class="${$(c).attr('class') || ''}" id="${$(c).attr('id') || ''}">`).join(', ')}`);
+      allSectionsInBody.forEach(section => {
+        const $section = $(section);
+        const parent = $section.parent();
+        const parentKey = parent.get(0); // Use DOM node as key
+        
+        if (!seenParents.has(parentKey)) {
+          seenParents.add(parentKey);
+          const siblings = parent.children().toArray();
+          siblings.forEach(sibling => allParentChildren.add(sibling));
+        }
+        
+        // CRITICAL FIX: Also collect article.nested1 containers that hold these sections
+        // This ensures we process h2 headings that are direct children of articles
+        const $article = $section.closest('article.nested1');
+        if ($article.length > 0) {
+          const articleNode = $article.get(0);
+          if (!articlesToInclude.has(articleNode)) {
+            articlesToInclude.add(articleNode);
+            console.log(`🔍 ✅ Including article.nested1#${$article.attr('id') || 'NO-ID'} for processing`);
+          }
+        }
+      });
+      
+      const sectionParentChildren = Array.from(allParentChildren);
+      const articlesArray = Array.from(articlesToInclude);
+      console.log(`🔍 Collected ${sectionParentChildren.length} unique elements from ${seenParents.size} parent container(s)`);
+      console.log(`🔍 ✅ Including ${articlesArray.length} article.nested1 container(s) for heading extraction`);
       
       // ALSO include nav elements that are children of articles (e.g., #request-predictive-intelligence-for-im > nav)
       // These should come AFTER sections but BEFORE contentPlaceholder
@@ -4295,9 +4396,9 @@ async function extractContentFromHtml(html) {
           contentPlaceholders.push(...missingPlaceholders);
         }
       
-      // Use section parent's children + article navs + contentPlaceholder siblings (in correct order)
-      contentElements = [...sectionParentChildren, ...articleNavs, ...contentPlaceholders];
-      console.log(`🔍 ✅ Using ${contentElements.length} elements from section parent as contentElements`);
+      // Use article.nested1 containers FIRST (for h2 headings), then section parent's children + article navs + contentPlaceholder siblings
+      contentElements = [...articlesArray, ...sectionParentChildren, ...articleNavs, ...contentPlaceholders];
+      console.log(`🔍 ✅ Using ${contentElements.length} elements (${articlesArray.length} articles + ${sectionParentChildren.length} section content + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
     } else {
       // No sections found, use original top-level children
       contentElements = topLevelChildren;
@@ -4460,21 +4561,50 @@ async function extractContentFromHtml(html) {
   console.log(`🔍 Fallback check - cleaned content length: ${content.trim().length}`);
   
   // Check if all content elements were successfully removed (processed)
+  // Exclude wrapper divs that have no text content and only contain other wrapper elements
   let unprocessedElements = 0;
+  let candidateElements = [];
+  
   if ($('body').length > 0) {
-    unprocessedElements = $('body').children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').length;
+    candidateElements = $('body').children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').toArray();
   } else if ($('.zDocsTopicPageBody').length > 0) {
-    unprocessedElements = $('.zDocsTopicPageBody').children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').length;
+    candidateElements = $('.zDocsTopicPageBody').children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').toArray();
   } else if ($('.dita, .refbody, article, main, [role="main"]').length > 0) {
     const mainArticle = $('article.dita, .refbody').first();
     if (mainArticle.length > 0) {
-      unprocessedElements = mainArticle.children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').length;
+      candidateElements = mainArticle.children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').toArray();
     } else {
-      unprocessedElements = $('.dita, .refbody, article, main, [role="main"]').first().children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').length;
+      candidateElements = $('.dita, .refbody, article, main, [role="main"]').first().children('p, div, section, ul, ol, pre, figure, h1, h2, h3, h4, h5, h6').toArray();
     }
   }
   
-  console.log(`🔍 Unprocessed elements remaining: ${unprocessedElements}`);
+  // Filter out empty wrapper divs (no direct text content, only contain other elements)
+  const meaningfulElements = candidateElements.filter(el => {
+    const $el = $(el);
+    const tagName = el.name;
+    
+    // Non-div elements are always meaningful
+    if (tagName !== 'div') return true;
+    
+    // For divs, check if they have meaningful content
+    // A div is a meaningless wrapper if:
+    // 1. It has no direct text content (ignoring whitespace)
+    // 2. It only contains other block elements (article, section, div, main)
+    const directText = $el.contents().filter((i, node) => node.type === 'text').text().trim();
+    if (directText.length > 0) return true; // Has text, meaningful
+    
+    // Check children - if only contains wrapper elements, it's meaningless
+    const children = $el.children().toArray();
+    const hasOnlyWrappers = children.length > 0 && children.every(child => {
+      const childTag = child.name;
+      return ['article', 'section', 'div', 'main', 'aside', 'nav', 'header', 'footer'].includes(childTag);
+    });
+    
+    return !hasOnlyWrappers; // Meaningful if it doesn't have only wrappers
+  });
+  
+  unprocessedElements = meaningfulElements.length;
+  console.log(`🔍 Unprocessed elements remaining: ${unprocessedElements} (filtered ${candidateElements.length - meaningfulElements.length} empty wrapper divs)`);
   
   if (unprocessedElements > 0) {
     console.log(`⚠️ Warning: ${unprocessedElements} content elements were not processed!`);

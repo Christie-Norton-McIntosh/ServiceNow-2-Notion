@@ -57,3 +57,4 @@ tests/fixtures/validation-failures/*.html
 
 # Allow tracking of dist if explicitly needed by unignoring
 # !/dist/README.md
+patch/pages-to-update

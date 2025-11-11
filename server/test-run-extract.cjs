@@ -23,6 +23,32 @@ if (!global.isValidNotionUrl) {
   };
 }
 
+if (!global.createImageBlock) {
+  global.createImageBlock = async function createImageBlock(src, alt = "") {
+    // Mock implementation for test environment - just create an external image block
+    if (!src || !global.isValidImageUrl(src)) return null;
+    return {
+      object: "block",
+      type: "image",
+      image: {
+        type: "external",
+        external: { url: src },
+        caption: alt ? [{ type: "text", text: { content: alt } }] : [],
+      },
+    };
+  };
+}
+
+if (!global.downloadAndUploadImage) {
+  global.downloadAndUploadImage = async function downloadAndUploadImage(imageUrl, alt = "image") {
+    // Mock implementation for test environment - return a fake upload ID
+    // In production, this would download the image and upload to Notion
+    if (!imageUrl || !global.isValidImageUrl(imageUrl)) return null;
+    console.log(`🧪 [MOCK] downloadAndUploadImage called for: ${imageUrl.substring(0, 80)}`);
+    return "mock-upload-id-" + Math.random().toString(36).substring(7);
+  };
+}
+
 (async () => {
   try {
     const inputPath = process.argv[2];

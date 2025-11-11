@@ -81,7 +81,6 @@ function dedupeAndFilterBlocks(blockArray, options = {}) {
   const recentBlocks = []; // Stores [key, index] pairs for the last N blocks
   const out = [];
   let removed = 0;
-  let filteredCallouts = 0;
   let duplicates = 0;
 
   for (let i = 0; i < blockArray.length; i++) {
@@ -148,21 +147,6 @@ function dedupeAndFilterBlocks(blockArray, options = {}) {
         log(`→ Callout with content will be deduped: "${trimmed.substring(0, 60)}..."`);
       }
       
-      // Filter out gray info callouts only (keep blue notes)
-      if (
-        blk &&
-        blk.type === "callout" &&
-        blk.callout &&
-        blk.callout.color === "gray_background" &&
-        blk.callout.icon?.type === "emoji" &&
-        String(blk.callout.icon.emoji).includes("ℹ")
-      ) {
-        log(`🚫 Filtering gray callout: emoji="${blk.callout.icon?.emoji}", color="${blk.callout.color}"`);
-        removed++;
-        filteredCallouts++;
-        continue;
-      }
-
       // Special-case image dedupe by uploaded file id ONLY - use global dedupe for images
       if (blk && blk.type === 'image' && blk.image) {
         const fileId = blk.image.file_upload && blk.image.file_upload.id;
@@ -240,7 +224,7 @@ function dedupeAndFilterBlocks(blockArray, options = {}) {
   }
 
   if (removed > 0) {
-    log(`🔧 dedupeAndFilterBlocks: removed ${removed} total (${filteredCallouts} callouts, ${duplicates} duplicates)`);
+    log(`🔧 dedupeAndFilterBlocks: removed ${removed} duplicate(s)`);
   }
 
   return out;

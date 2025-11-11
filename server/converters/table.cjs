@@ -11,6 +11,7 @@
  * - Image extraction from table cells and placement as separate blocks
  * - Table deduplication to prevent duplicate content
  * - Support for nested lists within table cells
+ * - Smart icon detection: converts yes/no/check/cross icons to emojis (✅/❌)
  * 
  * Dependencies:
  * - server/utils/notion-format.cjs (cleanHtmlText)
@@ -189,9 +190,305 @@ async function convertTableBlock(tableHtml, options = {}) {
       }
     });
     
-    // Replace any remaining standalone img tags with bullet placeholder
+    // Replace any remaining standalone img tags
+    // First, detect yes/no icons and replace with emojis
+    // Then use bullet placeholder for other images
     if (/<img[^>]*>/i.test(processedHtml)) {
-      processedHtml = processedHtml.replace(/<img[^>]*>/gi, ' • ');
+      processedHtml = processedHtml.replace(/<img([^>]*)>/gi, (match, attrs) => {
+        // Extract alt text and src for pattern matching
+        const altMatch = /alt=["']([^"']*)["']/i.exec(attrs);
+        const srcMatch = /src=["']([^"']*)["']/i.exec(attrs);
+        const widthMatch = /width=["']?(\d+)["']?/i.exec(attrs);
+        const heightMatch = /height=["']?(\d+)["']?/i.exec(attrs);
+        
+        const alt = altMatch ? altMatch[1].toLowerCase() : '';
+        const src = srcMatch ? srcMatch[1].toLowerCase() : '';
+        const width = widthMatch ? parseInt(widthMatch[1]) : 0;
+        const height = heightMatch ? parseInt(heightMatch[1]) : 0;
+        
+        // Check if this is a small icon (typical icons are <= 32px)
+        const isSmallIcon = (width > 0 && width <= 32) || (height > 0 && height <= 32);
+        
+        // Icon pattern definitions: [patterns, emoji, label]
+        const iconTypes = [
+          // YES/CHECK/AVAILABLE - Priority 1
+          {
+            patterns: [
+              /\b(yes|check|tick|available|enabled|true|success|valid|confirmed?|approved?|active)\b/i,
+              /\b(green.*check|checkmark|check.*mark)\b/i,
+              /\/(?:yes|check|tick|available|enabled|success|valid|ok|active)\.[a-z]{3,4}$/i
+            ],
+            emoji: '✅',
+            label: 'YES/CHECK'
+          },
+          // NO/CROSS/UNAVAILABLE - Priority 1
+          {
+            patterns: [
+              /\b(no|cross|unavailable|disabled|false|error|invalid|denied|rejected|inactive)\b/i,
+              /\b(red.*cross|x.*mark|cross.*mark)\b/i,
+              /\/(?:no|cross|error|invalid|disabled|unavailable|inactive)\.[a-z]{3,4}$/i
+            ],
+            emoji: '❌',
+            label: 'NO/CROSS'
+          },
+          // WARNING/CAUTION - Priority 2
+          {
+            patterns: [
+              /\b(warning|caution|alert|attention|important)\b/i,
+              /\b(yellow.*triangle|warning.*triangle|exclamation.*triangle)\b/i,
+              /\/(?:warning|caution|alert|important)\.[a-z]{3,4}$/i
+            ],
+            emoji: '⚠️',
+            label: 'WARNING'
+          },
+          // INFO/NOTE - Priority 2
+          {
+            patterns: [
+              /\b(info|information|note|notice|fyi)\b/i,
+              /\b(blue.*circle|info.*circle|information.*icon)\b/i,
+              /\/(?:info|information|note|notice)\.[a-z]{3,4}$/i
+            ],
+            emoji: 'ℹ️',
+            label: 'INFO'
+          },
+          // TIP/LIGHTBULB - Priority 2
+          {
+            patterns: [
+              /\b(tip|hint|suggestion|lightbulb|idea|best.*practice)\b/i,
+              /\/(?:tip|hint|lightbulb|idea)\.[a-z]{3,4}$/i
+            ],
+            emoji: '💡',
+            label: 'TIP'
+          },
+          // HELP/QUESTION - Priority 2
+          {
+            patterns: [
+              /\b(help|question|\?|support|assistance)\b/i,
+              /\/(?:help|question|support)\.[a-z]{3,4}$/i
+            ],
+            emoji: '❓',
+            label: 'HELP'
+          },
+          // SECURITY/LOCK - Priority 3
+          {
+            patterns: [
+              /\b(lock|locked|security|secure|protected|private|encrypted?)\b/i,
+              /\/(?:lock|security|secure|private)\.[a-z]{3,4}$/i
+            ],
+            emoji: '🔒',
+            label: 'SECURITY'
+          },
+          // UNLOCK/OPEN - Priority 3
+          {
+            patterns: [
+              /\b(unlock|unlocked|open|public|unprotected)\b/i,
+              /\/(?:unlock|open|public)\.[a-z]{3,4}$/i
+            ],
+            emoji: '🔓',
+            label: 'UNLOCK'
+          },
+          // SETTINGS/GEAR - Priority 3
+          {
+            patterns: [
+              /\b(settings?|config|configuration|gear|preferences?|options?)\b/i,
+              /\/(?:settings?|config|gear|preferences?)\.[a-z]{3,4}$/i
+            ],
+            emoji: '⚙️',
+            label: 'SETTINGS'
+          },
+          // EDIT/PENCIL - Priority 3
+          {
+            patterns: [
+              /\b(edit|pencil|modify|change|update)\b/i,
+              /\/(?:edit|pencil|modify)\.[a-z]{3,4}$/i
+            ],
+            emoji: '✏️',
+            label: 'EDIT'
+          },
+          // DELETE/TRASH - Priority 3
+          {
+            patterns: [
+              /\b(delete|trash|remove|discard|bin)\b/i,
+              /\/(?:delete|trash|remove|bin)\.[a-z]{3,4}$/i
+            ],
+            emoji: '🗑️',
+            label: 'DELETE'
+          },
+          // SEARCH/FIND - Priority 3
+          {
+            patterns: [
+              /\b(search|find|lookup|magnif|glass)\b/i,
+              /\/(?:search|find|lookup)\.[a-z]{3,4}$/i
+            ],
+            emoji: '🔍',
+            label: 'SEARCH'
+          },
+          // DOWNLOAD - Priority 3
+          {
+            patterns: [
+              /\b(download|down.*arrow|save)\b/i,
+              /\/(?:download|down.*arrow)\.[a-z]{3,4}$/i
+            ],
+            emoji: '⬇️',
+            label: 'DOWNLOAD'
+          },
+          // UPLOAD - Priority 3
+          {
+            patterns: [
+              /\b(upload|up.*arrow)\b/i,
+              /\/(?:upload|up.*arrow)\.[a-z]{3,4}$/i
+            ],
+            emoji: '⬆️',
+            label: 'UPLOAD'
+          },
+          // LINK/CHAIN - Priority 3
+          {
+            patterns: [
+              /\b(link|chain|url|hyperlink|connection)\b/i,
+              /\/(?:link|chain|url)\.[a-z]{3,4}$/i
+            ],
+            emoji: '🔗',
+            label: 'LINK'
+          },
+          // USER/PERSON - Priority 3
+          {
+            patterns: [
+              /\b(user|person|profile|account|individual)\b/i,
+              /\/(?:user|person|profile|account)\.[a-z]{3,4}$/i
+            ],
+            emoji: '👤',
+            label: 'USER'
+          },
+          // GROUP/PEOPLE - Priority 3
+          {
+            patterns: [
+              /\b(group|people|team|users|members)\b/i,
+              /\/(?:group|people|team|users)\.[a-z]{3,4}$/i
+            ],
+            emoji: '👥',
+            label: 'GROUP'
+          },
+          // STAR/FAVORITE - Priority 3
+          {
+            patterns: [
+              /\b(star|favorite|favourite|bookmark|featured)\b/i,
+              /\/(?:star|favorite|favourite|bookmark)\.[a-z]{3,4}$/i
+            ],
+            emoji: '⭐',
+            label: 'STAR'
+          },
+          // FLAG - Priority 3
+          {
+            patterns: [
+              /\b(flag|marker|marked)\b/i,
+              /\/(?:flag|marker)\.[a-z]{3,4}$/i
+            ],
+            emoji: '🚩',
+            label: 'FLAG'
+          },
+          // CALENDAR/DATE - Priority 3
+          {
+            patterns: [
+              /\b(calendar|date|schedule|appointment)\b/i,
+              /\/(?:calendar|date|schedule)\.[a-z]{3,4}$/i
+            ],
+            emoji: '📅',
+            label: 'CALENDAR'
+          },
+          // CLOCK/TIME - Priority 3
+          {
+            patterns: [
+              /\b(clock|time|timer|hour|minute)\b/i,
+              /\/(?:clock|time|timer)\.[a-z]{3,4}$/i
+            ],
+            emoji: '⏰',
+            label: 'CLOCK'
+          },
+          // FILE/DOCUMENT - Priority 3
+          {
+            patterns: [
+              /\b(file|document|doc|page|paper)\b/i,
+              /\/(?:file|document|doc|page)\.[a-z]{3,4}$/i
+            ],
+            emoji: '📄',
+            label: 'FILE'
+          },
+          // FOLDER/DIRECTORY - Priority 3
+          {
+            patterns: [
+              /\b(folder|directory|dir)\b/i,
+              /\/(?:folder|directory|dir)\.[a-z]{3,4}$/i
+            ],
+            emoji: '📁',
+            label: 'FOLDER'
+          },
+          // EMAIL/MAIL - Priority 3
+          {
+            patterns: [
+              /\b(email|mail|message|envelope)\b/i,
+              /\/(?:email|mail|message|envelope)\.[a-z]{3,4}$/i
+            ],
+            emoji: '📧',
+            label: 'EMAIL'
+          },
+          // PHONE - Priority 3
+          {
+            patterns: [
+              /\b(phone|telephone|call|mobile)\b/i,
+              /\/(?:phone|telephone|call|mobile)\.[a-z]{3,4}$/i
+            ],
+            emoji: '📞',
+            label: 'PHONE'
+          },
+          // HOME - Priority 3
+          {
+            patterns: [
+              /\b(home|house|main|dashboard)\b/i,
+              /\/(?:home|house|main|dashboard)\.[a-z]{3,4}$/i
+            ],
+            emoji: '🏠',
+            label: 'HOME'
+          }
+        ];
+        
+        // Try to match icon type by checking patterns (prioritize src over alt)
+        // First pass: check if src (filename) matches any pattern
+        let detectedIcon = null;
+        for (const iconType of iconTypes) {
+          const srcMatches = iconType.patterns.some(pattern => pattern.test(src));
+          if (srcMatches) {
+            detectedIcon = iconType;
+            break; // Use first src match
+          }
+        }
+        
+        // Second pass: if no src match, check alt text
+        if (!detectedIcon) {
+          for (const iconType of iconTypes) {
+            const altMatches = iconType.patterns.some(pattern => pattern.test(alt));
+            if (altMatches) {
+              detectedIcon = iconType;
+              break; // Use first alt match
+            }
+          }
+        }
+        
+        // If detected, use the emoji
+        if (detectedIcon) {
+          const filename = src.substring(src.lastIndexOf('/') + 1, src.length);
+          console.log(`✨ Detected ${detectedIcon.label} icon (alt="${alt}", src="${filename}", ${width}x${height}px) → replacing with ${detectedIcon.emoji}`);
+          return ` ${detectedIcon.emoji} `;
+        }
+        
+        // Fallback: if small icon without specific pattern, assume positive/yes
+        if (isSmallIcon) {
+          console.log(`✨ Detected small icon (alt="${alt}", src="${src.substring(src.lastIndexOf('/') + 1)}", ${width}x${height}px) → defaulting to ✅`);
+          return ' ✅ ';
+        }
+        
+        // Generic image - use bullet placeholder
+        return ' • ';
+      });
     }
     
     // Handle note callouts in table cells - strip the wrapper and keep only the content
@@ -553,14 +850,34 @@ async function convertTableBlock(tableHtml, options = {}) {
  */
 function deduplicateTableBlocks(blocks) {
   if (!Array.isArray(blocks)) return blocks;
-  const seen = new Set();
-  return blocks.filter((block) => {
-    if (block.type !== "table") return true;
+  
+  // Only remove CONSECUTIVE/ADJACENT duplicate tables
+  // Preserve identical tables that appear in different parts of the document
+  // (e.g., repeated steps in a process with the same table structure)
+  const result = [];
+  let prevTableKey = null;
+  
+  for (const block of blocks) {
+    if (block.type !== "table") {
+      result.push(block);
+      prevTableKey = null; // Reset when we see a non-table block
+      continue;
+    }
+    
+    // Generate key based on table content
     const key = JSON.stringify(block.table.children.map(row => row.table_row.cells));
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+    
+    // Only skip if this table is identical to the IMMEDIATELY PREVIOUS block
+    if (key === prevTableKey) {
+      console.log(`🧹 Removing consecutive duplicate table`);
+      continue; // Skip this duplicate
+    }
+    
+    result.push(block);
+    prevTableKey = key;
+  }
+  
+  return result;
 }
 
 /**

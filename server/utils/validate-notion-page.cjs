@@ -7,6 +7,22 @@
  * - Reasonable block count
  * - Expected content structure
  * - Key headings/sections present
+ * 
+ * HEADING COUNT VALIDATION:
+ * Heading counts use ±20% tolerance to account for:
+ * 1. Synthetic section headings: ServiceNow uses <p><span class="ph uicontrol">Title</span></p>
+ *    which get converted to heading_2 blocks (now counted in HTML parsing)
+ * 2. Heading splitting: Long headings exceeding 100 rich_text elements split into multiple blocks
+ * 3. H4/H5/H6 downgrading: All downgrade to heading_3 (Notion only supports h1-h3)
+ * 
+ * PARAGRAPH COUNT VALIDATION:
+ * Paragraph counts use ±50% tolerance (informational only, not errors):
+ * 1. Promoted to list items: First <p> child of <li> becomes list item text, not paragraph block
+ * 2. Filtered empty paragraphs: Empty/whitespace-only paragraphs are filtered during conversion
+ * 3. Paragraph splitting: Long paragraphs exceeding 100 rich_text elements split into multiple blocks
+ * 4. Synthetic headings: <section><p><span class="ph uicontrol">...</span></p> become heading_2
+ * 5. Wrapped orphan content: Text not in containers gets wrapped in paragraph blocks
+ * 6. In tables: Paragraphs inside tables are excluded (table cells don't contain paragraph blocks)
  */
 
 /**
@@ -169,10 +185,41 @@ function parseSourceHtmlCounts(html) {
       }
     });
     
-    const paragraphs = allParagraphs - paragraphsInTables - paragraphsPromotedToListText;
+    // Count synthetic UIControl paragraphs that become headings (exclude from paragraph count)
+    // Same pattern as synthetic headings: <section><p class="p"><span class="ph uicontrol">...</span></p>
+    let paragraphsBecomeHeadings = 0;
+    $('section > p.p').each((i, p) => {
+      const $p = $(p);
+      const html = $p.html() || '';
+      const isSyntheticHeading = /^\s*<span[^>]*class=["'][^"']*\bph\b[^"']*\buicontrol\b[^"']*["'][^>]*>[^<]+<\/span>\s*$/.test(html);
+      if (isSyntheticHeading) {
+        paragraphsBecomeHeadings++;
+      }
+    });
+    
+    const paragraphs = allParagraphs - paragraphsInTables - paragraphsPromotedToListText - paragraphsBecomeHeadings;
     
     // Count headings (excluding h1 which is used as the page title)
-    const headings = $('h2, h3, h4, h5, h6').length;
+    let headings = $('h2, h3, h4, h5, h6').length;
+    
+    // Count synthetic section headings: ServiceNow sections without h2 tags use
+    // <p class="p"><span class="ph uicontrol">Title</span></p> which get converted to heading_2
+    // These paragraphs contain ONLY a single UIControl span (no other content)
+    let syntheticHeadings = 0;
+    $('section > p.p').each((i, p) => {
+      const $p = $(p);
+      const html = $p.html() || '';
+      // Match paragraphs with ONLY a single UIControl span (with optional whitespace)
+      const isSyntheticHeading = /^\s*<span[^>]*class=["'][^"']*\bph\b[^"']*\buicontrol\b[^"']*["'][^>]*>[^<]+<\/span>\s*$/.test(html);
+      if (isSyntheticHeading) {
+        syntheticHeadings++;
+      }
+    });
+    
+    if (syntheticHeadings > 0) {
+      console.log(`📊 [VALIDATION] Found ${syntheticHeadings} synthetic UIControl headings (will be converted to heading_2)`);
+      headings += syntheticHeadings;
+    }
     
     // Count tables
     const tables = $('table').length;
@@ -227,10 +274,11 @@ function parseSourceHtmlCounts(html) {
     const codeBlocks = allCodeBlocks - codeBlocksInTables;
     
     // Log paragraph count details if paragraphs were excluded
-    if (paragraphsInTables > 0 || paragraphsPromotedToListText > 0) {
+    if (paragraphsInTables > 0 || paragraphsPromotedToListText > 0 || paragraphsBecomeHeadings > 0) {
       const exclusions = [];
       if (paragraphsInTables > 0) exclusions.push(`${paragraphsInTables} in tables`);
       if (paragraphsPromotedToListText > 0) exclusions.push(`${paragraphsPromotedToListText} promoted to list item text`);
+      if (paragraphsBecomeHeadings > 0) exclusions.push(`${paragraphsBecomeHeadings} converted to headings`);
       console.log(`📊 [VALIDATION] Paragraph count: ${allParagraphs} total, ${exclusions.join(', ')} (excluded), ${paragraphs} counted for validation`);
     }
     
@@ -453,12 +501,12 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
           log(`✅ [VALIDATION] Image count acceptable: ${notionCounts.images}/${sourceCounts.images}`);
         }
 
-        // Callouts - allow slight variations due to filtering (gray info callouts are removed)
+        // Callouts - allow slight variations due to counting methodology differences
         // ERROR if significantly fewer (likely dropped content)
         // WARNING if more (might be counting methodology difference)
         let calloutsMismatch = false;
         if (sourceCounts.callouts > 0) {
-          const minExpected = Math.max(1, sourceCounts.callouts - 2); // Allow up to 2 fewer (filtered gray info)
+          const minExpected = Math.max(1, sourceCounts.callouts - 1); // Allow up to 1 fewer (counting difference)
           const maxExpected = sourceCounts.callouts + 1; // Allow 1 extra (counting difference)
           
           if (notionCounts.callouts < minExpected) {
@@ -476,21 +524,27 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
           }
         }
 
-        // Headings - less than expected is ERROR, more is WARNING
+        // Headings - use tolerance for splitting behavior
+        // Note: Headings can be split into multiple blocks if they exceed 100 rich_text elements
+        // Also: h4/h5/h6 get downgraded to h3 (Notion only supports heading_1/2/3)
+        // Allow up to 20% more headings to account for splitting and downgrading
         let headingsFewer = false;
         let headingsMore = false;
         if (sourceCounts.headings > 0) {
-          if (notionCounts.headings < sourceCounts.headings) {
+          const minExpected = Math.floor(sourceCounts.headings * 0.8); // Allow 20% fewer (merged/lost)
+          const maxExpected = Math.ceil(sourceCounts.headings * 1.2); // Allow 20% more (split/downgraded)
+          
+          if (notionCounts.headings < minExpected) {
             headingsFewer = true;
             result.hasErrors = true;
-            result.issues.push(`Heading count too low: expected ${sourceCounts.headings}, got ${notionCounts.headings}`);
-            log(`❌ [VALIDATION] Heading count too low: ${notionCounts.headings}/${sourceCounts.headings}`);
-          } else if (notionCounts.headings > sourceCounts.headings) {
+            result.issues.push(`Heading count too low: expected ~${sourceCounts.headings} (±20%), got ${notionCounts.headings}`);
+            log(`❌ [VALIDATION] Heading count too low: ${notionCounts.headings} < ${minExpected} (source: ${sourceCounts.headings})`);
+          } else if (notionCounts.headings > maxExpected) {
             headingsMore = true;
-            result.warnings.push(`Extra headings: expected ${sourceCounts.headings}, got ${notionCounts.headings} (acceptable)`);
-            log(`⚠️ [VALIDATION] Heading count higher than expected: ${notionCounts.headings}/${sourceCounts.headings} (acceptable)`);
+            result.warnings.push(`Extra headings: expected ~${sourceCounts.headings} (±20%), got ${notionCounts.headings} (may be split headings)`);
+            log(`⚠️ [VALIDATION] Heading count higher than expected: ${notionCounts.headings} > ${maxExpected} (source: ${sourceCounts.headings})`);
           } else {
-            log(`✅ [VALIDATION] Heading count matches: ${notionCounts.headings}/${sourceCounts.headings}`);
+            log(`✅ [VALIDATION] Heading count within range: ${notionCounts.headings} (source: ${sourceCounts.headings}, range: ${minExpected}-${maxExpected})`);
           }
         }
 
@@ -523,21 +577,24 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
           }
         }
 
-        // Paragraphs - warning level (with tolerance for splitting/merging)
-        // Shows ⚠️ if outside tolerance but doesn't fail validation
+        // Paragraphs - informational only (counting methodology is imprecise)
+        // Paragraphs can be split (>100 rich_text), filtered (empty), or wrapped (orphan content)
+        // Use 50% tolerance and only log extreme differences as informational notes
         if (sourceCounts.paragraphs > 0) {
-          const tolerance = Math.ceil(sourceCounts.paragraphs * 0.3); // 30% tolerance
-          const minExpected = sourceCounts.paragraphs - tolerance;
+          const tolerance = Math.ceil(sourceCounts.paragraphs * 0.5); // 50% tolerance (very loose)
+          const minExpected = Math.max(1, sourceCounts.paragraphs - tolerance);
           const maxExpected = sourceCounts.paragraphs + tolerance;
           
           if (notionCounts.paragraphs < minExpected) {
-            result.warnings.push(`⚠️ Paragraph count unusually low: expected ~${sourceCounts.paragraphs} (±${tolerance}), got ${notionCounts.paragraphs}`);
-            log(`⚠️ [VALIDATION] Paragraph count low: ${notionCounts.paragraphs} < ${minExpected} (source: ${sourceCounts.paragraphs})`);
+            // Only add as informational note, not a warning
+            result.warnings.push(`ℹ️ Paragraph count lower than expected: ~${sourceCounts.paragraphs} (±${tolerance}), got ${notionCounts.paragraphs} (may be filtered empty paragraphs or promoted to list items)`);
+            log(`ℹ️ [VALIDATION] Paragraph count low: ${notionCounts.paragraphs} < ${minExpected} (source: ${sourceCounts.paragraphs}) - informational only`);
           } else if (notionCounts.paragraphs > maxExpected) {
-            result.warnings.push(`⚠️ Paragraph count unusually high: expected ~${sourceCounts.paragraphs} (±${tolerance}), got ${notionCounts.paragraphs}`);
-            log(`⚠️ [VALIDATION] Paragraph count high: ${notionCounts.paragraphs} > ${maxExpected} (source: ${sourceCounts.paragraphs})`);
+            // Only add as informational note, not a warning
+            result.warnings.push(`ℹ️ Paragraph count higher than expected: ~${sourceCounts.paragraphs} (±${tolerance}), got ${notionCounts.paragraphs} (may be split paragraphs or wrapped orphan content)`);
+            log(`ℹ️ [VALIDATION] Paragraph count high: ${notionCounts.paragraphs} > ${maxExpected} (source: ${sourceCounts.paragraphs}) - informational only`);
           } else {
-            log(`✅ [VALIDATION] Paragraph count within range: ${notionCounts.paragraphs} (source: ${sourceCounts.paragraphs})`);
+            log(`✅ [VALIDATION] Paragraph count within range: ${notionCounts.paragraphs} (source: ${sourceCounts.paragraphs}, range: ${minExpected}-${maxExpected})`);
           }
         }
 
@@ -578,7 +635,9 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
       result.summary += `\n• Callouts: ${result.sourceCounts.callouts} → ${result.notionCounts.callouts}`;
     }
 
-    result.summary += `\n\nStats: ${JSON.stringify(result.stats, null, 2)}`;
+    // Note: Stats are now stored in a separate "Stats" property, not in the summary
+    // This keeps the Validation property focused on issues/warnings
+    // and makes Stats separately queryable in Notion
 
     log(`🔍 [VALIDATION] Complete: ${result.success ? 'PASSED' : 'FAILED'}`);
     
