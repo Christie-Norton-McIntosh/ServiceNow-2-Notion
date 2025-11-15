@@ -457,13 +457,40 @@ async function orchestrateDeepNesting(pageId, markerMap) {
           const joinedNew = newRt.map((r) => r.text?.content || "").join(" ");
           if (joinedOld !== joinedNew) {
             const safeNewRt = sanitizeRichTextArray(newRt);
-            await notion.blocks.update({
-              block_id: paragraphId,
-              paragraph: { rich_text: safeNewRt },
-            });
-            log(
-              `✅ Orchestrator: removed marker from paragraph ${paragraphId}`
-            );
+            
+            // Retry logic for conflict errors
+            let updateSuccess = false;
+            let conflictRetries = 0;
+            const maxConflictRetries = 3;
+            
+            let rateLimitRetries = 0;
+            const maxRateLimitRetries = 5;
+            while (!updateSuccess && (conflictRetries <= maxConflictRetries || rateLimitRetries <= maxRateLimitRetries)) {
+              try {
+                await notion.blocks.update({
+                  block_id: paragraphId,
+                  paragraph: { rich_text: safeNewRt },
+                });
+                updateSuccess = true;
+                log(
+                  `✅ Orchestrator: removed marker from paragraph ${paragraphId}`
+                );
+              } catch (updateError) {
+                if (updateError.status === 429 && rateLimitRetries < maxRateLimitRetries) {
+                  rateLimitRetries++;
+                  const delay = Math.min(1000 * Math.pow(2, rateLimitRetries - 1), 5000);
+                  log(`⏳ Orchestrator: rate limit on paragraph ${paragraphId}, retry ${rateLimitRetries}/${maxRateLimitRetries} after ${delay}ms`);
+                  await new Promise(resolve => setTimeout(resolve, delay));
+                } else if (updateError.code === 'conflict_error' && conflictRetries < maxConflictRetries) {
+                  conflictRetries++;
+                  const delay = 500 * conflictRetries;
+                  log(`🔄 Orchestrator: conflict on paragraph ${paragraphId}, retry ${conflictRetries}/${maxConflictRetries} after ${delay}ms`);
+                  await new Promise(resolve => setTimeout(resolve, delay));
+                } else {
+                  throw updateError; // Re-throw for outer catch
+                }
+              }
+            }
           }
         } catch (e) {
           log(
@@ -481,7 +508,9 @@ async function orchestrateDeepNesting(pageId, markerMap) {
         let delay = 1000;
         let success = false;
         
-        while (retries > 0 && !success) {
+        let rateLimitRetries = 0;
+        const maxRateLimitRetries = 5;
+        while ((retries > 0 || rateLimitRetries <= maxRateLimitRetries) && !success) {
           try {
             const block = await notion.blocks.retrieve({ block_id: parentId });
             const blockType = block.type;
@@ -508,9 +537,18 @@ async function orchestrateDeepNesting(pageId, markerMap) {
           } catch (e) {
             retries--;
             if (retries > 0) {
-              log(`⚠️ Orchestrator: marker removal failed (${retries} retries left), waiting ${delay}ms: ${e && e.message}`);
-              await new Promise(resolve => setTimeout(resolve, delay));
-              delay *= 2; // Exponential backoff
+              // Use shorter delay for conflict errors (they resolve quickly)
+              const actualDelay = e.code === 'conflict_error' ? 500 : delay;
+              log(`⚠️ Orchestrator: marker removal failed${e.code === 'conflict_error' ? ' (conflict)' : ''} (${retries} retries left), waiting ${actualDelay}ms: ${e && e.message}`);
+              await new Promise(resolve => setTimeout(resolve, actualDelay));
+              delay *= 2; // Exponential backoff for non-conflict errors
+            } else if (e && e.status === 429 && rateLimitRetries < maxRateLimitRetries) {
+              rateLimitRetries++;
+              const rlDelay = Math.min(1000 * Math.pow(2, rateLimitRetries - 1), 5000);
+              log(`⏳ Orchestrator: rate limit on block ${parentId}, retry ${rateLimitRetries}/${maxRateLimitRetries} after ${rlDelay}ms`);
+              await new Promise(resolve => setTimeout(resolve, rlDelay));
+              // give one more normal retry after rate limit backoff
+              retries = Math.max(retries, 1);
             } else {
               log(
                 "⚠️ Orchestrator: failed to remove marker from block after all retries:",
@@ -562,6 +600,21 @@ async function orchestrateDeepNesting(pageId, markerMap) {
   } catch (e) {
     log("⚠️ Orchestrator: sweeper failed:", e && e.message);
   }
+  
+  // Run a second aggressive sweep to catch any remaining markers (belt and suspenders)
+  try {
+    log(`🔍 [MARKER-CLEANUP] Running final aggressive marker sweep on page ${pageId}`);
+    const secondSweep = await sweepAndRemoveMarkersFromPage(pageId);
+    if (secondSweep && secondSweep.updated) {
+      log(
+        `🔍 [MARKER-CLEANUP] Second sweep updated ${secondSweep.updated} additional blocks`
+      );
+    } else {
+      log(`🔍 [MARKER-CLEANUP] Second sweep found no remaining markers`);
+    }
+  } catch (e) {
+    log("⚠️ [MARKER-CLEANUP] Second sweep failed:", e && e.message);
+  }
 
   return { appended: totalAppended };
 }
@@ -578,11 +631,26 @@ async function sweepAndRemoveMarkersFromPage(rootPageId) {
   const tokenPrefix = "(sn2n:";
 
   async function listChildren(blockId, cursor) {
-    return await notion.blocks.children.list({
-      block_id: blockId,
-      page_size: 100,
-      start_cursor: cursor,
-    });
+    // Add minimal retry for transient errors
+    const maxRetries = 3;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await notion.blocks.children.list({
+          block_id: blockId,
+          page_size: 100,
+          start_cursor: cursor,
+        });
+      } catch (e) {
+        const retryable = e && (e.status === 429 || /ECONNRESET|ETIMEDOUT|timeout|socket hang up/i.test(e.message || ''));
+        if (retryable && attempt < maxRetries) {
+          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+          log(`⏳ Sweeper: retrying listChildren for ${blockId} attempt ${attempt}/${maxRetries} after ${delay}ms`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        throw e;
+      }
+    }
   }
 
   const queue = [rootPageId];
@@ -603,8 +671,89 @@ async function sweepAndRemoveMarkersFromPage(rootPageId) {
         try {
           // Check for rich_text on the block's typed payload
           const t = child.type;
-          // Support multiple block types that have rich_text
-          const payload = child[t] || child.paragraph || child.callout || child.to_do || child.toggle || {};
+          // Support ALL block types that can have rich_text
+          const payload = child[t] || 
+                          child.paragraph || 
+                          child.callout || 
+                          child.bulleted_list_item || 
+                          child.numbered_list_item ||
+                          child.to_do || 
+                          child.toggle || 
+                          child.quote ||
+                          child.heading_1 ||
+                          child.heading_2 ||
+                          child.heading_3 ||
+                          {};
+
+          // Special handling: table_row markers inside cells
+          if (t === 'table_row' && child.table_row && Array.isArray(child.table_row.cells)) {
+            try {
+              const cells = child.table_row.cells;
+              let changed = false;
+              const markerRegex = /\(sn2n:[^)]+\)/gi;
+              const newCells = cells.map(cell => {
+                if (!Array.isArray(cell)) return cell;
+                const cellPlain = cell.map(rt => rt?.text?.content || '').join('');
+                if (!markerRegex.test(cellPlain)) return cell;
+                let cleaned = cell;
+                const matches = cellPlain.match(markerRegex) || [];
+                for (const m of matches) {
+                  const markerName = (m || '').replace(/^\(|\)$/g, '').split(':')[1] || null;
+                  if (markerName) {
+                    cleaned = removeMarkerFromRichTextArray(cleaned, markerName);
+                  } else {
+                    // Fallback literal removal
+                    cleaned = cleaned.map(rt => {
+                      if (!rt || !rt.text || typeof rt.text.content !== 'string') return rt;
+                      return { ...rt, text: { ...rt.text, content: rt.text.content.replace(m, '') } };
+                    });
+                  }
+                }
+                // Aggressive cleanup of any remaining tokens
+                cleaned = cleaned.map(rt => {
+                  if (!rt || !rt.text || typeof rt.text.content !== 'string') return rt;
+                  return { ...rt, text: { ...rt.text, content: rt.text.content.replace(/\(sn2n:[a-z0-9\-_]+\)/gi, '') } };
+                }).filter(rt => rt && rt.text && typeof rt.text.content === 'string' && rt.text.content.trim().length > 0);
+                if (JSON.stringify(cleaned) !== JSON.stringify(cell)) changed = true;
+                return cleaned;
+              });
+
+              if (changed) {
+                // Retry with backoff for conflicts and rate limits
+                let ok = false;
+                let conflictRetries = 0, rateLimitRetries = 0;
+                const maxConflictRetries = 3, maxRateLimitRetries = 5;
+                while (!ok && (conflictRetries <= maxConflictRetries || rateLimitRetries <= maxRateLimitRetries)) {
+                  try {
+                    await notion.blocks.update({
+                      block_id: child.id,
+                      table_row: { cells: newCells }
+                    });
+                    updated++;
+                    ok = true;
+                    log(`🔧 Sweeper: removed marker(s) from table_row ${child.id}`);
+                  } catch (e) {
+                    if (e.code === 'conflict_error' && conflictRetries < maxConflictRetries) {
+                      conflictRetries++;
+                      const d = 500 * conflictRetries;
+                      log(`🔄 Sweeper: conflict updating table_row ${child.id}, retry ${conflictRetries}/${maxConflictRetries} after ${d}ms`);
+                      await new Promise(r => setTimeout(r, d));
+                    } else if (e.status === 429 && rateLimitRetries < maxRateLimitRetries) {
+                      rateLimitRetries++;
+                      const d = Math.min(1000 * Math.pow(2, rateLimitRetries - 1), 5000);
+                      log(`⏳ Sweeper: rate limit updating table_row ${child.id}, retry ${rateLimitRetries}/${maxRateLimitRetries} after ${d}ms`);
+                      await new Promise(r => setTimeout(r, d));
+                    } else {
+                      log(`⚠️ Sweeper: failed to update table_row ${child.id}: ${e && e.message}`);
+                      break;
+                    }
+                  }
+                }
+              }
+            } catch (e) {
+              log(`⚠️ Sweeper: error processing table_row ${child.id}: ${e && e.message}`);
+            }
+          }
           const rich = Array.isArray(payload.rich_text)
             ? payload.rich_text
             : [];
@@ -632,6 +781,18 @@ async function sweepAndRemoveMarkersFromPage(rootPageId) {
                 });
               }
             }
+            
+            // Additional aggressive cleanup: remove any remaining marker patterns directly
+            // This catches markers that may have been missed by the above logic
+            newRich = newRich.map((rt) => {
+              if (!rt || !rt.text || typeof rt.text.content !== "string") return rt;
+              // Remove all (sn2n:xxxx) patterns
+              const cleaned = rt.text.content.replace(/\(sn2n:[a-z0-9\-_]+\)/gi, '');
+              return { ...rt, text: { ...rt.text, content: cleaned } };
+            }).filter(rt => {
+              // Remove empty text segments after marker removal
+              return rt && rt.text && rt.text.content && rt.text.content.trim().length > 0;
+            });
 
             const joinedOld = rich.map((r) => r.text?.content || "").join(" ");
             const joinedNew = newRich
@@ -642,18 +803,42 @@ async function sweepAndRemoveMarkersFromPage(rootPageId) {
               const safeNewRt = Array.isArray(newRich) ? newRich : [];
               const updateBody = {};
               updateBody[child.type] = { rich_text: safeNewRt };
-              try {
-                await notion.blocks.update({
-                  block_id: child.id,
-                  [child.type]: { rich_text: safeNewRt },
-                });
-                updated++;
-                log(`🔧 Sweeper: removed marker(s) from block ${child.id}`);
-              } catch (e) {
-                log(
-                  `⚠️ Sweeper: failed to update block ${child.id}:`,
-                  e && e.message
-                );
+              
+              // Retry logic for conflict errors
+              let updateSuccess = false;
+              let conflictRetries = 0;
+              const maxConflictRetries = 3;
+              
+              let rateLimitRetries = 0;
+              const maxRateLimitRetries = 5;
+              while (!updateSuccess && (conflictRetries <= maxConflictRetries || rateLimitRetries <= maxRateLimitRetries)) {
+                try {
+                  await notion.blocks.update({
+                    block_id: child.id,
+                    [child.type]: { rich_text: safeNewRt },
+                  });
+                  updated++;
+                  updateSuccess = true;
+                  log(`🔧 Sweeper: removed marker(s) from block ${child.id}`);
+                } catch (e) {
+                  if (e.status === 429 && rateLimitRetries < maxRateLimitRetries) {
+                    rateLimitRetries++;
+                    const delay = Math.min(1000 * Math.pow(2, rateLimitRetries - 1), 5000);
+                    log(`⏳ Sweeper: rate limit on block ${child.id}, retry ${rateLimitRetries}/${maxRateLimitRetries} after ${delay}ms`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                  } else if (e.code === 'conflict_error' && conflictRetries < maxConflictRetries) {
+                    conflictRetries++;
+                    const delay = 500 * conflictRetries;
+                    log(`🔄 Sweeper: conflict on block ${child.id}, retry ${conflictRetries}/${maxConflictRetries} after ${delay}ms`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                  } else {
+                    log(
+                      `⚠️ Sweeper: failed to update block ${child.id}:`,
+                      e && e.message
+                    );
+                    break;
+                  }
+                }
               }
             }
           }

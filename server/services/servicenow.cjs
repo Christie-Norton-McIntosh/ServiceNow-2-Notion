@@ -1805,6 +1805,11 @@ async function extractContentFromHtml(html) {
       const listItems = $elem.find('> li').toArray();
       console.log(`🔍 Processing <ul> with ${listItems.length} list items`);
       
+      // CALLOUT EXTRACTION FIX: Collect callouts from list items to promote as siblings
+      // Notion does not support callouts as children of list items, so we extract them
+      // and add them as root-level blocks after the list completes
+      const extractedCallouts = [];
+      
       for (let li of listItems) {
         const $li = $(li);
         
@@ -1917,6 +1922,22 @@ async function extractContentFromHtml(html) {
                 const hasMarker = !!block._sn2n_marker;
                 const richTextPreview = block[blockType]?.rich_text?.map(rt => rt.text?.content || '').join('').substring(0, 40);
                 console.log(`🔍 [NESTED-BLOCK-STATE-UL] Type: ${blockType}, hasMarker: ${hasMarker}, text: "${richTextPreview}..."`);
+              }
+              
+              // CALLOUT EXTRACTION FIX: Extract callouts to promote as root-level siblings
+              // Notion does not support callouts as children of list items
+              if (block && block.type === 'callout') {
+                console.log(`🔍 [CALLOUT-EXTRACT] Extracting callout from list item to promote as sibling block`);
+                // Add a subtle prefix to indicate this callout came from a list context
+                if (block.callout && block.callout.rich_text && block.callout.rich_text.length > 0) {
+                  // Prepend "• " to the first text element
+                  const firstText = block.callout.rich_text[0];
+                  if (firstText && firstText.text && firstText.text.content) {
+                    firstText.text.content = `• ${firstText.text.content}`;
+                  }
+                }
+                extractedCallouts.push(block);
+                return; // Don't process further - will be added after list
               }
               
               // CRITICAL FIX: Check for marker tokens FIRST (parent blocks with own deferred children)
@@ -2312,6 +2333,13 @@ async function extractContentFromHtml(html) {
           }
         }
       }
+      
+      // CALLOUT EXTRACTION FIX: Add extracted callouts as root-level sibling blocks after the list
+      if (extractedCallouts.length > 0) {
+        console.log(`🔍 [CALLOUT-EXTRACT] Adding ${extractedCallouts.length} extracted callout(s) as siblings after <ul>`);
+        processedBlocks.push(...extractedCallouts);
+      }
+      
       console.log(`✅ Created list blocks from <ul>`);
       $elem.remove(); // Mark as processed
       
@@ -2319,6 +2347,9 @@ async function extractContentFromHtml(html) {
       // Ordered list
       const listItems = $elem.find('> li').toArray();
       console.log(`🔍 Processing <ol> with ${listItems.length} list items`);
+      
+      // CALLOUT EXTRACTION FIX: Collect callouts from list items to promote as siblings
+      const extractedCallouts = [];
       
       for (let li of listItems) {
         const $li = $(li);
@@ -2466,6 +2497,22 @@ async function extractContentFromHtml(html) {
             }
             
             nestedChildren.forEach(block => {
+              // CALLOUT EXTRACTION FIX: Extract callouts to promote as root-level siblings
+              // Notion does not support callouts as children of list items
+              if (block && block.type === 'callout') {
+                console.log(`🔍 [CALLOUT-EXTRACT] Extracting callout from ordered list item to promote as sibling block`);
+                // Add a subtle prefix to indicate this callout came from a list context
+                if (block.callout && block.callout.rich_text && block.callout.rich_text.length > 0) {
+                  // Prepend "• " to the first text element
+                  const firstText = block.callout.rich_text[0];
+                  if (firstText && firstText.text && firstText.text.content) {
+                    firstText.text.content = `• ${firstText.text.content}`;
+                  }
+                }
+                extractedCallouts.push(block);
+                return; // Don't process further - will be added after list
+              }
+              
               // CRITICAL FIX: Check for marker tokens FIRST (parent blocks with own deferred children)
               // These should be added as immediate children, regardless of whether they also have _sn2n_marker
               const blockType = block.type;
@@ -2869,6 +2916,13 @@ async function extractContentFromHtml(html) {
           }
         }
       }
+      
+      // CALLOUT EXTRACTION FIX: Add extracted callouts as root-level sibling blocks after the list
+      if (extractedCallouts.length > 0) {
+        console.log(`🔍 [CALLOUT-EXTRACT] Adding ${extractedCallouts.length} extracted callout(s) as siblings after <ol>`);
+        processedBlocks.push(...extractedCallouts);
+      }
+      
       console.log(`✅ Created list blocks from <ol>`);
       $elem.remove(); // Mark as processed
       

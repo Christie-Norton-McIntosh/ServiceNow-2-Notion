@@ -49,45 +49,48 @@ export function injectMainPanel() {
         localStorage.removeItem('w2n-panel-position');
       }
     }
-  } catch (e) {
-    console.warn('[W2N] Failed to restore panel position:', e);
-  }
-  
-  // Apply position (either saved or default)
-  if (savedPosition) {
-    panel.style.cssText = `
-      position: fixed;
-      left: ${Math.round(savedPosition.left)}px;
-      top: ${Math.round(savedPosition.top)}px;
-      width: 320px;
-      background: white;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.15);
-      z-index: 10000;
-      font-family: system-ui, -apple-system, sans-serif;
-      font-size: 14px;
-      user-select: none;
-      opacity: 0.95;
-      transition: opacity 0.2s ease;
-    `;
-  } else {
-    // Default position (top-right)
-    panel.style.cssText = `
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      width: 320px;
-      background: white;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.15);
-      z-index: 10000;
-      font-family: system-ui, -apple-system, sans-serif;
-      font-size: 14px;
-      user-select: none;
-      opacity: 0.95;
-      transition: opacity 0.2s ease;
+          if (isRateLimited) {
+            autoExtractState.rateLimitHits++;
+            const failedPageInfo = {
+              pageNumber: currentPageNum,
+              url: window.location.href,
+              title: document.title,
+              timestamp: new Date().toISOString(),
+              reason: 'rate_limit',
+              errorMessage: error.message
+            };
+            autoExtractState.failedPages.push(failedPageInfo);
+            let waitSeconds = 30;
+            if (captureAttempts === 2) waitSeconds = 60;
+            debug(`🚦 RATE LIMIT HIT during AutoExtract on page ${currentPageNum}`);
+            debug(`   Total rate limit hits this session: ${autoExtractState.rateLimitHits}`);
+            debug(`   Pausing AutoExtract for ${waitSeconds} seconds...`);
+            debug(`   Failed page saved for retry: ${failedPageInfo.title}`);
+            showToast(
+              `⏸️ Rate limit hit! Pausing for ${waitSeconds}s before retrying...`,
+              5000
+            );
+            if (button) {
+              button.textContent = `⏸️ Paused: Rate limit (${waitSeconds}s)...`;
+            }
+            overlayModule.setMessage(`⏸️ Rate limit - waiting ${waitSeconds}s...`);
+            await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
+            debug(`✅ Rate limit cooldown complete, retrying page ${currentPageNum}...`);
+            showToast(
+              `✅ Cooldown complete, retrying page ${currentPageNum}...`,
+              3000
+            );
+            autoExtractState.failedPages.pop();
+            if (captureAttempts < 2) {
+              continue; // Retry with increased backoff
+            } else {
+              debug(`❌ Aborting after 2 rate limit retries for page ${currentPageNum}`);
+              showToast(`❌ Aborting after 2 rate limit retries.`, 5000);
+              stopAutoExtract(autoExtractState);
+              if (button) button.textContent = `❌ Stopped: Rate limit`;
+              return;
+            }
+          }
     `;
   }
 
@@ -119,13 +122,9 @@ export function injectMainPanel() {
       <div style="margin-bottom:16px;">
         <label style="display:block;margin-bottom:5px;font-weight:500;">Database:</label>
         <select id="w2n-database-select" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px;">
-          <option value="${config.databaseId || ""}">${
-    config.databaseName || "(no database)"
-  }</option>
+          <option value="${config.databaseId || ""}">${config.databaseName || "(no database)"}</option>
         </select>
-        <div id="w2n-selected-database-label" style="margin-top:8px;font-size:12px;color:#6b7280;">Database: ${
-          config.databaseName || "(no database)"
-        }</div>
+        <div id="w2n-selected-database-label" style="margin-top:8px;font-size:12px;color:#6b7280;">Database: ${config.databaseName || "(no database)"}</div>
         <div style="margin-top:8px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
           <button id="w2n-refresh-dbs" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">Refresh</button>
           <button id="w2n-search-dbs" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">Search</button>

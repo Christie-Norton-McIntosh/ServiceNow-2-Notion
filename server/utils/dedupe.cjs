@@ -167,6 +167,48 @@ function dedupeAndFilterBlocks(blockArray, options = {}) {
         continue;
       }
 
+      // Special-case table dedupe: check for immediately adjacent identical tables (within proximity window)
+      // Tables can legitimately appear multiple times in different sections, so only dedupe if very close
+      if (blk && blk.type === 'table' && blk.table) {
+        const tableKey = computeBlockKey(blk);
+        
+        // Check if an identical table appears within the proximity window
+        const foundInWindow = recentBlocks.find(entry => {
+          const [entryKey, entryIndex] = entry;
+          return entryKey === tableKey && (i - entryIndex) <= PROXIMITY_WINDOW;
+        });
+        
+        if (foundInWindow) {
+          const distance = i - foundInWindow[1];
+          const preview = (() => {
+            try {
+              const firstRow = blk.table.children?.[0]?.table_row?.cells?.[0] || [];
+              if (Array.isArray(firstRow)) {
+                return firstRow.map(rt => rt?.text?.content || '').join('').substring(0, 40);
+              }
+              return '[no preview]';
+            } catch (e) {
+              return '[error]';
+            }
+          })();
+          log(`🚫 Deduping table at index ${i}: duplicate of table at ${foundInWindow[1]} (distance: ${distance}, preview: "${preview}")`);
+          removed++;
+          duplicates++;
+          continue;
+        }
+        
+        // Not a duplicate, add to recent blocks
+        recentBlocks.push([tableKey, i]);
+        
+        // Keep window size manageable for tables too
+        while (recentBlocks.length > 0 && (i - recentBlocks[0][1]) > PROXIMITY_WINDOW) {
+          recentBlocks.shift();
+        }
+        
+        out.push(blk);
+        continue;
+      }
+
       const key = computeBlockKey(blk);
       
       // Special handling for callouts: stricter deduplication for immediately adjacent duplicates

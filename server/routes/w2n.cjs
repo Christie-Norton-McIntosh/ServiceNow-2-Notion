@@ -1106,10 +1106,13 @@ router.post('/W2N', async (req, res) => {
         try {
           const propertyUpdates = {};
           
-          // Set Error checkbox if validation failed
+          // Set Error checkbox based on validation result (always explicit)
           if (validationResult.hasErrors) {
             propertyUpdates["Error"] = { checkbox: true };
             log(`⚠️ Validation failed - setting Error checkbox`);
+          } else {
+            propertyUpdates["Error"] = { checkbox: false };
+            log(`✅ Validation passed - clearing Error checkbox`);
           }
           
           // Set Validation property with results summary (without stats)
@@ -1279,40 +1282,60 @@ router.patch('/W2N/:pageId', async (req, res) => {
           collectAndStripMarkers, removeCollectedBlocks, deepStripPrivateKeys, 
           orchestrateDeepNesting, getExtraDebug, normalizeAnnotations, normalizeUrl, 
           isValidImageUrl, cleanInvalidBlocks } = getGlobals();
-  
+
   const { pageId } = req.params;
   log(`🔧 PATCH W2N: Updating page ${pageId}`);
-  
+
   // Clear trackers for new request
   if (global._sn2n_paragraph_tracker) {
     console.log(`🔄 [DUPLICATE-DETECT] Clearing paragraph tracker (had ${global._sn2n_paragraph_tracker.length} entries)`);
   }
   global._sn2n_paragraph_tracker = [];
-  
+
   if (global._sn2n_callout_tracker) {
     console.log(`🔄 [CALLOUT-DUPLICATE] Clearing callout tracker (had ${global._sn2n_callout_tracker.size} entries)`);
   }
   global._sn2n_callout_tracker = new Set();
-  
+
+  // Heartbeat interval + cleanup hoisted so catch block can access
+  let patchStartTime = Date.now();
+  let operationPhase = 'initializing';
+  let heartbeatInterval = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - patchStartTime) / 1000);
+    log(`💓 [${elapsed}s] PATCH in progress - ${operationPhase}...`);
+  }, 10000);
+  const cleanup = () => {
+    if (heartbeatInterval) {
+      clearInterval(heartbeatInterval);
+      heartbeatInterval = null;
+    }
+  };
+
   try {
     const payload = req.body;
     const pageTitle = payload.title || 'Untitled';
     log(`📝 Processing PATCH request for: ${pageTitle}`);
     
-    // Validate page ID format
-    if (!pageId || pageId.length !== 32) {
-      return sendError(res, "INVALID_PAGE_ID", "Page ID must be a 32-character UUID", null, 400);
+    // Heartbeat already started above; patchStartTime/operationPhase initialized
+    
+    // Validate page ID format (accept both with and without hyphens)
+    const normalizedPageId = pageId.replace(/-/g, '');
+    if (!normalizedPageId || normalizedPageId.length !== 32) {
+      cleanup();
+      return sendError(res, "INVALID_PAGE_ID", "Page ID must be a valid 32-character UUID (with or without hyphens)", null, 400);
     }
     
     // Extract fresh content from HTML
     const html = payload.contentHtml || payload.content;
     if (!html) {
+      cleanup();
       return sendError(res, "MISSING_CONTENT", "contentHtml or content required", null, 400);
     }
     
     log(`📄 HTML content length: ${html.length} characters`);
     
     // Extract blocks from HTML (same as POST endpoint)
+    operationPhase = 'extracting blocks from HTML';
     const extractionResult = await htmlToNotionBlocks(html);
     
     if (!extractionResult || !extractionResult.blocks) {
@@ -1392,6 +1415,7 @@ router.patch('/W2N/:pageId', async (req, res) => {
     log(`📦 Prepared ${initialBlocks.length} initial blocks, ${remainingBlocks.length} remaining`);
     
     // STEP 1: Delete all existing blocks from the page
+    operationPhase = 'fetching existing blocks';
     log(`🗑️ STEP 1: Deleting all existing blocks from page ${pageId}`);
     
     let existingBlocks = [];
@@ -1423,51 +1447,95 @@ router.patch('/W2N/:pageId', async (req, res) => {
     
     log(`   Found ${existingBlocks.length} existing blocks to delete`);
     
-    // Delete all blocks with rate limit protection
+    // Parallel delete with concurrency limit and rate limit management
+    operationPhase = `deleting ${existingBlocks.length} blocks in parallel`;
     let deletedCount = 0;
+    let failedCount = 0;
+    const maxConcurrent = 10; // Process 10 deletions in parallel
     const maxRateLimitRetries = 5;
     
-    for (let i = 0; i < existingBlocks.length; i++) {
-      const block = existingBlocks[i];
+    // Helper function to delete a single block with retry logic
+    const deleteBlockWithRetry = async (block, index) => {
       let rateLimitRetryCount = 0;
+      let conflictRetryCount = 0;
       let deleted = false;
+      const maxConflictRetries = 3;
       
-      while (!deleted && rateLimitRetryCount <= maxRateLimitRetries) {
+      while (!deleted && rateLimitRetryCount <= maxRateLimitRetries && conflictRetryCount <= maxConflictRetries) {
         try {
           await notion.blocks.delete({ block_id: block.id });
           deletedCount++;
           deleted = true;
-          
-          // Rate limit protection: delay every 10 deletions
-          if ((i + 1) % 10 === 0) {
-            await new Promise(resolve => setTimeout(resolve, 100));
-          }
         } catch (error) {
           if (error.status === 429) {
             rateLimitRetryCount++;
             const delay = Math.min(1000 * Math.pow(2, rateLimitRetryCount - 1), 5000);
-            log(`   ⏳ Rate limit hit on delete ${i + 1}, retry ${rateLimitRetryCount}/${maxRateLimitRetries} after ${delay}ms`);
+            log(`   ⏳ Rate limit hit on delete ${index + 1}, retry ${rateLimitRetryCount}/${maxRateLimitRetries} after ${delay}ms`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          } else if (error.code === 'conflict_error') {
+            conflictRetryCount++;
+            const delay = 500 * conflictRetryCount; // 500ms, 1s, 1.5s
+            log(`   🔄 Conflict on delete ${index + 1}, retry ${conflictRetryCount}/${maxConflictRetries} after ${delay}ms`);
             await new Promise(resolve => setTimeout(resolve, delay));
           } else {
             log(`   ⚠️ Failed to delete block ${block.id}: ${error.message}`);
+            failedCount++;
             break; // Skip this block and continue
           }
         }
       }
+      
+      if (!deleted && rateLimitRetryCount > maxRateLimitRetries) {
+        log(`   ❌ Max retries exceeded for block ${block.id}`);
+        failedCount++;
+      } else if (!deleted && conflictRetryCount > maxConflictRetries) {
+        log(`   ❌ Max conflict retries exceeded for block ${block.id}`);
+        failedCount++;
+      }
+    };
+    
+    // Process deletions in parallel batches
+    const startTime = Date.now();
+    for (let i = 0; i < existingBlocks.length; i += maxConcurrent) {
+      const batch = existingBlocks.slice(i, i + maxConcurrent);
+      const batchNum = Math.floor(i / maxConcurrent) + 1;
+      const totalBatches = Math.ceil(existingBlocks.length / maxConcurrent);
+      
+      log(`   Deleting batch ${batchNum}/${totalBatches} (${batch.length} blocks)...`);
+      
+      // Delete batch in parallel
+      await Promise.all(
+        batch.map((block, batchIndex) => deleteBlockWithRetry(block, i + batchIndex))
+      );
+      
+      // Small delay between batches to prevent overwhelming the API
+      if (i + maxConcurrent < existingBlocks.length) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      
+      // Progress update every 5 batches
+      if (batchNum % 5 === 0) {
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        log(`   Progress: ${deletedCount}/${existingBlocks.length} deleted (${elapsed}s elapsed)`);
+      }
     }
     
-    log(`✅ Deleted ${deletedCount} blocks from page`);
+    const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+    log(`✅ Deleted ${deletedCount}/${existingBlocks.length} blocks in ${totalTime}s${failedCount > 0 ? ` (${failedCount} failed)` : ''}`);
     
     // STEP 2: Upload fresh content
+    operationPhase = `uploading ${extractedBlocks.length} fresh blocks`;
     log(`📤 STEP 2: Uploading ${extractedBlocks.length} fresh blocks`);
     
     // Upload initial batch (up to 100 blocks) with retry logic
     const maxRetries = 3;
+    const maxConflictRetries = 3;
     let retryCount = 0;
+    let conflictRetryCount = 0;
     let uploadSuccess = false;
     let rateLimitRetryCount = 0;
     
-    while (!uploadSuccess && (retryCount <= maxRetries || rateLimitRetryCount <= maxRateLimitRetries)) {
+    while (!uploadSuccess && (retryCount <= maxRetries || rateLimitRetryCount <= maxRateLimitRetries || conflictRetryCount <= maxConflictRetries)) {
       try {
         await notion.blocks.children.append({
           block_id: pageId,
@@ -1480,6 +1548,11 @@ router.patch('/W2N/:pageId', async (req, res) => {
           rateLimitRetryCount++;
           const delay = Math.min(1000 * Math.pow(2, rateLimitRetryCount - 1), 5000);
           log(`   ⏳ Rate limit hit on upload, retry ${rateLimitRetryCount}/${maxRateLimitRetries} after ${delay}ms`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        } else if (error.code === 'conflict_error') {
+          conflictRetryCount++;
+          const delay = 500 * conflictRetryCount; // 500ms, 1s, 1.5s
+          log(`   🔄 Conflict on upload, retry ${conflictRetryCount}/${maxConflictRetries} after ${delay}ms`);
           await new Promise(resolve => setTimeout(resolve, delay));
         } else {
           retryCount++;
@@ -1507,12 +1580,37 @@ router.patch('/W2N/:pageId', async (req, res) => {
         log(`   Uploading chunk ${i + 1}/${chunks.length} (${chunk.length} blocks)...`);
         
         deepStripPrivateKeys(chunk);
-        await notion.blocks.children.append({
-          block_id: pageId,
-          children: chunk
-        });
         
-        // Rate limit protection
+        // Retry logic for this chunk
+        let chunkSuccess = false;
+        let chunkRetries = 0;
+        const maxChunkRetries = 3;
+        
+        while (!chunkSuccess && chunkRetries <= maxChunkRetries) {
+          try {
+            await notion.blocks.children.append({
+              block_id: pageId,
+              children: chunk
+            });
+            chunkSuccess = true;
+          } catch (chunkError) {
+            if (chunkError.code === 'conflict_error' && chunkRetries < maxChunkRetries) {
+              chunkRetries++;
+              const delay = 500 * chunkRetries;
+              log(`   🔄 Conflict on chunk ${i + 1}, retry ${chunkRetries}/${maxChunkRetries} after ${delay}ms`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+            } else if (chunkError.status === 429 && chunkRetries < maxChunkRetries) {
+              chunkRetries++;
+              const delay = 1000 * Math.pow(2, chunkRetries - 1);
+              log(`   ⏳ Rate limit on chunk ${i + 1}, retry ${chunkRetries}/${maxChunkRetries} after ${delay}ms`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+            } else {
+              throw chunkError;
+            }
+          }
+        }
+        
+        // Rate limit protection between chunks
         if (i < chunks.length - 1) {
           await new Promise(resolve => setTimeout(resolve, 100));
         }
@@ -1521,8 +1619,15 @@ router.patch('/W2N/:pageId', async (req, res) => {
       log(`✅ All ${remainingBlocks.length} remaining blocks uploaded`);
     }
     
+    // Brief pause after uploads to let Notion settle
+    if (extractedBlocks.length > 0) {
+      log(`⏸️  Waiting 500ms for Notion to process uploads...`);
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
     // STEP 3: Run orchestration for deep nesting
     if (markerMap && Object.keys(markerMap).length > 0) {
+      operationPhase = `orchestrating deep nesting for ${Object.keys(markerMap).length} markers`;
       log(`🔧 STEP 3: Running deep-nesting orchestration for ${Object.keys(markerMap).length} markers`);
       
       try {
@@ -1531,6 +1636,35 @@ router.patch('/W2N/:pageId', async (req, res) => {
       } catch (orchError) {
         log(`⚠️ Orchestration failed (non-fatal): ${orchError.message}`);
       }
+    }
+    
+    // STEP 3.5: Marker sweep
+    // If markers were collected (orchestration ran), always sweep.
+    // Additionally, when SN2N_ORPHAN_LIST_REPAIR=1, perform a fallback sweep even if markerMap is empty.
+    const shouldForceSweep = process.env.SN2N_ORPHAN_LIST_REPAIR === '1';
+    if ((markerMap && Object.keys(markerMap).length > 0) || shouldForceSweep) {
+      operationPhase = 'sweeping for residual markers';
+      const reason = (markerMap && Object.keys(markerMap).length > 0) ? 'orchestration markers present' : 'fallback safety sweep enabled';
+      log(`🧹 STEP 3.5: Preparing marker sweep (${reason})`);
+
+      // Wait 1 second before marker sweep to reduce conflicts
+      log(`⏸️  Waiting 1s before marker sweep to reduce conflicts...`);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      log(`🧹 STEP 3.5: Running final marker sweep to clean any residual markers`);
+      try {
+        const { sweepAndRemoveMarkersFromPage } = require('./orchestration/deep-nesting.cjs');
+        const sweepResult = await sweepAndRemoveMarkersFromPage(pageId);
+        if (sweepResult && sweepResult.updated > 0) {
+          log(`✅ Marker sweep updated ${sweepResult.updated} blocks`);
+        } else {
+          log(`✅ Marker sweep found no markers to remove`);
+        }
+      } catch (sweepError) {
+        log(`⚠️ Marker sweep failed (non-fatal): ${sweepError.message}`);
+      }
+    } else {
+      log(`✅ STEP 3.5: No markers collected and safety sweep disabled, skipping marker sweep (saves 2-5 seconds)`);
     }
     
     // STEP 4: Update page properties if provided
@@ -1551,7 +1685,13 @@ router.patch('/W2N/:pageId', async (req, res) => {
     // STEP 5: Optional validation
     let validationResult = null;
     if (process.env.SN2N_VALIDATE_OUTPUT === '1') {
+      operationPhase = 'validating updated page';
       log(`🔍 STEP 5: Validating updated page`);
+      
+      // Shorter delay for PATCH (1s instead of 2s for POST) - PATCH operations are simpler
+      const validationDelay = 1000;
+      log(`   Waiting ${validationDelay}ms for Notion's eventual consistency...`);
+      await new Promise(resolve => setTimeout(resolve, validationDelay));
       
       try {
         validationResult = await validateNotionPage(notion, pageId, {
@@ -1623,23 +1763,28 @@ router.patch('/W2N/:pageId', async (req, res) => {
     }
     
     // Success response
+    cleanup(); // Stop heartbeat
+    const totalPatchTime = ((Date.now() - patchStartTime) / 1000).toFixed(1);
+    
     const result = {
       success: true,
       pageId,
       pageUrl: `https://notion.so/${pageId.replace(/-/g, '')}`,
       blocksDeleted: deletedCount,
       blocksAdded: extractedBlocks.length,
-      hasVideos
+      hasVideos,
+      patchTimeSeconds: parseFloat(totalPatchTime)
     };
     
     if (validationResult) {
       result.validation = validationResult;
     }
     
-    log(`✅ Page update complete`);
+    log(`✅ Page update complete in ${totalPatchTime}s`);
     return sendSuccess(res, result);
     
   } catch (error) {
+    cleanup(); // Stop heartbeat on error
     log(`❌ PATCH W2N Error:`, error.message);
     
     if (error.body) {

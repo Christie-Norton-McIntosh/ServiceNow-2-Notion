@@ -26,8 +26,9 @@ Quick, actionable guidance for AI coding agents working in this repo. Keep edits
     - Issue 3: Whitespace-only text node filtering (exclude blank nodes in block counting)
     - Issue 4: Image extraction from nested tables (recursively search for `<img>` in `<table>` descendants)
     - Issue 5: Table preservation priority (if table + single-image detected, keep table; don't downgrade to image)
-- API surface: POST `/api/W2N` with `{ title, databaseId, contentHtml|content, properties?, url?, dryRun? }`. `dryRun` returns `{ children, hasVideos }` without creating a page. Health: `/health`, `/ping`, `/api/status`; DB: `/api/databases/:id`; logging: `/api/logging`.
-- Pitfalls: search for `w2n-` IDs before UI renames; wire modal injectors only in `src/main.js`; respect Notion nesting/100-block caps; use `Array.from()` with DOM; rebuild userscript after edits.
+- API surface: POST `/api/W2N` with `{ title, databaseId, contentHtml|content, properties?, url?, dryRun? }`. `dryRun` returns `{ children, hasVideos }` without creating a page. PATCH `/api/W2N/:pageId` with `{ title, contentHtml, url }` deletes all blocks and re-uploads content (requires 32-char UUID, accepts with/without hyphens). Health: `/health`, `/ping`, `/api/status`; DB: `/api/databases/:id`; logging: `/api/logging`.
+- PATCH workflow: Use dry-run validation before PATCH (`dryRun:true`), execute PATCH with 120s timeout, verify post-PATCH validation. Script: `patch/config/batch-patch-validated.sh` (validation → PATCH → move to updated-pages). Known issue: curl may hang beyond timeout on large payloads; monitor with `ps aux | grep batch-patch` and check log files.
+- Pitfalls: search for `w2n-` IDs before UI renames; wire modal injectors only in `src/main.js`; respect Notion nesting/100-block caps; use `Array.from()` with DOM; rebuild userscript after edits; PATCH operations may timeout on complex pages (monitor logs).
 
 ---
 

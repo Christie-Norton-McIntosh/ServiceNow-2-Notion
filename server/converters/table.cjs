@@ -23,7 +23,7 @@
  */
 
 const { cleanHtmlText } = require("../utils/notion-format.cjs");
-const { convertServiceNowUrl, isValidImageUrl } = require("../utils/url.cjs");
+const { convertServiceNowUrl } = require("../utils/url.cjs");
 const cheerio = require('cheerio');
 
 /**
@@ -147,9 +147,26 @@ async function convertTableBlock(tableHtml, options = {}) {
         
         // Convert ServiceNow URLs to proper format
         src = convertServiceNowUrl(src);
-        
-        // Only add valid image URLs
-        if (src && isValidImageUrl(src)) {
+
+        // Determine if we should include this image:
+        // - Prefer including all ServiceNow-hosted images (we'll upload them)
+        // - Otherwise, include if a global URL validator approves
+        const isServiceNowImage = /servicenow\.(com|net)/i.test(src);
+        let include = false;
+        try {
+          if (isServiceNowImage) {
+            include = true;
+          } else if (typeof isValidImageUrl === 'function') {
+            include = !!isValidImageUrl(src);
+          } else {
+            // Fallback: basic check for absolute http(s)
+            include = /^https?:\/\//i.test(src);
+          }
+        } catch (_) {
+          include = false;
+        }
+
+        if (src && include) {
           extractedImages.push({ src, alt: caption });
           validImageUrls.add(originalSrc); // Track original URL for matching
         }
@@ -794,31 +811,52 @@ async function convertTableBlock(tableHtml, options = {}) {
   if (extractedImages.length > 0) {
     console.log(`📸 Extracted ${extractedImages.length} images from table cells`);
     for (const image of extractedImages) {
-      const imageBlock = {
-        object: "block",
-        type: "image",
-        image: {
-          type: "external",
-          external: {
-            url: image.src
+      const isServiceNowImage = /servicenow\.(com|net)/i.test(image.src);
+      let imageBlock = null;
+
+      // Prefer uploading ServiceNow images so they render outside an authenticated session
+      if (typeof downloadAndUploadImage === 'function') {
+        try {
+          const uploadId = await downloadAndUploadImage(image.src, image.alt || 'image');
+          if (uploadId) {
+            imageBlock = {
+              object: 'block',
+              type: 'image',
+              image: {
+                type: 'file_upload',
+                file_upload: { id: uploadId },
+                caption: image.alt
+                  ? [{ type: 'text', text: { content: image.alt } }]
+                  : [],
+              },
+            };
           }
+        } catch (e) {
+          console.log(`❌ [table.cjs] Image upload failed: ${e.message || e}`);
         }
-      };
-      
-      // Add caption if alt text exists
-      if (image.alt) {
-        imageBlock.image.caption = [
-          {
-            type: "text",
-            text: {
-              content: image.alt
-            }
-          }
-        ];
       }
-      
-      blocks.push(imageBlock);
-      console.log(`📸 Added image block: ${image.src.substring(0, 80)}...`);
+
+      // Fallback: for non-ServiceNow images, allow external URL if available
+      if (!imageBlock && !isServiceNowImage) {
+        imageBlock = {
+          object: 'block',
+          type: 'image',
+          image: {
+            type: 'external',
+            external: { url: image.src },
+            caption: image.alt
+              ? [{ type: 'text', text: { content: image.alt } }]
+              : [],
+          },
+        };
+      }
+
+      if (imageBlock) {
+        blocks.push(imageBlock);
+        console.log(`📸 Added image block: ${image.src.substring(0, 80)}...`);
+      } else {
+        console.log(`⚠️ [table.cjs] Skipped image (no upload and external not allowed): ${image.src.substring(0, 80)}...`);
+      }
     }
   }
   
