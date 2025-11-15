@@ -43,7 +43,7 @@ const tablePath = require.resolve('../converters/table.cjs');
 delete require.cache[tablePath];
 const { convertTableBlock } = require('../converters/table.cjs');
 
-const { generateMarker } = require('../orchestration/marker-management.cjs');
+const { generateMarker, removeMarkerFromRichTextArray } = require('../orchestration/marker-management.cjs');
 
 /** @private Global tracker for video detection (reset per conversion) */
 let hasDetectedVideos = false;
@@ -169,6 +169,48 @@ function enforceNestingDepthLimit(blocks, currentDepth = 0) {
  */
 async function extractContentFromHtml(html) {
   const { log, normalizeAnnotations, isValidImageUrl, downloadAndUploadImage, normalizeUrl, getExtraDebug } = getGlobals();
+  const seenMarkers = new Set();
+
+  function createMarker(elementId = null) {
+    const marker = generateMarker(elementId);
+    seenMarkers.add(marker);
+    return marker;
+  }
+
+  function recordMarkers(blocks = []) {
+    if (!Array.isArray(blocks)) return;
+    for (const block of blocks) {
+      if (block && block._sn2n_marker) {
+        seenMarkers.add(block._sn2n_marker);
+      }
+    }
+  }
+
+  function stripMarkerTokensFromBlocks(blockList) {
+    const markers = Array.from(seenMarkers);
+    if (markers.length === 0 || !Array.isArray(blockList)) return;
+
+    const processBlocks = (list) => {
+      for (const block of list) {
+        if (!block || typeof block !== 'object') continue;
+        const blockType = block.type;
+        if (blockType && block[blockType] && Array.isArray(block[blockType].rich_text)) {
+          let cleaned = block[blockType].rich_text;
+          for (const marker of markers) {
+            cleaned = removeMarkerFromRichTextArray(cleaned, marker);
+          }
+          block[blockType].rich_text = cleaned;
+        }
+        if (blockType && block[blockType] && Array.isArray(block[blockType].children)) {
+          processBlocks(block[blockType].children);
+        }
+        if (Array.isArray(block.children)) {
+          processBlocks(block.children);
+        }
+      }
+    };
+    processBlocks(blockList);
+  }
   
   console.log('🚨🚨🚨 SERVICENOW.CJS FUNCTION START - MODULE LOADED 🚨🚨🚨');
   
@@ -472,6 +514,7 @@ async function extractContentFromHtml(html) {
       if (text.includes(imgTag)) {
         text = text.replace(imgTag, "");
       }
+      imgRegex.lastIndex = 0;
     }
 
     // Handle bold/strong tags by replacing with markers
@@ -1294,17 +1337,21 @@ async function extractContentFromHtml(html) {
           
           // Add marker for orchestrator to append children after creation
           if (childBlocks.length > 0) {
-            const marker = generateMarker();
+            const marker = createMarker();
             
             // Tag each child block with the marker for orchestration
             // CRITICAL: Don't overwrite existing markers from nested processing!
             const blocksNeedingMarker = childBlocks.filter(b => !b._sn2n_marker);
             const blocksWithExistingMarker = childBlocks.filter(b => b._sn2n_marker);
+            recordMarkers(blocksWithExistingMarker);
             
             blocksNeedingMarker.forEach(block => {
               block._sn2n_marker = marker;
             });
             
+            if (blocksNeedingMarker.length > 0) {
+              console.log(`🔍 [MARKER-PRESERVE-CALLOUT] ${blocksNeedingMarker.length} new blocks marked for callout orchestration`);
+            }
             if (blocksWithExistingMarker.length > 0) {
               console.log(`🔍 [MARKER-PRESERVE-CALLOUT] ${blocksWithExistingMarker.length} blocks already have markers - preserving`);
             }
@@ -1325,11 +1372,14 @@ async function extractContentFromHtml(html) {
             });
             
             if (getExtraDebug && getExtraDebug()) log(`🔍 Added marker ${markerToken} for ${childBlocks.length} deferred blocks`);
+            
+            // Add child blocks to callout so collectAndStripMarkers can find them
+            calloutBlock.callout.children = childBlocks;
           }
           
           processedBlocks.push(calloutBlock);
           
-          // Add child blocks to processedBlocks so they get collected by orchestrator
+          // Also add child blocks to processedBlocks as siblings (they have markers and will be orchestrated)
           if (childBlocks.length > 0) {
             processedBlocks.push(...childBlocks);
           }
@@ -1888,6 +1938,16 @@ async function extractContentFromHtml(html) {
           // Create the list item with text content AND nested blocks as children
           if (textOnlyHtml && cleanHtmlText(textOnlyHtml).trim()) {
             const { richText: liRichText, imageBlocks: liImages } = await parseRichText(textOnlyHtml);
+            let inlineImageMarkerToken = null;
+            if (liImages && liImages.length > 0) {
+              const imageMarker = createMarker();
+              inlineImageMarkerToken = `(sn2n:${imageMarker})`;
+              liImages.forEach(img => {
+                img._sn2n_marker = imageMarker;
+              });
+              recordMarkers(liImages);
+              console.log(`🔍 [MARKER-PRESERVE-IMAGE] ${liImages.length} inline image(s) marked with ${inlineImageMarkerToken}`);
+            }
             
             // Filter nested blocks: Notion list items can only have certain block types as children
             // Supported: bulleted_list_item, numbered_list_item, to_do, toggle, image
@@ -2014,6 +2074,9 @@ async function extractContentFromHtml(html) {
               } else if (block && block.type) {
                 // Tables, headings, callouts, etc. need markers
                 console.log(`⚠️ Block type "${block.type}" needs marker for deferred append to list item`);
+                if (block.type === 'table') {
+                  console.log(`🔍 [MARKER-PRESERVE-TABLE] Table block deferred for orchestration to preserve source order`);
+                }
                 markedBlocks.push(block);
               }
             });
@@ -2051,22 +2114,28 @@ async function extractContentFromHtml(html) {
             
             if (liRichText.length > 0 && liRichText.some(rt => rt.text.content.trim())) {
               const richTextChunks = splitRichTextArray(liRichText);
-              for (const chunk of richTextChunks) {
+              for (let chunkIndex = 0; chunkIndex < richTextChunks.length; chunkIndex++) {
+                const chunk = richTextChunks[chunkIndex];
                 console.log(`🔍 [UL-ITEM] Creating bulleted_list_item with ${chunk.length} rich_text elements and ${allChildren.length} children`);
                 
                 // If there are marked blocks, generate a marker and add token to rich text
                 let markerToken = null;
-                if (markedBlocks.length > 0) {
-                  const marker = generateMarker();
+                  if (markedBlocks.length > 0) {
+                  const marker = createMarker();
                   markerToken = `(sn2n:${marker})`;
                   // Tag each marked block with the marker for orchestration
                   // CRITICAL: Don't overwrite existing markers from nested processing!
                   const blocksNeedingMarker = markedBlocks.filter(b => !b._sn2n_marker);
                   const blocksWithExistingMarker = markedBlocks.filter(b => b._sn2n_marker);
+                  recordMarkers(blocksWithExistingMarker);
                   
                   blocksNeedingMarker.forEach(block => {
                     block._sn2n_marker = marker;
                   });
+                  if (blocksNeedingMarker.length > 0) {
+                    console.log(`🔍 [MARKER-PRESERVE-UL] ${blocksNeedingMarker.length} new blocks marked with ${markerToken}`);
+                  }
+                  console.log(`🔍 [MARKER-PRESERVE] ${markedBlocks.length} deferred UL block(s) associated with ${markerToken}`);
                   
                   if (blocksWithExistingMarker.length > 0) {
                     console.log(`🔍 [MARKER-PRESERVE-UL] ${blocksWithExistingMarker.length} blocks already have markers - preserving original associations`);
@@ -2086,6 +2155,21 @@ async function extractContentFromHtml(html) {
                     }
                   });
                   console.log(`🔍 Added marker ${markerToken} for ${markedBlocks.length} deferred blocks`);
+                }
+                if (inlineImageMarkerToken && chunkIndex === 0) {
+                  chunk.push({
+                    type: "text",
+                    text: { content: ` ${inlineImageMarkerToken}` },
+                    annotations: {
+                      bold: false,
+                      italic: false,
+                      strikethrough: false,
+                      underline: false,
+                      code: false,
+                      color: "default"
+                    }
+                  });
+                  console.log(`🔍 [INLINE-IMAGE-ATTACH] Added marker ${inlineImageMarkerToken} for ${liImages.length} inline image(s)`);
                 }
                 
                 const listItemBlock = {
@@ -2148,11 +2232,12 @@ async function extractContentFromHtml(html) {
               // Add marker if there are remaining children
               let richText = [...promotedText];
               if (markedBlocks.length > 0) {
-                const marker = generateMarker();
+                const marker = createMarker();
                 const markerToken = `(sn2n:${marker})`;
                 
                 const blocksNeedingMarker = markedBlocks.filter(b => !b._sn2n_marker);
                 const blocksWithExistingMarker = markedBlocks.filter(b => b._sn2n_marker);
+                recordMarkers(blocksWithExistingMarker);
                 
                 blocksNeedingMarker.forEach(block => {
                   block._sn2n_marker = marker;
@@ -2175,6 +2260,7 @@ async function extractContentFromHtml(html) {
                   }
                 });
                 console.log(`🔍 Added marker ${markerToken} for ${markedBlocks.length} deferred blocks (promoted paragraph children)`);
+                console.log(`🔍 [MARKER-PRESERVE-IMAGE] Promoted inline images and nested content grouped under ${markerToken}`);
               }
               
               const listItemBlock = {
@@ -2225,16 +2311,20 @@ async function extractContentFromHtml(html) {
               let markerToken = null;
               const richText = [{ type: "text", text: { content: "" } }];
               if (markedBlocks.length > 0) {
-                const marker = generateMarker();
+                const marker = createMarker();
                 markerToken = `(sn2n:${marker})`;
                 
                 const blocksNeedingMarker = markedBlocks.filter(b => !b._sn2n_marker);
                 const blocksWithExistingMarker = markedBlocks.filter(b => b._sn2n_marker);
+                recordMarkers(blocksWithExistingMarker);
                 
                 blocksNeedingMarker.forEach(block => {
                   block._sn2n_marker = marker;
                 });
                 
+                if (blocksNeedingMarker.length > 0) {
+                  console.log(`🔍 [MARKER-PRESERVE-UL] ${blocksNeedingMarker.length} new blocks marked for UL orchestration`);
+                }
                 if (blocksWithExistingMarker.length > 0) {
                   console.log(`🔍 [MARKER-PRESERVE-UL-NOTEXT] ${blocksWithExistingMarker.length} blocks already have markers - preserving`);
                 }
@@ -2298,11 +2388,12 @@ async function extractContentFromHtml(html) {
             // (numbered_list_item > bulleted_list_item > numbered_list_item > image)
             // CRITICAL: Only attach images to the FIRST chunk to avoid duplicate markers
             if (liImages && liImages.length > 0 && chunkIndex === 0) {
-              const marker = generateMarker();
+              const marker = createMarker();
               const markerToken = `(sn2n:${marker})`;
               liImages.forEach(img => {
                 img._sn2n_marker = marker;
               });
+                console.log(`🔍 [MARKER-PRESERVE-IMAGE] ${liImages.length} inline image(s) marked with ${markerToken}`);
               listItemBlock.bulleted_list_item.rich_text.push({
                 type: "text",
                 text: { content: ` ${markerToken}` },
@@ -2317,6 +2408,7 @@ async function extractContentFromHtml(html) {
               });
               console.log(`🔍 [INLINE-IMAGE-ATTACH] Creating bulleted_list_item with ${chunk.length} rich_text elements`);
               console.log(`🔍 [INLINE-IMAGE-ATTACH] Added marker ${markerToken} for ${liImages.length} deferred image(s)`);
+              console.log(`🔍 [MARKER-PRESERVE-IMAGE] Inline images told to share marker ${markerToken}`);
               
               // Add images as children so collectAndStripMarkers can find them
               listItemBlock.bulleted_list_item.children = liImages;
@@ -2589,6 +2681,9 @@ async function extractContentFromHtml(html) {
               } else if (block && block.type) {
                 // Tables, headings, callouts, etc. need markers
                 console.log(`⚠️ Block type "${block.type}" needs marker for deferred append to list item`);
+                if (block.type === 'table') {
+                  console.log(`🔍 [MARKER-PRESERVE-TABLE] Table block deferred for orchestration to preserve source order`);
+                }
                 markedBlocks.push(block);
               }
             });
@@ -2634,16 +2729,21 @@ async function extractContentFromHtml(html) {
                 // If there are marked blocks, generate a marker and add token to rich text
                 let markerToken = null;
                 if (markedBlocks.length > 0) {
-                  const marker = generateMarker();
+                  const marker = createMarker();
                   markerToken = `(sn2n:${marker})`;
                   // Tag each marked block with the marker for orchestration
                   // CRITICAL: Don't overwrite existing markers from nested processing!
                   const blocksNeedingMarker = markedBlocks.filter(b => !b._sn2n_marker);
                   const blocksWithExistingMarker = markedBlocks.filter(b => b._sn2n_marker);
+                  recordMarkers(blocksWithExistingMarker);
                   
                   blocksNeedingMarker.forEach(block => {
                     block._sn2n_marker = marker;
                   });
+                  if (blocksNeedingMarker.length > 0) {
+                    console.log(`🔍 [MARKER-PRESERVE] ${blocksNeedingMarker.length} new blocks marked with ${markerToken}`);
+                  }
+                  console.log(`🔍 [MARKER-PRESERVE] ${markedBlocks.length} deferred OL block(s) grouped under ${markerToken}`);
                   
                   if (blocksWithExistingMarker.length > 0) {
                     console.log(`🔍 [MARKER-PRESERVE] ${blocksWithExistingMarker.length} blocks already have markers - preserving original associations`);
@@ -2707,6 +2807,7 @@ async function extractContentFromHtml(html) {
                 );
                 return !isChildOfMarkedBlock;
               });
+              recordMarkers(blocksWithExistingMarkers);
               if (blocksWithExistingMarkers.length > 0) {
                 console.log(`🔍 Adding ${blocksWithExistingMarkers.length} blocks with existing markers from nested processing (ordered)`);
                 processedBlocks.push(...blocksWithExistingMarkers);
@@ -2749,7 +2850,7 @@ async function extractContentFromHtml(html) {
               // Add marker token to rich text if there are blocks that need orchestration
               let richText = [...promotedText];
               if (markedBlocks.length > 0) {
-                const marker = generateMarker();
+                const marker = createMarker();
                 const markerToken = `(sn2n:${marker})`;
                 markedBlocks.forEach(block => {
                   block._sn2n_marker = marker;
@@ -2767,6 +2868,10 @@ async function extractContentFromHtml(html) {
                   }
                 });
                 console.log(`🔍 [IMAGE-INLINE-FIX-V2] Added marker ${markerToken} for ${markedBlocks.length} deferred blocks (including images)`);
+                  const inlineImages = markedBlocks.filter(b => b && b.type === 'image');
+                  if (inlineImages.length > 0) {
+                    console.log(`🔍 [MARKER-PRESERVE-IMAGE] ${inlineImages.length} inline image(s) marked with ${markerToken}`);
+                  }
               }
               
               const listItemBlock = {
@@ -2801,6 +2906,9 @@ async function extractContentFromHtml(html) {
                   validChildren.push(block);
                 } else if (block && block.type) {
                   console.log(`⚠️ Block type "${block.type}" needs marker for deferred append to list item`);
+                  if (block.type === 'table') {
+                    console.log(`🔍 [MARKER-PRESERVE-TABLE] Table block deferred for orchestration to preserve source order`);
+                  }
                   markedBlocks.push(block);
                 }
               });
@@ -2817,11 +2925,12 @@ async function extractContentFromHtml(html) {
               let markerToken = null;
               const richText = [{ type: "text", text: { content: "" } }];
               if (markedBlocks.length > 0) {
-                const marker = generateMarker();
+                const marker = createMarker();
                 markerToken = `(sn2n:${marker})`;
                 
                 const blocksNeedingMarker = markedBlocks.filter(b => !b._sn2n_marker);
                 const blocksWithExistingMarker = markedBlocks.filter(b => b._sn2n_marker);
+                recordMarkers(blocksWithExistingMarker);
                 
                 blocksNeedingMarker.forEach(block => {
                   block._sn2n_marker = marker;
@@ -2885,7 +2994,7 @@ async function extractContentFromHtml(html) {
             // (numbered_list_item > bulleted_list_item > numbered_list_item > image)
             // CRITICAL: Only attach images to the FIRST chunk to avoid duplicate markers
             if (liImages && liImages.length > 0 && chunkIndex === 0) {
-              const marker = generateMarker();
+              const marker = createMarker();
               const markerToken = `(sn2n:${marker})`;
               liImages.forEach(img => {
                 img._sn2n_marker = marker;
@@ -3196,7 +3305,7 @@ async function extractContentFromHtml(html) {
       }
       $elem.remove(); // Mark as processed
       
-    } else if (tagName === 'section' && $elem.hasClass('prereq')) {
+    } else if ((tagName === 'section' || (tagName === 'div' && $elem.hasClass('section'))) && $elem.hasClass('prereq')) {
       // Special handling for "Before you begin" prerequisite sections
       // Convert entire section to a callout with pushpin emoji
       console.log(`🔍 Processing prereq section as callout`);
@@ -3246,6 +3355,14 @@ async function extractContentFromHtml(html) {
           const childHtml = $child.html() || '';
           
           console.log(`🔍   Child ${i}: <${childTag}> class="${$child.attr('class')}" content="${childHtml.substring(0, 60)}..."`);
+          
+          // Check if this is a block-level element that should be processed as a nested block
+          if (childTag === 'ul' || childTag === 'ol' || childTag === 'pre' || childTag === 'table') {
+            console.log(`🔍 [PREREQ-NESTED-BLOCK] Processing <${childTag}> as nested block`);
+            const childBlocks = await processElement(child);
+            nestedBlocks.push(...childBlocks);
+            continue; // Skip rich text processing for this child
+          }
           
           // CRITICAL FIX: Check if this child contains nested div.note elements
           // If it does, extract them as separate blocks instead of including their text
@@ -3338,7 +3455,7 @@ async function extractContentFromHtml(html) {
           
           // Add nested blocks as children to the first callout
           if (i === 0 && nestedBlocks.length > 0) {
-            const marker = generateMarker();
+            const marker = createMarker();
             const markerToken = `(sn2n:${marker})`;
             
             // Add marker token to callout rich text
@@ -3359,11 +3476,15 @@ async function extractContentFromHtml(html) {
             // CRITICAL: Don't overwrite existing markers from nested processing!
             const blocksNeedingMarker = nestedBlocks.filter(b => !b._sn2n_marker);
             const blocksWithExistingMarker = nestedBlocks.filter(b => b._sn2n_marker);
+            recordMarkers(blocksWithExistingMarker);
             
             blocksNeedingMarker.forEach(block => {
               block._sn2n_marker = marker;
             });
             
+            if (blocksNeedingMarker.length > 0) {
+              console.log(`🔍 [MARKER-PRESERVE-PREREQ] ${blocksNeedingMarker.length} new blocks marked for prereq orchestration`);
+            }
             if (blocksWithExistingMarker.length > 0) {
               console.log(`🔍 [MARKER-PRESERVE-PREREQ] ${blocksWithExistingMarker.length} blocks already have markers - preserving`);
             }
@@ -4726,6 +4847,10 @@ async function extractContentFromHtml(html) {
   
   // No post-processing needed - proper nesting structure handles list numbering restart
   console.log(`✅ Extraction complete: ${blocks.length} blocks`);
+  if (seenMarkers.size > 0) {
+    console.log(`🔍 Removing ${seenMarkers.size} marker token(s) from rich text before finalizing`);
+    stripMarkerTokensFromBlocks(blocks);
+  }
   
   
   // Restore technical placeholders in all rich_text content
