@@ -11,6 +11,8 @@
  * Note: URLs are handled by <kbd> tag processing, not pattern matching
  */
 const TECHNICAL_PATTERNS = {
+  // Simple HTTP/HTTPS URL detection (https://example.com, http://host/path)
+  url: /^https?:\/\/[^\s]+/i,
   // File paths (Unix/Windows)
   path: /^[\/~\\]/i,
   
