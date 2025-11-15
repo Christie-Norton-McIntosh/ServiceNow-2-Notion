@@ -1869,6 +1869,7 @@ try {
   console.log('✅ W2N router configured with HOT-RELOAD wrapper (POST + PATCH)');
   app.use("/api", require('./routes/databases.cjs'));
   app.use("/api", require('./routes/upload.cjs'));
+  app.use("/api", require('./routes/validate.cjs'));
 } catch (e) {
   console.log("⚠️ API route modules not available, using inline fallbacks:", e.message);
   // Main API routes will be handled by the inline endpoints defined above
