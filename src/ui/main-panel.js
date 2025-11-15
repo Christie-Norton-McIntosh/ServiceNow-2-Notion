@@ -49,50 +49,9 @@ export function injectMainPanel() {
         localStorage.removeItem('w2n-panel-position');
       }
     }
-          if (isRateLimited) {
-            autoExtractState.rateLimitHits++;
-            const failedPageInfo = {
-              pageNumber: currentPageNum,
-              url: window.location.href,
-              title: document.title,
-              timestamp: new Date().toISOString(),
-              reason: 'rate_limit',
-              errorMessage: error.message
-            };
-            autoExtractState.failedPages.push(failedPageInfo);
-            let waitSeconds = 30;
-            if (captureAttempts === 2) waitSeconds = 60;
-            debug(`🚦 RATE LIMIT HIT during AutoExtract on page ${currentPageNum}`);
-            debug(`   Total rate limit hits this session: ${autoExtractState.rateLimitHits}`);
-            debug(`   Pausing AutoExtract for ${waitSeconds} seconds...`);
-            debug(`   Failed page saved for retry: ${failedPageInfo.title}`);
-            showToast(
-              `⏸️ Rate limit hit! Pausing for ${waitSeconds}s before retrying...`,
-              5000
-            );
-            if (button) {
-              button.textContent = `⏸️ Paused: Rate limit (${waitSeconds}s)...`;
-            }
-            overlayModule.setMessage(`⏸️ Rate limit - waiting ${waitSeconds}s...`);
-            await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
-            debug(`✅ Rate limit cooldown complete, retrying page ${currentPageNum}...`);
-            showToast(
-              `✅ Cooldown complete, retrying page ${currentPageNum}...`,
-              3000
-            );
-            autoExtractState.failedPages.pop();
-            if (captureAttempts < 2) {
-              continue; // Retry with increased backoff
-            } else {
-              debug(`❌ Aborting after 2 rate limit retries for page ${currentPageNum}`);
-              showToast(`❌ Aborting after 2 rate limit retries.`, 5000);
-              stopAutoExtract(autoExtractState);
-              if (button) button.textContent = `❌ Stopped: Rate limit`;
-              return;
-            }
-          }
-    `;
-  }
+    } catch (e) {
+      debug("Failed to restore panel position from localStorage:", e);
+    }
 
   panel.addEventListener("mouseenter", () => (panel.style.opacity = "1"));
   panel.addEventListener("mouseleave", () => (panel.style.opacity = "0.95"));
