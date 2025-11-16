@@ -1416,6 +1416,7 @@ router.patch('/W2N/:pageId', async (req, res) => {
     
     // STEP 1: Delete all existing blocks from the page
     operationPhase = 'fetching existing blocks';
+    log(`[PATCH-PROGRESS] STEP 1: Starting delete of existing blocks from page ${pageId}`);
     log(`🗑️ STEP 1: Deleting all existing blocks from page ${pageId}`);
     
     let existingBlocks = [];
@@ -1522,9 +1523,11 @@ router.patch('/W2N/:pageId', async (req, res) => {
     
     const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
     log(`✅ Deleted ${deletedCount}/${existingBlocks.length} blocks in ${totalTime}s${failedCount > 0 ? ` (${failedCount} failed)` : ''}`);
+    log(`[PATCH-PROGRESS] STEP 1 Complete: Deleted ${deletedCount}/${existingBlocks.length} blocks in ${totalTime}s`);
     
     // STEP 2: Upload fresh content
     operationPhase = `uploading ${extractedBlocks.length} fresh blocks`;
+    log(`[PATCH-PROGRESS] STEP 2: Starting upload of ${extractedBlocks.length} fresh blocks`);
     log(`📤 STEP 2: Uploading ${extractedBlocks.length} fresh blocks`);
     
     // Upload initial batch (up to 100 blocks) with retry logic
@@ -1625,17 +1628,24 @@ router.patch('/W2N/:pageId', async (req, res) => {
       await new Promise(resolve => setTimeout(resolve, 500));
     }
     
+    log(`[PATCH-PROGRESS] STEP 2 Complete: Uploaded all ${extractedBlocks.length} blocks successfully`);
+    
     // STEP 3: Run orchestration for deep nesting
     if (markerMap && Object.keys(markerMap).length > 0) {
       operationPhase = `orchestrating deep nesting for ${Object.keys(markerMap).length} markers`;
+      log(`[PATCH-PROGRESS] STEP 3: Starting deep-nesting orchestration for ${Object.keys(markerMap).length} markers`);
       log(`🔧 STEP 3: Running deep-nesting orchestration for ${Object.keys(markerMap).length} markers`);
       
       try {
         const orchResult = await orchestrateDeepNesting(pageId, markerMap);
         log(`✅ Orchestration complete: ${JSON.stringify(orchResult)}`);
+        log(`[PATCH-PROGRESS] STEP 3 Complete: Orchestration successful`);
       } catch (orchError) {
         log(`⚠️ Orchestration failed (non-fatal): ${orchError.message}`);
+        log(`[PATCH-PROGRESS] STEP 3 Warning: Orchestration failed but continuing`);
       }
+    } else {
+      log(`[PATCH-PROGRESS] STEP 3 Skipped: No deep nesting markers present`);
     }
     
     // STEP 3.5: Marker sweep
@@ -1709,6 +1719,8 @@ router.patch('/W2N/:pageId', async (req, res) => {
         log(`⚠️ Validation failed (non-fatal): ${valError.message}`);
       }
     }
+    
+    log(`[PATCH-PROGRESS] All steps complete - PATCH operation successful!`);
     
     // STEP 6: Update Validation property with PATCH indicator
     if (validationResult) {

@@ -193,8 +193,27 @@ for html_file in "$SRC_DIR"/*.html; do
   validate_end_human=$(date +"%Y-%m-%d %H:%M:%S")
   echo "  🕒 Validation end:   $validate_end_human (duration ${validate_duration}s)" | tee -a "$LOG_FILE"
 
-  # STEP 2: Execute PATCH with timeout monitoring
+  # STEP 2: Execute PATCH with adaptive timeout based on complexity
   echo "  2️⃣  PATCHing page..." | tee -a "$LOG_FILE"
+  
+  # Estimate complexity from dry-run response
+  block_count=$(echo "$dry_body" | jq -r '.data.children | length' 2>/dev/null || echo 0)
+  table_count=$(echo "$dry_body" | jq -r '[.data.children[] | select(.type == "table")] | length' 2>/dev/null || echo 0)
+  
+  echo "  📊 Complexity: $block_count blocks, $table_count tables" | tee -a "$LOG_FILE"
+  
+  # Adaptive timeout selection
+  if [[ $block_count -gt 500 || $table_count -gt 50 ]]; then
+    manual_timeout=480  # 8 minutes for very complex pages (80+ tables)
+    echo "  ⚡ Using extended timeout: ${manual_timeout}s (high complexity)" | tee -a "$LOG_FILE"
+  elif [[ $block_count -gt 300 || $table_count -gt 30 ]]; then
+    manual_timeout=300  # 5 minutes for complex pages (30-80 tables)
+    echo "  ⚡ Using extended timeout: ${manual_timeout}s (medium complexity)" | tee -a "$LOG_FILE"
+  else
+    manual_timeout=180  # 3 minutes for normal pages
+    echo "  ⚡ Using standard timeout: ${manual_timeout}s" | tee -a "$LOG_FILE"
+  fi
+  
   patch_start_epoch=$(date +%s)
   patch_start_human=$(date +"%Y-%m-%d %H:%M:%S")
   echo "  🕒 PATCH start: $patch_start_human (epoch $patch_start_epoch)" | tee -a "$LOG_FILE"
@@ -202,10 +221,7 @@ for html_file in "$SRC_DIR"/*.html; do
   # Start PATCH in background and monitor
   temp_response="/tmp/patch-response-$$-$total.txt"
   
-  # Manual timeout: 180 seconds (increased from 130)
-  manual_timeout=180
-  
-  curl -s -m 180 -w "\n%{http_code}" -X PATCH "$API_URL/$page_id" \
+  curl -s -m "$manual_timeout" -w "\n%{http_code}" -X PATCH "$API_URL/$page_id" \
     -H "Content-Type: application/json" \
     -d "{\"title\":\"$title\",\"contentHtml\":$(echo "$content" | jq -Rs .),\"url\":\"https://docs.servicenow.com\"}" \
     > "$temp_response" 2>&1 &

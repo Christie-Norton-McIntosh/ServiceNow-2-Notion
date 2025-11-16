@@ -20,13 +20,15 @@ Quick, actionable guidance for AI coding agents working in this repo. Keep edits
   - Notion limits: chunk children in 100-block batches; append remaining after page create (`w2n.cjs`).
   - Images: ServiceNow images must be downloaded+uploaded to Notion `file_uploads`; fallback to external URL only for non-ServiceNow images (`sn2n-proxy.cjs:createImageBlock`).
   - Dedupe/filter: filter gray info callouts; dedupe identical blocks and images by id/URL (`server/utils/dedupe.cjs` used in `w2n.cjs`).
-  - Validation fixes (v11.0.0): 5 issues fixed in callout/table processing:
+- **Validation fixes (v11.0.0)**: 6 issues fixed in callout/table processing:
     - Issue 1: Recursive block type detection (check children for tables/images, not just callout text)
     - Issue 2: Multi-pass DataTables unwrapping (iterate until no changes to handle nested wrappers)
     - Issue 3: Whitespace-only text node filtering (exclude blank nodes in block counting)
     - Issue 4: Image extraction from nested tables (recursively search for `<img>` in `<table>` descendants)
     - Issue 5: Table preservation priority (if table + single-image detected, keep table; don't downgrade to image)
+    - Issue 6: Callout detection with underscore-separated classes (removed `\b` word boundaries from regex patterns to match `note_note`, `warning_type`, etc.)
 - API surface: POST `/api/W2N` with `{ title, databaseId, contentHtml|content, properties?, url?, dryRun? }`. `dryRun` returns `{ children, hasVideos }` without creating a page. PATCH `/api/W2N/:pageId` with `{ title, contentHtml, url }` deletes all blocks and re-uploads content (requires 32-char UUID, accepts with/without hyphens). Health: `/health`, `/ping`, `/api/status`; DB: `/api/databases/:id`; logging: `/api/logging`.
+- Auto-validation: Enable with `SN2N_VALIDATE_OUTPUT=1`. On each extraction, proxy validates HTML→Notion conversion with ±30% tolerance (70%-150% of expected blocks). Updates Notion properties (Error checkbox, Validation text, Stats). Failed pages auto-saved to `patch/pages-to-update/` with metadata for re-extraction. See `docs/AUTO-VALIDATION.md`.
 - PATCH workflow: Use dry-run validation before PATCH (`dryRun:true`), execute PATCH with 120s timeout, verify post-PATCH validation. Script: `patch/config/batch-patch-validated.sh` (validation → PATCH → move to updated-pages). Known issue: curl may hang beyond timeout on large payloads; monitor with `ps aux | grep batch-patch` and check log files.
 - Pitfalls: search for `w2n-` IDs before UI renames; wire modal injectors only in `src/main.js`; respect Notion nesting/100-block caps; use `Array.from()` with DOM; rebuild userscript after edits; PATCH operations may timeout on complex pages (monitor logs).
 
