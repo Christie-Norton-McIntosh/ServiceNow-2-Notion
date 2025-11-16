@@ -21,6 +21,9 @@
     "test:all:server": "node scripts/run-tests.cjs --with-server",
     "test:unit": "node server/tests/unit/dedupe-unit-test.cjs",
     "test:smoke": "node \"Smoke Test/proxy-smoke-test.cjs\"",
+    "validate": "node scripts/validate-html-to-notion-conversion.cjs",
+    "validate:batch": "node scripts/batch-validate-conversions.cjs",
+    "validate:deep": "node scripts/validate-content-order-and-nesting.cjs",
     "release:patch": "node scripts/release.js patch",
     "release:minor": "node scripts/release.js minor",
     "release:major": "node scripts/release.js major"

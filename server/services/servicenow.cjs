@@ -1191,23 +1191,24 @@ async function extractContentFromHtml(html) {
     }
 
     // Utility: derive callout icon/color from class list or label
+    // FIXED v11.0.0: Removed word boundaries (\b) to handle classes like "note_note"
     function getCalloutPropsFromClasses(classes = "") {
       const cls = String(classes || "");
       let color = "blue_background"; // default to info-ish note
       let icon = "ℹ️";
-      if (/\b(important|critical)\b/.test(cls)) {
+      if (/(important|critical)/.test(cls)) {
         color = "red_background";
         icon = "⚠️";
-      } else if (/\bwarning\b/.test(cls)) {
+      } else if (/warning/.test(cls)) {
         color = "orange_background";
         icon = "⚠️";
-      } else if (/\bcaution\b/.test(cls)) {
+      } else if (/caution/.test(cls)) {
         color = "yellow_background";
         icon = "⚠️";
-      } else if (/\btip\b/.test(cls)) {
+      } else if (/tip/.test(cls)) {
         color = "green_background";
         icon = "💡";
-      } else if (/\b(info|note)\b/.test(cls)) {
+      } else if (/(info|note)/.test(cls)) {
         color = "blue_background";
         icon = "ℹ️";
       }
@@ -1417,7 +1418,9 @@ async function extractContentFromHtml(html) {
       $elem.remove(); // Mark as processed
     // 2) Aside elements commonly used as notes/admonitions
     // Note: Exclude "itemgroup" divs - those are just ServiceNow content containers, not callouts
-    } else if (tagName === 'aside' || (tagName === 'div' && !/\bitemgroup\b/.test($elem.attr('class') || '') && /\b(info|note|warning|important|tip|caution)\b/.test($elem.attr('class') || ''))) {
+    // FIXED v11.0.0: Changed regex from \b word boundaries to match anywhere in class string
+    // This handles cases like "note note note_note" where underscore breaks word boundary matching
+    } else if (tagName === 'aside' || (tagName === 'div' && !/\bitemgroup\b/.test($elem.attr('class') || '') && /(info|note|warning|important|tip|caution)/.test($elem.attr('class') || ''))) {
       const classAttr = $elem.attr('class') || '';
   if (getExtraDebug && getExtraDebug()) log(`🔍 MATCHED CALLOUT CONTAINER (<${tagName}>) class="${classAttr}"`);
       const { color: calloutColor, icon: calloutIcon } = getCalloutPropsFromClasses(classAttr);
@@ -4847,10 +4850,15 @@ async function extractContentFromHtml(html) {
   
   // No post-processing needed - proper nesting structure handles list numbering restart
   console.log(`✅ Extraction complete: ${blocks.length} blocks`);
-  if (seenMarkers.size > 0) {
-    console.log(`🔍 Removing ${seenMarkers.size} marker token(s) from rich text before finalizing`);
-    stripMarkerTokensFromBlocks(blocks);
-  }
+  
+  // CRITICAL FIX: DO NOT strip marker tokens here!
+  // Marker tokens MUST remain in rich_text for dry-run orchestration to work.
+  // The tokens are used by attachToParents() in w2n.cjs to find where to attach collected blocks.
+  // Stripping happens AFTER orchestration completes (in w2n.cjs or during page creation).
+  // if (seenMarkers.size > 0) {
+  //   console.log(`🔍 Removing ${seenMarkers.size} marker token(s) from rich text before finalizing`);
+  //   stripMarkerTokensFromBlocks(blocks);
+  // }
   
   
   // Restore technical placeholders in all rich_text content

@@ -13,7 +13,7 @@ ANALYSIS_LOG="$LOG_DIR/validation-analysis-$TS.log"
 ERROR_SUMMARY="$LOG_DIR/error-summary-$TS.json"
 
 API_URL="http://localhost:3004/api/W2N"
-DATABASE_ID="178f8dc43e2780d09be1c568a04d7bf3"
+DATABASE_ID="282a89fedba5815e91f0db972912ef9f"
 
 echo "[INFO] Starting validation analysis" | tee -a "$ANALYSIS_LOG"
 echo "[INFO] Source dir: $SRC_DIR" | tee -a "$ANALYSIS_LOG"
