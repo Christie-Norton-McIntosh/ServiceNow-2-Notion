@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.8
+// @version      11.0.9
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.8";
+    window.BUILD_VERSION = "11.0.9";
 (function () {
 
   // Configuration constants and default settings
@@ -4288,6 +4288,10 @@
           return;
         }
 
+        // Actually click the next button
+        debug(`[NEXT-BUTTON] 🖱️ Clicking next button...`);
+        await clickNextPageButton(nextButton);
+
         // Wait for page navigation
         debug(`[AUTO-EXTRACT] ⏳ Step 4: Waiting for page navigation...`);
         if (button) {
@@ -4344,6 +4348,10 @@
               debug(`[NAV-RETRY] ❌ Could not find next button on retry ${navigationRetryCount}`);
               break;
             }
+            
+            // Actually click the button on retry
+            debug(`[NAV-RETRY] 🖱️ Clicking next button (retry ${navigationRetryCount})...`);
+            await clickNextPageButton(retryNextButton);
             
             // Wait for navigation
             debug(`[NAV-RETRY] ⏳ Waiting for navigation (retry ${navigationRetryCount})...`);
