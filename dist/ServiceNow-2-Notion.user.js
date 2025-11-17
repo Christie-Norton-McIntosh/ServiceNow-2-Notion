@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.13
+// @version      11.0.14
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.13";
+    window.BUILD_VERSION = "11.0.14";
 (function () {
 
   // Configuration constants and default settings
@@ -2721,9 +2721,9 @@
           localStorage.removeItem('w2n-panel-position');
         }
       }
-      } catch (e) {
-        debug("Failed to restore panel position from localStorage:", e);
-      }
+    } catch (e) {
+      debug("Failed to restore panel position from localStorage:", e);
+    }
 
     panel.addEventListener("mouseenter", () => (panel.style.opacity = "1"));
     panel.addEventListener("mouseleave", () => (panel.style.opacity = "0.95"));
