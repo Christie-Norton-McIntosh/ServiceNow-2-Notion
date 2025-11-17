@@ -7,7 +7,7 @@ const path = require('path');
 
 const API_BASE = process.env.SN2N_API_BASE || 'http://localhost:3004/api';
 const PARENT_PAGE_ID = process.env.SN2N_PARENT_PAGE_ID || '2a8a89fe-dba5-8149-bb6b-f5cec836bdfa';
-const LOG_DIR = path.join(__dirname, '..', 'pages-to-update', 'log');
+const LOG_DIR = path.join(__dirname, '..', 'logs');
 
 async function httpPostJson(url, body) {
   const res = await fetch(url, {

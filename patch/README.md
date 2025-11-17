@@ -5,31 +5,23 @@ This directory contains pages that need to be updated in Notion via the PATCH en
 ## Structure
 
 ### `config/`
-Configuration and scripts for the patch workflow:
+Configuration, scripts, and utilities for the patch workflow:
 - **`batch-patch-with-cooldown.sh`** ⭐ PRIMARY - Main PATCH script with adaptive timeout (180s/300s/480s) and complexity estimation
 - **`revalidate-updated-pages.sh`** - Validates all pages in updated-pages/, moves failures back
 - **`simple-property-refresh.sh`** - Quick property updates without validation
 - **`clear-validation-errors.sh`** - Bulk clear validation errors for updated pages
 - **`test-all-pages.sh`** - Quick dry-run test of all pages
 - **`analyze-validation-failures.sh`** - Detailed validation error analysis
+- **`batch-marker-sweep.sh`** - Marker cleanup across multiple pages
+- **`batch-repatch-and-validate.sh`** - Re-PATCH and validate pages
+- **`create-new-pages.sh`** - Create new pages from HTML files
+- **`validate-*.cjs`** - Page validation utilities
 - **`archived/`** - Deprecated scripts (superseded by primary script)
 
-### `pages-to-update/`
-HTML files extracted from ServiceNow pages that have corresponding Notion pages needing updates. Each file contains:
-- Embedded metadata (Page ID, expected block counts)
-- Fresh HTML content from ServiceNow
-- Timestamp in filename
-
-**Files remain here if:**
-- PATCH API call fails (network/server errors)
-- PATCH succeeds but validation finds errors
-- No Page ID mapping exists
-
-### `pages-to-update/updated-pages/`
-Successfully updated pages that passed both PATCH and validation. These files have been:
-- Successfully PATCHed to Notion
-- Validated with no critical errors
-- Moved here as a historical record
+### `pages/`
+Status-organized archive of HTML files by update status:
+- **`pages/pages-to-update/`** - HTML files extracted from ServiceNow pages that need PATCH updates (INPUT)
+- **`pages/updated-pages/`** - Successfully updated pages (OUTPUT: moved from pages-to-update/ after successful PATCH + validation)
 
 ## Scripts
 
@@ -111,8 +103,8 @@ Or if there are errors:
    bash batch-patch-with-cooldown.sh
    ```
 4. **Review results**:
-   - ✅ Clean updates → moved to `pages-to-update/updated-pages/`
-   - ⏱️ Timeouts → moved to `pages-to-update/problematic-files/` (complex pages needing extended timeout)
+   - ✅ Clean updates → moved to `pages/updated-pages/`
+   - ⏱️ Timeouts → moved to `pages/problematic-files/` (complex pages needing extended timeout)
    - ⚠️ With errors → remain in `pages-to-update/` for investigation
    - ❌ API failures → remain in `pages-to-update/` for retry
 

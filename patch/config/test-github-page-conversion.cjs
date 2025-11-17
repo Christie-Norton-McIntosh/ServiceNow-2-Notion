@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 
 const API_BASE = process.env.SN2N_API_BASE || 'http://localhost:3004/api';
-const FILE_PATH = path.join(__dirname, '..', 'pages-to-update', 'updated-pages', 'onboard-github-to-devops-change-velocity-workspace-2025-11-11T08-55-59.html');
+const FILE_PATH = path.join(__dirname, '..', 'pages', 'updated-pages', 'onboard-github-to-devops-change-velocity-workspace-2025-11-11T08-55-59.html');
 
 async function httpPostJson(url, body) {
   const res = await fetch(url, { 

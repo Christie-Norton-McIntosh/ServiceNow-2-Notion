@@ -4,7 +4,10 @@ set -e
 # Unarchive all pages in pages-to-update/ that are archived in Notion
 # This fixes the HTTP 500 errors when attempting PATCH operations
 
-NOTION_TOKEN=$(grep NOTION_TOKEN ../../server/.env | cut -d= -f2)
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PAGES_DIR="$ROOT_DIR/patch/pages/pages-to-update"
+
+NOTION_TOKEN=$(grep NOTION_TOKEN "$ROOT_DIR/server/.env" | cut -d= -f2)
 NOTION_VERSION="2022-06-28"
 
 echo "🔄 Unarchiving pages in Notion..."
@@ -13,7 +16,7 @@ echo ""
 success_count=0
 fail_count=0
 
-for file in *.html; do
+for file in "$PAGES_DIR"/*.html; do
   # Skip if no HTML files
   if [ ! -f "$file" ]; then
     echo "No HTML files found"

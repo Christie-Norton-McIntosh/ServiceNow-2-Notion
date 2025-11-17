@@ -277,6 +277,37 @@ Note: If your edits change any client-side code (files under `src/` or the gener
   - `tests/test-callout-*.cjs` - Callout validation tests (Issues 1 through 5 fixes)
   - `tests/test-table-*.cjs` - Table formatting and image extraction tests
 
+## 📋 Patch Directory Structure (v11.0.6 — Unified Page States)
+
+The `patch/` directory contains pages that need PATCH updates in Notion and serves as a workflow hub.
+
+**Organization:**
+- **`patch/pages/pages-to-update/`** - INPUT: HTML files awaiting PATCH operations (fresh extractions from AutoExtract)
+- **`patch/pages/updated-pages/`** - OUTPUT: Successfully updated pages (PATCH + validation passed)
+- **`patch/complete/`** - ARCHIVE: Reference collection of all completed pages (227 pages)
+- **`patch/docs/`** - DOCUMENTATION: Investigation notes, metadata, and guides
+- **`patch/logs/`** - LOGS: Timestamped runtime logs from batch operations
+- **`patch/config/`** - CONFIG: All scripts, utilities, and batch processing (consolidated from former scripts/ dir)
+
+**Key Points:**
+- Unified page state hub: both INPUT and OUTPUT under `patch/pages/`
+- `patch/pages/pages-to-update/` is flat (no subdirectories) — INPUT directory
+- `patch/pages/updated-pages/` stores successful updates — OUTPUT directory (58 pages)
+- Semantically clear: "pages" = status hub, root level = supporting infrastructure
+- Primary script: `patch/config/batch-patch-with-cooldown.sh` (adaptive timeout)
+
+**Workflow:**
+1. AutoExtract saves failing pages to `patch/pages/pages-to-update/`
+2. Manual inspection or code fixes applied
+3. Run batch script: `cd patch/config && bash batch-patch-with-cooldown.sh`
+4. Successful pages moved to `patch/pages/updated-pages/`
+5. Failed pages remain in `patch/pages/pages-to-update/` for retry or investigation
+
+**References:**
+- Batch workflow: `patch/README.md`
+- Auto-validation: `docs/AUTO-VALIDATION.md`
+- Consolidation details: `patch/docs/FOLDER_CONSOLIDATION_v11.0.5.md`
+
 ## 📋 Code-Edit Checklist
 
 1. Search for `w2n-` ID references before renaming UI elements
