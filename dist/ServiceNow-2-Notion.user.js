@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.15
+// @version      11.0.16
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.15";
+    window.BUILD_VERSION = "11.0.16";
 (function () {
 
   // Configuration constants and default settings
@@ -4263,23 +4263,73 @@
             autoExtractState.processedUrls.add(currentUrl);
             autoExtractState.lastPageId = currentPageId;
             
-            // Process and save to Notion
+            // Process and save to Notion with rate limit retry
             debug(`[AUTO-EXTRACT] 📤 Saving page ${currentPageNum} to Notion...`);
             overlayModule.setMessage(`Processing page ${currentPageNum}...`);
           
-            // Process the content using the app's processWithProxy method
-            // This will internally show more detailed messages like:
-            // - "Checking proxy connection..."
-            // - "Converting content to Notion blocks..."
-            // - "Page created successfully!"
-            await app.processWithProxy(extractedData);
+            // Retry logic for rate limits
+            const maxRateLimitRetries = 3;
+            let rateLimitRetryCount = 0;
+            let processingSuccess = false;
             
-            // If we get here without throwing, it succeeded
-            const result = { success: true };
-
-            autoExtractState.totalProcessed++;
-            debug(`[AUTO-EXTRACT] ✅ Page ${currentPageNum} saved to Notion`);
-            overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
+            while (rateLimitRetryCount <= maxRateLimitRetries && !processingSuccess) {
+              try {
+                // Process the content using the app's processWithProxy method
+                // This will internally show more detailed messages like:
+                // - "Checking proxy connection..."
+                // - "Converting content to Notion blocks..."
+                // - "Page created successfully!"
+                await app.processWithProxy(extractedData);
+                
+                // If we get here without throwing, it succeeded
+                processingSuccess = true;
+                
+                autoExtractState.totalProcessed++;
+                debug(`[AUTO-EXTRACT] ✅ Page ${currentPageNum} saved to Notion`);
+                overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
+              } catch (processingError) {
+                // Check if this is a rate limit error
+                const errorMessage = processingError.message || '';
+                const isRateLimit = errorMessage.includes('Rate limit') || 
+                                   errorMessage.includes('rate limited') ||
+                                   errorMessage.includes('429');
+                
+                if (isRateLimit && rateLimitRetryCount < maxRateLimitRetries) {
+                  rateLimitRetryCount++;
+                  const waitTime = Math.min(30 * Math.pow(2, rateLimitRetryCount - 1), 120); // 30s, 60s, 120s
+                  
+                  debug(`⚠️ [RATE-LIMIT] Hit rate limit on page ${currentPageNum}, waiting ${waitTime}s before retry ${rateLimitRetryCount}/${maxRateLimitRetries}...`);
+                  
+                  if (button) {
+                    button.textContent = `⏳ Rate limit - waiting ${waitTime}s...`;
+                  }
+                  
+                  showToast(
+                    `⚠️ Rate limit hit. Waiting ${waitTime} seconds before retry ${rateLimitRetryCount}/${maxRateLimitRetries}...`,
+                    waitTime * 1000
+                  );
+                  
+                  overlayModule.setMessage(`⏳ Rate limit - waiting ${waitTime}s...`);
+                  
+                  // Wait with countdown
+                  for (let i = waitTime; i > 0; i -= 5) {
+                    await new Promise(resolve => setTimeout(resolve, 5000));
+                    if (button) {
+                      button.textContent = `⏳ Retry in ${i}s...`;
+                    }
+                  }
+                  
+                  debug(`🔄 [RATE-LIMIT] Retrying page ${currentPageNum} after cooldown...`);
+                } else {
+                  // Not a rate limit error, or we've exhausted retries - rethrow
+                  throw processingError;
+                }
+              }
+            }
+            
+            if (!processingSuccess) {
+              throw new Error(`Failed to process page ${currentPageNum} after ${maxRateLimitRetries} rate limit retries`);
+            }
           }
         } else {
           debug(`[NAV-RETRY] ⏩ Skipped extraction for expected duplicate, proceeding to navigation...`);
