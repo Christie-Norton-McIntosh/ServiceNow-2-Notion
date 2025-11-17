@@ -1617,6 +1617,10 @@ async function continueAutoExtractionLoop(autoExtractState) {
         return;
       }
 
+      // Actually click the next button
+      debug(`[NEXT-BUTTON] 🖱️ Clicking next button...`);
+      await clickNextPageButton(nextButton);
+
       // Wait for page navigation
       debug(`[AUTO-EXTRACT] ⏳ Step 4: Waiting for page navigation...`);
       if (button) {
@@ -1673,6 +1677,10 @@ async function continueAutoExtractionLoop(autoExtractState) {
             debug(`[NAV-RETRY] ❌ Could not find next button on retry ${navigationRetryCount}`);
             break;
           }
+          
+          // Actually click the button on retry
+          debug(`[NAV-RETRY] 🖱️ Clicking next button (retry ${navigationRetryCount})...`);
+          await clickNextPageButton(retryNextButton);
           
           // Wait for navigation
           debug(`[NAV-RETRY] ⏳ Waiting for navigation (retry ${navigationRetryCount})...`);

@@ -38,6 +38,7 @@ function getGlobals() {
     removeCollectedBlocks: global.removeCollectedBlocks,
     deepStripPrivateKeys: global.deepStripPrivateKeys,
     orchestrateDeepNesting: global.orchestrateDeepNesting,
+    sweepAndRemoveMarkersFromPage: global.sweepAndRemoveMarkersFromPage,
     getExtraDebug: global.getExtraDebug,
     normalizeAnnotations: global.normalizeAnnotations,
     normalizeUrl: global.normalizeUrl,
@@ -263,7 +264,7 @@ router.post('/W2N', async (req, res) => {
         if (calloutIndices.length > 1) {
           log(`🔍 [DRYRUN-CALLOUT-DEDUPE] Found ${calloutIndices.length} callouts at indices: [${calloutIndices.join(', ')}]`);
           
-          const seenCalloutTexts = new Map(); // text -> first index
+          const seenCalloutTexts = new Map(); // text -> {firstIdx, count}
           const indicesToRemove = [];
           
           calloutIndices.forEach((idx) => {
@@ -277,17 +278,35 @@ router.post('/W2N', async (req, res) => {
               .replace(/\s+/g, ' ')  // Normalize whitespace
               .trim();
             
+            // Check if this is a "Note:" or "Before you begin" callout
+            const isNoteCallout = /^Note:/i.test(fullText);
+            const isBeforeYouBeginCallout = /^Before you begin/i.test(fullText);
+            const isExemptCallout = isNoteCallout || isBeforeYouBeginCallout;
+            
             // Use first 200 chars as signature (handles minor variations)
             const signature = fullText.substring(0, 200).toLowerCase();
             
             if (seenCalloutTexts.has(signature)) {
-              // Duplicate found - mark for removal
-              const firstIdx = seenCalloutTexts.get(signature);
-              log(`🚫 [DRYRUN-CALLOUT-DEDUPE] Removing duplicate callout at index ${idx} (duplicate of ${firstIdx}): "${fullText.substring(0, 60)}..."`);
-              indicesToRemove.push(idx);
+              const entry = seenCalloutTexts.get(signature);
+              const firstIdx = entry.firstIdx;
+              const distance = idx - firstIdx;
+              
+              // For exempt callouts (Note:, Before you begin), only dedupe if ADJACENT (distance <= 1)
+              // For other callouts, dedupe within proximity window (distance <= 5)
+              const shouldRemove = isExemptCallout ? (distance <= 1) : (distance <= 5);
+              
+              if (shouldRemove) {
+                const calloutType = isNoteCallout ? 'Note:' : (isBeforeYouBeginCallout ? 'Before you begin' : 'regular');
+                log(`🚫 [DRYRUN-CALLOUT-DEDUPE] Removing ${calloutType} duplicate at index ${idx} (distance ${distance} from ${firstIdx}): "${fullText.substring(0, 60)}..."`);
+                indicesToRemove.push(idx);
+              } else {
+                log(`✅ [DRYRUN-CALLOUT-DEDUPE] Keeping exempt callout at index ${idx} (distance ${distance} from ${firstIdx} exceeds adjacency): "${fullText.substring(0, 60)}..."`);
+                // Update to track this as a new "first" occurrence for future comparisons
+                seenCalloutTexts.set(signature, {firstIdx: idx, count: entry.count + 1});
+              }
             } else {
               // First occurrence - keep it
-              seenCalloutTexts.set(signature, idx);
+              seenCalloutTexts.set(signature, {firstIdx: idx, count: 1});
             }
           });
           
@@ -303,6 +322,7 @@ router.post('/W2N', async (req, res) => {
         log(`❌ [DRYRUN-CALLOUT-DEDUPE] Error during callout deduplication: ${dedupeError.message}`);
       }
 
+      log(`📤 [DRYRUN] About to return response with ${children ? children.length : 'NULL'} children blocks`);
       return sendSuccess(res, { dryRun: true, children, hasVideos, warnings: extractionWarnings });
     }
 
@@ -1890,8 +1910,8 @@ router.patch('/W2N/:pageId', async (req, res) => {
 
     log(`🧹 STEP 3.5: Running final marker sweep to clean any residual markers`);
     try {
-      const { sweepAndRemoveMarkersFromPage } = require('./orchestration/deep-nesting.cjs');
-      const sweepResult = await sweepAndRemoveMarkersFromPage(pageId);
+      // Use global context function (hot-reload safe - doesn't require relative paths)
+      const sweepResult = await global.sweepAndRemoveMarkersFromPage(pageId);
       if (sweepResult && sweepResult.updated > 0) {
         log(`✅ Marker sweep updated ${sweepResult.updated} blocks (removed inherited markers)`);
       } else {
