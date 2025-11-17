@@ -142,6 +142,11 @@ const fallbackOrchestrateDeepNesting = orchestrateDeepNesting || (async (pageId,
   return { appended: 0 };
 });
 
+const fallbackSweepAndRemoveMarkersFromPage = sweepAndRemoveMarkersFromPage || (async (pageId) => {
+  console.log("⚠️ Using fallback sweepAndRemoveMarkersFromPage - orchestration modules not available");
+  return { updated: 0, checked: 0 };
+});
+
 const fallbackDeepStripPrivateKeys = deepStripPrivateKeys || ((blocks) => {
   console.log("⚠️ Using fallback deepStripPrivateKeys - orchestration modules not available");
   // Simple fallback that removes _sn2n_ keys
@@ -169,6 +174,7 @@ const fallbackRemoveCollectedBlocks = removeCollectedBlocks || ((blocks) => {
 const safeAppendBlocksToBlockId = appendBlocksToBlockId || fallbackAppendBlocksToBlockId;
 const safeCollectAndStripMarkers = collectAndStripMarkers || fallbackCollectAndStripMarkers;
 const safeOrchestrateDeepNesting = orchestrateDeepNesting || fallbackOrchestrateDeepNesting;
+const safeSweepAndRemoveMarkersFromPage = sweepAndRemoveMarkersFromPage || fallbackSweepAndRemoveMarkersFromPage;
 const safeDeepStripPrivateKeys = deepStripPrivateKeys || fallbackDeepStripPrivateKeys;
 const safeGenerateMarker = generateMarker || fallbackGenerateMarker;
 const safeRemoveCollectedBlocks = removeCollectedBlocks || fallbackRemoveCollectedBlocks;
@@ -1789,6 +1795,7 @@ global.collectAndStripMarkers = safeCollectAndStripMarkers;
 global.removeCollectedBlocks = safeRemoveCollectedBlocks;
 global.deepStripPrivateKeys = safeDeepStripPrivateKeys;
 global.orchestrateDeepNesting = safeOrchestrateDeepNesting;
+global.sweepAndRemoveMarkersFromPage = safeSweepAndRemoveMarkersFromPage;
 global.getExtraDebug = getExtraDebug;
 global.normalizeAnnotations = normalizeAnnotations;
 global.normalizeUrl = normalizeUrl;
