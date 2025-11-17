@@ -60,3 +60,4 @@ tests/fixtures/validation-failures/*.html
 patch/pages-to-update
 patch/complete
 patch/pages
+patch/logs
