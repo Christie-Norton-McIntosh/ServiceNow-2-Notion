@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.14
+// @version      11.0.15
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.14";
+    window.BUILD_VERSION = "11.0.15";
 (function () {
 
   // Configuration constants and default settings
@@ -2701,6 +2701,24 @@
     const panel = document.createElement("div");
     panel.id = "w2n-notion-panel";
     
+    // Set base CSS styles
+    panel.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 320px;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+    z-index: 10000;
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    user-select: none;
+    opacity: 0.95;
+    transition: opacity 0.2s ease;
+  `;
+    
     // Try to restore saved position from localStorage
     let savedPosition = null;
     try {
@@ -2719,6 +2737,11 @@
           // Saved position is off-screen, reset it
           savedPosition = null;
           localStorage.removeItem('w2n-panel-position');
+        } else {
+          // Apply saved position
+          panel.style.left = `${savedPosition.left}px`;
+          panel.style.top = `${savedPosition.top}px`;
+          panel.style.right = 'auto'; // Override default right positioning
         }
       }
     } catch (e) {
