@@ -8,7 +8,8 @@ RED='\033[0;31m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-UPDATED_DIR="../pages-to-update/updated-pages"
+PATCH_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+UPDATED_DIR="$PATCH_DIR/pages/updated-pages"
 
 echo ""
 echo "=================================================="

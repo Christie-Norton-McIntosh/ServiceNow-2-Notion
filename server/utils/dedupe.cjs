@@ -37,7 +37,9 @@ function computeBlockKey(blk) {
           .substring(0, 200);
       let rowSamples = [];
       if (Array.isArray(blk.table.children)) {
-        for (let i = 0; i < Math.min(3, blk.table.children.length); i++) {
+        // Sample MORE rows to better distinguish tables (up to 5 rows instead of 3)
+        // This helps prevent false positives when tables have similar headers
+        for (let i = 0; i < Math.min(5, blk.table.children.length); i++) {
           const cells = blk.table.children[i]?.table_row?.cells || [];
           const rowText = cells
             .map((c) => {
@@ -50,6 +52,8 @@ function computeBlockKey(blk) {
           rowSamples.push(rowText);
         }
       }
+      // Include row count in key to distinguish tables with different sizes
+      // (e.g., 20-row table vs 1-row table should never be considered duplicates)
       return `table:${w}x${rows}:${rowSamples.join("||")}`;
     }
     if (blk.type === "numbered_list_item" || blk.type === "bulleted_list_item") {
@@ -111,16 +115,20 @@ function dedupeAndFilterBlocks(blockArray, options = {}) {
       }
       
       // Never dedupe callouts with common STANDALONE patterns (title-only without content)
-      // But DO dedupe callouts with full content (e.g., "Note: Any customizations...")
-      // NOTE: Even title-only callouts should be checked for ADJACENT duplicates
+      // Also exempt "Note:" and "Before you begin" callouts from proximity-based deduplication
+      // NOTE: Even exempted callouts should be checked for ADJACENT duplicates
       if (blk && blk.type === 'callout') {
         const txt = plainTextFromRich(blk.callout?.rich_text || []);
         const trimmed = txt.trim();
-        // Only exempt if it's JUST the title pattern with no additional content
+        // Exempt if it's JUST the title pattern with no content, OR if it starts with "Note:" or "Before you begin"
+        // This prevents legitimate repeated warnings/prereqs in different sections from being deduped
         const isTitleOnly = /^(Before you begin|Role required:|Prerequisites?|Note:|Important:|Warning:)\s*$/i.test(trimmed);
-        if (isTitleOnly) {
-          log(`✓ Title-only callout, checking for adjacent duplicates: "${trimmed}"`);
-          // Still check for adjacent duplicates even for title-only
+        const isNoteCallout = /^Note:/i.test(trimmed);
+        const isBeforeYouBeginCallout = /^Before you begin/i.test(trimmed);
+        if (isTitleOnly || isNoteCallout || isBeforeYouBeginCallout) {
+          const calloutType = isTitleOnly ? 'Title-only' : (isNoteCallout ? 'Note:' : 'Before you begin');
+          log(`✓ ${calloutType} callout, checking for adjacent duplicates: "${trimmed.substring(0, 60)}..."`);
+          // Still check for adjacent duplicates even for exempted callouts
           const key = computeBlockKey(blk);
           const adjacentDuplicate = recentBlocks.find(entry => {
             const [entryKey, entryIndex] = entry;
@@ -129,7 +137,7 @@ function dedupeAndFilterBlocks(blockArray, options = {}) {
           });
           
           if (adjacentDuplicate) {
-            log(`🚫 Deduping adjacent title-only callout at index ${i}: "${trimmed}" (duplicate of block ${adjacentDuplicate[1]})`);
+            log(`🚫 Deduping adjacent ${calloutType} callout at index ${i}: "${trimmed.substring(0, 60)}..." (duplicate of block ${adjacentDuplicate[1]})`);
             removed++;
             duplicates++;
             continue;
@@ -143,7 +151,7 @@ function dedupeAndFilterBlocks(blockArray, options = {}) {
           out.push(blk);
           continue;
         }
-        // For callouts with content after the title, use normal deduplication
+        // For other callouts with content, use normal proximity-based deduplication
         log(`→ Callout with content will be deduped: "${trimmed.substring(0, 60)}..."`);
       }
       
@@ -221,6 +229,9 @@ function dedupeAndFilterBlocks(blockArray, options = {}) {
         const calloutText = plainTextFromRich(blk.callout?.rich_text || []).substring(0, 60);
         const calloutType = blk.callout?.icon?.emoji || 'unknown';
         
+        log(`🔍 [CALLOUT-DEDUPE-CHECK] Checking callout ${i}: "${calloutText}..." key="${key}"`);
+        log(`🔍 [CALLOUT-DEDUPE-CHECK] Recent blocks: ${recentBlocks.map(e => `[${e[1]}: ${e[0].substring(0, 40)}]`).join(', ')}`);
+        
         const adjacentDuplicate = recentBlocks.find(entry => {
           const [entryKey, entryIndex] = entry;
           const distance = i - entryIndex;
@@ -234,6 +245,7 @@ function dedupeAndFilterBlocks(blockArray, options = {}) {
           duplicates++;
           continue;
         }
+        log(`✓ [CALLOUT-DEDUPE-CHECK] Not a duplicate, adding to output`);
         // If not immediately adjacent, use normal window for callouts with content
         effectiveWindow = PROXIMITY_WINDOW;
       }

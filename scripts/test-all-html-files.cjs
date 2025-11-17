@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Test extraction for all HTML files in patch/pages-to-update/
+ * Test extraction for all HTML files in patch/pages/pages-to-update/
  * Shows block counts without verbose logging
  */
 
@@ -9,7 +9,7 @@ const path = require('path');
 const http = require('http');
 
 // Test all HTML files
-const pagesDir = path.join(__dirname, '..', 'patch', 'pages-to-update');
+const pagesDir = path.join(__dirname, '..', 'patch', 'pages', 'pages-to-update');
 const htmlFiles = fs.readdirSync(pagesDir).filter(f => f.endsWith('.html'));
 
 console.log(`\n📦 Testing ${htmlFiles.length} HTML files...\n`);

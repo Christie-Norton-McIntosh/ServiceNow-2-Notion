@@ -5,11 +5,12 @@
 
 set -e
 
-PAGES_DIR="/Users/norton-mcintosh/GitHub/ServiceNow-2-Notion/patch/pages-to-update"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PAGES_DIR="$ROOT_DIR/patch/pages/pages-to-update"
 SERVER_URL="http://localhost:3004"
 DATABASE_ID="282a89fedba5815e91f0db972912ef9f"
-CREATED_DIR="$PAGES_DIR/created-pages"
-FAILED_DIR="$PAGES_DIR/failed-pages"
+CREATED_DIR="$ROOT_DIR/patch/pages/created-pages"
+FAILED_DIR="$ROOT_DIR/patch/pages/failed-pages"
 
 # Create directories if they don't exist
 mkdir -p "$CREATED_DIR"

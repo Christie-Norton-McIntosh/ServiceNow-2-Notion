@@ -2,15 +2,15 @@
 set -euo pipefail
 
 # Batch sweep to remove visible (sn2n:...) markers from Notion pages
-# Reads Page IDs from HTML files in updated-pages/ and invokes the manual sweep per page
+# Reads Page IDs from HTML files in pages/updated-pages/ and invokes the manual sweep per page
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-UPDATED_DIR="$ROOT_DIR/pages-to-update/updated-pages"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+UPDATED_DIR="$ROOT_DIR/patch/pages/updated-pages"
 LOG_FILE="/tmp/marker-sweep-batch.log"
 
 # Load env for Notion token if present
-if [ -f "$ROOT_DIR/../server/.env" ]; then
-  export $(grep -v '^#' "$ROOT_DIR/../server/.env" | xargs)
+if [ -f "$ROOT_DIR/server/.env" ]; then
+  export $(grep -v '^#' "$ROOT_DIR/server/.env" | xargs)
 fi
 
 if [ ! -d "$UPDATED_DIR" ]; then

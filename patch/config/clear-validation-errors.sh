@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Clear validation errors for all pages in updated-pages/
+# Clear validation errors for all pages in pages/updated-pages/
 # These pages were successfully patched, so clear their Error checkbox and update validation
 
 API_URL="http://localhost:3004/api/validate"
-UPDATED_DIR="$(cd "$(dirname "$0")/../pages-to-update/updated-pages" && pwd)"
+PATCH_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+UPDATED_DIR="$PATCH_DIR/pages/updated-pages"
 
 echo "=================================================="
 echo "  🧹 Clear Validation Errors"

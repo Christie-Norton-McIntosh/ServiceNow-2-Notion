@@ -5,7 +5,7 @@ const http = require('http');
 const path = require('path');
 
 const testFile = process.argv[2] || 'computer-cmdb-ci-computer-class-2025-11-13T14-32-36.html';
-const htmlPath = path.join(__dirname, '..', 'patch', 'pages-to-update', testFile);
+const htmlPath = path.join(__dirname, '..', 'patch', 'pages', 'pages-to-update', testFile);
 
 console.log(`\n🔍 Testing extraction for: ${testFile}\n`);
 

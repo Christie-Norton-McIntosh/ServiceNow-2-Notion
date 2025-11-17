@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Debug HTML extraction from patch/pages-to-update files
+ * Debug HTML extraction from patch/pages/pages-to-update files
  * Directly tests the servicenow.cjs extraction logic with verbose diagnostics
  */
 
@@ -11,7 +11,7 @@ const cheerio = require(path.join(__dirname, '..', 'server', 'node_modules', 'ch
 
 // Test file
 const testFile = process.argv[2] || 'computer-cmdb-ci-computer-class-2025-11-13T14-32-36.html';
-const htmlPath = path.join(__dirname, '..', 'patch', 'pages-to-update', testFile);
+const htmlPath = path.join(__dirname, '..', 'patch', 'pages', 'pages-to-update', testFile);
 
 console.log(`\n🔍 Debug Extraction for: ${testFile}\n`);
 

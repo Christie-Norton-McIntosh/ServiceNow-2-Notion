@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # Test new pages in pages-to-update with dryRun validation
-PAGES_DIR="/Users/norton-mcintosh/GitHub/ServiceNow-2-Notion/patch/pages-to-update"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PAGES_DIR="$ROOT_DIR/patch/pages/pages-to-update"
 API="http://localhost:3004/api/W2N"
 DB_ID="1524506adba58133b45ad4bb20d13c2e"
 

@@ -252,6 +252,57 @@ router.post('/W2N', async (req, res) => {
         log(`⚠️ (dryRun) Marker simulation failed: ${e && e.message ? e.message : e}`);
       }
 
+      // FIX v11.0.7: Final callout deduplication for dry run mode
+      // Apply same deduplication logic as non-dry-run mode to ensure consistent results
+      try {
+        const calloutIndices = [];
+        children.forEach((block, idx) => {
+          if (block.type === 'callout') calloutIndices.push(idx);
+        });
+        
+        if (calloutIndices.length > 1) {
+          log(`🔍 [DRYRUN-CALLOUT-DEDUPE] Found ${calloutIndices.length} callouts at indices: [${calloutIndices.join(', ')}]`);
+          
+          const seenCalloutTexts = new Map(); // text -> first index
+          const indicesToRemove = [];
+          
+          calloutIndices.forEach((idx) => {
+            const callout = children[idx];
+            
+            // Extract and normalize text content
+            const fullText = (callout.callout?.rich_text || [])
+              .map(rt => rt.text?.content || '')
+              .join('')
+              .replace(/\(sn2n:[a-z0-9\-]+\)/gi, '') // Strip markers
+              .replace(/\s+/g, ' ')  // Normalize whitespace
+              .trim();
+            
+            // Use first 200 chars as signature (handles minor variations)
+            const signature = fullText.substring(0, 200).toLowerCase();
+            
+            if (seenCalloutTexts.has(signature)) {
+              // Duplicate found - mark for removal
+              const firstIdx = seenCalloutTexts.get(signature);
+              log(`🚫 [DRYRUN-CALLOUT-DEDUPE] Removing duplicate callout at index ${idx} (duplicate of ${firstIdx}): "${fullText.substring(0, 60)}..."`);
+              indicesToRemove.push(idx);
+            } else {
+              // First occurrence - keep it
+              seenCalloutTexts.set(signature, idx);
+            }
+          });
+          
+          if (indicesToRemove.length > 0) {
+            const toRemove = new Set(indicesToRemove);
+            const beforeCount = children.length;
+            children = children.filter((_, idx) => !toRemove.has(idx));
+            const afterCount = children.length;
+            log(`✅ [DRYRUN-CALLOUT-DEDUPE] Removed ${indicesToRemove.length} duplicate callout(s), blocks: ${beforeCount} → ${afterCount}`);
+          }
+        }
+      } catch (dedupeError) {
+        log(`❌ [DRYRUN-CALLOUT-DEDUPE] Error during callout deduplication: ${dedupeError.message}`);
+      }
+
       return sendSuccess(res, { dryRun: true, children, hasVideos, warnings: extractionWarnings });
     }
 
@@ -306,6 +357,7 @@ router.post('/W2N', async (req, res) => {
     // Create children blocks from content
     let children = [];
     let hasVideos = false;
+    let extractionResult = null; // Store extraction result for validation
 
     // Prefer HTML content with conversion to Notion blocks
     let extractionWarnings = [];
@@ -337,17 +389,20 @@ router.post('/W2N', async (req, res) => {
         console.log('🔍 [CORRUPTION-DEBUG] ========================================\n');
       }
       
-      const result = await htmlToNotionBlocks(payload.contentHtml);
-      children = result.blocks;
-      hasVideos = result.hasVideos;
-      extractionWarnings = result.warnings || [];
+      extractionResult = await htmlToNotionBlocks(payload.contentHtml);
+      children = extractionResult.blocks;
+      hasVideos = extractionResult.hasVideos;
+      extractionWarnings = extractionResult.warnings || [];
       log(`✅ Converted HTML to ${children.length} Notion blocks`);
       
       // Deduplicate consecutive identical tables
       const beforeDedupe = children.length;
+      const tablesBefore = children.filter(b => b.type === 'table').length;
+      log(`📊 Before dedupe: ${children.length} blocks (${tablesBefore} tables)`);
       children = deduplicateTableBlocks(children);
+      const tablesAfter = children.filter(b => b.type === 'table').length;
       if (children.length < beforeDedupe) {
-        log(`🧹 Removed ${beforeDedupe - children.length} duplicate table(s)`);
+        log(`🧹 Removed ${beforeDedupe - children.length} duplicate block(s) (tables: ${tablesBefore} → ${tablesAfter})`);
       }
       
       if (hasVideos) {
@@ -526,7 +581,13 @@ router.post('/W2N', async (req, res) => {
     }
 
     // Use central dedupe utility so unit tests can target it
+    const beforeDedupeCount = children.length;
+    const calloutsBefore = children.filter(c => c.type === 'callout').length;
+    log(`🔍 [DEDUPE-DEBUG] Before deduplication: ${beforeDedupeCount} blocks (${calloutsBefore} callouts)`);
     children = dedupeUtil.dedupeAndFilterBlocks(children, { log });
+    const afterDedupeCount = children.length;
+    const calloutsAfter = children.filter(c => c.type === 'callout').length;
+    log(`🔍 [DEDUPE-DEBUG] After deduplication: ${afterDedupeCount} blocks (${calloutsAfter} callouts), removed ${beforeDedupeCount - afterDedupeCount} blocks`);
     
     // CRITICAL: Also dedupe children nested inside list items
     // Callouts can appear as children of list items and need deduplication too
@@ -591,6 +652,60 @@ router.post('/W2N', async (req, res) => {
     log(`🔧 Running nested deduplication on ${children.length} top-level blocks...`);
     children = dedupeNestedChildren(children);
     log(`✅ Deduplication complete (including nested children)`);
+    
+    // FIX v11.0.7: Final pass to remove any remaining duplicate callouts
+    // Duplicate callouts can appear when extracted from nested lists at multiple levels
+    // Remove consecutive identical callouts (within proximity of 2 blocks)
+    const calloutIndices = [];
+    children.forEach((block, idx) => {
+      if (block.type === 'callout') calloutIndices.push(idx);
+    });
+    
+    try {
+      log(`🔍 [FINAL-CALLOUT-DEDUPE] Found ${calloutIndices.length} callouts at indices: [${calloutIndices.join(', ')}]`);
+      
+      // FIX v11.0.7: Aggressive callout deduplication by text content only
+      // Callouts extracted from nested lists can create duplicates even after other deduplication passes
+      // Use simple text-based matching (first 200 chars) to catch all duplicates
+      const seenCalloutTexts = new Map(); // text -> first index
+      const indicesToRemove = [];
+      
+      calloutIndices.forEach((idx) => {
+        const callout = children[idx];
+        
+        // Extract and normalize text content
+        const fullText = (callout.callout?.rich_text || [])
+          .map(rt => rt.text?.content || '')
+          .join('')
+          .replace(/\(sn2n:[a-z0-9\-]+\)/gi, '') // Strip markers
+          .replace(/\s+/g, ' ')  // Normalize whitespace
+          .trim();
+        
+        // Use first 200 chars as signature (handles minor variations)
+        const signature = fullText.substring(0, 200).toLowerCase();
+        
+        if (seenCalloutTexts.has(signature)) {
+          // Duplicate found - mark for removal
+          const firstIdx = seenCalloutTexts.get(signature);
+          log(`🚫 [FINAL-CALLOUT-DEDUPE] Removing duplicate callout at index ${idx} (duplicate of ${firstIdx}): "${fullText.substring(0, 60)}..."`);
+          indicesToRemove.push(idx);
+        } else {
+          // First occurrence - keep it
+          seenCalloutTexts.set(signature, idx);
+        }
+      });
+      
+      if (indicesToRemove.length > 0) {
+        const toRemove = new Set(indicesToRemove);
+        const beforeCount = children.length;
+        children = children.filter((_, idx) => !toRemove.has(idx));
+        const afterCount = children.length;
+        log(`✅ [FINAL-CALLOUT-DEDUPE] Removed ${indicesToRemove.length} duplicate callout(s), blocks: ${beforeCount} → ${afterCount}`);
+      }
+    } catch (dedupeError) {
+      log(`❌ [FINAL-CALLOUT-DEDUPE] Error during final callout deduplication: ${dedupeError.message}`);
+      console.error('[FINAL-CALLOUT-DEDUPE] Full error:', dedupeError);
+    }
 
     // Create the page (handling Notion's 100-block limit)
     log(`� Creating Notion page with ${children.length} blocks`);
@@ -898,11 +1013,19 @@ router.post('/W2N', async (req, res) => {
     }
 
     // After initial page creation and appending remaining blocks, run the orchestrator
+    let orchestrationFailed = false;
+    let orchestrationError = null;
+    
     try {
       if (markerMap && Object.keys(markerMap).length > 0) {
-        log("🔧 Running deep-nesting orchestrator...");
+        log(`\n========================================`);
+        log("🔧 STARTING ORCHESTRATION (deep nesting + marker cleanup)");
+        log(`   Page ID: ${response.id}`);
+        log(`   Markers to process: ${Object.keys(markerMap).length}`);
+        log(`========================================\n`);
+        
         const orch = await orchestrateDeepNesting(response.id, markerMap);
-        log("🔧 Orchestrator result:", orch);
+        log("✅ Orchestrator completed successfully:", orch);
         
         // CRITICAL: After orchestration adds children to list items, we need to deduplicate again
         // The orchestrator may add duplicate callouts as children to list items
@@ -974,19 +1097,15 @@ router.post('/W2N', async (req, res) => {
                 }
                 
                 // For tables at page root, only check consecutive duplicates if we have few tables
-                // If there are only 1-2 tables total, they might be genuine orchestration duplicates
-                // Notion API returns tables without their children, so all tables look identical by structure
+                // FIXED v11.0.7: Skip deduplication for ALL tables at page root
+                // Notion API returns tables without their children, so different tables look identical by structure
+                // Tables in different sections are legitimate content, not duplicates from orchestration
                 if (isPageRoot && child.type === 'table') {
                   const tableCount = children.filter(c => c.type === 'table').length;
-                  if (tableCount > 2) {
-                    log(`${indent}  ✓ Preserving table at page root (${tableCount} tables, likely different sections)`);
-                    prevChild = child;
-                    prevKey = null;
-                    continue;
-                  } else {
-                    // With 1-2 tables, allow consecutive deduplication to catch orchestration duplicates
-                    log(`${indent}  🔍 Checking table for consecutive deduplication (only ${tableCount} table(s) at root)`);
-                  }
+                  log(`${indent}  ✓ Preserving table at page root (${tableCount} table(s) - likely from different sections)`);
+                  prevChild = child;
+                  prevKey = null;
+                  continue;
                 }
                 
                 // Skip deduplication for images at page root (they're in different sections, not duplicates)
@@ -1049,9 +1168,19 @@ router.post('/W2N', async (req, res) => {
         } catch (dedupError) {
           log(`⚠️ Post-orchestration deduplication failed: ${dedupError.message}`);
         }
+      } else {
+        log("ℹ️ No markers to orchestrate (no deep nesting needed)");
       }
     } catch (e) {
-      log("⚠️ Orchestrator failed:", e && e.message);
+      orchestrationFailed = true;
+      orchestrationError = e;
+      log(`\n========================================`);
+      log("❌ ORCHESTRATION FAILED");
+      log(`   Error: ${e.message}`);
+      log(`   Stack: ${e.stack}`);
+      log(`========================================\n`);
+      log("⚠️ WARNING: Page may contain visible markers (marker cleanup failed)");
+      log("⚠️ This page should be flagged for manual review or re-PATCH");
     }
 
     // Run post-creation validation if enabled
@@ -1059,10 +1188,20 @@ router.post('/W2N', async (req, res) => {
     const shouldValidate = process.env.SN2N_VALIDATE_OUTPUT === '1' || process.env.SN2N_VALIDATE_OUTPUT === 'true';
     
     if (shouldValidate) {
+      log(`\n========================================`);
+      log(`🔍 STARTING VALIDATION for page ${response.id}`);
+      log(`   Title: "${payload.title}"`);
+      log(`   Expected blocks: ${children.length}`);
+      if (orchestrationFailed) {
+        log(`   ⚠️ ORCHESTRATION FAILED - validation will likely detect marker leaks`);
+      }
+      log(`========================================\n`);
+      
       try {
         // Delay to allow Notion's API to fully process page creation and deduplication
         // Increased from 500ms to 2000ms to prevent "got 0 blocks" false positives
         // Notion's eventual consistency can take 1-2 seconds for complex pages
+        log("⏳ Waiting 2s for Notion API to process page creation...");
         await new Promise(resolve => setTimeout(resolve, 2000));
         
         log("🔍 Running post-creation validation...");
@@ -1078,7 +1217,7 @@ router.post('/W2N', async (req, res) => {
           {
             expectedMinBlocks: minBlocks,
             expectedMaxBlocks: maxBlocks,
-            sourceHtml: payload.contentHtml // Pass original HTML for content comparison
+            sourceHtml: extractionResult?.fixedHtml || payload.contentHtml // Use fixed HTML for accurate validation
           },
           log
         );
@@ -1100,57 +1239,146 @@ router.post('/W2N', async (req, res) => {
         // Don't fail the entire request if validation fails
       }
       
+      // If orchestration failed, add that to validation issues
+      if (orchestrationFailed && validationResult) {
+        if (!validationResult.issues) validationResult.issues = [];
+        validationResult.issues.push(`Orchestration failed: ${orchestrationError?.message || 'Unknown error'} - page may contain visible markers`);
+        validationResult.hasErrors = true;
+        validationResult.success = false;
+        
+        // Update summary to reflect orchestration failure
+        const orchFailureNote = `\n\n❌ CRITICAL: Orchestration failed - markers may be visible in page`;
+        if (validationResult.summary) {
+          validationResult.summary += orchFailureNote;
+        } else {
+          validationResult.summary = orchFailureNote;
+        }
+        
+        log(`⚠️ Added orchestration failure to validation result`);
+      }
+      
       // Update page properties with validation results (moved outside try/catch)
       // This ensures properties are ALWAYS updated, even if validation errors
       if (validationResult) {
-        try {
-          const propertyUpdates = {};
-          
-          // Set Error checkbox based on validation result (always explicit)
-          if (validationResult.hasErrors) {
-            propertyUpdates["Error"] = { checkbox: true };
-            log(`⚠️ Validation failed - setting Error checkbox`);
-          } else {
-            propertyUpdates["Error"] = { checkbox: false };
-            log(`✅ Validation passed - clearing Error checkbox`);
-          }
-          
-          // Set Validation property with results summary (without stats)
-          // Using rich_text property type (multi-line text)
-          propertyUpdates["Validation"] = {
-            rich_text: [
-              {
-                type: "text",
-                text: { content: validationResult.summary }
-              }
-            ]
-          };
-          
-          // Set Stats property with detailed statistics
-          // Using rich_text property type (multi-line text)
-          if (validationResult.stats) {
-            const statsText = JSON.stringify(validationResult.stats, null, 2);
-            propertyUpdates["Stats"] = {
+        // FIX v11.0.7: Increased retries from 3 to 5 and longer delays to handle transient Notion API issues
+        // Pages were being "skipped" for validation when property updates failed after 3 attempts
+        const maxPropertyRetries = 5;
+        let propertyUpdateSuccess = false;
+        
+        for (let propRetry = 0; propRetry <= maxPropertyRetries && !propertyUpdateSuccess; propRetry++) {
+          try {
+            const propertyUpdates = {};
+            
+            // Set Error checkbox based on validation result (always explicit)
+            if (validationResult.hasErrors) {
+              propertyUpdates["Error"] = { checkbox: true };
+              log(`⚠️ Validation failed - setting Error checkbox`);
+            } else {
+              propertyUpdates["Error"] = { checkbox: false };
+              log(`✅ Validation passed - clearing Error checkbox`);
+            }
+            
+            // Set Validation property with results summary (without stats)
+            // Using rich_text property type (multi-line text)
+            propertyUpdates["Validation"] = {
               rich_text: [
                 {
                   type: "text",
-                  text: { content: statsText }
+                  text: { content: validationResult.summary }
                 }
               ]
             };
-            log(`📊 Setting Stats property with validation statistics`);
+            
+            // Set Stats property with detailed statistics
+            // Using rich_text property type (multi-line text)
+            if (validationResult.stats) {
+              const statsText = JSON.stringify(validationResult.stats, null, 2);
+              propertyUpdates["Stats"] = {
+                rich_text: [
+                  {
+                    type: "text",
+                    text: { content: statsText }
+                  }
+                ]
+              };
+              log(`📊 Setting Stats property with validation statistics`);
+            }
+            
+            // Update the page properties
+            await notion.pages.update({
+              page_id: response.id,
+              properties: propertyUpdates
+            });
+            
+            propertyUpdateSuccess = true;
+            log(`✅ Validation properties updated successfully${propRetry > 0 ? ` (after ${propRetry} ${propRetry === 1 ? 'retry' : 'retries'})` : ''}`);
+          } catch (propError) {
+            const isLastRetry = propRetry >= maxPropertyRetries;
+            // FIX v11.0.7: Extended backoff to handle transient Notion API issues (max 32s)
+            const waitTime = Math.min(Math.pow(2, propRetry), 32) * 1000; // 1s, 2s, 4s, 8s, 16s, 32s
+            
+            if (isLastRetry) {
+              log(`\n${'='.repeat(80)}`);
+              log(`❌ CRITICAL: Failed to update validation properties after ${maxPropertyRetries + 1} attempts`);
+              log(`   Error: ${propError.message}`);
+              log(`   Page ID: ${response.id}`);
+              log(`   Page URL: ${response.url}`);
+              log(`\n⚠️ ATTEMPTING FALLBACK: Minimal property update (Error checkbox only)`);
+              log(`${'='.repeat(80)}\n`);
+              
+              // FIX v11.0.7: FALLBACK 1 - Try minimal property update with just Error checkbox
+              try {
+                await notion.pages.update({
+                  page_id: response.id,
+                  properties: {
+                    "Error": { checkbox: validationResult.hasErrors }
+                  }
+                });
+                log(`✅ FALLBACK SUCCESS: Error checkbox updated (minimal properties)`);
+                propertyUpdateSuccess = true;
+              } catch (fallback1Error) {
+                log(`❌ FALLBACK 1 FAILED: ${fallback1Error.message}`);
+                
+                // FIX v11.0.7: FALLBACK 2 - Write validation summary as block comment
+                try {
+                  log(`⚠️ ATTEMPTING FALLBACK 2: Block comment with validation summary`);
+                  const validationSummary = `🤖 VALIDATION METADATA (Auto-generated)\n` +
+                    `Status: ${validationResult.hasErrors ? '❌ Failed' : '✅ Passed'}\n` +
+                    `Errors: ${validationResult.criticalIssues}\n` +
+                    `Warnings: ${validationResult.minorIssues}\n` +
+                    `Stats: ${validationResult.statsText}\n` +
+                    `Timestamp: ${new Date().toISOString()}`;
+                  
+                  // Prepend callout with validation info at top of page
+                  await notion.blocks.children.append({
+                    block_id: response.id,
+                    children: [{
+                      object: 'block',
+                      type: 'callout',
+                      callout: {
+                        rich_text: [{ type: 'text', text: { content: validationSummary } }],
+                        icon: { type: 'emoji', emoji: validationResult.hasErrors ? '❌' : '✅' },
+                        color: validationResult.hasErrors ? 'red_background' : 'green_background'
+                      }
+                    }]
+                  });
+                  log(`✅ FALLBACK 2 SUCCESS: Validation metadata written as block comment`);
+                  propertyUpdateSuccess = true;
+                } catch (fallback2Error) {
+                  log(`❌ FALLBACK 2 FAILED: ${fallback2Error.message}`);
+                  log(`\n⚠️ WARNING: Page ${response.id} has NO validation metadata`);
+                  log(`   Page exists at: ${response.url}`);
+                  log(`   Manual validation may be required!\n`);
+                }
+              }
+              
+              // Don't throw - page was created successfully, just property update failed
+            } else {
+              log(`⚠️ Property update failed (attempt ${propRetry + 1}/${maxPropertyRetries + 1}): ${propError.message}`);
+              log(`   Retrying in ${waitTime / 1000}s...`);
+              await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
           }
-          
-          // Update the page properties
-          await notion.pages.update({
-            page_id: response.id,
-            properties: propertyUpdates
-          });
-          
-          log(`✅ Validation properties updated successfully`);
-        } catch (propError) {
-          log(`❌ Failed to update validation properties: ${propError.message}`);
-          // Don't throw - page was created successfully, just property update failed
         }
         
         // Log validation errors and warnings (moved outside property update)
@@ -1164,7 +1392,7 @@ router.post('/W2N', async (req, res) => {
           const shouldSaveFixtures = process.env.SN2N_SAVE_VALIDATION_FAILURES !== 'false' && process.env.SN2N_SAVE_VALIDATION_FAILURES !== '0';
           if (shouldSaveFixtures && payload.contentHtml) {
             try {
-              const fixturesDir = process.env.SN2N_FIXTURES_DIR || path.join(__dirname, '../../patch/pages-to-update');
+              const fixturesDir = process.env.SN2N_FIXTURES_DIR || path.join(__dirname, '../../patch/pages/pages-to-update');
               
               // Ensure directory exists
               if (!fs.existsSync(fixturesDir)) {
@@ -1649,32 +1877,28 @@ router.patch('/W2N/:pageId', async (req, res) => {
     }
     
     // STEP 3.5: Marker sweep
-    // If markers were collected (orchestration ran), always sweep.
-    // Additionally, when SN2N_ORPHAN_LIST_REPAIR=1, perform a fallback sweep even if markerMap is empty.
-    const shouldForceSweep = process.env.SN2N_ORPHAN_LIST_REPAIR === '1';
-    if ((markerMap && Object.keys(markerMap).length > 0) || shouldForceSweep) {
-      operationPhase = 'sweeping for residual markers';
-      const reason = (markerMap && Object.keys(markerMap).length > 0) ? 'orchestration markers present' : 'fallback safety sweep enabled';
-      log(`🧹 STEP 3.5: Preparing marker sweep (${reason})`);
+    // ALWAYS run marker sweep for PATCH operations to clean inherited markers from previous page versions
+    // PATCH deletes all blocks and re-creates them, which can leave orphaned markers from the old version
+    operationPhase = 'sweeping for residual markers';
+    const hasMarkers = markerMap && Object.keys(markerMap).length > 0;
+    const reason = hasMarkers ? 'orchestration markers present' : 'PATCH safety sweep (cleans inherited markers)';
+    log(`🧹 STEP 3.5: Preparing marker sweep (${reason})`);
 
-      // Wait 1 second before marker sweep to reduce conflicts
-      log(`⏸️  Waiting 1s before marker sweep to reduce conflicts...`);
-      await new Promise(resolve => setTimeout(resolve, 1000));
+    // Wait 1 second before marker sweep to reduce conflicts
+    log(`⏸️  Waiting 1s before marker sweep to reduce conflicts...`);
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
-      log(`🧹 STEP 3.5: Running final marker sweep to clean any residual markers`);
-      try {
-        const { sweepAndRemoveMarkersFromPage } = require('./orchestration/deep-nesting.cjs');
-        const sweepResult = await sweepAndRemoveMarkersFromPage(pageId);
-        if (sweepResult && sweepResult.updated > 0) {
-          log(`✅ Marker sweep updated ${sweepResult.updated} blocks`);
-        } else {
-          log(`✅ Marker sweep found no markers to remove`);
-        }
-      } catch (sweepError) {
-        log(`⚠️ Marker sweep failed (non-fatal): ${sweepError.message}`);
+    log(`🧹 STEP 3.5: Running final marker sweep to clean any residual markers`);
+    try {
+      const { sweepAndRemoveMarkersFromPage } = require('./orchestration/deep-nesting.cjs');
+      const sweepResult = await sweepAndRemoveMarkersFromPage(pageId);
+      if (sweepResult && sweepResult.updated > 0) {
+        log(`✅ Marker sweep updated ${sweepResult.updated} blocks (removed inherited markers)`);
+      } else {
+        log(`✅ Marker sweep found no markers to remove`);
       }
-    } else {
-      log(`✅ STEP 3.5: No markers collected and safety sweep disabled, skipping marker sweep (saves 2-5 seconds)`);
+    } catch (sweepError) {
+      log(`⚠️ Marker sweep failed (non-fatal): ${sweepError.message}`);
     }
     
     // STEP 4: Update page properties if provided
@@ -1705,7 +1929,7 @@ router.patch('/W2N/:pageId', async (req, res) => {
       
       try {
         validationResult = await validateNotionPage(notion, pageId, {
-          sourceHtml: html,
+          sourceHtml: extractionResult.fixedHtml || html,
           expectedTitle: pageTitle,
           verbose: true
         });

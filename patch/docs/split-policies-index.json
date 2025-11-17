@@ -1,0 +1,354 @@
+{
+  "originalFile": "generic-policies-in-devops-config-2025-11-11T10-02-11.html",
+  "originalPageId": "2a8a89fe-dba5-8149-bb6b-f5cec836bdfa",
+  "originalTitle": "Generic policies in DevOps Config",
+  "originalUrl": "https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/product/devops-config/reference/devops-config-gen-policies.html",
+  "splitTimestamp": "2025-11-16T03-57-24",
+  "totalSections": 43,
+  "files": [
+    {
+      "filename": "all-key-value-comparator-allkeysvaluescomparator-2025-11-16T03-57-24.html",
+      "title": "All Key-Value Comparator (allKeysValuesComparator)",
+      "filepath": "patch/pages-to-update/split-policies/all-key-value-comparator-allkeysvaluescomparator-2025-11-16T03-57-24.html",
+      "sizeKB": 14,
+      "section": 1,
+      "totalSections": 43
+    },
+    {
+      "filename": "authorized-email-domains-authorizedemaildomains-2025-11-16T03-57-24.html",
+      "title": "Authorized Email Domains (authorizedEmailDomains)",
+      "filepath": "patch/pages-to-update/split-policies/authorized-email-domains-authorizedemaildomains-2025-11-16T03-57-24.html",
+      "sizeKB": 14,
+      "section": 2,
+      "totalSections": 43
+    },
+    {
+      "filename": "authorized-hosts-in-urls-authorisedhostsinurls-2025-11-16T03-57-24.html",
+      "title": "Authorized Hosts in URLs (authorisedHostsInURLS)",
+      "filepath": "patch/pages-to-update/split-policies/authorized-hosts-in-urls-authorisedhostsinurls-2025-11-16T03-57-24.html",
+      "sizeKB": 14,
+      "section": 3,
+      "totalSections": 43
+    },
+    {
+      "filename": "authorized-key-value-combinations-authorisedkvcomb-2025-11-16T03-57-24.html",
+      "title": "Authorized Key-Value Combinations (authorisedKVCombinations)",
+      "filepath": "patch/pages-to-update/split-policies/authorized-key-value-combinations-authorisedkvcomb-2025-11-16T03-57-24.html",
+      "sizeKB": 14,
+      "section": 4,
+      "totalSections": 43
+    },
+    {
+      "filename": "authorized-ports-range-authorisedportsrange-2025-11-16T03-57-24.html",
+      "title": "Authorized Ports Range (authorisedPortsRange)",
+      "filepath": "patch/pages-to-update/split-policies/authorized-ports-range-authorisedportsrange-2025-11-16T03-57-24.html",
+      "sizeKB": 14,
+      "section": 5,
+      "totalSections": 43
+    },
+    {
+      "filename": "certificate-validator-certificatevalidator-2025-11-16T03-57-24.html",
+      "title": "Certificate Validator (certificateValidator)",
+      "filepath": "patch/pages-to-update/split-policies/certificate-validator-certificatevalidator-2025-11-16T03-57-24.html",
+      "sizeKB": 14,
+      "section": 6,
+      "totalSections": 43
+    },
+    {
+      "filename": "consistent-nodes-comparator-consistentnodescompara-2025-11-16T03-57-24.html",
+      "title": "Consistent Nodes Comparator (consistentNodesComparator)",
+      "filepath": "patch/pages-to-update/split-policies/consistent-nodes-comparator-consistentnodescompara-2025-11-16T03-57-24.html",
+      "sizeKB": 13,
+      "section": 7,
+      "totalSections": 43
+    },
+    {
+      "filename": "correct-host-regex-correcthostregex-2025-11-16T03-57-24.html",
+      "title": "Correct Host Regex (correctHostRegex)",
+      "filepath": "patch/pages-to-update/split-policies/correct-host-regex-correcthostregex-2025-11-16T03-57-24.html",
+      "sizeKB": 14,
+      "section": 8,
+      "totalSections": 43
+    },
+    {
+      "filename": "detect-unused-variables-detectunusedvariables-2025-11-16T03-57-24.html",
+      "title": "Detect Unused Variables (detectUnusedVariables)",
+      "filepath": "patch/pages-to-update/split-policies/detect-unused-variables-detectunusedvariables-2025-11-16T03-57-24.html",
+      "sizeKB": 13,
+      "section": 9,
+      "totalSections": 43
+    },
+    {
+      "filename": "different-key-names-same-values-differentkeynamess-2025-11-16T03-57-24.html",
+      "title": "Different Key Names Same Values (differentKeyNamesSameValues)",
+      "filepath": "patch/pages-to-update/split-policies/different-key-names-same-values-differentkeynamess-2025-11-16T03-57-24.html",
+      "sizeKB": 13,
+      "section": 10,
+      "totalSections": 43
+    },
+    {
+      "filename": "different-values-nodes-comparator-differentvaluesn-2025-11-16T03-57-24.html",
+      "title": "Different Values Nodes Comparator (differentValuesNodesComparator)",
+      "filepath": "patch/pages-to-update/split-policies/different-values-nodes-comparator-differentvaluesn-2025-11-16T03-57-24.html",
+      "sizeKB": 13,
+      "section": 11,
+      "totalSections": 43
+    },
+    {
+      "filename": "docker-image-format-validator-dockerimageformatval-2025-11-16T03-57-24.html",
+      "title": "Docker Image Format Validator (dockerImageFormatValidator)",
+      "filepath": "patch/pages-to-update/split-policies/docker-image-format-validator-dockerimageformatval-2025-11-16T03-57-24.html",
+      "sizeKB": 14,
+      "section": 12,
+      "totalSections": 43
+    },
+    {
+      "filename": "docker-image-registry-validator-dockerimageregistr-2025-11-16T03-57-24.html",
+      "title": "Docker Image Registry Validator (dockerImageRegistryValidator)",
+      "filepath": "patch/pages-to-update/split-policies/docker-image-registry-validator-dockerimageregistr-2025-11-16T03-57-24.html",
+      "sizeKB": 14,
+      "section": 13,
+      "totalSections": 43
+    },
+    {
+      "filename": "docker-network-validator-dockernetworkvalidator-2025-11-16T03-57-24.html",
+      "title": "Docker Network Validator (dockerNetworkValidator)",
+      "filepath": "patch/pages-to-update/split-policies/docker-network-validator-dockernetworkvalidator-2025-11-16T03-57-24.html",
+      "sizeKB": 13,
+      "section": 14,
+      "totalSections": 43
+    },
+    {
+      "filename": "duplicate-values-duplicatevalues-2025-11-16T03-57-24.html",
+      "title": "Duplicate Values (duplicateValues)",
+      "filepath": "patch/pages-to-update/split-policies/duplicate-values-duplicatevalues-2025-11-16T03-57-24.html",
+      "sizeKB": 14,
+      "section": 15,
+      "totalSections": 43
+    },
+    {
+      "filename": "forbidden-key-value-combinations-forbiddenkvcombin-2025-11-16T03-57-24.html",
+      "title": "Forbidden Key-Value Combinations (forbiddenKVcombinations)",
+      "filepath": "patch/pages-to-update/split-policies/forbidden-key-value-combinations-forbiddenkvcombin-2025-11-16T03-57-24.html",
+      "sizeKB": 14,
+      "section": 16,
+      "totalSections": 43
+    },
+    {
+      "filename": "generic-list-validator-genericlistvalidator-2025-11-16T03-57-24.html",
+      "title": "Generic List Validator (genericListValidator)",
+      "filepath": "patch/pages-to-update/split-policies/generic-list-validator-genericlistvalidator-2025-11-16T03-57-24.html",
+      "sizeKB": 16,
+      "section": 17,
+      "totalSections": 43
+    },
+    {
+      "filename": "generic-validator-genericvalidator-2025-11-16T03-57-24.html",
+      "title": "Generic Validator (genericValidator)",
+      "filepath": "patch/pages-to-update/split-policies/generic-validator-genericvalidator-2025-11-16T03-57-24.html",
+      "sizeKB": 17,
+      "section": 18,
+      "totalSections": 43
+    },
+    {
+      "filename": "key-existence-comparator-keyexistencecomparator-2025-11-16T03-57-24.html",
+      "title": "Key Existence Comparator (keyExistenceComparator)",
+      "filepath": "patch/pages-to-update/split-policies/key-existence-comparator-keyexistencecomparator-2025-11-16T03-57-24.html",
+      "sizeKB": 14,
+      "section": 19,
+      "totalSections": 43
+    },
+    {
+      "filename": "key-naming-convention-keynamingconvention-2025-11-16T03-57-24.html",
+      "title": "Key Naming Convention (keyNamingConvention)",
+      "filepath": "patch/pages-to-update/split-policies/key-naming-convention-keynamingconvention-2025-11-16T03-57-24.html",
+      "sizeKB": 15,
+      "section": 20,
+      "totalSections": 43
+    },
+    {
+      "filename": "key-path-validator-keypathvalidator-2025-11-16T03-57-24.html",
+      "title": "Key Path Validator (keyPathValidator)",
+      "filepath": "patch/pages-to-update/split-policies/key-path-validator-keypathvalidator-2025-11-16T03-57-24.html",
+      "sizeKB": 15,
+      "section": 21,
+      "totalSections": 43
+    },
+    {
+      "filename": "key-value-substring-check-keyvaluesubstringcheck-2025-11-16T03-57-24.html",
+      "title": "Key Value Substring Check (keyValueSubstringCheck)",
+      "filepath": "patch/pages-to-update/split-policies/key-value-substring-check-keyvaluesubstringcheck-2025-11-16T03-57-24.html",
+      "sizeKB": 14,
+      "section": 22,
+      "totalSections": 43
+    },
+    {
+      "filename": "list-comparator-listcomparator-2025-11-16T03-57-24.html",
+      "title": "List Comparator (listComparator)",
+      "filepath": "patch/pages-to-update/split-policies/list-comparator-listcomparator-2025-11-16T03-57-24.html",
+      "sizeKB": 13,
+      "section": 23,
+      "totalSections": 43
+    },
+    {
+      "filename": "mandatory-keys-mandatorykeys-2025-11-16T03-57-24.html",
+      "title": "Mandatory Keys (mandatoryKeys)",
+      "filepath": "patch/pages-to-update/split-policies/mandatory-keys-mandatorykeys-2025-11-16T03-57-24.html",
+      "sizeKB": 13,
+      "section": 24,
+      "totalSections": 43
+    },
+    {
+      "filename": "memory-limit-validator-memorylimitvalidator-2025-11-16T03-57-24.html",
+      "title": "Memory Limit Validator (memoryLimitValidator)",
+      "filepath": "patch/pages-to-update/split-policies/memory-limit-validator-memorylimitvalidator-2025-11-16T03-57-24.html",
+      "sizeKB": 14,
+      "section": 25,
+      "totalSections": 43
+    },
+    {
+      "filename": "mandatory-tags-list-mandatorytagslist-2025-11-16T03-57-24.html",
+      "title": "Mandatory Tags List (mandatoryTagsList)",
+      "filepath": "patch/pages-to-update/split-policies/mandatory-tags-list-mandatorytagslist-2025-11-16T03-57-24.html",
+      "sizeKB": 14,
+      "section": 26,
+      "totalSections": 43
+    },
+    {
+      "filename": "mandatory-value-mandatoryvalue-2025-11-16T03-57-24.html",
+      "title": "Mandatory Value (mandatoryValue)",
+      "filepath": "patch/pages-to-update/split-policies/mandatory-value-mandatoryvalue-2025-11-16T03-57-24.html",
+      "sizeKB": 14,
+      "section": 27,
+      "totalSections": 43
+    },
+    {
+      "filename": "mandatory-value-by-type-mandatoryvaluebytype-2025-11-16T03-57-24.html",
+      "title": "Mandatory Value By Type (mandatoryValueByType)",
+      "filepath": "patch/pages-to-update/split-policies/mandatory-value-by-type-mandatoryvaluebytype-2025-11-16T03-57-24.html",
+      "sizeKB": 14,
+      "section": 28,
+      "totalSections": 43
+    },
+    {
+      "filename": "no-clear-sensitive-data-noclearsensitivedata-2025-11-16T03-57-24.html",
+      "title": "No Clear Sensitive Data (noClearSensitiveData)",
+      "filepath": "patch/pages-to-update/split-policies/no-clear-sensitive-data-noclearsensitivedata-2025-11-16T03-57-24.html",
+      "sizeKB": 14,
+      "section": 29,
+      "totalSections": 43
+    },
+    {
+      "filename": "no-duplicate-keys-noduplicatekeys-2025-11-16T03-57-24.html",
+      "title": "No Duplicate Keys (noDuplicateKeys)",
+      "filepath": "patch/pages-to-update/split-policies/no-duplicate-keys-noduplicatekeys-2025-11-16T03-57-24.html",
+      "sizeKB": 13,
+      "section": 30,
+      "totalSections": 43
+    },
+    {
+      "filename": "no-empty-values-noemptyvalues-2025-11-16T03-57-24.html",
+      "title": "No Empty Values (noEmptyValues)",
+      "filepath": "patch/pages-to-update/split-policies/no-empty-values-noemptyvalues-2025-11-16T03-57-24.html",
+      "sizeKB": 14,
+      "section": 31,
+      "totalSections": 43
+    },
+    {
+      "filename": "no-forbidden-values-noforbiddenvalues-2025-11-16T03-57-24.html",
+      "title": "No Forbidden Values (noForbiddenValues)",
+      "filepath": "patch/pages-to-update/split-policies/no-forbidden-values-noforbiddenvalues-2025-11-16T03-57-24.html",
+      "sizeKB": 14,
+      "section": 32,
+      "totalSections": 43
+    },
+    {
+      "filename": "no-ftp-noftp-2025-11-16T03-57-24.html",
+      "title": "No FTP (noFTP)",
+      "filepath": "patch/pages-to-update/split-policies/no-ftp-noftp-2025-11-16T03-57-24.html",
+      "sizeKB": 14,
+      "section": 33,
+      "totalSections": 43
+    },
+    {
+      "filename": "no-http-nohttp-2025-11-16T03-57-24.html",
+      "title": "No HTTP (noHTTP)",
+      "filepath": "patch/pages-to-update/split-policies/no-http-nohttp-2025-11-16T03-57-24.html",
+      "sizeKB": 14,
+      "section": 34,
+      "totalSections": 43
+    },
+    {
+      "filename": "node-keys-comparator-nodekeyscomparator-2025-11-16T03-57-24.html",
+      "title": "Node Keys Comparator (nodeKeysComparator)",
+      "filepath": "patch/pages-to-update/split-policies/node-keys-comparator-nodekeyscomparator-2025-11-16T03-57-24.html",
+      "sizeKB": 14,
+      "section": 35,
+      "totalSections": 43
+    },
+    {
+      "filename": "no-ldap-noldap-2025-11-16T03-57-24.html",
+      "title": "No LDAP (noLDAP)",
+      "filepath": "patch/pages-to-update/split-policies/no-ldap-noldap-2025-11-16T03-57-24.html",
+      "sizeKB": 14,
+      "section": 36,
+      "totalSections": 43
+    },
+    {
+      "filename": "nodes-value-comparator-nodesvaluecomparator-2025-11-16T03-57-24.html",
+      "title": "Nodes Value Comparator (nodesValueComparator)",
+      "filepath": "patch/pages-to-update/split-policies/nodes-value-comparator-nodesvaluecomparator-2025-11-16T03-57-24.html",
+      "sizeKB": 16,
+      "section": 37,
+      "totalSections": 43
+    },
+    {
+      "filename": "no-white-space-characters-allowed-nowhitespaceallo-2025-11-16T03-57-24.html",
+      "title": "No White-Space Characters Allowed (noWhiteSpaceAllowed)",
+      "filepath": "patch/pages-to-update/split-policies/no-white-space-characters-allowed-nowhitespaceallo-2025-11-16T03-57-24.html",
+      "sizeKB": 13,
+      "section": 38,
+      "totalSections": 43
+    },
+    {
+      "filename": "same-key-value-samekeyvalue-2025-11-16T03-57-24.html",
+      "title": "Same Key Value (sameKeyValue)",
+      "filepath": "patch/pages-to-update/split-policies/same-key-value-samekeyvalue-2025-11-16T03-57-24.html",
+      "sizeKB": 13,
+      "section": 39,
+      "totalSections": 43
+    },
+    {
+      "filename": "same-values-comparator-samevaluescomparator-2025-11-16T03-57-24.html",
+      "title": "Same Values Comparator (sameValuesComparator)",
+      "filepath": "patch/pages-to-update/split-policies/same-values-comparator-samevaluescomparator-2025-11-16T03-57-24.html",
+      "sizeKB": 15,
+      "section": 40,
+      "totalSections": 43
+    },
+    {
+      "filename": "unique-key-value-uniquekeyvalue-2025-11-16T03-57-24.html",
+      "title": "Unique Key Value (uniqueKeyValue)",
+      "filepath": "patch/pages-to-update/split-policies/unique-key-value-uniquekeyvalue-2025-11-16T03-57-24.html",
+      "sizeKB": 13,
+      "section": 41,
+      "totalSections": 43
+    },
+    {
+      "filename": "unique-values-across-deployables-checkuniquekeyval-2025-11-16T03-57-24.html",
+      "title": "Unique Values Across Deployables (checkUniqueKeyValue_crossDeployables)",
+      "filepath": "patch/pages-to-update/split-policies/unique-values-across-deployables-checkuniquekeyval-2025-11-16T03-57-24.html",
+      "sizeKB": 14,
+      "section": 42,
+      "totalSections": 43
+    },
+    {
+      "filename": "unresolved-variables-unresolvedvariables-2025-11-16T03-57-24.html",
+      "title": "Unresolved Variables (unresolvedVariables)",
+      "filepath": "patch/pages-to-update/split-policies/unresolved-variables-unresolvedvariables-2025-11-16T03-57-24.html",
+      "sizeKB": 13,
+      "section": 43,
+      "totalSections": 43
+    }
+  ]
+}

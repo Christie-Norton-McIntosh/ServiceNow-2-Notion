@@ -5,9 +5,9 @@
 # === Configuration ===
 API_URL="http://localhost:3004/api/W2N"
 DB_ID="282a89fedba5815e91f0db972912ef9f"
-SCRIPT_DIR="$(cd "$(dirname "$0")/../pages-to-update" && pwd)"
-UPDATED_DIR="$SCRIPT_DIR/updated-pages"
-PAGES_DIR="$SCRIPT_DIR"
+ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+UPDATED_DIR="$ROOT_DIR/patch/pages/updated-pages"
+PAGES_DIR="$ROOT_DIR/patch/pages/pages-to-update"
 DELAY=0.3  # 300ms between requests
 
 # === Color codes ===

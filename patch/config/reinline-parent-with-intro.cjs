@@ -10,9 +10,9 @@ const path = require('path');
 
 const API_BASE = process.env.SN2N_API_BASE || 'http://localhost:3004/api';
 const PARENT_PAGE_ID = process.env.SN2N_PARENT_PAGE_ID || '2a8a89fe-dba5-8149-bb6b-f5cec836bdfa';
-const ORIG_FILE = path.join(__dirname, '..', 'pages-to-update', 'problematic-files', 'generic-policies-in-devops-config-2025-11-11T10-02-11.html');
-const SRC_DIR = path.join(__dirname, '..', 'pages-to-update', 'updated-pages');
-const LOG_DIR = path.join(__dirname, '..', 'pages-to-update', 'log');
+const ORIG_FILE = path.join(__dirname, '..', 'pages', 'problematic-files', 'generic-policies-in-devops-config-2025-11-11T10-02-11.html');
+const SRC_DIR = path.join(__dirname, '..', 'pages', 'updated-pages');
+const LOG_DIR = path.join(__dirname, '..', 'logs');
 
 function readFirstLines(filePath, maxLines = 60) {
   const fd = fs.openSync(filePath, 'r');

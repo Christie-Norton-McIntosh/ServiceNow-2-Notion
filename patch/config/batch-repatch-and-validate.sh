@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Batch PATCH all HTML files in updated-pages to their corresponding Notion pages
+# Batch PATCH all HTML files in pages/updated-pages to their corresponding Notion pages
 # by extracting the embedded Page ID from each file, then immediately re-validate
 # each page to refresh Notion properties.
 
-UPDATED_DIR="/Users/norton-mcintosh/GitHub/ServiceNow-2-Notion/patch/pages-to-update/updated-pages"
+PATCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+UPDATED_DIR="$PATCH_DIR/pages/updated-pages"
 API="http://localhost:3004/api/W2N"
 VAL="http://localhost:3004/api/validate"
 

@@ -2,8 +2,9 @@
 set -euo pipefail
 
 # Create new pages from pages-to-update and validate immediately
-PAGES_DIR="/Users/norton-mcintosh/GitHub/ServiceNow-2-Notion/patch/pages-to-update"
-UPDATED_DIR="/Users/norton-mcintosh/GitHub/ServiceNow-2-Notion/patch/pages-to-update/updated-pages"
+PATCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PAGES_DIR="$PATCH_DIR/pages/pages-to-update"
+UPDATED_DIR="$PATCH_DIR/pages/created-pages"
 API="http://localhost:3004/api/W2N"
 VAL="http://localhost:3004/api/validate"
 DB_ID="1524506adba58133b45ad4bb20d13c2e"
