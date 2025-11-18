@@ -479,13 +479,31 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
         result.notionCounts = notionCounts;
 
         // CRITICAL ELEMENT VALIDATION (determines pass/fail/warning)
-        // Tables must match exactly
+        // Tables must match exactly (or be legitimately split due to 100-row limit)
         let tablesMismatch = false;
         if (sourceCounts.tables > 0 && notionCounts.tables !== sourceCounts.tables) {
-          tablesMismatch = true;
-          result.hasErrors = true;
-          result.issues.push(`Table count mismatch: expected ${sourceCounts.tables}, got ${notionCounts.tables}`);
-          log(`❌ [VALIDATION] Table count mismatch: ${notionCounts.tables}/${sourceCounts.tables}`);
+          // Check if extra tables are due to table splitting (100-row Notion limit)
+          // Look for split table info callout in the blocks
+          // FIX v11.0.18: Use allBlocks instead of undefined 'blocks' variable
+          const hasSplitTableCallout = allBlocks.some(block => 
+            block.type === 'callout' && 
+            block.callout?.rich_text?.some(rt => 
+              rt.text?.content?.includes('split into') && 
+              rt.text?.content?.includes('tables') &&
+              rt.text?.content?.includes('100-row')
+            )
+          );
+          
+          if (hasSplitTableCallout && notionCounts.tables > sourceCounts.tables) {
+            // Extra tables are due to legitimate splitting, not an error
+            log(`ℹ️ [VALIDATION] Table count higher due to splitting: ${notionCounts.tables}/${sourceCounts.tables} (split for 100-row limit)`);
+            result.warnings.push(`Table count higher: ${sourceCounts.tables} source table(s) split into ${notionCounts.tables} Notion tables due to 100-row limit`);
+          } else {
+            tablesMismatch = true;
+            result.hasErrors = true;
+            result.issues.push(`Table count mismatch: expected ${sourceCounts.tables}, got ${notionCounts.tables}`);
+            log(`❌ [VALIDATION] Table count mismatch: ${notionCounts.tables}/${sourceCounts.tables}`);
+          }
         } else if (sourceCounts.tables > 0) {
           log(`✅ [VALIDATION] Table count matches: ${notionCounts.tables}/${sourceCounts.tables}`);
         }

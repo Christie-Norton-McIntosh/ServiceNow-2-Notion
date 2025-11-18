@@ -8,6 +8,7 @@ const express = require('express');
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
+const cheerio = require('cheerio');
 
 // FORCE RELOAD TIMESTAMP: 2025-10-24T04:53:00.000Z  
 console.log('🔥🔥🔥 W2N.CJS MODULE LOADED AT:', new Date().toISOString());
@@ -481,6 +482,49 @@ router.post('/W2N', async (req, res) => {
     // Before creating the page, strip any internal helper keys from blocks
     deepStripPrivateKeys(children);
 
+    // Compute expected callout count from source HTML so dedupe can be conditional.
+    // Use Cheerio to robustly detect callout-like elements (class contains 'note' or 'callout',
+    // role="note", or text starting with 'Note:'). Deduplicate matches by outer HTML
+    // to avoid double-counting the same element.
+    let expectedCallouts = null;
+    try {
+      if (payload.contentHtml) {
+        try {
+          const $ = cheerio.load(payload.contentHtml || '');
+          const matched = new Set();
+
+          $('*').each((i, el) => {
+            try {
+              const $el = $(el);
+              const cls = ($el.attr('class') || '').toString();
+              const role = ($el.attr('role') || '').toString();
+              const text = ($el.text() || '').toString().trim();
+
+              const classMatch = /\b(note|callout|before-you-begin)\b/i.test(cls);
+              const roleMatch = /note/i.test(role);
+              const textMatch = /^Note:/i.test(text);
+
+              if (classMatch || roleMatch || textMatch) {
+                // Use outer HTML as a dedupe key
+                const outer = $.html(el) || text;
+                matched.add(outer);
+              }
+            } catch (innerE) {
+              // ignore element-level parse errors
+            }
+          });
+
+          expectedCallouts = matched.size;
+          log(`🔍 [DEDUPE-WIRE] expectedCallouts from HTML (cheerio): ${expectedCallouts}`);
+        } catch (cheerioErr) {
+          log(`⚠️ [DEDUPE-WIRE] Cheerio parsing failed: ${cheerioErr.message}`);
+          expectedCallouts = null;
+        }
+      }
+    } catch (e) {
+      expectedCallouts = null;
+    }
+
     // Remove unwanted callouts (info) and dedupe identical blocks to avoid
     // duplicate callouts/tables introduced by nested-extraction logic.
     const computeBlockKey = (blk) => {
@@ -604,7 +648,7 @@ router.post('/W2N', async (req, res) => {
     const beforeDedupeCount = children.length;
     const calloutsBefore = children.filter(c => c.type === 'callout').length;
     log(`🔍 [DEDUPE-DEBUG] Before deduplication: ${beforeDedupeCount} blocks (${calloutsBefore} callouts)`);
-    children = dedupeUtil.dedupeAndFilterBlocks(children, { log });
+  children = dedupeUtil.dedupeAndFilterBlocks(children, { log, expectedCallouts });
     const afterDedupeCount = children.length;
     const calloutsAfter = children.filter(c => c.type === 'callout').length;
     log(`🔍 [DEDUPE-DEBUG] After deduplication: ${afterDedupeCount} blocks (${calloutsAfter} callouts), removed ${beforeDedupeCount - afterDedupeCount} blocks`);
@@ -620,7 +664,7 @@ router.post('/W2N', async (req, res) => {
           
           block.numbered_list_item.children = dedupeUtil.dedupeAndFilterBlocks(
             block.numbered_list_item.children, 
-            { log }
+            { log, expectedCallouts }
           );
           
           const afterCount = block.numbered_list_item.children.length;
@@ -636,7 +680,7 @@ router.post('/W2N', async (req, res) => {
           
           block.bulleted_list_item.children = dedupeUtil.dedupeAndFilterBlocks(
             block.bulleted_list_item.children, 
-            { log }
+            { log, expectedCallouts }
           );
           
           const afterCount = block.bulleted_list_item.children.length;
@@ -649,7 +693,7 @@ router.post('/W2N', async (req, res) => {
         } else if (block.type === 'toggle' && block.toggle?.children) {
           const beforeCount = block.toggle.children.length;
           log(`${indent}🔍 [NESTED-DEDUPE] toggle[${idx}] has ${beforeCount} children`);
-          block.toggle.children = dedupeUtil.dedupeAndFilterBlocks(block.toggle.children, { log });
+          block.toggle.children = dedupeUtil.dedupeAndFilterBlocks(block.toggle.children, { log, expectedCallouts });
           const afterCount = block.toggle.children.length;
           if (beforeCount !== afterCount) {
             log(`${indent}  🚫 Removed ${beforeCount - afterCount} duplicate(s) from toggle[${idx}]`);
@@ -658,7 +702,7 @@ router.post('/W2N', async (req, res) => {
         } else if (block.type === 'callout' && block.callout?.children) {
           const beforeCount = block.callout.children.length;
           log(`${indent}🔍 [NESTED-DEDUPE] callout[${idx}] has ${beforeCount} children`);
-          block.callout.children = dedupeUtil.dedupeAndFilterBlocks(block.callout.children, { log });
+          block.callout.children = dedupeUtil.dedupeAndFilterBlocks(block.callout.children, { log, expectedCallouts });
           const afterCount = block.callout.children.length;
           if (beforeCount !== afterCount) {
             log(`${indent}  🚫 Removed ${beforeCount - afterCount} duplicate(s) from callout[${idx}]`);
@@ -683,44 +727,75 @@ router.post('/W2N', async (req, res) => {
     
     try {
       log(`🔍 [FINAL-CALLOUT-DEDUPE] Found ${calloutIndices.length} callouts at indices: [${calloutIndices.join(', ')}]`);
-      
-      // FIX v11.0.7: Aggressive callout deduplication by text content only
-      // Callouts extracted from nested lists can create duplicates even after other deduplication passes
-      // Use simple text-based matching (first 200 chars) to catch all duplicates
-      const seenCalloutTexts = new Map(); // text -> first index
-      const indicesToRemove = [];
-      
-      calloutIndices.forEach((idx) => {
-        const callout = children[idx];
-        
-        // Extract and normalize text content
-        const fullText = (callout.callout?.rich_text || [])
-          .map(rt => rt.text?.content || '')
-          .join('')
-          .replace(/\(sn2n:[a-z0-9\-]+\)/gi, '') // Strip markers
-          .replace(/\s+/g, ' ')  // Normalize whitespace
-          .trim();
-        
-        // Use first 200 chars as signature (handles minor variations)
-        const signature = fullText.substring(0, 200).toLowerCase();
-        
-        if (seenCalloutTexts.has(signature)) {
-          // Duplicate found - mark for removal
-          const firstIdx = seenCalloutTexts.get(signature);
-          log(`🚫 [FINAL-CALLOUT-DEDUPE] Removing duplicate callout at index ${idx} (duplicate of ${firstIdx}): "${fullText.substring(0, 60)}..."`);
-          indicesToRemove.push(idx);
+
+      const actualCalloutCount = calloutIndices.length;
+      // If caller provided expectedCallouts, and actual <= expected, skip final dedupe
+      if (typeof expectedCallouts === 'number' && actualCalloutCount <= expectedCallouts) {
+        log(`ℹ️ [FINAL-CALLOUT-DEDUPE] Skipping final dedupe: actual (${actualCalloutCount}) <= expected (${expectedCallouts})`);
+      } else {
+        // Build signatures for each callout in document order
+        const calloutEntries = calloutIndices.map(idx => {
+          const callout = children[idx];
+          const fullText = (callout.callout?.rich_text || [])
+            .map(rt => rt.text?.content || '')
+            .join('')
+            .replace(/\(sn2n:[a-z0-9\-]+\)/gi, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          const signature = fullText.substring(0, 200).toLowerCase();
+          return { idx, signature, fullText };
+        });
+
+        const indicesToRemove = [];
+
+        if (typeof expectedCallouts === 'number') {
+          // Keep earliest occurrences up to expectedCallouts (allow duplicates only if needed)
+          const keepSet = new Set();
+          const seenSignatures = new Set();
+          let keptCount = 0;
+
+          for (const entry of calloutEntries) {
+            if (keptCount < expectedCallouts) {
+              // Prefer keeping new signatures first
+              if (!seenSignatures.has(entry.signature)) {
+                keepSet.add(entry.idx);
+                seenSignatures.add(entry.signature);
+                keptCount++;
+              } else {
+                // Signature already seen; keep this duplicate only if we still need more
+                keepSet.add(entry.idx);
+                keptCount++;
+              }
+            } else {
+              indicesToRemove.push(entry.idx);
+            }
+          }
+
+          // Any callout index not in keepSet should be removed
+          calloutEntries.forEach(e => {
+            if (!keepSet.has(e.idx)) indicesToRemove.push(e.idx);
+          });
         } else {
-          // First occurrence - keep it
-          seenCalloutTexts.set(signature, idx);
+          // No expectedCallouts provided: fallback to original aggressive dedupe (keep first occurrence per signature)
+          const seen = new Map();
+          for (const entry of calloutEntries) {
+            if (seen.has(entry.signature)) {
+              const firstIdx = seen.get(entry.signature);
+              log(`🚫 [FINAL-CALLOUT-DEDUPE] Removing duplicate callout at index ${entry.idx} (duplicate of ${firstIdx}): "${entry.fullText.substring(0,60)}..."`);
+              indicesToRemove.push(entry.idx);
+            } else {
+              seen.set(entry.signature, entry.idx);
+            }
+          }
         }
-      });
-      
-      if (indicesToRemove.length > 0) {
-        const toRemove = new Set(indicesToRemove);
-        const beforeCount = children.length;
-        children = children.filter((_, idx) => !toRemove.has(idx));
-        const afterCount = children.length;
-        log(`✅ [FINAL-CALLOUT-DEDUPE] Removed ${indicesToRemove.length} duplicate callout(s), blocks: ${beforeCount} → ${afterCount}`);
+
+        if (indicesToRemove.length > 0) {
+          const toRemove = new Set(indicesToRemove);
+          const beforeCount = children.length;
+          children = children.filter((_, idx) => !toRemove.has(idx));
+          const afterCount = children.length;
+          log(`✅ [FINAL-CALLOUT-DEDUPE] Removed ${indicesToRemove.length} duplicate callout(s), blocks: ${beforeCount} → ${afterCount}`);
+        }
       }
     } catch (dedupeError) {
       log(`❌ [FINAL-CALLOUT-DEDUPE] Error during final callout deduplication: ${dedupeError.message}`);
@@ -1202,10 +1277,59 @@ router.post('/W2N', async (req, res) => {
       log("⚠️ WARNING: Page may contain visible markers (marker cleanup failed)");
       log("⚠️ This page should be flagged for manual review or re-PATCH");
     }
+    
+    // FIX v11.0.18: FALLBACK MARKER CLEANUP - Even if orchestration fails, try to clean up markers
+    // This prevents marker leaks that make pages look broken to users
+    if (orchestrationFailed || Object.keys(markerMap || {}).length > 0) {
+      log(`\n========================================`);
+      log("🧹 ATTEMPTING FALLBACK MARKER CLEANUP");
+      log(`   Reason: ${orchestrationFailed ? 'Orchestration failed' : 'Markers present in markerMap'}`);
+      log(`   Markers to clean: ${Object.keys(markerMap || {}).length}`);
+      log(`========================================\n`);
+      
+      try {
+        // Use the global marker sweep function to find and remove ALL markers from the page
+        const sweepResult = await global.sweepAndRemoveMarkersFromPage(response.id);
+        
+        if (sweepResult && sweepResult.success) {
+          log(`✅ Fallback marker cleanup succeeded!`);
+          log(`   Markers found and removed: ${sweepResult.markersRemoved || 0}`);
+          log(`   Blocks updated: ${sweepResult.blocksUpdated || 0}`);
+          
+          // If fallback cleanup succeeded, update orchestration status
+          if (sweepResult.markersRemoved > 0) {
+            log(`✅ Successfully recovered from orchestration failure via fallback cleanup`);
+            // Don't clear orchestrationFailed flag - validation should still know there was an issue
+            // but the markers are now cleaned up
+          }
+        } else {
+          log(`⚠️ Fallback marker cleanup completed but may not have found all markers`);
+          log(`   Sweep result:`, JSON.stringify(sweepResult));
+        }
+      } catch (sweepError) {
+        log(`❌ Fallback marker cleanup also failed: ${sweepError.message}`);
+        log(`   Stack: ${sweepError.stack}`);
+        log(`⚠️ Page ${response.id} will likely have visible markers - manual cleanup required`);
+      }
+    }
 
     // Run post-creation validation if enabled
     let validationResult = null;
     const shouldValidate = process.env.SN2N_VALIDATE_OUTPUT === '1' || process.env.SN2N_VALIDATE_OUTPUT === 'true';
+    
+    // FIX v11.0.18: Always create a validation result, even if validation is disabled
+    // This ensures properties are never left blank
+    if (!shouldValidate) {
+      validationResult = {
+        success: true,
+        hasErrors: false,
+        issues: [],
+        warnings: [],
+        stats: null,
+        summary: `ℹ️ Validation not enabled (set SN2N_VALIDATE_OUTPUT=1 to enable)`
+      };
+      log(`ℹ️ Validation skipped - will set properties to indicate validation not run`);
+    }
     
     if (shouldValidate) {
       log(`\n========================================`);
@@ -1247,15 +1371,17 @@ router.post('/W2N', async (req, res) => {
       } catch (validationError) {
         log(`⚠️ Validation failed with error: ${validationError.message}`);
         log(`⚠️ Stack trace: ${validationError.stack}`);
-        // Create a placeholder result to ensure we log the validation attempt
+        // FIX v11.0.18: Create a validation result even when validation throws
+        // This ensures properties are ALWAYS updated, never left blank
         validationResult = {
           success: false,
           hasErrors: true,
           issues: [`Validation error: ${validationError.message}`],
           warnings: [],
           stats: null,
-          summary: `❌ Validation encountered an error: ${validationError.message}`
+          summary: `❌ Validation encountered an error: ${validationError.message}\n\nStack: ${validationError.stack?.substring(0, 500) || 'N/A'}`
         };
+        log(`📝 Created error validation result to ensure properties are updated`);
         // Don't fail the entire request if validation fails
       }
       
@@ -1279,11 +1405,25 @@ router.post('/W2N', async (req, res) => {
       
       // Update page properties with validation results (moved outside try/catch)
       // This ensures properties are ALWAYS updated, even if validation errors
+      // FIX v11.0.18: Add safety check - if validationResult is somehow null, create a default one
+      if (!validationResult) {
+        log(`⚠️ WARNING: validationResult is null - creating default result`);
+        validationResult = {
+          success: false,
+          hasErrors: true,
+          issues: ['Internal error: validation result was null'],
+          warnings: [],
+          stats: null,
+          summary: '❌ Internal error: validation result was not created properly'
+        };
+      }
+      
       if (validationResult) {
         // FIX v11.0.7: Increased retries from 3 to 5 and longer delays to handle transient Notion API issues
         // Pages were being "skipped" for validation when property updates failed after 3 attempts
         const maxPropertyRetries = 5;
         let propertyUpdateSuccess = false;
+        let savedToUpdateFolder = false; // FIX v11.0.19: Track if page was auto-saved
         
         for (let propRetry = 0; propRetry <= maxPropertyRetries && !propertyUpdateSuccess; propRetry++) {
           try {
@@ -1343,53 +1483,65 @@ router.post('/W2N', async (req, res) => {
               log(`   Error: ${propError.message}`);
               log(`   Page ID: ${response.id}`);
               log(`   Page URL: ${response.url}`);
-              log(`\n⚠️ ATTEMPTING FALLBACK: Minimal property update (Error checkbox only)`);
               log(`${'='.repeat(80)}\n`);
               
-              // FIX v11.0.7: FALLBACK 1 - Try minimal property update with just Error checkbox
+              // FIX v11.0.19: Auto-save page to pages-to-update when validation properties fail
+              // This ensures the page gets flagged for re-extraction even if properties can't be set
+              // REMOVED: Fallback 1 (Error checkbox only) and Fallback 2 (callout block)
+              // Reason: With auto-save tracking, partial validation is misleading
               try {
-                await notion.pages.update({
-                  page_id: response.id,
-                  properties: {
-                    "Error": { checkbox: validationResult.hasErrors }
-                  }
-                });
-                log(`✅ FALLBACK SUCCESS: Error checkbox updated (minimal properties)`);
-                propertyUpdateSuccess = true;
-              } catch (fallback1Error) {
-                log(`❌ FALLBACK 1 FAILED: ${fallback1Error.message}`);
+                const fs = require('fs');
+                const path = require('path');
                 
-                // FIX v11.0.7: FALLBACK 2 - Write validation summary as block comment
-                try {
-                  log(`⚠️ ATTEMPTING FALLBACK 2: Block comment with validation summary`);
-                  const validationSummary = `🤖 VALIDATION METADATA (Auto-generated)\n` +
-                    `Status: ${validationResult.hasErrors ? '❌ Failed' : '✅ Passed'}\n` +
-                    `Errors: ${validationResult.criticalIssues}\n` +
-                    `Warnings: ${validationResult.minorIssues}\n` +
-                    `Stats: ${validationResult.statsText}\n` +
-                    `Timestamp: ${new Date().toISOString()}`;
-                  
-                  // Prepend callout with validation info at top of page
-                  await notion.blocks.children.append({
-                    block_id: response.id,
-                    children: [{
-                      object: 'block',
-                      type: 'callout',
-                      callout: {
-                        rich_text: [{ type: 'text', text: { content: validationSummary } }],
-                        icon: { type: 'emoji', emoji: validationResult.hasErrors ? '❌' : '✅' },
-                        color: validationResult.hasErrors ? 'red_background' : 'green_background'
-                      }
-                    }]
-                  });
-                  log(`✅ FALLBACK 2 SUCCESS: Validation metadata written as block comment`);
-                  propertyUpdateSuccess = true;
-                } catch (fallback2Error) {
-                  log(`❌ FALLBACK 2 FAILED: ${fallback2Error.message}`);
-                  log(`\n⚠️ WARNING: Page ${response.id} has NO validation metadata`);
-                  log(`   Page exists at: ${response.url}`);
-                  log(`   Manual validation may be required!\n`);
+                // Create pages-to-update directory if it doesn't exist
+                const pagesDir = path.join(__dirname, '..', 'patch', 'pages', 'pages-to-update');
+                if (!fs.existsSync(pagesDir)) {
+                  fs.mkdirSync(pagesDir, { recursive: true });
                 }
+                
+                // Create filename with page title and timestamp
+                const sanitizedTitle = payload.title.toLowerCase()
+                  .replace(/[^a-z0-9]+/g, '-')
+                  .replace(/^-+|-+$/g, '')
+                  .substring(0, 80);
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+                const filename = `${sanitizedTitle}-${timestamp}.html`;
+                const filepath = path.join(pagesDir, filename);
+                
+                // Build HTML file with metadata
+                const htmlContent = `<!--
+Auto-saved: Validation properties failed to update after ${maxPropertyRetries + 1} retries
+Page ID: ${response.id}
+Page URL: ${response.url}
+Page Title: ${payload.title}
+Created: ${new Date().toISOString()}
+Source URL: ${payload.url || 'N/A'}
+
+Validation Result:
+${JSON.stringify(validationResult, null, 2)}
+
+Error Details:
+- Primary Error: ${propError.message}
+-->
+
+${payload.contentHtml || ''}
+`;
+                
+                fs.writeFileSync(filepath, htmlContent, 'utf-8');
+                log(`✅ AUTO-SAVED: Page saved to ${filename}`);
+                log(`   Location: ${filepath}`);
+                log(`   This page will be picked up by batch PATCH workflow`);
+                
+                // Also log to persistent failure tracking file
+                const failureLog = path.join(__dirname, '..', 'patch', 'logs', 'validation-property-failures.log');
+                const logEntry = `${new Date().toISOString()} | ${response.id} | "${payload.title}" | ${response.url} | ${filename}\n`;
+                fs.appendFileSync(failureLog, logEntry, 'utf-8');
+                log(`📝 Logged to validation-property-failures.log`);
+                savedToUpdateFolder = true; // FIX v11.0.19: Mark as saved
+                
+              } catch (saveError) {
+                log(`❌ FAILED TO AUTO-SAVE PAGE: ${saveError.message}`);
+                log(`   Manual intervention required to track this page!`);
               }
               
               // Don't throw - page was created successfully, just property update failed
@@ -1461,9 +1613,8 @@ router.post('/W2N', async (req, res) => {
           });
         }
       }
-    } else {
-      log(`ℹ️ Validation skipped (SN2N_VALIDATE_OUTPUT not enabled)`);
     }
+    // Note: Removed redundant "validation skipped" log - now handled earlier
 
     log("🔗 Page URL:", response.url);
     
@@ -1472,6 +1623,18 @@ router.post('/W2N', async (req, res) => {
     if (validationResult) {
       log(`📊 Validation summary: ${validationResult.success ? 'PASSED' : 'FAILED'}`);
       log(`   Errors: ${validationResult.issues.length}, Warnings: ${validationResult.warnings.length}`);
+    }
+    
+    // FIX v11.0.19: Check if page was auto-saved due to property update failure
+    if (typeof savedToUpdateFolder !== 'undefined' && savedToUpdateFolder) {
+      log(`\n${'='.repeat(80)}`);
+      log(`⚠️⚠️⚠️ ACTION REQUIRED: Page auto-saved to pages-to-update folder`);
+      log(`   Page ID: ${response.id}`);
+      log(`   Title: ${payload.title}`);
+      log(`   Reason: Validation properties failed to update after all retries`);
+      log(`   Location: patch/pages/pages-to-update/`);
+      log(`   Next Steps: Page will be re-PATCHed by batch workflow`);
+      log(`${'='.repeat(80)}\n`);
     }
     
     // Final summary
@@ -1622,7 +1785,47 @@ router.patch('/W2N/:pageId', async (req, res) => {
     
     // Deduplicate blocks
     const beforeDedupeCount = extractedBlocks.length;
-    extractedBlocks = dedupeUtil.dedupeAndFilterBlocks(extractedBlocks);
+    // Compute expected callouts from the source HTML for conditional dedupe
+    // Use Cheerio-based detection (class contains 'note'/'callout', role='note', or text starting with 'Note:')
+    let expectedCallouts = null;
+    try {
+      if (html) {
+        try {
+          const $ = cheerio.load(html || '');
+          const matched = new Set();
+
+          $('*').each((i, el) => {
+            try {
+              const $el = $(el);
+              const cls = ($el.attr('class') || '').toString();
+              const role = ($el.attr('role') || '').toString();
+              const text = ($el.text() || '').toString().trim();
+
+              const classMatch = /\b(note|callout|before-you-begin)\b/i.test(cls);
+              const roleMatch = /note/i.test(role);
+              const textMatch = /^Note:/i.test(text);
+
+              if (classMatch || roleMatch || textMatch) {
+                const outer = $.html(el) || text;
+                matched.add(outer);
+              }
+            } catch (innerE) {
+              // ignore element-level parse errors
+            }
+          });
+
+          expectedCallouts = matched.size;
+          log(`🔍 [PATCH-DEDUPE-WIRE] expectedCallouts from HTML (cheerio): ${expectedCallouts}`);
+        } catch (cheerioErr) {
+          log(`⚠️ [PATCH-DEDUPE-WIRE] Cheerio parsing failed: ${cheerioErr.message}`);
+          expectedCallouts = null;
+        }
+      }
+    } catch (e) {
+      expectedCallouts = null;
+    }
+
+    extractedBlocks = dedupeUtil.dedupeAndFilterBlocks(extractedBlocks, { log, expectedCallouts });
     const afterDedupeCount = extractedBlocks.length;
     
     if (beforeDedupeCount !== afterDedupeCount) {

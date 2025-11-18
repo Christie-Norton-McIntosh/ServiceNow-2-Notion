@@ -1927,10 +1927,8 @@ async function extractContentFromHtml(html) {
       const ulId = $elem.attr('id') || 'no-id';
       console.log(`🔍 [UL-DEBUG] Processing <ul class="${ulClass}" id="${ulId}"> with ${listItems.length} list items`);
       
-      // CALLOUT EXTRACTION FIX: Collect callouts from list items to promote as siblings
-      // Notion does not support callouts as children of list items, so we extract them
-      // and add them as root-level blocks after the list completes
-      const extractedCallouts = [];
+      // FIX v11.0.19: Callouts now use marker-based orchestration (markedBlocks)
+      // This preserves correct section ordering instead of batching callouts together
       
       for (let li of listItems) {
         const $li = $(li);
@@ -2068,15 +2066,17 @@ async function extractContentFromHtml(html) {
                 console.log(`🔍 [NESTED-BLOCK-STATE-UL] Type: ${blockType}, hasMarker: ${hasMarker}, text: "${richTextPreview}..."`);
               }
               
-              // CALLOUT EXTRACTION FIX: Extract callouts to promote as root-level siblings
-              // Notion does not support callouts as children of list items
+              // CALLOUT MARKER FIX v11.0.19: Use marker-based orchestration for callouts in list items
+              // This preserves correct section ordering instead of batching all extracted callouts together
+              // Notion does not support callouts as children of list items, so we:
+              // 1. Add a marker to the list item's rich_text
+              // 2. Store the callout in markerMap for orchestration
+              // 3. Append the callout as a sibling after the list item is created
               if (block && block.type === 'callout') {
                 const calloutPreview = block.callout?.rich_text?.[0]?.text?.content?.substring(0, 50) || 'no text';
-                console.log(`🔍 [CALLOUT-DEDUPE] Extracting callout from UL: "${calloutPreview}"`);
-                // FIX v11.0.7: Don't prepend bullets - causes duplicate callouts when nested lists are processed recursively
-                // Each nesting level would add another bullet, creating "• • • Note:", "• • Note:", "• Note:" from the same callout
-                extractedCallouts.push(block);
-                return; // Don't process further - will be added after list
+                console.log(`🔍 [CALLOUT-MARKER] Callout in list item - using marker orchestration: "${calloutPreview}"`);
+                markedBlocks.push(block);
+                return; // Will be orchestrated as sibling after list item
               }
               
               // CRITICAL FIX: Check for marker tokens FIRST (parent blocks with own deferred children)
@@ -2505,15 +2505,9 @@ async function extractContentFromHtml(html) {
         }
       }
       
-      // CALLOUT EXTRACTION FIX: Add extracted callouts as root-level sibling blocks after the list
-      if (extractedCallouts.length > 0) {
-        console.log(`🔍 [CALLOUT-DEDUPE] Adding ${extractedCallouts.length} extracted callout(s) as siblings after <ul>`);
-        extractedCallouts.forEach((co, idx) => {
-          const preview = co.callout?.rich_text?.[0]?.text?.content?.substring(0, 50) || 'no text';
-          console.log(`🔍 [CALLOUT-DEDUPE]   [${idx}] "${preview}"`);
-        });
-        processedBlocks.push(...extractedCallouts);
-      }
+      // FIX v11.0.19: Callouts now use marker-based orchestration (no longer extracted to array)
+      // The extractedCallouts array is no longer populated - callouts go into markedBlocks instead
+      // This preserves correct section ordering
       
       console.log(`✅ Created list blocks from <ul>`);
       $elem.remove(); // Mark as processed
@@ -2523,8 +2517,8 @@ async function extractContentFromHtml(html) {
       const listItems = $elem.find('> li').toArray();
       console.log(`🔍 Processing <ol> with ${listItems.length} list items`);
       
-      // CALLOUT EXTRACTION FIX: Collect callouts from list items to promote as siblings
-      const extractedCallouts = [];
+      // FIX v11.0.19: Callouts now use marker-based orchestration (markedBlocks)
+      // This preserves correct section ordering instead of batching callouts together
       
       for (let li of listItems) {
         const $li = $(li);
@@ -2672,15 +2666,17 @@ async function extractContentFromHtml(html) {
             }
             
             nestedChildren.forEach(block => {
-              // CALLOUT EXTRACTION FIX: Extract callouts to promote as root-level siblings
-              // Notion does not support callouts as children of list items
+              // CALLOUT MARKER FIX v11.0.19: Use marker-based orchestration for callouts in list items
+              // This preserves correct section ordering instead of batching all extracted callouts together
+              // Notion does not support callouts as children of list items, so we:
+              // 1. Add a marker to the list item's rich_text
+              // 2. Store the callout in markerMap for orchestration
+              // 3. Append the callout as a sibling after the list item is created
               if (block && block.type === 'callout') {
                 const calloutPreview = block.callout?.rich_text?.[0]?.text?.content?.substring(0, 50) || 'no text';
-                console.log(`🔍 [CALLOUT-DEDUPE] Extracting callout from OL: "${calloutPreview}"`);
-                // FIX v11.0.7: Don't prepend bullets - causes duplicate callouts when nested lists are processed recursively
-                // Each nesting level would add another bullet, creating "• • • Note:", "• • Note:", "• Note:" from the same callout
-                extractedCallouts.push(block);
-                return; // Don't process further - will be added after list
+                console.log(`🔍 [CALLOUT-MARKER] Callout in list item - using marker orchestration: "${calloutPreview}"`);
+                markedBlocks.push(block);
+                return; // Will be orchestrated as sibling after list item
               }
               
               // CRITICAL FIX: Check for marker tokens FIRST (parent blocks with own deferred children)
@@ -3104,15 +3100,9 @@ async function extractContentFromHtml(html) {
         }
       }
       
-      // CALLOUT EXTRACTION FIX: Add extracted callouts as root-level sibling blocks after the list
-      if (extractedCallouts.length > 0) {
-        console.log(`🔍 [CALLOUT-DEDUPE] Adding ${extractedCallouts.length} extracted callout(s) as siblings after <ol>`);
-        extractedCallouts.forEach((co, idx) => {
-          const preview = co.callout?.rich_text?.[0]?.text?.content?.substring(0, 50) || 'no text';
-          console.log(`🔍 [CALLOUT-DEDUPE]   [${idx}] "${preview}"`);
-        });
-        processedBlocks.push(...extractedCallouts);
-      }
+      // FIX v11.0.19: Callouts now use marker-based orchestration (no longer extracted to array)
+      // The extractedCallouts array is no longer populated - callouts go into markedBlocks instead
+      // This preserves correct section ordering
       
       console.log(`✅ Created list blocks from <ol>`);
       $elem.remove(); // Mark as processed

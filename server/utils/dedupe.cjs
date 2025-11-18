@@ -76,7 +76,7 @@ function computeBlockKey(blk) {
 }
 
 function dedupeAndFilterBlocks(blockArray, options = {}) {
-  const { log = () => {} } = options;
+  const { log = () => {}, expectedCallouts = null } = options;
   if (!Array.isArray(blockArray)) return blockArray;
   
   // Use a sliding window approach: only dedupe if identical blocks appear within N positions
@@ -90,6 +90,27 @@ function dedupeAndFilterBlocks(blockArray, options = {}) {
   for (let i = 0; i < blockArray.length; i++) {
     const blk = blockArray[i];
     try {
+      // Determine whether Note: callouts should be eligible for deduplication.
+      // Only enable note-callout dedupe when the caller provides an expected
+      // callout count and the actual number of Note callouts exceeds it.
+      // This prevents removing legitimate repeated "Note:" warnings when
+      // the expected baseline is unknown.
+      let allowNoteDedupe = false;
+      if (typeof expectedCallouts === 'number') {
+        try {
+          const actualNoteCount = blockArray.reduce((acc, b) => {
+            if (b && b.type === 'callout') {
+              const txt = plainTextFromRich(b.callout?.rich_text || []).trim();
+              if (/^Note:/i.test(txt)) return acc + 1;
+            }
+            return acc;
+          }, 0);
+          if (actualNoteCount > expectedCallouts) allowNoteDedupe = true;
+        } catch (e) {
+          // If counting fails, be conservative and do not allow note dedupe
+          allowNoteDedupe = false;
+        }
+      }
       // Never dedupe dividers - they're always unique by position
       if (blk && blk.type === 'divider') {
         out.push(blk);
@@ -115,8 +136,10 @@ function dedupeAndFilterBlocks(blockArray, options = {}) {
       }
       
       // Never dedupe callouts with common STANDALONE patterns (title-only without content)
-      // Also exempt "Note:" and "Before you begin" callouts from proximity-based deduplication
-      // NOTE: Even exempted callouts should be checked for ADJACENT duplicates
+      // Also exempt "Note:" and "Before you begin" callouts from ALL deduplication
+      // FIX v11.0.19: Removed adjacent-duplicate check for Note callouts
+      // Reason: Identical "Note:" callouts in different sections are legitimate (not duplicates)
+      // Example: "Historical data might not be available..." appears in 3 different feature descriptions
       if (blk && blk.type === 'callout') {
         const txt = plainTextFromRich(blk.callout?.rich_text || []);
         const trimmed = txt.trim();
@@ -125,34 +148,21 @@ function dedupeAndFilterBlocks(blockArray, options = {}) {
         const isTitleOnly = /^(Before you begin|Role required:|Prerequisites?|Note:|Important:|Warning:)\s*$/i.test(trimmed);
         const isNoteCallout = /^Note:/i.test(trimmed);
         const isBeforeYouBeginCallout = /^Before you begin/i.test(trimmed);
-        if (isTitleOnly || isNoteCallout || isBeforeYouBeginCallout) {
+        // Only exempt Note: callouts from deduplication when we DO NOT have
+        // an expectedCallouts baseline (safe default). If the caller provided
+        // an expectedCallouts and the actual Note count exceeds it, allow
+        // deduplication of Note callouts by falling through to the normal logic.
+        const exemptNote = isNoteCallout && !allowNoteDedupe;
+        if (isTitleOnly || exemptNote || isBeforeYouBeginCallout) {
           const calloutType = isTitleOnly ? 'Title-only' : (isNoteCallout ? 'Note:' : 'Before you begin');
-          log(`✓ ${calloutType} callout, checking for adjacent duplicates: "${trimmed.substring(0, 60)}..."`);
-          // Still check for adjacent duplicates even for exempted callouts
-          const key = computeBlockKey(blk);
-          const adjacentDuplicate = recentBlocks.find(entry => {
-            const [entryKey, entryIndex] = entry;
-            const distance = i - entryIndex;
-            return entryKey === key && distance <= 1;
-          });
-          
-          if (adjacentDuplicate) {
-            log(`🚫 Deduping adjacent ${calloutType} callout at index ${i}: "${trimmed.substring(0, 60)}..." (duplicate of block ${adjacentDuplicate[1]})`);
-            removed++;
-            duplicates++;
-            continue;
-          }
-          
-          // Not a duplicate, add to recent blocks and output
-          recentBlocks.push([key, i]);
-          while (recentBlocks.length > 0 && (i - recentBlocks[0][1]) > PROXIMITY_WINDOW) {
-            recentBlocks.shift();
-          }
+          log(`✓ ${calloutType} callout, NEVER deduped: "${trimmed.substring(0, 60)}..."`);
+          // FIX v11.0.19: Do NOT check for adjacent duplicates - these callouts can legitimately repeat
+          // Add to output without deduplication
           out.push(blk);
           continue;
         }
         // For other callouts with content, use normal proximity-based deduplication
-        log(`→ Callout with content will be deduped: "${trimmed.substring(0, 60)}..."`);
+        log(`→ Callout with content will use proximity deduplication: "${trimmed.substring(0, 60)}..."`);
       }
       
       // Special-case image dedupe by uploaded file id ONLY - use global dedupe for images

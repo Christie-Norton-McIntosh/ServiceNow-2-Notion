@@ -29,6 +29,24 @@ export function injectMainPanel() {
   const panel = document.createElement("div");
   panel.id = "w2n-notion-panel";
   
+  // Set base CSS styles
+  panel.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 320px;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+    z-index: 10000;
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    user-select: none;
+    opacity: 0.95;
+    transition: opacity 0.2s ease;
+  `;
+  
   // Try to restore saved position from localStorage
   let savedPosition = null;
   try {
@@ -47,11 +65,16 @@ export function injectMainPanel() {
         // Saved position is off-screen, reset it
         savedPosition = null;
         localStorage.removeItem('w2n-panel-position');
+      } else {
+        // Apply saved position
+        panel.style.left = `${savedPosition.left}px`;
+        panel.style.top = `${savedPosition.top}px`;
+        panel.style.right = 'auto'; // Override default right positioning
       }
     }
-    } catch (e) {
-      debug("Failed to restore panel position from localStorage:", e);
-    }
+  } catch (e) {
+    debug("Failed to restore panel position from localStorage:", e);
+  }
 
   panel.addEventListener("mouseenter", () => (panel.style.opacity = "1"));
   panel.addEventListener("mouseleave", () => (panel.style.opacity = "0.95"));
@@ -1569,23 +1592,73 @@ async function continueAutoExtractionLoop(autoExtractState) {
           autoExtractState.processedUrls.add(currentUrl);
           autoExtractState.lastPageId = currentPageId;
           
-          // Process and save to Notion
+          // Process and save to Notion with rate limit retry
           debug(`[AUTO-EXTRACT] 📤 Saving page ${currentPageNum} to Notion...`);
           overlayModule.setMessage(`Processing page ${currentPageNum}...`);
         
-          // Process the content using the app's processWithProxy method
-          // This will internally show more detailed messages like:
-          // - "Checking proxy connection..."
-          // - "Converting content to Notion blocks..."
-          // - "Page created successfully!"
-          await app.processWithProxy(extractedData);
+          // Retry logic for rate limits
+          const maxRateLimitRetries = 3;
+          let rateLimitRetryCount = 0;
+          let processingSuccess = false;
           
-          // If we get here without throwing, it succeeded
-          const result = { success: true };
-
-          autoExtractState.totalProcessed++;
-          debug(`[AUTO-EXTRACT] ✅ Page ${currentPageNum} saved to Notion`);
-          overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
+          while (rateLimitRetryCount <= maxRateLimitRetries && !processingSuccess) {
+            try {
+              // Process the content using the app's processWithProxy method
+              // This will internally show more detailed messages like:
+              // - "Checking proxy connection..."
+              // - "Converting content to Notion blocks..."
+              // - "Page created successfully!"
+              await app.processWithProxy(extractedData);
+              
+              // If we get here without throwing, it succeeded
+              processingSuccess = true;
+              
+              autoExtractState.totalProcessed++;
+              debug(`[AUTO-EXTRACT] ✅ Page ${currentPageNum} saved to Notion`);
+              overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
+            } catch (processingError) {
+              // Check if this is a rate limit error
+              const errorMessage = processingError.message || '';
+              const isRateLimit = errorMessage.includes('Rate limit') || 
+                                 errorMessage.includes('rate limited') ||
+                                 errorMessage.includes('429');
+              
+              if (isRateLimit && rateLimitRetryCount < maxRateLimitRetries) {
+                rateLimitRetryCount++;
+                const waitTime = Math.min(30 * Math.pow(2, rateLimitRetryCount - 1), 120); // 30s, 60s, 120s
+                
+                debug(`⚠️ [RATE-LIMIT] Hit rate limit on page ${currentPageNum}, waiting ${waitTime}s before retry ${rateLimitRetryCount}/${maxRateLimitRetries}...`);
+                
+                if (button) {
+                  button.textContent = `⏳ Rate limit - waiting ${waitTime}s...`;
+                }
+                
+                showToast(
+                  `⚠️ Rate limit hit. Waiting ${waitTime} seconds before retry ${rateLimitRetryCount}/${maxRateLimitRetries}...`,
+                  waitTime * 1000
+                );
+                
+                overlayModule.setMessage(`⏳ Rate limit - waiting ${waitTime}s...`);
+                
+                // Wait with countdown
+                for (let i = waitTime; i > 0; i -= 5) {
+                  await new Promise(resolve => setTimeout(resolve, 5000));
+                  if (button) {
+                    button.textContent = `⏳ Retry in ${i}s...`;
+                  }
+                }
+                
+                debug(`🔄 [RATE-LIMIT] Retrying page ${currentPageNum} after cooldown...`);
+              } else {
+                // Not a rate limit error, or we've exhausted retries - rethrow
+                throw processingError;
+              }
+            }
+          }
+          
+          if (!processingSuccess) {
+            throw new Error(`Failed to process page ${currentPageNum} after ${maxRateLimitRetries} rate limit retries`);
+          }
         }
       } else {
         debug(`[NAV-RETRY] ⏩ Skipped extraction for expected duplicate, proceeding to navigation...`);

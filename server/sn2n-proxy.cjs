@@ -1829,6 +1829,10 @@ try {
     const servicenowPath = require.resolve('./services/servicenow.cjs');
     delete require.cache[servicenowPath];
     
+    // FIX v11.0.18: Also clear validation cache since w2n imports it
+    const validationPath = require.resolve('./utils/validate-notion-page.cjs');
+    delete require.cache[validationPath];
+    
     const freshRouter = require('./routes/w2n.cjs');
     
     console.log('🔥 Reloaded w2n.cjs + servicenow.cjs, delegating to freshly loaded router');
@@ -1856,6 +1860,10 @@ try {
     // Also clear servicenow.cjs cache since w2n depends on it
     const servicenowPath = require.resolve('./services/servicenow.cjs');
     delete require.cache[servicenowPath];
+    
+    // FIX v11.0.18: Also clear validation cache since w2n imports it
+    const validationPath = require.resolve('./utils/validate-notion-page.cjs');
+    delete require.cache[validationPath];
     
     const freshRouter = require('./routes/w2n.cjs');
     
