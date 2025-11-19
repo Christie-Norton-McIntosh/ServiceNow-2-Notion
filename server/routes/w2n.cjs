@@ -1285,39 +1285,46 @@ router.post('/W2N', async (req, res) => {
       log("⚠️ This page should be flagged for manual review or re-PATCH");
     }
     
-    // FIX v11.0.18: FALLBACK MARKER CLEANUP - Even if orchestration fails, try to clean up markers
-    // This prevents marker leaks that make pages look broken to users
-    if (orchestrationFailed || Object.keys(markerMap || {}).length > 0) {
-      log(`\n========================================`);
-      log("🧹 ATTEMPTING FALLBACK MARKER CLEANUP");
-      log(`   Reason: ${orchestrationFailed ? 'Orchestration failed' : 'Markers present in markerMap'}`);
-      log(`   Markers to clean: ${Object.keys(markerMap || {}).length}`);
-      log(`========================================\n`);
+    // FIX v11.0.23: ALWAYS RUN MARKER SWEEP after orchestration (same as PATCH endpoint)
+    // The orchestrator's internal sweep may run before Notion's API has propagated all block updates
+    // A final sweep with a delay ensures all residual markers are caught
+    // This prevents marker leaks that validation detects in POST operations
+    const hasMarkers = Object.keys(markerMap || {}).length > 0;
+    const reason = orchestrationFailed 
+      ? 'Orchestration failed - emergency cleanup' 
+      : hasMarkers 
+        ? 'POST safety sweep (verify orchestrator cleaned all markers)'
+        : 'POST safety sweep (no markers expected but checking anyway)';
+    
+    log(`\n========================================`);
+    log("🧹 RUNNING FINAL MARKER SWEEP");
+    log(`   Reason: ${reason}`);
+    log(`   Markers in map: ${Object.keys(markerMap || {}).length}`);
+    log(`   Orchestration status: ${orchestrationFailed ? 'FAILED' : 'succeeded'}`);
+    log(`========================================\n`);
+    
+    // Wait 1 second before sweep to let Notion's eventual consistency settle
+    // This matches PATCH endpoint behavior and reduces false positives
+    log(`⏸️  Waiting 1s before marker sweep to reduce conflicts...`);
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    try {
+      const sweepResult = await global.sweepAndRemoveMarkersFromPage(response.id);
       
-      try {
-        // Use the global marker sweep function to find and remove ALL markers from the page
-        const sweepResult = await global.sweepAndRemoveMarkersFromPage(response.id);
-        
-        if (sweepResult && sweepResult.success) {
-          log(`✅ Fallback marker cleanup succeeded!`);
-          log(`   Markers found and removed: ${sweepResult.markersRemoved || 0}`);
-          log(`   Blocks updated: ${sweepResult.blocksUpdated || 0}`);
-          
-          // If fallback cleanup succeeded, update orchestration status
-          if (sweepResult.markersRemoved > 0) {
-            log(`✅ Successfully recovered from orchestration failure via fallback cleanup`);
-            // Don't clear orchestrationFailed flag - validation should still know there was an issue
-            // but the markers are now cleaned up
-          }
+      if (sweepResult && sweepResult.updated > 0) {
+        log(`✅ Final marker sweep updated ${sweepResult.updated} blocks`);
+        if (orchestrationFailed) {
+          log(`✅ Successfully recovered from orchestration failure via marker sweep`);
         } else {
-          log(`⚠️ Fallback marker cleanup completed but may not have found all markers`);
-          log(`   Sweep result:`, JSON.stringify(sweepResult));
+          log(`⚠️ Found markers after orchestration - orchestrator's internal sweep may have run too early`);
         }
-      } catch (sweepError) {
-        log(`❌ Fallback marker cleanup also failed: ${sweepError.message}`);
-        log(`   Stack: ${sweepError.stack}`);
-        log(`⚠️ Page ${response.id} will likely have visible markers - manual cleanup required`);
+      } else {
+        log(`✅ Final marker sweep found no markers to remove`);
       }
+    } catch (sweepError) {
+      log(`❌ Final marker sweep failed: ${sweepError.message}`);
+      log(`   Stack: ${sweepError.stack}`);
+      log(`⚠️ Page ${response.id} may have visible markers - flagged for validation`);
     }
 
     // Run post-creation validation if enabled
