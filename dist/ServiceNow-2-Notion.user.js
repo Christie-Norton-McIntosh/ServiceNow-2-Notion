@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.22
+// @version      11.0.24
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.22";
+    window.BUILD_VERSION = "11.0.24";
 (function () {
 
   // Configuration constants and default settings
@@ -4682,8 +4682,43 @@
     return pageId;
   }
 
-  function stopAutoExtract(autoExtractState) {
+  function stopAutoExtract(autoExtractState, reason = "Unknown") {
     debug("[AUTO-EXTRACT] 🛑 stopAutoExtract called - cleaning up");
+    debug(`[AUTO-EXTRACT] Stop reason: ${reason}`);
+    
+    // FIX v11.0.27: Save stop reason to persistent log for post-mortem analysis
+    try {
+      const stopLog = {
+        timestamp: new Date().toISOString(),
+        reason: reason,
+        totalProcessed: autoExtractState.totalProcessed || 0,
+        lastPageNum: autoExtractState.currentPageNum || 0,
+        duplicateCount: autoExtractState.duplicateCount || 0,
+        url: window.location.href
+      };
+      
+      // Get existing logs (keep last 10)
+      let logs = [];
+      try {
+        const existingLogs = GM_getValue("w2n_autoExtractStopLogs", "[]");
+        logs = JSON.parse(existingLogs);
+      } catch (e) {
+        logs = [];
+      }
+      
+      logs.push(stopLog);
+      if (logs.length > 10) {
+        logs = logs.slice(-10); // Keep only last 10 entries
+      }
+      
+      GM_setValue("w2n_autoExtractStopLogs", JSON.stringify(logs, null, 2));
+      debug("[PERSISTENT-LOG] 💾 Saved stop reason to persistent log");
+      
+      // Also log to console with special marker for easy searching
+      console.log("🔴 [AUTOEXTRACT-STOP-LOG] 🔴", stopLog);
+    } catch (logError) {
+      debug(`[PERSISTENT-LOG] ❌ Failed to save stop log: ${logError.message}`);
+    }
     
     autoExtractState.running = false;
     overlayModule.setProgress(100);
@@ -8461,6 +8496,47 @@
     app: () => app,
     version: PROVIDER_VERSION,
     debug: debug,
+    
+    // FIX v11.0.27: Add helper to view AutoExtract stop logs
+    viewStopLogs: () => {
+      try {
+        const logs = GM_getValue("w2n_autoExtractStopLogs", "[]");
+        const parsed = JSON.parse(logs);
+        
+        if (parsed.length === 0) {
+          console.log("📋 No AutoExtract stop logs found");
+          return [];
+        }
+        
+        console.log(`\n${'='.repeat(80)}`);
+        console.log(`📋 AutoExtract Stop Logs (last ${parsed.length} entries)`);
+        console.log(`${'='.repeat(80)}\n`);
+        
+        parsed.forEach((log, idx) => {
+          console.log(`[${idx + 1}] ${log.timestamp}`);
+          console.log(`    Reason: ${log.reason}`);
+          console.log(`    Pages Processed: ${log.totalProcessed}`);
+          console.log(`    Last Page: ${log.lastPageNum}`);
+          console.log(`    Duplicate Count: ${log.duplicateCount}`);
+          console.log(`    URL: ${log.url}`);
+          console.log('');
+        });
+        
+        console.log(`${'='.repeat(80)}`);
+        console.log(`Tip: Run window.ServiceNowToNotion.clearStopLogs() to clear history`);
+        console.log(`${'='.repeat(80)}\n`);
+        
+        return parsed;
+      } catch (error) {
+        console.error("Failed to retrieve stop logs:", error);
+        return [];
+      }
+    },
+    
+    clearStopLogs: () => {
+      GM_setValue("w2n_autoExtractStopLogs", "[]");
+      console.log("✅ AutoExtract stop logs cleared");
+    }
   };
 
   // Auto-initialize when script loads
