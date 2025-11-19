@@ -2023,6 +2023,20 @@ async function extractContentFromHtml(html) {
           }
         });
         
+        // FIX v11.0.24: Search inside div.p for nested callouts
+        // div.p often contains mixed content (text + lists + callouts)
+        // The callouts inside div.p need to be extracted as nested blocks
+        $li.find('> div.p').each((i, divP) => {
+          const innerCallouts = $(divP).find('> div.note').toArray();
+          if (innerCallouts.length > 0) {
+            innerCallouts.forEach(callout => {
+              if (!nestedBlocks.includes(callout)) {
+                nestedBlocks.push(callout);
+              }
+            });
+          }
+        });
+        
         // FIX v11.0.18: Look for DIRECT div.note children only (not deep-nested)
         // Deep-nested callouts (inside text) will be extracted as part of the rich text
         // This works in concert with the .closest() check which prevents duplicate processing
