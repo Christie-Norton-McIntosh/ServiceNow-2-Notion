@@ -1,0 +1,157 @@
+<!--
+Auto-saved: Validation properties failed to update after 6 retries
+Page ID: 2afa89fe-dba5-8182-a8c3-d5d686159215
+Page URL: https://www.notion.so/Review-certification-tasks-in-CMDB-Workspace-2afa89fedba58182a8c3d5d686159215
+Page Title: Review certification tasks in CMDB Workspace
+Created: 2025-11-18T07:39:53.603Z
+Source URL: https://www.servicenow.com/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/data-certific-review-tasks.html
+
+Validation Result:
+{
+  "success": false,
+  "hasErrors": true,
+  "issues": [
+    "Block count too low: expected at least 10, got 0",
+    "Table count mismatch: expected 1, got 0",
+    "Missing callouts: expected 3, got 0 (3 missing)"
+  ],
+  "warnings": [
+    "Ordered list item count differs: expected 19, got 0 (19 fewer - may be counting methodology difference)",
+    "Unordered list item count differs: expected 12, got 0 (12 fewer - may be counting methodology difference)",
+    "ℹ️ Paragraph count lower than expected: ~13 (±7), got 0 (may be filtered empty paragraphs or promoted to list items)"
+  ],
+  "stats": {
+    "totalBlocks": 0,
+    "blockTypes": {},
+    "headingCount": 0,
+    "fetchTimeMs": 127
+  },
+  "summary": "❌ Validation failed: 3 critical error(s), 3 informational warning(s)\n\n❌ Critical Errors:\n1. Block count too low: expected at least 10, got 0\n2. Table count mismatch: expected 1, got 0\n3. Missing callouts: expected 3, got 0 (3 missing)\n\nℹ️ Informational Warnings:\n1. Ordered list item count differs: expected 19, got 0 (19 fewer - may be counting methodology difference)\n2. Unordered list item count differs: expected 12, got 0 (12 fewer - may be counting methodology difference)\n3. ℹ️ Paragraph count lower than expected: ~13 (±7), got 0 (may be filtered empty paragraphs or promoted to list items)\n\n📊 Content Comparison (Source → Notion):\n• Ordered list items: 19 → 0\n• Unordered list items: 12 → 0\n• Paragraphs: 13 → 0\n• Headings: 0 → 0\n• Tables: 1 → 0\n• Images: 0 → 0\n• Callouts: 3 → 0",
+  "sourceCounts": {
+    "orderedListItems": 19,
+    "unorderedListItems": 12,
+    "totalListItems": 31,
+    "paragraphs": 13,
+    "headings": 0,
+    "tables": 1,
+    "images": 0,
+    "callouts": 3,
+    "codeBlocks": 0
+  },
+  "notionCounts": {
+    "orderedListItems": 0,
+    "unorderedListItems": 0,
+    "totalListItems": 0,
+    "paragraphs": 0,
+    "headings": 0,
+    "tables": 0,
+    "images": 0,
+    "callouts": 0,
+    "codeBlocks": 0
+  }
+}
+
+Error Details:
+- Primary Error: You have been rate limited. Please try again in a few minutes.
+-->
+
+<div class="zDocsTopicPageBody" data-prismjs-copy="Copy" data-prismjs-copy-error="Text could not be copied. Try using keyboard shortcuts like Ctrl + C to copy instead." data-prismjs-copy-success="Copied!"><div dir="ltr" class="zDocsTopicPageBodyContent wide"><div><article class="hascomments" data-page="bundle:yokohama-servicenow-platform/enus/product/configuration-management/task/data-certific-review-tasks.html" id="bundle:yokohama-servicenow-platform/enus/product/configuration-management/task/data-certific-review-tasks.html"><main role="main"><article role="article" class="dita" id="data-certific-review-tasks" aria-labelledby="title_data-certific-review-tasks">
+    
+    
+    
+    <div class="body taskbody"><p class="shortdesc">Review the values of record fields and CI attributes in certification tasks assigned to you, and then certify, edit, or fail the review according to your findings.<span class="ph"> For managers, tasks of direct reports are included, and for user group managers, tasks of members in the group are also included. </span></p>
+        <section class="section prereq"><div class="tasklabel"><p class="sectiontitle tasklabel">Before you begin</p></div>
+            <p class="p">Role required: sn_cmdb_user, sn_cmdb_editor, or sn_cmdb_admin</p>
+            <p class="p">Canceling a certification task is available only for tasks that are in the 'In progress' or 'Not started' status,  and the required role is data_manager_admin or sn_cmdb_admin.</p>
+        </section>
+        <section class="section context" id="data-certific-review-tasks__context_fbw_25x_11c"><div class="tasklabel"><p class="sectiontitle tasklabel">About this task</p></div>
+            <p class="p">If a certification task isn't properly assigned, you can reassign it to another user if you know who the appropriate reviewer is, or request an administrator to reassign the task.</p>
+            <div class="note note note_note"><span class="note__title">Note:</span> 
+                <ul class="ul" id="data-certific-review-tasks__ul_k1h_w1g_n2c">
+                    <li class="li">If the policy is configured to disallow empty attribute values, you will only be able to fail certification of the associated CIs, but you won't be able to certify them unless you populate
+                        the empty attributes first.</li>
+                    <li class="li">If the policy is configured to disallow updates to field values, you won't be able to update non-compliant CIs, resulting in failing their certification.</li>
+                </ul>
+            </div>
+        </section>
+        <section><div class="tasklabel"><p class="sectiontitle tasklabel">Procedure</p></div><ol class="ol steps"><li class="li step stepexpand">
+                <span class="ph cmd">Navigate to the Certification tasks list in either of the following ways.</span>
+                <div class="itemgroup info">
+                    <ul class="ul" id="data-certific-review-tasks__ul_pr4_2lv_sfc">
+                        <li class="li">Navigate to <span class="ph menucascade"><span class="ph uicontrol">Workspaces</span><abbr> &gt; </abbr><span class="ph uicontrol">CMDB Workspace</span></span>, then select <span class="ph uicontrol">My Work</span> in the CMDB Workspace menu bar. In the My tasks section, select the Certification tasks tab.</li>
+                        <li class="li">Navigate to <span class="ph menucascade"><span class="ph uicontrol">Workspaces</span><abbr> &gt; </abbr><span class="ph uicontrol">CMDB Workspace</span></span>. On the Home view in CMDB Workspace, select the <span class="ph uicontrol">Data Certification Dashboard</span> quick link. Then, on the Data Certification Dashboard, drill down to the Certification tasks list
+                            from a certification instance card or from the Workload and Aging tasks tiles, as described in <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/concept/data-cert-dashboard-workspace.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/data-cert-dashboard-workspace.html" class="xref" title="Use the Data Certification Dashboard in CMDB Workspace as a central location to manage Data Certification instances and tasks, and to see counts, progress, state, and analytical insights. You can drill down past due certification tasks to examine and to reassign them, for example, so that they can be completed by an appropriate user.">Data Certification Dashboard</a>.</li>
+                    </ul>
+                </div>
+            </li><li class="li step stepexpand">(Optional) 
+                <span class="ph cmd">In the Certification tasks list, select multiple tasks to reassign tasks in bulk.</span>
+                <ol type="a" class="ol substeps" id="data-certific-review-tasks__substeps_jg3_ptj_xfc">
+                    <li class="li substep substepexpand">
+                        <span class="ph cmd">Select the Certification tasks tab, then the task or tasks that you want to reassign.</span>
+                        <div class="itemgroup info">
+                            <ul class="ul" id="data-certific-review-tasks__ul_hmd_xmr_wsb">
+                                <li class="li">Select <span class="ph uicontrol">Reassign</span>: Reassign a task to another group or user if you aren't the appropriate user to review the field values and you know who the appropriate reviewer is.<ul class="ul" id="data-certific-review-tasks__ul_my5_bb2_b1c">
+                                        <li class="li"><span class="ph uicontrol">Assignment group</span>: Select the assignment group the user belongs to.</li>
+                                        <li class="li"><span class="ph uicontrol">Assign to:</span> Search for the appropriate reviewer to reassign this task to.</li>
+                                        <li class="li"><span class="ph uicontrol">Submit a reason for this action</span>: Enter a reason why you are reassigning the task.</li>
+                                    </ul></li>
+                                <li class="li">Select the <span class="ph uicontrol">Reassign</span> drop-down menu then select <span class="ph uicontrol">Assign to me</span>: Assign the task that isn't assigned, to yourself, if you are the appropriate reviewer for this
+                                    task.</li>
+                                <li class="li">Select the <span class="ph uicontrol">Reassign</span> drop-down menu then select <span class="ph uicontrol">Request reassignment</span>: Request to reassign the task, that is assigned to you incorrectly, to someone else. Enter
+                                    a reason why the task needs to be reassigned, then select <span class="ph uicontrol">Submit</span>.</li>
+                            </ul>
+                        </div>
+                    </li>
+                    <li class="li substep substepexpand">
+                        <span class="ph cmd">Select <span class="ph uicontrol">Proceed</span>.</span>
+                    </li>
+                </ol>
+            </li><li class="li step stepexpand">
+                <span class="ph cmd">In the Certification tasks tab, select the certification task that you want to review.</span>
+            </li><li class="li step stepexpand">
+                <span class="ph cmd">Review the details of the certification task, then select <span class="ph uicontrol">Review records to certify</span>.</span>
+                <div class="itemgroup info">
+                    <div class="note note note_note"><span class="note__title">Note:</span> You can reassign the tasks on this page, see Step 2 to review the reassignment options.</div>
+                </div>
+            </li><li class="li step stepexpand">
+                <span class="ph cmd">Select the records that you want to conclude the review for in the Review not completed tab, and then select <span class="ph uicontrol">Certify</span> or <span class="ph uicontrol">Fail</span>.</span>
+                <div class="itemgroup info">
+                    <p class="p">You can select all the records showing on the page for bulk processing by selecting the check box in the first column header, and then selecting the <span class="ph uicontrol">Select all &lt;n&gt; item/s in
+                            this list</span> link that appears.</p>
+                    <div class="p">
+                        <ul class="ul" id="data-certific-review-tasks__ul_i44_1hp_vcc">
+                            <li class="li">The review conclusion of certified or failed is applied in bulk only to those certification fields in the selected records, which are still pending a review. For example, a certification field that is already
+                                marked as certified, isn't affected by selecting <span class="ph uicontrol">Fail</span>. Only the unreviewed fields are marked as failed. Records whose review is concluded are moved to the Review completed tab.</li>
+                            <li class="li">If the policy is configured to disallow empty attribute values, then CIs with empty fields won't be certified when you select <span class="ph uicontrol">Certify</span>. In this situation, to
+                                certify those CIs, you must first populate the empty attributes.</li>
+                        </ul>
+                    </div>
+                </div>
+            </li><li class="li step stepexpand">
+                <span class="ph cmd">Select the records that you want to review in details and then select <span class="ph uicontrol">Review records</span>.</span>
+                <div class="itemgroup info">
+                    <p class="p">A check mark next to a column header, denotes the fields whose values are included in this certification review (<dfn class="term">certification fields</dfn>). All other columns show additional fields that are included only to
+                        help you identify records (<dfn class="term">display fields</dfn>).</p>
+                    <p class="p">When you select records (or CIs) to review, the fields (or attributes) for the selected records appear on the right, in a separate field review section. When you select a single record to review, the field values of
+                        the selected record appear. When you select multiple records to review, the field values don't appear. In that section, select the fields to apply your review results, or select <span class="ph uicontrol">Select all
+                            fields</span> to apply the review results to all fields.</p>
+                </div>
+                <div class="table-wrap"><table count-columns="2" border="1" frame="hsides" rules="rows" cellpadding="4" cellspacing="0" summary="" class="simpletable choicetable choicetableborder" id="data-certific-review-tasks__choicetable_jcw_pq5_zzb"><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead"><tr class="sthead chhead"><th scope="col" class="stentry choptionhd" style="vertical-align:bottom;text-align:left;">Option</th><th scope="col" class="stentry chdeschd" style="vertical-align:bottom;text-align:left;">Description</th></tr></thead><tbody><tr class="strow chrow">
+                        <td style="vertical-align:top;" headers="d868235e277-option" id="d868235e290" class="stentry choption">Fail selected fields</td>
+                        <td style="vertical-align:top;" class="stentry chdesc">Select this to denote field values that are incorrect. When you're finished, the records will move to the Review completed tab.</td>
+                    </tr><tr class="strow chrow">
+                        <td style="vertical-align:top;" headers="d868235e277-option" id="d868235e299" class="stentry choption">Certify selected fields</td>
+                        <td style="vertical-align:top;" class="stentry chdesc">Select this to confirm field values that are correct. When you're finished, the records will move to the Review completed tab.</td>
+                    </tr><tr class="strow chrow">
+                        <td style="vertical-align:top;" headers="d868235e277-option" id="d868235e308" class="stentry choption">Edit fields</td>
+                        <td style="vertical-align:top;" class="stentry chdesc">Select this to update the fields whose value is incorrect. When you're finished, select <span class="ph uicontrol">Update</span>. You can continue and certify the updated fields.</td>
+                    </tr></tbody></table></div>
+            </li><li class="li step stepexpand">
+                <span class="ph cmd">Select <span class="ph uicontrol">Submit</span> when all the records have been reviewed.</span>
+                <div class="itemgroup info">The <span class="ph uicontrol">Submit</span> button isn't available until all the records in the task are reviewed and the task is complete.</div>
+            </li></ol></section>
+        <section class="section postreq" id="data-certific-review-tasks__postreq_z3g_snn_21c"><div class="tasklabel"><p class="sectiontitle tasklabel">What to do next</p></div>
+            <p class="p">You can review the certification results in the Review completed tab, and change certification results or edit field values.</p>
+        </section>
+    </div>
+</article></main></article></div></div></div>

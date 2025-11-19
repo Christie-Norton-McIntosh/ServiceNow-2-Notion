@@ -1,0 +1,171 @@
+<!--
+Auto-saved: Validation properties failed to update after 6 retries
+Page ID: 2afa89fe-dba5-8185-9833-eb29c6c55ce8
+Page URL: https://www.notion.so/Review-attestation-tasks-in-CMDB-Workspace-2afa89fedba581859833eb29c6c55ce8
+Page Title: Review attestation tasks in CMDB Workspace
+Created: 2025-11-18T07:39:57.901Z
+Source URL: https://www.servicenow.com/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/review-data-manager-attes-task.html
+
+Validation Result:
+{
+  "success": false,
+  "hasErrors": true,
+  "issues": [
+    "Block count too low: expected at least 10, got 0",
+    "Image count mismatch: expected 3, got 0",
+    "Missing callouts: expected 2, got 0 (2 missing)"
+  ],
+  "warnings": [
+    "Ordered list item count differs: expected 23, got 0 (23 fewer - may be counting methodology difference)",
+    "Unordered list item count differs: expected 13, got 0 (13 fewer - may be counting methodology difference)",
+    "ℹ️ Paragraph count lower than expected: ~19 (±10), got 0 (may be filtered empty paragraphs or promoted to list items)"
+  ],
+  "stats": {
+    "totalBlocks": 0,
+    "blockTypes": {},
+    "headingCount": 0,
+    "fetchTimeMs": 2133
+  },
+  "summary": "❌ Validation failed: 3 critical error(s), 3 informational warning(s)\n\n❌ Critical Errors:\n1. Block count too low: expected at least 10, got 0\n2. Image count mismatch: expected 3, got 0\n3. Missing callouts: expected 2, got 0 (2 missing)\n\nℹ️ Informational Warnings:\n1. Ordered list item count differs: expected 23, got 0 (23 fewer - may be counting methodology difference)\n2. Unordered list item count differs: expected 13, got 0 (13 fewer - may be counting methodology difference)\n3. ℹ️ Paragraph count lower than expected: ~19 (±10), got 0 (may be filtered empty paragraphs or promoted to list items)\n\n📊 Content Comparison (Source → Notion):\n• Ordered list items: 23 → 0\n• Unordered list items: 13 → 0\n• Paragraphs: 19 → 0\n• Headings: 0 → 0\n• Tables: 0 → 0\n• Images: 3 → 0\n• Callouts: 2 → 0",
+  "sourceCounts": {
+    "orderedListItems": 23,
+    "unorderedListItems": 13,
+    "totalListItems": 36,
+    "paragraphs": 19,
+    "headings": 0,
+    "tables": 0,
+    "images": 3,
+    "callouts": 2,
+    "codeBlocks": 0
+  },
+  "notionCounts": {
+    "orderedListItems": 0,
+    "unorderedListItems": 0,
+    "totalListItems": 0,
+    "paragraphs": 0,
+    "headings": 0,
+    "tables": 0,
+    "images": 0,
+    "callouts": 0,
+    "codeBlocks": 0
+  }
+}
+
+Error Details:
+- Primary Error: You have been rate limited. Please try again in a few minutes.
+-->
+
+<div class="zDocsTopicPageBody" data-prismjs-copy="Copy" data-prismjs-copy-error="Text could not be copied. Try using keyboard shortcuts like Ctrl + C to copy instead." data-prismjs-copy-success="Copied!"><div dir="ltr" class="zDocsTopicPageBodyContent wide"><div><article class="hascomments" data-page="bundle:yokohama-servicenow-platform/enus/product/configuration-management/task/review-data-manager-attes-task.html" id="bundle:yokohama-servicenow-platform/enus/product/configuration-management/task/review-data-manager-attes-task.html"><main role="main"><article role="article" class="dita" id="review-data-manager-attes-task" aria-labelledby="title_review-data-manager-attes-task">
+   
+   
+   
+   <div class="body taskbody"><p class="shortdesc">Review attestation tasks that are assigned to you or to an assignment group that you
+        belong to in accordance with CMDB Data Manager Attestation policies. Check the physical
+        existence of IT infrastructure or applications associated with CIs in the attestation task
+        and then process those CIs as appropriate.</p>
+        <section class="section context" id="review-data-manager-attes-task__context_fpj_hzh_s2c"><div class="tasklabel"><p class="sectiontitle tasklabel">About this task</p></div>
+            <p class="p"><span class="ph">For managers, tasks of direct reports are included, and for user group managers, tasks of members in the group are also included. </span></p>
+        </section>
+      <section class="section prereq"><div class="tasklabel"><p class="sectiontitle tasklabel">Before you begin</p></div>
+         <div class="p">Role required: <ul class="ul" id="review-data-manager-attes-task__ul_dkg_tkr_wsb">
+               <li class="li">CMDB administrator: data_manager_admin, sn_cmdb_admin (already includes the
+                        data_manager_admin role)</li>
+               <li class="li">CI and service owner or manager: data_manager_user, sn_cmdb_user (already
+                        includes the data_manager_user role)</li>
+            </ul></div>
+            <p class="p">Canceling an attestation task is available only for tasks that are in the 'In progress' or 'Not started' status,  and the required role is data_manager_admin or sn_cmdb_admin.</p>
+      </section>
+      <section class="section context" id="review-data-manager-attes-task__context_owd_cjr_wsb"><div class="tasklabel"><p class="sectiontitle tasklabel">About this task</p></div>
+         <p class="p">After you receive notifications about attestation tasks assigned to you, check the actual IT infrastructure or applications that you own, and then process the CIs in the task accordingly. Initially, all the CIs in the
+                attestation task are listed in a Not Yet Reviewed list and therefore require a review. Attested CIs are then moved to an Attested CIs list, while CIs you reject are moved to a separate Rejected CIs list. After processing all
+                the CIs in the task, you can submit and complete the task. For general information about attestation and the flow of attestation, see <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/concept/attesting-cis.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/attesting-cis.html" class="xref" title="Verify the existence of actual IT infrastructure and applications that you own, systematically and in bulk. As CIs are continuously ingested into the CMDB from various data sources, ensure the integrity of the CMDB. Remove any stale CIs that are associated with IT infrastructure or applications that no longer exists.">CIs attestation</a>.</p>
+            <p class="p">As you process the CIs in the task, only the fields <span class="keyword parmname">Attestation Status</span> (values: <span class="ph uicontrol">Attested</span>, <span class="ph uicontrol">Rejected</span>, <span class="ph uicontrol">Not Yet Reviewed</span>),
+                    <span class="keyword parmname">Attested By</span>, and <span class="keyword parmname">Attested Date</span> are automatically updated. Also, details of your activities are captured in the activity stream of the task.</p>
+         <p class="p">Attesting tasks is performed in the <span class="ph">My Work</span> view in the <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/concept/cmdb-workspace.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/cmdb-workspace.html" class="xref" title="The CMDB Workspace is an efficient, central, and modernized way for you to work. Use CMDB Workspace to search and explore the CMDB, examine health and recent activities, and access CMDB dashboards and tools to support tasks in your organization.">CMDB Workspace store app</a>.</p>
+      </section>
+      <section><div class="tasklabel"><p class="sectiontitle tasklabel">Procedure</p></div><ol class="ol steps"><li class="li step stepexpand">
+                <span class="ph cmd">
+                    <span class="ph">Navigate to <span class="ph menucascade"><span class="ph uicontrol">Workspaces</span><abbr> &gt; </abbr><span class="ph uicontrol">CMDB Workspace</span></span> and then select <span class="ph uicontrol">My Work</span> in the <span class="ph">CMDB Workspace</span> menu bar.</span></span>
+                <div class="itemgroup info">Any attestation tasks that are assigned to you or to assignment groups you belong to, appear in the <span class="ph"><span class="ph uicontrol">Attestation tasks</span> tab in the My tasks section</span>. Attestation tasks are associated with details such as the due dates and short descriptions for those tasks.
+                    Assignment groups that you are a member of, are also listed.</div>
+            </li><li class="li step stepexpand">
+                <span class="ph cmd">Select a task to review<span class="ph"> from the Attestation tasks list</span>.<span class="ph"> For a bulk review, select multiple tasks or check the box next to 'Configuration Item' to review all the tasks in the list.</span></span>
+            </li><li class="li step stepexpand">
+            <span class="ph cmd">Review details of a task:</span>
+            <ol type="a" class="ol substeps" id="review-data-manager-attes-task__substeps_ah3_klr_wsb">
+               <li class="li substep substepexpand">(Optional) 
+                        <span class="ph cmd">Administrators can select <span class="ph uicontrol">Cancel task</span> if attesting the CIs in the task isn't needed.</span>
+                        <div class="itemgroup info">For example, if the task was created by error. The canceled task is deleted without any further processing.</div>
+                    </li>
+               <li class="li substep substepexpand">(Optional) 
+                        <span class="ph cmd">If the task isn't properly assigned, select <span class="ph uicontrol">Reassign</span> and then select one of the following options.</span>
+                        <div class="itemgroup info">
+                            <p class="p">Depending on your selection, the task might no longer be assigned to you.</p>
+                            <ul class="ul" id="review-data-manager-attes-task__ul_hmd_xmr_wsb">
+                                <li class="li"><span class="ph uicontrol">To me</span>: If the task isn't yet assigned to a specific user and you are the owner of the CIs who can process the task.</li>
+                                <li class="li">
+                                    <p class="p"><span class="ph uicontrol">To other user</span>: If you aren't the actual owner of the CIs and there is someone else that is more appropriate as the owner for the task. In the Reassign to other user dialog box,
+                                        set <span class="ph uicontrol">Assign to</span> to that user and enter the reason for the reassignment. Then select <span class="ph uicontrol">Proceed</span>.</p>
+                                    <p class="p">For a CI owner, only users from the assignment group that the task is currently assigned to, appear. For Admins, all users with the data_manager_user role appear.</p>
+                                </li>
+                                <li class="li"><span class="ph uicontrol">Send for reassignment</span>: If you aren't the appropriate user for this task and the administrator needs to assign the task to someone else. In the Send for reassignment dialog box,
+                                    enter the reason for the operation and then select <span class="ph uicontrol">Submit</span> to send a notification to the administrator.</li>
+                            </ul>
+                        </div>
+                    </li>
+               <li class="li substep substepexpand">
+                        <span class="ph cmd">Select <span class="ph uicontrol">Review CIs to attest</span> to continue the CI attestation process.</span>
+                        <div class="itemgroup info">If the task is not assigned to anyone, it is automatically assigned to the current user.</div>
+                    </li>
+            </ol>
+         </li><li class="li step stepexpand">(Optional) 
+                <span class="ph cmd">If the Smart detection dialog box appears, select <span class="ph uicontrol">Review</span> to review the CIs or <span class="ph uicontrol">Auto-attest</span> to attest the detected CIs without a review.</span>
+                <ol type="a" class="ol substeps" id="review-data-manager-attes-task__substeps_xyn_wms_wsb">
+                    <li class="li substep">
+                        <span class="ph cmd">Review the details of the CIs in the list.</span>
+                    </li>
+                    <li class="li substep">(Optional) 
+                        <span class="ph cmd">Select <span class="ph uicontrol">Auto-attest</span> to automatically attest all the CIs in the list and to move them to the Attested CIs list.</span>
+                    </li>
+                    <li class="li substep">(Optional) 
+                        <span class="ph cmd">Select <span class="ph uicontrol">Cancel auto-attestation</span> to leave all the CIs in the Not Yet Reviewed list and to later continue attesting those CIs regardless of smart detection.</span>
+                    </li>
+                </ol>
+                <div class="itemgroup info">If you select <span class="ph uicontrol">Cancel</span>, you can later select <span class="ph uicontrol">Run auto-attestation</span> in the Smart detection widget.
+                    When reviewing the CIs to attest, the list in the Smart detection pane is filtered to CIs that are candidates for auto-attestation, letting you auto-attest all those CIs in bulk.</div>
+            </li><li class="li step stepexpand">
+                <span class="ph cmd">Review the CIs in the Not Yet Reviewed list.</span>
+                <div class="itemgroup info">
+                    <p class="p">You can select a CI to open a dashboard with more details such as <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/concept/c_CMDBHealth.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/c_CMDBHealth.html" class="xref" title="Monitoring and maintaining the health of the CMDB is essential to an effective and continuous use of the product. Health indicators such as duplicate CIs, required CI fields, and audits are evaluated and aggregated into health scores at the class, health group, and service levels. CMDB Health also provides a framework for applying standardized CI remediation.">CI health</a>, key properties, and <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/concept/multisource-cmdb.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/multisource-cmdb.html" class="xref" title="CMDB 360 retains complete history about discovery sources and proposed values, involved in updates of CI attributes. Use CMDB 360 data to track how the CMDB is populated by various discovery sources at the CI attribute level. Also, to revert CI updates from a specific discovery source, or to recompute attribute values using updated reconciliation rules.">CMDB 360 data</a>. The CI health details that appear depend on settings and activation of various features.</p>
+                    <p class="p">Use the following cards on the right hand bar to get help and status:</p>
+                    <ul class="ul" id="review-data-manager-attes-task__ul_hnc_fxt_x5b">
+                        <li class="li">Select Attestation actions (<img src="https://servicenow-be-prod.servicenow.com/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/../image/workspace-attestation-actions.png?_LANG=enus" class="image" id="review-data-manager-attes-task__image_tnd_lzt_x5b" alt="CMDB Workspace attestation actions.">) to get help on the possible actions you can take while reviewing CIs.</li>
+                        <li class="li">Select Attestation status (<img src="https://servicenow-be-prod.servicenow.com/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/../image/workspace-attestation-status.png?_LANG=enus" class="image" id="review-data-manager-attes-task__image_iht_nzt_x5b" alt="CMDB Workspace attestation status.">) to see your progress in reviewing and attesting CIs.</li>
+                        <li class="li">Select Smart detection status (<img src="https://servicenow-be-prod.servicenow.com/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/../image/workspace-auto-attest-status.png?_LANG=enus" class="image" id="review-data-manager-attes-task__image_iyh_qzt_x5b" alt="CMDB Workspace smart detection status.">) to see if any CIs are candidates for auto-attestation and to apply auto-attestation if applicable.</li>
+                    </ul>
+                </div>
+            </li><li class="li step stepexpand">
+                <span class="ph cmd">In the <span class="ph uicontrol">Details</span> tab of the Attestation Review CIs pane, select the CIs that you are ready to process and select an action to apply to all selected CIs.</span>
+                <div class="itemgroup info">
+                    <ul class="ul" id="review-data-manager-attes-task__ul_nc3_4wr_wsb">
+                        <li class="li"><p class="p">Select the CIs that you can attest their existence and select <span class="ph uicontrol">Attest</span> to move them to the Attested list.</p>
+                            <p class="p">To undo attestation, select the Attested list, select the CIs that you want to move back to the Not Yet Reviewed list and select <span class="ph uicontrol">Unattest</span>. Or, select the CIs that you want to move to the
+                                Rejected list and select <span class="ph uicontrol">Reject</span>.</p></li>
+                        <li class="li"><p class="p">Select the CIs that you can't attest their existence and select <span class="ph uicontrol">Reject</span> to move them to the Rejected list. In the Confirm rejecting CIs dialog box, enter an explanation and then select
+                                <span class="ph uicontrol">Proceed</span>.</p>
+                            <p class="p">To undo rejection, select the Rejected list, select the CIs that you want to move back to the Not Yet Reviewed list and select <span class="ph uicontrol">Unattest</span>. Or, select the CIs that you want to move to the
+                                Attested list and select <span class="ph uicontrol">Attest</span>.</p></li>
+                        <li class="li"><p class="p">Select the CIs that shouldn't be included in this task and in future Data Manager attestation policies, and select <span class="ph uicontrol">Exclude</span>. In the Confirm excluding CIs dialog box, enter an explanation and then select
+                                    <span class="ph uicontrol">Proceed</span>.</p>
+                            <p class="p">Those excluded CIs are added to the exclusion list of CMDB Data Manager attestation policies. For more information, see <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task/manage-data-mgr-ci-exclusion-list.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/manage-data-mgr-ci-exclusion-list.html" class="xref" title="Create an exclusion list for the various policy types of the CMDB Data Manager, by using the CMDB Data Manager legacy build on Core UI. Policies of a specific policy type will not target the CIs or other records in the exclusion list for that policy type.">Manage exclusion lists of CMDB Data Manager (in Core UI)</a>. Only an admin can undo this operation using the CMDB Data Manager.</p></li>
+                        <li class="li"><p class="p">Select any CIs that you identify as duplicates of other CIs and select <span class="ph uicontrol">Remove duplicates from task</span>. In the Confirm removing duplicate CIs dialog box, enter an explanation and then select
+                                    <span class="ph uicontrol">Proceed</span>.</p>
+                            <div class="p">Those duplicate CIs are removed from the attestation task and a de-duplication task is generated for them, which is similar to the de-duplication tasks created by the Identification and Reconciliation Engine
+                                (IRE). For more details about how to process and remediate de-duplication tasks, see <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/concept/de-duplication-tasks.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/de-duplication-tasks.html" class="xref" title="Duplicate CIs in the CMDB unnecessarily overload the system and interfere with the CMDB's integrity and reliability. It is therefore important to regularly use CMDB tools that detect and remediate duplicate CIs.">Duplicate CIs remediation</a>.<div class="note note note_note"><span class="note__title">Note:</span> Only an admin can undo this operation.</div></div></li>
+                        <li class="li">After processing all the CIs in the task, when the Not Yet Reviewed list is empty, the <span class="ph uicontrol">Submit</span> button is enabled. Select <span class="ph uicontrol">Submit</span>, and then in the Submit attestation
+                            dialog box select <span class="ph uicontrol">Submit</span> to close the task.</li>
+                    </ul>
+                </div>
+            </li></ol></section>
+   </div>
+</article></main></article></div></div></div>

@@ -1,5 +1,6 @@
 /**
  * @fileoverview ServiceNow Content Extraction Service
+ * @version 11.0.18-null-check-fix-DIV-P - Fixed childBlocks.push null error at line 1908
  * 
  * This module handles the complex parsing and extraction of content from ServiceNow
  * documentation pages, converting HTML structures to Notion-compatible block format.
@@ -1157,7 +1158,7 @@ async function extractContentFromHtml(html) {
   }
 
   // Process elements in document order by walking the DOM tree
-  async function processElement(element) {
+  async function processElement(element, isNested = false) {
     const $elem = $(element);
     const tagName = element.name;
     const processedBlocks = [];
@@ -1255,6 +1256,13 @@ async function extractContentFromHtml(html) {
     // Handle different element types
     // 1) Explicit ServiceNow note/callout containers
     if (tagName === 'div' && $elem.attr('class') && $elem.attr('class').includes('note')) {
+      // v11.0.19: Skip if inside list UNLESS we're explicitly processing nested content
+      // This prevents top-level iteration from removing the element before list processing can handle it
+      if (!isNested && $elem.closest('ul, ol').length > 0) {
+        if (getExtraDebug && getExtraDebug()) log('🔍 Skipping div.note inside list (will be processed as nested)');
+        return processedBlocks;
+      }
+      
       console.log(`🔍 ✅ MATCHED CALLOUT! class="${$elem.attr('class')}"`);
       console.log(`🔍 Callout HTML preview (first 500 chars): ${($elem.html() || '').substring(0, 500)}`);
 
@@ -1364,7 +1372,8 @@ async function extractContentFromHtml(html) {
           };
           
           // Add marker for orchestrator to append children after creation
-          if (childBlocks.length > 0) {
+          // v11.0.19: Skip markers for nested callouts - they're already in the right place
+          if (childBlocks.length > 0 && !isNested) {
             const marker = createMarker();
             
             // Tag each child block with the marker for orchestration
@@ -1611,15 +1620,61 @@ async function extractContentFromHtml(html) {
       }
       
       console.log(`✅ Creating code block with language: ${language}`);
-      processedBlocks.push({
-        object: "block",
-        type: "code",
-        code: {
-          rich_text: [{ type: "text", text: { content: codeText } }],
-          language: language
+      
+      // Notion API limit: max 2000 characters per text.content
+      // If code block exceeds this, split into multiple code blocks
+      const MAX_CODE_LENGTH = 2000;
+      if (codeText.length > MAX_CODE_LENGTH) {
+        console.log(`⚠️ Code block exceeds ${MAX_CODE_LENGTH} chars (${codeText.length}). Splitting into chunks...`);
+        
+        let remainingText = codeText;
+        let chunkIndex = 0;
+        
+        while (remainingText.length > 0) {
+          // Extract chunk of max length, trying to break at newline if possible
+          let chunkSize = Math.min(MAX_CODE_LENGTH, remainingText.length);
+          let chunk = remainingText.substring(0, chunkSize);
+          
+          // If we're not at the end and didn't break at a newline, try to find one
+          if (remainingText.length > chunkSize) {
+            const lastNewline = chunk.lastIndexOf('\n');
+            if (lastNewline > MAX_CODE_LENGTH * 0.8) { // Only break at newline if it's reasonably close to limit
+              chunkSize = lastNewline + 1;
+              chunk = remainingText.substring(0, chunkSize);
+            }
+          }
+          
+          chunkIndex++;
+          const totalChunks = Math.ceil(codeText.length / MAX_CODE_LENGTH);
+          
+          console.log(`  📦 Chunk ${chunkIndex}/${totalChunks}: ${chunk.length} chars`);
+          
+          processedBlocks.push({
+            object: "block",
+            type: "code",
+            code: {
+              rich_text: [{ type: "text", text: { content: chunk } }],
+              language: language
+            }
+          });
+          
+          remainingText = remainingText.substring(chunkSize);
         }
-      });
-      console.log(`✅ Code block created and added to processedBlocks (count: ${processedBlocks.length})`);
+        
+        console.log(`✅ Split code block into ${chunkIndex} chunks`);
+      } else {
+        // Code block fits within limit
+        processedBlocks.push({
+          object: "block",
+          type: "code",
+          code: {
+            rich_text: [{ type: "text", text: { content: codeText } }],
+            language: language
+          }
+        });
+        console.log(`✅ Code block created and added to processedBlocks (count: ${processedBlocks.length})`);
+      }
+      
       $elem.remove(); // Mark as processed
       
     } else if (tagName === 'iframe') {
@@ -1890,7 +1945,9 @@ async function extractContentFromHtml(html) {
       if (children.length > 0) {
         for (const child of children) {
           const childBlocks = await processElement(child);
-          processedBlocks.push(...childBlocks);
+          if (childBlocks && Array.isArray(childBlocks)) {
+            processedBlocks.push(...childBlocks);
+          }
         }
       } else {
         // No child elements - extract text content as paragraph
@@ -1962,16 +2019,17 @@ async function extractContentFromHtml(html) {
           }
         });
         
-        // FIX: Also look for div.note elements nested deeper (inside text content)
-        // These are callouts that appear inside list item text
-        const deepNotes = $li.find('div.note').toArray().filter(note => !nestedBlocks.includes(note));
-        if (deepNotes.length > 0) {
-          console.log(`🔍 [CALLOUT-FIX] Found ${deepNotes.length} deep-nested div.note elements in list item`);
-          deepNotes.forEach(note => {
+        // FIX v11.0.18: Look for DIRECT div.note children only (not deep-nested)
+        // Deep-nested callouts (inside text) will be extracted as part of the rich text
+        // This works in concert with the .closest() check which prevents duplicate processing
+        const directNotes = $li.find('> div.note').toArray().filter(note => !nestedBlocks.includes(note));
+        if (directNotes.length > 0) {
+          console.log(`🔍 [CALLOUT-FIX] Found ${directNotes.length} direct-child div.note elements in list item`);
+          directNotes.forEach(note => {
             const noteClass = $(note).attr('class') || '';
-            console.log(`🔍 [CALLOUT-FIX] Deep note class="${noteClass}"`);
+            console.log(`🔍 [CALLOUT-FIX] Direct note class="${noteClass}"`);
           });
-          nestedBlocks.push(...deepNotes);
+          nestedBlocks.push(...directNotes);
         }
         
         // DIAGNOSTIC: Log what we found
@@ -2004,7 +2062,12 @@ async function extractContentFromHtml(html) {
           for (let i = 0; i < nestedBlocks.length; i++) {
             const nestedBlock = nestedBlocks[i];
             console.log(`🔍 Processing nested block in list item: <${nestedBlock.name}>`);
-            const childBlocks = await processElement(nestedBlock);
+            const childBlocks = await processElement(nestedBlock, true); // Pass isNested=true
+            // Skip if element was filtered out (e.g., callout inside list)
+            if (!childBlocks || !Array.isArray(childBlocks)) {
+              console.log(`🔍 🎯 NULL-CHECK-FIX-v11.0.18-UL: Nested block returned null/non-array, skipping`);
+              continue;
+            }
             // DEBUG: Log images in nestedChildren with FULL details
             childBlocks.forEach((blk, idx) => {
               if (blk.type === 'image') {
@@ -2066,18 +2129,9 @@ async function extractContentFromHtml(html) {
                 console.log(`🔍 [NESTED-BLOCK-STATE-UL] Type: ${blockType}, hasMarker: ${hasMarker}, text: "${richTextPreview}..."`);
               }
               
-              // CALLOUT MARKER FIX v11.0.19: Use marker-based orchestration for callouts in list items
-              // This preserves correct section ordering instead of batching all extracted callouts together
-              // Notion does not support callouts as children of list items, so we:
-              // 1. Add a marker to the list item's rich_text
-              // 2. Store the callout in markerMap for orchestration
-              // 3. Append the callout as a sibling after the list item is created
-              if (block && block.type === 'callout') {
-                const calloutPreview = block.callout?.rich_text?.[0]?.text?.content?.substring(0, 50) || 'no text';
-                console.log(`🔍 [CALLOUT-MARKER] Callout in list item - using marker orchestration: "${calloutPreview}"`);
-                markedBlocks.push(block);
-                return; // Will be orchestrated as sibling after list item
-              }
+              // v11.0.19: Callouts CAN be children of list items (Notion supports this)
+              // With isNested=true flag, callouts are properly created without markers
+              // No special handling needed - let them be added as children like other blocks
               
               // CRITICAL FIX: Check for marker tokens FIRST (parent blocks with own deferred children)
               // These should be added as immediate children, regardless of whether they also have _sn2n_marker
@@ -2150,8 +2204,20 @@ async function extractContentFromHtml(html) {
                   }
                   immediateChildren.push(block);
                 }
+              } else if (block && block.type === 'callout') {
+                // v11.0.19: Callouts CAN be immediate children of list items
+                // PATCH v11.0.20: Check for marker to prevent duplicates
+                if (block._sn2n_marker) {
+                  // Has marker - will be handled by orchestration, don't add as immediate child
+                  console.log(`🔍 [UL] Callout has marker "${block._sn2n_marker}" - deferring to orchestration (prevents duplicate)`);
+                  markedBlocks.push(block);
+                } else {
+                  // No marker - processed with isNested=true, add as immediate child
+                  console.log(`🔍 [UL] Nested callout without markers - adding as immediate child`);
+                  immediateChildren.push(block);
+                }
               } else if (block && block.type) {
-                // Tables, headings, callouts, etc. need markers
+                // Tables, headings, etc. need markers
                 console.log(`⚠️ Block type "${block.type}" needs marker for deferred append to list item`);
                 if (block.type === 'table') {
                   console.log(`🔍 [MARKER-PRESERVE-TABLE] Table block deferred for orchestration to preserve source order`);
@@ -2622,7 +2688,12 @@ async function extractContentFromHtml(html) {
           for (let i = 0; i < nestedBlocks.length; i++) {
             const nestedBlock = nestedBlocks[i];
             console.log(`🔍 Processing nested block in ordered list item: <${nestedBlock.name}>`);
-            const childBlocks = await processElement(nestedBlock);
+            const childBlocks = await processElement(nestedBlock, true); // Pass isNested=true
+            // Skip if element was filtered out (e.g., callout inside list)
+            if (!childBlocks || !Array.isArray(childBlocks)) {
+              console.log(`🔍 🎯 NULL-CHECK-FIX-v11.0.18-OL: Nested block returned null/non-array, skipping`);
+              continue;
+            }
             // DEBUG: Log images in nestedChildren with FULL details
             childBlocks.forEach((blk, idx) => {
               if (blk.type === 'image') {
@@ -2666,18 +2737,9 @@ async function extractContentFromHtml(html) {
             }
             
             nestedChildren.forEach(block => {
-              // CALLOUT MARKER FIX v11.0.19: Use marker-based orchestration for callouts in list items
-              // This preserves correct section ordering instead of batching all extracted callouts together
-              // Notion does not support callouts as children of list items, so we:
-              // 1. Add a marker to the list item's rich_text
-              // 2. Store the callout in markerMap for orchestration
-              // 3. Append the callout as a sibling after the list item is created
-              if (block && block.type === 'callout') {
-                const calloutPreview = block.callout?.rich_text?.[0]?.text?.content?.substring(0, 50) || 'no text';
-                console.log(`🔍 [CALLOUT-MARKER] Callout in list item - using marker orchestration: "${calloutPreview}"`);
-                markedBlocks.push(block);
-                return; // Will be orchestrated as sibling after list item
-              }
+              // v11.0.19: Callouts CAN be children of list items (Notion supports this)
+              // With isNested=true flag, callouts are properly created without markers
+              // No special handling needed - let them be added as children like other blocks
               
               // CRITICAL FIX: Check for marker tokens FIRST (parent blocks with own deferred children)
               // These should be added as immediate children, regardless of whether they also have _sn2n_marker
@@ -2752,8 +2814,20 @@ async function extractContentFromHtml(html) {
                   }
                   immediateChildren.push(block);
                 }
+              } else if (block && block.type === 'callout') {
+                // v11.0.19: Callouts CAN be immediate children of list items
+                // PATCH v11.0.20: Check for marker to prevent duplicates
+                if (block._sn2n_marker) {
+                  // Has marker - will be handled by orchestration, don't add as immediate child
+                  console.log(`🔍 [OL] Callout has marker "${block._sn2n_marker}" - deferring to orchestration (prevents duplicate)`);
+                  markedBlocks.push(block);
+                } else {
+                  // No marker - processed with isNested=true, add as immediate child
+                  console.log(`🔍 [OL] Nested callout without markers - adding as immediate child`);
+                  immediateChildren.push(block);
+                }
               } else if (block && block.type) {
-                // Tables, headings, callouts, etc. need markers
+                // Tables, headings, etc. need markers
                 console.log(`⚠️ Block type "${block.type}" needs marker for deferred append to list item`);
                 if (block.type === 'table') {
                   console.log(`🔍 [MARKER-PRESERVE-TABLE] Table block deferred for orchestration to preserve source order`);
@@ -3379,6 +3453,7 @@ async function extractContentFromHtml(html) {
       
     } else if ((tagName === 'section' || (tagName === 'div' && $elem.hasClass('section'))) && $elem.hasClass('prereq')) {
       // Special handling for "Before you begin" prerequisite sections
+      // REMOVED v11.0.18: .closest() check - same reasoning as div.note callouts
       // Convert entire section to a callout with pushpin emoji
       console.log(`🔍 Processing prereq section as callout`);
       
@@ -4618,6 +4693,46 @@ async function extractContentFromHtml(html) {
       
       const sectionParentChildren = Array.from(allParentChildren);
       const articlesArray = Array.from(articlesToInclude);
+      
+      // CRITICAL FIX v11.0.22: Also collect content from article.nested0 parent
+      // When article.nested1 elements exist, they may have siblings (like div.body.conbody) that contain intro content
+      // These siblings must be inserted BEFORE the article.nested1 elements in the final contentElements array
+      const nested0IntroContent = [];
+      const allNested1InBody = $('.zDocsTopicPageBody article.nested1').toArray();
+      console.log(`🔍 🎯 NESTED0-FIX: Found ${allNested1InBody.length} article.nested1 elements in .zDocsTopicPageBody`);
+      if (allNested1InBody.length > 0) {
+        console.log(`🔍 ✅ STEP 1: Checking for preceding content before first article.nested1...`);
+        
+        // Check the first article.nested1 to see if it's inside article.nested0
+        const $firstNested1 = $(allNested1InBody[0]);
+        console.log(`🔍 ✅ STEP 2: Got first article.nested1, id="${$firstNested1.attr('id')}"`);
+        
+        const $parent = $firstNested1.parent();
+        console.log(`🔍 ✅ STEP 3: Parent is <${$parent.prop('tagName')}> with class="${$parent.attr('class')}", id="${$parent.attr('id')}"`);
+        console.log(`🔍 ✅ STEP 4: Testing if parent.is('article.nested0'): ${$parent.is('article.nested0')}`);
+        console.log(`🔍 ✅ STEP 5: Testing alternative selectors: is('article[class*="nested0"]'): ${$parent.is('article[class*="nested0"]')}, hasClass('nested0'): ${$parent.hasClass('nested0')}`);
+        
+        if ($parent.is('article.nested0')) {
+          console.log(`🔍 ✅ STEP 6: Parent IS article.nested0, collecting preceding siblings...`);
+          
+          // Get all children of article.nested0 that come BEFORE the first article.nested1
+          const allChildren = $parent.children().toArray();
+          console.log(`🔍 ✅ STEP 7: Parent has ${allChildren.length} children total`);
+          
+          const firstNested1Index = allChildren.findIndex(child => $(child).is('article.nested1'));
+          console.log(`🔍 ✅ STEP 8: First article.nested1 is at index ${firstNested1Index}`);
+          
+          if (firstNested1Index > 0) {
+            const precedingSiblings = allChildren.slice(0, firstNested1Index);
+            console.log(`🔍 ✅ STEP 9: Found ${precedingSiblings.length} elements before first article.nested1: ${precedingSiblings.map(s => `<${s.name} class="${$(s).attr('class') || ''}">`).join(', ')}`);
+            nested0IntroContent.push(...precedingSiblings);
+          } else {
+            console.log(`🔍 ❌ STEP 9: firstNested1Index is ${firstNested1Index}, no preceding siblings to collect`);
+          }
+        } else {
+          console.log(`🔍 ❌ STEP 6: Parent is NOT article.nested0, skipping sibling collection`);
+        }
+      }
       console.log(`🔍 Collected ${sectionParentChildren.length} unique elements from ${seenParents.size} parent container(s)`);
       console.log(`🔍 ✅ Including ${articlesArray.length} article.nested1 container(s) for heading extraction`);
       
@@ -4644,12 +4759,37 @@ async function extractContentFromHtml(html) {
           contentPlaceholders.push(...missingPlaceholders);
         }
       
-      // Use article.nested1 containers FIRST (for h2 headings), then section parent's children + article navs + contentPlaceholder siblings
-      contentElements = [...articlesArray, ...sectionParentChildren, ...articleNavs, ...contentPlaceholders];
-      console.log(`🔍 ✅ Using ${contentElements.length} elements (${articlesArray.length} articles + ${sectionParentChildren.length} section content + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
+      // Use article.nested0 intro content FIRST (top-level content before nested1 articles), 
+      // then article.nested1 containers (for h2 headings), then section parent's children + article navs + contentPlaceholder siblings
+      contentElements = [...nested0IntroContent, ...articlesArray, ...sectionParentChildren, ...articleNavs, ...contentPlaceholders];
+      console.log(`🔍 ✅ Using ${contentElements.length} elements (${nested0IntroContent.length} nested0 intro + ${articlesArray.length} articles + ${sectionParentChildren.length} section content + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
     } else {
       // No sections found, use original top-level children
       contentElements = topLevelChildren;
+      
+      // CRITICAL FIX v11.0.22: Collect content from article.nested0 parent BEFORE article.nested1
+      // This handles the case where there are NO sections but article.nested0 contains intro content
+      const nested0IntroContent = [];
+      const allNested1InBody = $('.zDocsTopicPageBody article.nested1').toArray();
+      console.log(`🔍 🎯 NESTED0-FIX (NO-SECTIONS): Found ${allNested1InBody.length} article.nested1 elements in .zDocsTopicPageBody`);
+      if (allNested1InBody.length > 0) {
+        console.log(`🔍 ✅ (NO-SECTIONS) Checking for preceding content before first article.nested1...`);
+        const $firstNested1 = $(allNested1InBody[0]);
+        const $parent = $firstNested1.parent();
+        if ($parent.is('article.nested0')) {
+          console.log(`🔍 ✅ (NO-SECTIONS) article.nested1 is inside article.nested0, collecting preceding siblings...`);
+          const allChildren = $parent.children().toArray();
+          const firstNested1Index = allChildren.findIndex(child => $(child).is('article.nested1'));
+          if (firstNested1Index > 0) {
+            const precedingSiblings = allChildren.slice(0, firstNested1Index);
+            console.log(`🔍 ✅ (NO-SECTIONS) Found ${precedingSiblings.length} elements before first article.nested1: ${precedingSiblings.map(s => `<${s.name} class="${$(s).attr('class') || ''}">`).join(', ')}`);
+            nested0IntroContent.push(...precedingSiblings);
+            // Prepend intro content to contentElements
+            contentElements = [...nested0IntroContent, ...contentElements];
+            console.log(`🔍 ✅ (NO-SECTIONS) Prepended ${nested0IntroContent.length} intro blocks to contentElements (now ${contentElements.length} total)`);
+          }
+        }
+      }
       
         // FALLBACK: Check for contentPlaceholders that exist in DOM but weren't in topLevelChildren
         const allContentPlaceholdersInBody = $('.contentPlaceholder').toArray(); // Use global search since parent might be malformed
