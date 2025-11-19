@@ -2158,9 +2158,25 @@ router.patch('/W2N/:pageId', async (req, res) => {
       }
     }
     
-    // STEP 5: Optional validation
+    // STEP 5: Validation (optional, but always creates a result for property updates)
     let validationResult = null;
-    if (process.env.SN2N_VALIDATE_OUTPUT === '1') {
+    const shouldValidate = process.env.SN2N_VALIDATE_OUTPUT === '1' || process.env.SN2N_VALIDATE_OUTPUT === 'true';
+    
+    // FIX v11.0.24: Always create a validation result, even if validation is disabled
+    // This ensures properties are updated consistently with POST behavior
+    if (!shouldValidate) {
+      validationResult = {
+        success: true,
+        hasErrors: false,
+        issues: [],
+        warnings: [],
+        stats: null,
+        summary: `ℹ️ Validation not enabled (set SN2N_VALIDATE_OUTPUT=1 to enable)`
+      };
+      log(`ℹ️ Validation skipped - will set properties to indicate validation not run`);
+    }
+    
+    if (shouldValidate) {
       operationPhase = 'validating updated page';
       log(`🔍 STEP 5: Validating updated page`);
       
@@ -2189,55 +2205,54 @@ router.patch('/W2N/:pageId', async (req, res) => {
     log(`[PATCH-PROGRESS] All steps complete - PATCH operation successful!`);
     
     // STEP 6: Update Validation property with PATCH indicator
-    if (validationResult) {
-      try {
-        const propertyUpdates = {};
-        
-        // Set Error checkbox if validation failed
-        if (validationResult.hasErrors) {
-          propertyUpdates["Error"] = { checkbox: true };
-          log(`⚠️ Validation failed - setting Error checkbox`);
-        } else {
-          // Clear Error checkbox on successful validation
-          propertyUpdates["Error"] = { checkbox: false };
-        }
-        
-        // Set Validation property with PATCH indicator and results summary
-        const patchIndicator = "🔄 PATCH\n\n";
-        propertyUpdates["Validation"] = {
+    // FIX v11.0.24: Always update properties (validationResult always exists now)
+    try {
+      const propertyUpdates = {};
+      
+      // Set Error checkbox if validation failed
+      if (validationResult.hasErrors) {
+        propertyUpdates["Error"] = { checkbox: true };
+        log(`⚠️ Validation failed - setting Error checkbox`);
+      } else {
+        // Clear Error checkbox on successful validation
+        propertyUpdates["Error"] = { checkbox: false };
+      }
+      
+      // Set Validation property with PATCH indicator and results summary
+      const patchIndicator = "🔄 PATCH\n\n";
+      propertyUpdates["Validation"] = {
+        rich_text: [
+          {
+            type: "text",
+            text: { content: patchIndicator + validationResult.summary }
+          }
+        ]
+      };
+      
+      // Set Stats property with detailed statistics
+      if (validationResult.stats) {
+        const statsText = JSON.stringify(validationResult.stats, null, 2);
+        propertyUpdates["Stats"] = {
           rich_text: [
             {
               type: "text",
-              text: { content: patchIndicator + validationResult.summary }
+              text: { content: statsText }
             }
           ]
         };
-        
-        // Set Stats property with detailed statistics
-        if (validationResult.stats) {
-          const statsText = JSON.stringify(validationResult.stats, null, 2);
-          propertyUpdates["Stats"] = {
-            rich_text: [
-              {
-                type: "text",
-                text: { content: statsText }
-              }
-            ]
-          };
-          log(`📊 Setting Stats property with validation statistics`);
-        }
-        
-        // Update the page properties
-        await notion.pages.update({
-          page_id: pageId,
-          properties: propertyUpdates
-        });
-        
-        log(`✅ Validation properties updated with PATCH indicator`);
-      } catch (propError) {
-        log(`⚠️ Failed to update validation properties: ${propError.message}`);
-        // Don't throw - page was updated successfully, just property update failed
+        log(`📊 Setting Stats property with validation statistics`);
       }
+      
+      // Update the page properties
+      await notion.pages.update({
+        page_id: pageId,
+        properties: propertyUpdates
+      });
+      
+      log(`✅ Validation properties updated with PATCH indicator`);
+    } catch (propError) {
+      log(`⚠️ Failed to update validation properties: ${propError.message}`);
+      // Don't throw - page was updated successfully, just property update failed
     }
     
     // Success response
