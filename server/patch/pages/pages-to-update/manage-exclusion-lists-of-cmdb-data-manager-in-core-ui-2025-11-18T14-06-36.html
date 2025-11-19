@@ -1,0 +1,112 @@
+<!--
+Auto-saved: Validation properties failed to update after 6 retries
+Page ID: 2afa89fe-dba5-81b3-a447-f9ab24ccfec2
+Page URL: https://www.notion.so/Manage-exclusion-lists-of-CMDB-Data-Manager-in-Core-UI-2afa89fedba581b3a447f9ab24ccfec2
+Page Title: Manage exclusion lists of CMDB Data Manager (in Core UI)
+Created: 2025-11-18T14:06:36.033Z
+Source URL: https://www.servicenow.com/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/manage-data-mgr-ci-exclusion-list_1.html
+
+Validation Result:
+{
+  "success": false,
+  "hasErrors": true,
+  "issues": [
+    "Block count too low: expected at least 9, got 0",
+    "Table count mismatch: expected 1, got 0",
+    "Missing callouts: expected 2, got 0 (2 missing)"
+  ],
+  "warnings": [
+    "Ordered list item count differs: expected 8, got 0 (8 fewer - may be counting methodology difference)",
+    "Unordered list item count differs: expected 2, got 0 (2 fewer - may be counting methodology difference)",
+    "ℹ️ Paragraph count lower than expected: ~6 (±3), got 0 (may be filtered empty paragraphs or promoted to list items)"
+  ],
+  "stats": {
+    "totalBlocks": 0,
+    "blockTypes": {},
+    "headingCount": 0,
+    "fetchTimeMs": 803
+  },
+  "summary": "❌ Validation failed: 3 critical error(s), 3 informational warning(s)\n\n❌ Critical Errors:\n1. Block count too low: expected at least 9, got 0\n2. Table count mismatch: expected 1, got 0\n3. Missing callouts: expected 2, got 0 (2 missing)\n\nℹ️ Informational Warnings:\n1. Ordered list item count differs: expected 8, got 0 (8 fewer - may be counting methodology difference)\n2. Unordered list item count differs: expected 2, got 0 (2 fewer - may be counting methodology difference)\n3. ℹ️ Paragraph count lower than expected: ~6 (±3), got 0 (may be filtered empty paragraphs or promoted to list items)\n\n📊 Content Comparison (Source → Notion):\n• Ordered list items: 8 → 0\n• Unordered list items: 2 → 0\n• Paragraphs: 6 → 0\n• Headings: 0 → 0\n• Tables: 1 → 0\n• Images: 0 → 0\n• Callouts: 2 → 0",
+  "sourceCounts": {
+    "orderedListItems": 8,
+    "unorderedListItems": 2,
+    "totalListItems": 10,
+    "paragraphs": 6,
+    "headings": 0,
+    "tables": 1,
+    "images": 0,
+    "callouts": 2,
+    "codeBlocks": 0
+  },
+  "notionCounts": {
+    "orderedListItems": 0,
+    "unorderedListItems": 0,
+    "totalListItems": 0,
+    "paragraphs": 0,
+    "headings": 0,
+    "tables": 0,
+    "images": 0,
+    "callouts": 0,
+    "codeBlocks": 0
+  }
+}
+
+Error Details:
+- Primary Error: You have been rate limited. Please try again in a few minutes.
+-->
+
+<div class="zDocsTopicPageBody" data-prismjs-copy="Copy" data-prismjs-copy-error="Text could not be copied. Try using keyboard shortcuts like Ctrl + C to copy instead." data-prismjs-copy-success="Copied!"><div dir="ltr" class="zDocsTopicPageBodyContent wide"><div><article class="hascomments" data-page="bundle:yokohama-servicenow-platform/enus/product/configuration-management/task/manage-data-mgr-ci-exclusion-list.html" id="bundle:yokohama-servicenow-platform/enus/product/configuration-management/task/manage-data-mgr-ci-exclusion-list.html"><main role="main"><article role="article" class="dita" id="manage-data-mgr-ci-exclusion-list" aria-labelledby="title_manage-data-mgr-ci-exclusion-list">
+   
+   
+   
+   <div class="body taskbody"><p class="shortdesc">Create an exclusion list for the various policy types of the CMDB Data Manager<span class="ph">, by using the CMDB Data Manager legacy build on <span class="ph">Core UI</span></span>. Policies of a specific policy type will not target the CIs or other records in the exclusion list for that policy type.</p>
+      <section class="section prereq"><div class="tasklabel"><p class="sectiontitle tasklabel">Before you begin</p></div>
+         <div class="p">Role required: <ul class="ul" id="manage-data-mgr-ci-exclusion-list__ul_e43_31m_spb">
+               <li class="li">data_manager_admin: Full access to CI exclusion lists</li>
+               <li class="li">data_manager_user: Read access and can add a CI to a CI exclusion list</li>
+            </ul></div>
+      </section>
+      <section class="section context" id="manage-data-mgr-ci-exclusion-list__context_a4c_k4s_dzb"><div class="tasklabel"><p class="sectiontitle tasklabel">About this task</p></div>
+         <div class="p"><div class="note note note_note"><span class="note__title">Note:</span> Regardless of where you manage exclusion lists, the list is used in both the Data Manager (<span class="ph">Core UI</span>) and Data Manager in <span class="ph">CMDB Workspace</span>. For information about managing CI exclusion lists in the more advanced CMDB Data Manager in <span class="ph">CMDB Workspace</span>, see <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/concept/data-mgr-exp-cmdb-workspace.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/data-mgr-exp-cmdb-workspace.html" class="xref" title="Use the CMDB Data Manager in CMDB Workspace to administer policies, CIs life-cycle and attestation tasks, view analytics about on-going CMDB Data Manager processes, and to approve or reject assigned tasks.">CMDB Data Manager experience in CMDB Workspace</a>.</div></div>
+      </section>
+      <section><div class="tasklabel"><p class="sectiontitle tasklabel">Procedure</p></div><ol class="ol steps"><li class="li step stepexpand">
+            <span class="ph cmd">Navigate to <span class="ph menucascade"><span class="ph uicontrol">All</span><abbr> &gt; </abbr><span class="ph uicontrol">Configuration</span><abbr> &gt; </abbr><span class="ph uicontrol">CMDB Data Manager</span></span>.</span>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">On the CMDB Data Manager landing page, in the Excluded CIs tile, click <span class="ph uicontrol">View Excluded CIs</span>.</span>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">On the Excluded CIs list view, click <span class="ph uicontrol">Edit Exclusion List</span>
+                    and fill out the Specify Excluded CIs form.</span>
+            <div class="itemgroup info">
+               <div class="table-wrap"><table count-columns="2" class="table frame-all" id="manage-data-mgr-ci-exclusion-list__table_gtx_4zd_lpb"><caption></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                        <tr class="row">
+                           <th class="entry colsep-1 rowsep-1" id="manage-data-mgr-ci-exclusion-list__table_gtx_4zd_lpb__entry__1">Field</th>
+                           <th class="entry colsep-1 rowsep-1" id="manage-data-mgr-ci-exclusion-list__table_gtx_4zd_lpb__entry__2">Description</th>
+                        </tr>
+                     </thead><tbody class="tbody">
+                        <tr class="row">
+                           <td class="entry colsep-1 rowsep-1" headers="manage-data-mgr-ci-exclusion-list__table_gtx_4zd_lpb__entry__1">Policy Type</td>
+                           <td class="entry colsep-1 rowsep-1" headers="manage-data-mgr-ci-exclusion-list__table_gtx_4zd_lpb__entry__2">Type of policy from which to exclude the specified
+                                        CIs.</td>
+                        </tr>
+                        <tr class="row">
+                           <td class="entry colsep-1 rowsep-1" headers="manage-data-mgr-ci-exclusion-list__table_gtx_4zd_lpb__entry__1">Condition Filter</td>
+                           <td class="entry colsep-1 rowsep-1" headers="manage-data-mgr-ci-exclusion-list__table_gtx_4zd_lpb__entry__2">Conditions that CIs must meet to be excluded for the
+                                        specified policy type.</td>
+                        </tr>
+                     </tbody></table></div>
+            </div>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Click <span class="ph uicontrol">Run filter</span>.</span>
+            <div class="itemgroup info">All the CIs that meet the condition filters, appear in the Results
+                    section.</div>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">In the Results list, select any or all of the CIs that you want to exclude from the policies of the respective policy type.</span>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">In the Excluded CIs section, click the '+' icon to add the selected CIs to the Excluded CIs list.</span>
+         </li><li class="li step stepexpand">(Optional) 
+            <span class="ph cmd">In the Excluded CIs list, select CIs that you want to remove from the exclusion list, then click the trash icon.</span>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Click <span class="ph uicontrol">Save</span>.</span>
+         </li></ol></section>
+   </div>
+</article></main></article></div></div></div>

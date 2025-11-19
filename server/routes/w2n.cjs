@@ -453,33 +453,8 @@ router.post('/W2N', async (req, res) => {
       log("🎥 Videos detected in content during HTML conversion");
     }
 
-    // Collect any in-memory markers that were attached to trailing blocks
-    // These will be used by the orchestrator after the page is created
-    const markerMap = collectAndStripMarkers(children, {});
-    // Remove collected trailing blocks from the main children list so we don't
-    // create duplicates on the page root. They'll be appended later by the
-    // orchestrator to their intended parents.
-    const removedCount = removeCollectedBlocks(children);
-    if (removedCount > 0) {
-      log(
-        `🔖 Removed ${removedCount} collected trailing block(s) from initial children`
-      );
-    }
-    if (Object.keys(markerMap).length > 0) {
-      log(
-        `🔖 Found ${
-          Object.keys(markerMap).length
-        } marker(s) to orchestrate after create`
-      );
-      // Log each marker and its block count for debugging
-      Object.keys(markerMap).forEach(marker => {
-        const blocks = markerMap[marker] || [];
-        const blockTypes = blocks.map(b => b.type).join(', ');
-        log(`🔖   Marker "${marker}": ${blocks.length} block(s) [${blockTypes}]`);
-      });
-    }
-
-    // Before creating the page, strip any internal helper keys from blocks
+    // v11.0.21 FIX: Strip private keys BEFORE deduplication (matches PATCH endpoint)
+    // This ensures deduplication works on clean blocks without internal metadata
     deepStripPrivateKeys(children);
 
     // Compute expected callout count from source HTML so dedupe can be conditional.
@@ -497,16 +472,20 @@ router.post('/W2N', async (req, res) => {
             try {
               const $el = $(el);
               const cls = ($el.attr('class') || '').toString();
+              const tag = el.tagName ? el.tagName.toLowerCase() : '';
               const role = ($el.attr('role') || '').toString();
-              const text = ($el.text() || '').toString().trim();
 
-              const classMatch = /\b(note|callout|before-you-begin)\b/i.test(cls);
-              const roleMatch = /note/i.test(role);
-              const textMatch = /^Note:/i.test(text);
+              // Match servicenow.cjs conversion logic EXACTLY:
+              // 1. div.note (line 1257 in servicenow.cjs)
+              // 2. section.prereq or div.section.prereq (line 3380 in servicenow.cjs)
+              // 3. role="note"
+              const isDivNote = (tag === 'div' && /note/i.test(cls));
+              const isPrereq = ((tag === 'section' || (tag === 'div' && /section/i.test(cls))) && /prereq/i.test(cls));
+              const hasNoteRole = /note/i.test(role);
 
-              if (classMatch || roleMatch || textMatch) {
+              if (isDivNote || isPrereq || hasNoteRole) {
                 // Use outer HTML as a dedupe key
-                const outer = $.html(el) || text;
+                const outer = $.html(el) || $el.text();
                 matched.add(outer);
               }
             } catch (innerE) {
@@ -800,6 +779,34 @@ router.post('/W2N', async (req, res) => {
     } catch (dedupeError) {
       log(`❌ [FINAL-CALLOUT-DEDUPE] Error during final callout deduplication: ${dedupeError.message}`);
       console.error('[FINAL-CALLOUT-DEDUPE] Full error:', dedupeError);
+    }
+
+    // v11.0.21 FIX: Collect markers AFTER deduplication (matches PATCH endpoint order)
+    // This prevents duplicate blocks with markers from being removed before dedupe runs
+    // Collect any in-memory markers that were attached to trailing blocks
+    // These will be used by the orchestrator after the page is created
+    const markerMap = collectAndStripMarkers(children, {});
+    // Remove collected trailing blocks from the main children list so we don't
+    // create duplicates on the page root. They'll be appended later by the
+    // orchestrator to their intended parents.
+    const removedCount = removeCollectedBlocks(children);
+    if (removedCount > 0) {
+      log(
+        `🔖 Removed ${removedCount} collected trailing block(s) from initial children`
+      );
+    }
+    if (Object.keys(markerMap).length > 0) {
+      log(
+        `🔖 Found ${
+          Object.keys(markerMap).length
+        } marker(s) to orchestrate after create`
+      );
+      // Log each marker and its block count for debugging
+      Object.keys(markerMap).forEach(marker => {
+        const blocks = markerMap[marker] || [];
+        const blockTypes = blocks.map(b => b.type).join(', ');
+        log(`🔖   Marker "${marker}": ${blocks.length} block(s) [${blockTypes}]`);
+      });
     }
 
     // Create the page (handling Notion's 100-block limit)
@@ -1648,6 +1655,7 @@ ${payload.contentHtml || ''}
   } catch (error) {
     const { log, sendError } = getGlobals();
     log("❌ Error creating Notion page:", error.message);
+    log("❌ Stack trace:", error.stack);
     if (error && error.body) {
       try {
         const parsed =
@@ -1786,7 +1794,7 @@ router.patch('/W2N/:pageId', async (req, res) => {
     // Deduplicate blocks
     const beforeDedupeCount = extractedBlocks.length;
     // Compute expected callouts from the source HTML for conditional dedupe
-    // Use Cheerio-based detection (class contains 'note'/'callout', role='note', or text starting with 'Note:')
+    // Use Cheerio-based detection matching servicenow.cjs conversion logic EXACTLY
     let expectedCallouts = null;
     try {
       if (html) {
@@ -1798,15 +1806,19 @@ router.patch('/W2N/:pageId', async (req, res) => {
             try {
               const $el = $(el);
               const cls = ($el.attr('class') || '').toString();
+              const tag = el.tagName ? el.tagName.toLowerCase() : '';
               const role = ($el.attr('role') || '').toString();
-              const text = ($el.text() || '').toString().trim();
 
-              const classMatch = /\b(note|callout|before-you-begin)\b/i.test(cls);
-              const roleMatch = /note/i.test(role);
-              const textMatch = /^Note:/i.test(text);
+              // Match servicenow.cjs conversion logic EXACTLY:
+              // 1. div.note (line 1257 in servicenow.cjs)
+              // 2. section.prereq or div.section.prereq (line 3380 in servicenow.cjs)
+              // 3. role="note"
+              const isDivNote = (tag === 'div' && /note/i.test(cls));
+              const isPrereq = ((tag === 'section' || (tag === 'div' && /section/i.test(cls))) && /prereq/i.test(cls));
+              const hasNoteRole = /note/i.test(role);
 
-              if (classMatch || roleMatch || textMatch) {
-                const outer = $.html(el) || text;
+              if (isDivNote || isPrereq || hasNoteRole) {
+                const outer = $.html(el) || $el.text();
                 matched.add(outer);
               }
             } catch (innerE) {

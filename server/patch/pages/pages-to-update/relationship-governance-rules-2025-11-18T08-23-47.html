@@ -1,0 +1,111 @@
+<!--
+Auto-saved: Validation properties failed to update after 6 retries
+Page ID: 2afa89fe-dba5-8184-a5bc-cc4b1f032aa8
+Page URL: https://www.notion.so/Relationship-governance-rules-2afa89fedba58184a5bccc4b1f032aa8
+Page Title: Relationship governance rules
+Created: 2025-11-18T08:23:47.482Z
+Source URL: https://www.servicenow.com/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/relationship-governance.html
+
+Validation Result:
+{
+  "success": false,
+  "hasErrors": true,
+  "issues": [
+    "Block count too low: expected at least 14, got 0",
+    "Heading count too low: expected ~3 (±20%), got 0"
+  ],
+  "warnings": [
+    "Unordered list item count differs: expected 20, got 0 (20 fewer - may be counting methodology difference)",
+    "ℹ️ Paragraph count lower than expected: ~12 (±6), got 0 (may be filtered empty paragraphs or promoted to list items)"
+  ],
+  "stats": {
+    "totalBlocks": 0,
+    "blockTypes": {},
+    "headingCount": 0,
+    "fetchTimeMs": 125
+  },
+  "summary": "❌ Validation failed: 2 critical error(s), 2 informational warning(s)\n\n❌ Critical Errors:\n1. Block count too low: expected at least 14, got 0\n2. Heading count too low: expected ~3 (±20%), got 0\n\nℹ️ Informational Warnings:\n1. Unordered list item count differs: expected 20, got 0 (20 fewer - may be counting methodology difference)\n2. ℹ️ Paragraph count lower than expected: ~12 (±6), got 0 (may be filtered empty paragraphs or promoted to list items)\n\n📊 Content Comparison (Source → Notion):\n• Ordered list items: 0 → 0\n• Unordered list items: 20 → 0\n• Paragraphs: 12 → 0\n• Headings: 3 → 0\n• Tables: 0 → 0\n• Images: 0 → 0\n• Callouts: 0 → 0",
+  "sourceCounts": {
+    "orderedListItems": 0,
+    "unorderedListItems": 20,
+    "totalListItems": 20,
+    "paragraphs": 12,
+    "headings": 3,
+    "tables": 0,
+    "images": 0,
+    "callouts": 0,
+    "codeBlocks": 0
+  },
+  "notionCounts": {
+    "orderedListItems": 0,
+    "unorderedListItems": 0,
+    "totalListItems": 0,
+    "paragraphs": 0,
+    "headings": 0,
+    "tables": 0,
+    "images": 0,
+    "callouts": 0,
+    "codeBlocks": 0
+  }
+}
+
+Error Details:
+- Primary Error: You have been rate limited. Please try again in a few minutes.
+-->
+
+<div class="zDocsTopicPageBody" data-prismjs-copy="Copy" data-prismjs-copy-error="Text could not be copied. Try using keyboard shortcuts like Ctrl + C to copy instead." data-prismjs-copy-success="Copied!"><div dir="ltr" class="zDocsTopicPageBodyContent"><div><article class="hascomments" data-page="bundle:yokohama-servicenow-platform/enus/product/configuration-management/concept/relationship-governance.html" id="bundle:yokohama-servicenow-platform/enus/product/configuration-management/concept/relationship-governance.html"><main role="main"><article role="article" class="dita" id="relationship-governance" aria-labelledby="title_relationship-governance">
+   
+   
+   
+   <div class="body conbody"><p class="shortdesc">Relationship governance rules is a set of relationship rules used to ensure consistency
+  and validity in modeling relationships between configuration items (CIs) in the CMDB. Use
+  relationship governance rules to prevent the selection of relationship types or directions that
+  are not allowed between specific CI types.</p>
+      <section class="section" id="relationship-governance__section_tgh_vq5_j2b">
+         <p class="p">Different applications such as Discovery and Service Mapping create relationships between CIs. Each application might use inconsistent relationship type or direction to represent the same entity, resulting in multiple views of
+            the same CIs. Relationship governance rules define what are valid relationship types and valid directions between pairs of CI types resulting in valid and consistent relationships in the CMDB.</p>
+         <div class="p">Relationship governance rules consist of: <ul class="ul" id="relationship-governance__ul_q5y_pyr_32b">
+               <li class="li"><a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/concept/c_ServiceRulesMetadata.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/c_ServiceRulesMetadata.html" class="xref" title="Service definitions consist of CI types and relationship types. Dependent relationship rules define the dependency structure of the CI types and the relationship types in these service definitions, helping in CI identification and in the construction of business service maps.">CMDB dependent relationship rules</a>: Rules (hosting and containment rules) that are
+      used for CI identification. You can view and modify dependent relationship rules in the CI
+      Class Manager, after selecting a class from the class hierarchy and clicking
+       <span class="ph uicontrol">Dependent Relationship</span>.</li>
+               <li class="li"><a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/reference/r_SuggestedRelationshipModel.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/reference/r_SuggestedRelationshipModel.html" class="xref" title="The system keeps a table (Suggested Relationship [cmdb_rel_type_suggest]) of relationship types that are appropriate for a CI type, based on its class. You can manage suggested relationships by navigating to Configuration &gt; Suggested Relationships , or in the CI Class Manager.">Suggested relationships</a>:
+      Rules that are based on existing suggested relationships in the Suggested Relationship
+      [cmdb_rel_type_suggest] table. Suggested relationships are used in the <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/concept/c_RelationshipEditor.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/c_RelationshipEditor.html" class="xref" title="Use the relationship editor to view, create, modify, or delete CI relationships. Open the relationship editor from the CI Relations formatter.">CI relationship editor</a>. You can view and modify suggested relationships in the CI
+      Class Manager, after selecting a class from the class hierarchy and clicking
+       <span class="ph uicontrol">Suggested Relationships</span>.</li>
+               <li class="li"><a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/concept/c_ServiceRulesMetadata.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/c_ServiceRulesMetadata.html" class="xref" title="Service definitions consist of CI types and relationship types. Dependent relationship rules define the dependency structure of the CI types and the relationship types in these service definitions, helping in CI identification and in the construction of business service maps.">Reference rules</a>: Rules that are used mostly
+      by Cloud Management to represent all the possible valid combinations of pairs of referencing
+      and referenced CIs in the service definition.</li>
+               <li class="li">Built-in valid relationships: The following relationships are pre-defined in the base
+      system as valid relationships:<ul class="ul" id="relationship-governance__ul_s2l_5jx_j2b">
+                     <li class="li">cmdb_ci_endpoint -&gt; Applicative Flow To::Applicative Flow From -&gt; cmdb_ci_endpoint</li>
+                     <li class="li">cmdb_ci_endpoint -&gt; Implement End Point To::Implement End Point From -&gt; cmdb_ci</li>
+                     <li class="li">cmdb_ci -&gt; Use End Point To::Use End Point From -&gt; cmdb_ci_endpoint</li>
+                  </ul></li>
+            </ul></div>
+      </section>
+      <section class="section" id="relationship-governance__section_uwf_br5_j2b"><h2 id="d250172e112" class="title sectiontitle">General behavior</h2>
+         
+         <div class="p"><ul class="ul" id="relationship-governance__ul_en5_hzr_32b">
+               <li class="li">Relationship governance rules support inheritance. <p class="p">For example, suppose that the
+       suggested relationship cmdb_ci_appl Runs On::Runs cmdb_ci_hardware exists. Then a Runs
+       On::Runs relationship between a cmdb_ci_appl_dot_net CI and a cmdb_ci_windows_server CI is
+       valid. That is because .Net Application class inherits from the Application class and the
+       Windows Server class inherits from the Hardware class.</p></li>
+               <li class="li">Duplicate relationship governance rules are not allowed.</li>
+               <li class="li">Relationship governance rules are not domain separated.</li>
+               <li class="li">It is allowed to have more than one relationship type between the same two CI types. <div class="p">For
+       example, the following relationships are valid: <ul class="ul" id="relationship-governance__ul_bdj_lfx_j2b">
+                        <li class="li">cmdb_ci_appl Depends On::Used by cmdb_ci_service</li>
+                        <li class="li">cmdb_ci_appl Receives data from::Sends data to cmdb_ci_service</li>
+                     </ul></div></li>
+            </ul></div>
+      </section>
+      <section class="section" id="relationship-governance__section_qgl_bbx_j2b"><h2 id="d250172e146" class="title sectiontitle">Reports</h2>
+         
+         <p class="p">A relationship between CIs is considered valid if it conforms to any of the relationship governance rules. Use the Relationship Health dashboard to view reports about <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task/t_ViewRelationshipsHealth.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/t_ViewRelationshipsHealth.html" class="xref" title="View health scores for relationship health such as orphan, stale, and duplicate relationships, in the Relationship Health dashboard.">relationships health</a> including relationships compliance with relationship governance rules. The 'Relationships not compliant with all relationship rules' report shows CI relationships
+            that are not compliant with any of the relationship governance rules.</p>
+      </section>
+   </div>
+<nav role="navigation"></nav><nav role="navigation" class="tasksNavigation"></nav></article></main></article></div></div><div class="contentPlaceholder" style="height: 443px;"><div class="contentContainer zDocsSideBoxes withExpandCollapse"><div class="contentWrapper" style="height: 443px;"><button aria-hidden="true" data-tooltip-id="zDocsMiniTocCollapseToolTip" data-tooltip-content="Hide Mini TOC" data-testid="expand-collapse-button" class="zDocsMiniTocCollapseButton" aria-label="Hide" aria-expanded="true"><svg aria-hidden="true" class="ico-angle-arrow-right"><use xlink:href="#ico-angle-arrow-right"></use></svg></button><div class="miniTOC d-none d-md-block"><div class="miniTOCHeader"><h5 class="miniTOCTitle css-g931ng">On this page</h5></div><ul class="linkList"><li class="linkItem"><a class="link  css-ettsdk" href="#d250172e112" id="miniTOC-d250172e112">General behavior</a><ul id="miniTOC-collapse-d250172e112" class="level-2 linkList"></ul></li><li class="linkItem"><a class="link  css-ettsdk" href="#d250172e146" id="miniTOC-d250172e146">Reports</a><ul id="miniTOC-collapse-d250172e146" class="level-2 linkList"></ul></li></ul></div><div><h5 class=" css-g931ng" aria-level="5">Related Content</h5><ul><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/reference/r_SuggestedRelationshipModel.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Suggested class relationships</a><p>The system keeps a table (Suggested Relationship [cmdb_rel_type_suggest]) of relationship types that are appropriate for a CI type, based on its class. You can manage suggested relationships by navigating to Configuration Suggested Relationships , or in the CI Class Manager.</p></li><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/t_AddANewSuggestedRelationship.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Add a suggested relationship</a><p>Add a suggested relationship for a class. The list of suggested relationships for a class is available when you create a new relationship for a CI of that class.</p></li><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/c_CIRelationsFormatterNG.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>CI relations formatter</a><p>The default CI form includes a CI relations formatter from which you can examine a CI and its relationships in various views. From the CI relations formatter, you can also launch the CI relationship editor for the CI.</p></li><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/c_RelationshipEditor.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>CI relationship editor</a><p>Use the relationship editor to view, create, modify, or delete CI relationships. Open the relationship editor from the CI Relations formatter.</p></li><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/c_RelationQualifier.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Relation qualifier</a><p>A relation qualifier, which is a CI of the Qualifier [cmdb_ci_qualifier] type, stores important information about the CI relationships.</p></li><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/c_CIRelationshipSecurity.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>CI relationship security</a><p>When applying security to CI relationships, it is important to apply the access controls both to the CI Relationship (cmdb_rel_ci) table and to create an operation editCIRelations to the * table as well.</p></li><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/t_CreateACIRelationRollup.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Create a CI relation rollup</a><p>A CI relation rollup allows you to sum, count, max, min, or mean a relationship type. You can create CI relation rollups.</p></li></ul></div></div></div></div></div>
