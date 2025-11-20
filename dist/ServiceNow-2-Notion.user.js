@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.26
+// @version      11.0.27
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.26";
+    window.BUILD_VERSION = "11.0.27";
 (function () {
 
   // Configuration constants and default settings
@@ -1420,6 +1420,118 @@
       throw error;
     }
   }
+
+  /**
+   * Create a placeholder Notion page for a failed extraction
+   * This reserves the spot in the sequence and can be updated later
+   * 
+   * @param {Object} failedPageInfo - Information about the failed page
+   * @param {string} failedPageInfo.title - Page title
+   * @param {string} failedPageInfo.url - ServiceNow URL
+   * @param {string} failedPageInfo.reason - Failure reason
+   * @param {number} failedPageInfo.pageNumber - Page number in sequence
+   * @param {string} failedPageInfo.databaseId - Notion database ID
+   * @returns {Promise<Object>} Result with page ID and URL
+   */
+  async function createPlaceholderPage(failedPageInfo) {
+    debug(`📝 Creating placeholder page for: ${failedPageInfo.title}`);
+    
+    const { overlayModule } = await Promise.resolve().then(function () { return overlayProgress; });
+    
+    try {
+      overlayModule.setMessage(`Creating placeholder for failed page...`);
+      
+      // Create minimal HTML content with error information
+      const placeholderHtml = `
+      <div class="placeholder-content">
+        <div class="callout callout-warning">
+          <p><strong>⚠️ PLACEHOLDER - Extraction Failed</strong></p>
+          <p>This page failed to extract during AutoExtract and needs to be re-processed.</p>
+        </div>
+        <div class="info-section">
+          <h3>Failed Page Information</h3>
+          <p><strong>Original Title:</strong> ${failedPageInfo.title}</p>
+          <p><strong>ServiceNow URL:</strong> <a href="${failedPageInfo.url}">${failedPageInfo.url}</a></p>
+          <p><strong>Sequence Number:</strong> ${failedPageInfo.pageNumber}</p>
+          <p><strong>Failure Reason:</strong> ${failedPageInfo.reason}</p>
+          <p><strong>Timestamp:</strong> ${failedPageInfo.timestamp || new Date().toISOString()}</p>
+        </div>
+        <div class="callout callout-info">
+          <p><strong>ℹ️ Next Steps</strong></p>
+          <p>This placeholder will be automatically updated when the page is re-extracted from the failed pages queue.</p>
+          <p>You can also manually extract this page by visiting the ServiceNow URL above and using the ServiceNow-2-Notion extension.</p>
+        </div>
+      </div>
+    `;
+      
+      // Prepare placeholder page data
+      const placeholderData = {
+        title: `⚠️ PLACEHOLDER: ${failedPageInfo.title}`,
+        databaseId: failedPageInfo.databaseId,
+        contentHtml: placeholderHtml,
+        url: failedPageInfo.url,
+        properties: {
+          "Error": { checkbox: true },
+          "Validation": {
+            rich_text: [{
+              type: "text",
+              text: { 
+                content: `❌ PLACEHOLDER - Extraction Failed\n\nReason: ${failedPageInfo.reason}\n\nThis page needs to be re-extracted. It failed during AutoExtract at position ${failedPageInfo.pageNumber}.`
+              }
+            }]
+          }
+        }
+      };
+      
+      debug(`📤 Sending placeholder page data to proxy...`);
+      const result = await apiCall("POST", "/api/W2N", placeholderData);
+      
+      if (result && result.success) {
+        const pageId = result.data?.page?.id || result.page?.id;
+        let pageUrl = result.data?.pageUrl || result.pageUrl;
+        
+        if (!pageUrl && pageId) {
+          pageUrl = `https://www.notion.so/${pageId.replace(/-/g, "")}`;
+        }
+        
+        debug(`✅ Placeholder page created: ${pageUrl}`);
+        overlayModule.setMessage(`✓ Placeholder created for failed page`);
+        
+        return {
+          success: true,
+          pageId: pageId,
+          pageUrl: pageUrl,
+          isPlaceholder: true
+        };
+      }
+      
+      throw new Error(result?.error || "Failed to create placeholder page");
+      
+    } catch (error) {
+      debug(`⚠️ Failed to create placeholder page (non-fatal):`, error);
+      // Don't throw - placeholder creation is optional
+      // Return null so caller knows it failed but can continue
+      return {
+        success: false,
+        error: error.message,
+        isPlaceholder: true
+      };
+    }
+  }
+
+  var proxyApi = /*#__PURE__*/Object.freeze({
+    __proto__: null,
+    apiCall: apiCall,
+    checkProxyHealth: checkProxyHealth,
+    createPlaceholderPage: createPlaceholderPage,
+    fetchDatabaseSchema: fetchDatabaseSchema,
+    fetchDatabases: fetchDatabases,
+    getDefaultUnsplashImages: getDefaultUnsplashImages,
+    pingProxy: pingProxy,
+    queryDatabase: queryDatabase,
+    searchUnsplashImages: searchUnsplashImages,
+    sendProcessedContentToProxy: sendProcessedContentToProxy
+  });
 
   // Icon and Cover Selection Modal - Image selection UI
 
@@ -4318,28 +4430,69 @@
                   debug(`🔄 [RATE-LIMIT] Retrying page ${currentPageNum} after cooldown...`);
                 } else {
                   // Not a rate limit error, or we've exhausted retries
-                  // Save to failed pages queue and continue with next page
-                  debug(`⚠️ [RATE-LIMIT] Exhausted retries for page ${currentPageNum}, marking as failed and continuing...`);
+                  // Create placeholder page and save to failed pages queue
+                  debug(`⚠️ [RATE-LIMIT] Exhausted retries for page ${currentPageNum}, creating placeholder...`);
                   
                   // Initialize failedPages array if it doesn't exist
                   if (!autoExtractState.failedPages) {
                     autoExtractState.failedPages = [];
                   }
                   
-                  // Add to failed pages queue
-                  autoExtractState.failedPages.push({
+                  // Get database ID from app
+                  const databaseId = typeof GM_getValue === 'function' 
+                    ? GM_getValue('w2n_database_id', null)
+                    : null;
+                  
+                  // Create placeholder page info
+                  const failedPageInfo = {
                     pageNumber: currentPageNum,
                     title: extractedData?.title || 'Unknown',
                     url: currentUrl,
                     reason: errorMessage.substring(0, 200), // Truncate long error messages
                     timestamp: new Date().toISOString(),
-                    errorType: isRateLimit ? 'rate_limit' : 'other'
-                  });
+                    errorType: isRateLimit ? 'rate_limit' : 'other',
+                    databaseId: databaseId
+                  };
                   
-                  showToast(
-                    `⚠️ Page ${currentPageNum} failed (${isRateLimit ? 'rate limit' : 'error'}). Continuing with next page...`,
-                    4000
-                  );
+                  // Try to create placeholder page
+                  debug(`📝 [PLACEHOLDER] Creating placeholder page for failed extraction...`);
+                  if (button) {
+                    button.textContent = `Creating placeholder for page ${currentPageNum}...`;
+                  }
+                  
+                  try {
+                    // Import the placeholder function
+                    const { createPlaceholderPage } = await Promise.resolve().then(function () { return proxyApi; });
+                    const placeholderResult = await createPlaceholderPage(failedPageInfo);
+                    
+                    if (placeholderResult.success) {
+                      debug(`✅ [PLACEHOLDER] Created placeholder page: ${placeholderResult.pageUrl}`);
+                      
+                      // Add placeholder page info to failed page record
+                      failedPageInfo.placeholderPageId = placeholderResult.pageId;
+                      failedPageInfo.placeholderPageUrl = placeholderResult.pageUrl;
+                      
+                      showToast(
+                        `⚠️ Page ${currentPageNum} failed - placeholder created. Continuing...`,
+                        4000
+                      );
+                    } else {
+                      debug(`⚠️ [PLACEHOLDER] Failed to create placeholder (non-fatal), continuing anyway`);
+                      showToast(
+                        `⚠️ Page ${currentPageNum} failed. Continuing with next page...`,
+                        4000
+                      );
+                    }
+                  } catch (placeholderError) {
+                    debug(`⚠️ [PLACEHOLDER] Error creating placeholder (non-fatal):`, placeholderError);
+                    showToast(
+                      `⚠️ Page ${currentPageNum} failed. Continuing with next page...`,
+                      4000
+                    );
+                  }
+                  
+                  // Add to failed pages queue (whether placeholder succeeded or not)
+                  autoExtractState.failedPages.push(failedPageInfo);
                   
                   // Mark as NOT successful but DON'T throw - continue with next page
                   processingSuccess = false;
@@ -4550,16 +4703,23 @@
         debug(`💾 Failed pages saved to storage for manual retry`);
       }
       
+      // Count how many have placeholders
+      const placeholderCount = autoExtractState.failedPages.filter(fp => fp.placeholderPageId).length;
+      
       // Show warning to user
       const failedPagesMessage = `⚠️ AutoExtract completed with warnings!\n\n` +
         `✅ Successfully processed: ${autoExtractState.totalProcessed} pages\n` +
         `❌ Failed/Skipped: ${autoExtractState.failedPages.length} pages\n` +
-        `🚦 Rate limit hits: ${autoExtractState.rateLimitHits}\n\n` +
+        `� Placeholders created: ${placeholderCount} pages\n` +
+        `�🚦 Rate limit hits: ${autoExtractState.rateLimitHits || 0}\n\n` +
         `Failed pages list:\n` +
         autoExtractState.failedPages.map((fp, i) => 
-          `${i + 1}. ${fp.title || 'Untitled'} (page ${fp.pageNumber})\n   Reason: ${fp.reason}`
+          `${i + 1}. ${fp.title || 'Untitled'} (page ${fp.pageNumber})\n` +
+          `   Reason: ${fp.reason}\n` +
+          `   ${fp.placeholderPageId ? '✓ Placeholder created' : '✗ No placeholder'}`
         ).join('\n') +
-        `\n\nFailed pages have been saved. You can manually retry them later.`;
+        `\n\n${placeholderCount > 0 ? 'Placeholder pages have been created in Notion to hold the sequence.\n' : ''}` +
+        `Failed pages data saved for later retry.`;
       
       alert(failedPagesMessage);
       
