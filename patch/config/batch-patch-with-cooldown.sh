@@ -10,8 +10,10 @@ DST_DIR="$ROOT_DIR/patch/pages/updated-pages"
 PROBLEMATIC_DIR="$ROOT_DIR/patch/pages/problematic-files"
 LOG_DIR="$ROOT_DIR/patch/logs"
 FAILED_VALIDATION_DIR="$ROOT_DIR/patch/pages/failed-validation"
+PAGE_NOT_FOUND_DIR="$ROOT_DIR/patch/pages/page-not-found"
 mkdir -p "$LOG_DIR" "$DST_DIR" "$PROBLEMATIC_DIR"
 mkdir -p "$FAILED_VALIDATION_DIR"
+mkdir -p "$PAGE_NOT_FOUND_DIR"
 
 TS="$(date +%Y%m%d-%H%M%S)"
 LOG_FILE="$LOG_DIR/batch-patch-cooldown-$TS.log"
@@ -146,9 +148,15 @@ for html_file in "$SRC_DIR"/*.html; do
         fi
       fi
     fi
+    if [[ "$dry_http_code" == "404" ]]; then
+      echo "  ⚠️  Validation HTTP 404: Page not found - moving to page-not-found/" | tee -a "$LOG_FILE"
+      mv "$html_file" "$PAGE_NOT_FOUND_DIR/" || true
+      continue
+    fi
+
     if [[ "$dry_http_code" != "200" ]]; then
-    continue
-  fi
+      continue
+    fi
   fi
 
   has_errors=$(echo "$dry_body" | jq -r '.validationResult.hasErrors // false')
@@ -265,7 +273,7 @@ for html_file in "$SRC_DIR"/*.html; do
       patch_http_code=$(tail -n1 "$temp_response")
       patch_body=$(sed '$d' "$temp_response")
       
-      if [[ "$patch_http_code" == "200" ]]; then
+  if [[ "$patch_http_code" == "200" ]]; then
         # Verify validation passed (PATCH response uses .validation, not .validationResult)
         validation_result=$(echo "$patch_body" | jq -r '.validation // {}')
         has_errors=$(echo "$validation_result" | jq -r '.hasErrors // false')
@@ -299,8 +307,13 @@ for html_file in "$SRC_DIR"/*.html; do
           fi
         fi
       else
-        echo "  ❌ PATCH HTTP error: $patch_http_code" | tee -a "$LOG_FILE"
-        failed_patch=$((failed_patch+1))
+        if [[ "$patch_http_code" == "404" ]]; then
+          echo "  ⚠️  PATCH HTTP 404: Page not found - moving to page-not-found/" | tee -a "$LOG_FILE"
+          mv "$html_file" "$PAGE_NOT_FOUND_DIR/" || true
+        else
+          echo "  ❌ PATCH HTTP error: $patch_http_code" | tee -a "$LOG_FILE"
+          failed_patch=$((failed_patch+1))
+        fi
       fi
       
       rm -f "$temp_response"

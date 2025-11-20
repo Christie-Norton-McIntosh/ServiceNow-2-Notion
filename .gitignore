@@ -62,3 +62,5 @@ patch/pages/failed-validation/
 patch/pages/updated-pages/
 patch/pages/problematic-files/
 patch/logs/
+patch/pages
+patch/pages/page-not-found/
