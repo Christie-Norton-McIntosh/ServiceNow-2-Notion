@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.27
+// @version      11.0.28
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.27";
+    window.BUILD_VERSION = "11.0.28";
 (function () {
 
   // Configuration constants and default settings
@@ -1519,6 +1519,65 @@
     }
   }
 
+  /**
+   * PATCH update a Notion page (typically a placeholder) with real content
+   * Deletes all existing blocks and replaces with new content
+   * 
+   * @param {string} pageId - Notion page ID (with or without hyphens)
+   * @param {string} title - New page title
+   * @param {string} contentHtml - HTML content to convert and upload
+   * @param {string} url - ServiceNow URL
+   * @returns {Promise<Object>} Result with success status
+   */
+  async function patchNotionPage(pageId, title, contentHtml, url) {
+    debug(`📝 PATCH updating Notion page: ${pageId}`);
+    debug(`   Title: ${title}`);
+    debug(`   URL: ${url}`);
+    
+    const { overlayModule } = await Promise.resolve().then(function () { return overlayProgress; });
+    
+    try {
+      overlayModule.setMessage(`Updating page in Notion...`);
+      
+      // Normalize page ID (remove hyphens if present, backend will handle both formats)
+      const normalizedPageId = pageId.replace(/-/g, '');
+      
+      // Prepare PATCH data
+      const patchData = {
+        title: title,
+        contentHtml: contentHtml,
+        url: url
+      };
+      
+      debug(`📤 Sending PATCH request to /api/W2N/${normalizedPageId}...`);
+      
+      // PATCH operations use the default 5-minute timeout from apiCall
+      const result = await apiCall("PATCH", `/api/W2N/${normalizedPageId}`, patchData);
+      
+      debug(`📥 PATCH response:`, JSON.stringify(result, null, 2));
+      
+      if (result && result.success) {
+        debug(`✅ Page updated successfully`);
+        overlayModule.setMessage(`✓ Page updated in Notion!`);
+        
+        return {
+          success: true,
+          pageId: normalizedPageId,
+          data: result.data
+        };
+      }
+      
+      throw new Error(result?.error || result?.message || "PATCH update failed");
+      
+    } catch (error) {
+      debug(`❌ Failed to PATCH update page:`, error);
+      overlayModule.error({
+        message: `PATCH update failed: ${error.message}`
+      });
+      throw error;
+    }
+  }
+
   var proxyApi = /*#__PURE__*/Object.freeze({
     __proto__: null,
     apiCall: apiCall,
@@ -1527,6 +1586,7 @@
     fetchDatabaseSchema: fetchDatabaseSchema,
     fetchDatabases: fetchDatabases,
     getDefaultUnsplashImages: getDefaultUnsplashImages,
+    patchNotionPage: patchNotionPage,
     pingProxy: pingProxy,
     queryDatabase: queryDatabase,
     searchUnsplashImages: searchUnsplashImages,
@@ -4727,6 +4787,34 @@
         `⚠️ Completed with ${autoExtractState.failedPages.length} failed pages. See console for details.`,
         7000
       );
+      
+      // Ask user if they want to auto-retry failed pages after cooldown
+      const retryablePagesCount = autoExtractState.failedPages.filter(fp => fp.placeholderPageId).length;
+      if (retryablePagesCount > 0) {
+        const shouldRetry = confirm(
+          `🔄 Auto-Retry Failed Pages?\n\n` +
+          `${retryablePagesCount} failed page(s) have placeholders and can be auto-retried.\n\n` +
+          `The system will:\n` +
+          `• Wait 5 minutes for rate limits to clear\n` +
+          `• Visit each failed page in ServiceNow\n` +
+          `• Extract the content\n` +
+          `• PATCH update the placeholder pages\n\n` +
+          `Would you like to start the auto-retry process?`
+        );
+        
+        if (shouldRetry) {
+          debug(`🔄 [AUTO-RETRY] User confirmed auto-retry of failed pages`);
+          
+          // Start retry process in background
+          setTimeout(() => {
+            retryFailedPages(autoExtractState.failedPages, button);
+          }, 1000); // Small delay to let UI settle
+          
+          // Don't call stopAutoExtract yet - retry will handle it
+          if (button) button.textContent = "⏳ Preparing retry...";
+          return; // Exit without stopping
+        }
+      }
     } else {
       showToast(
         `✅ AutoExtract complete! Processed ${autoExtractState.totalProcessed} page(s)`,
@@ -5635,6 +5723,248 @@
     }
 
     return false;
+  }
+
+  /**
+   * Retry failed pages by navigating to each URL and updating placeholder pages
+   * @param {Array} failedPages - Array of failed page objects with placeholder info
+   * @param {HTMLElement} button - The AutoExtract button for status updates
+   */
+  async function retryFailedPages(failedPages, button) {
+    debug(`🔄 [AUTO-RETRY] Starting retry process for ${failedPages.length} failed page(s)`);
+    
+    const { overlayModule } = await Promise.resolve().then(function () { return overlayProgress; });
+    const app = window.ServiceNowToNotion?.app?.();
+    
+    if (!app) {
+      debug(`❌ [AUTO-RETRY] App not available, cannot retry`);
+      alert('Error: ServiceNow-2-Notion app not initialized');
+      return;
+    }
+    
+    // Filter to only pages with placeholder IDs (can be patched)
+    const retryablePages = failedPages.filter(fp => fp.placeholderPageId);
+    
+    if (retryablePages.length === 0) {
+      debug(`⚠️ [AUTO-RETRY] No retryable pages (no placeholder IDs)`);
+      if (button) button.textContent = "Start AutoExtract";
+      return;
+    }
+    
+    debug(`🔄 [AUTO-RETRY] Found ${retryablePages.length} retryable page(s) with placeholders`);
+    
+    // Initial 5-minute cooldown to avoid rate limits
+    const cooldownMinutes = 5;
+    const cooldownMs = cooldownMinutes * 60 * 1000;
+    
+    debug(`⏳ [AUTO-RETRY] Starting ${cooldownMinutes}-minute cooldown to clear rate limits...`);
+    
+    if (button) {
+      button.textContent = `⏳ Cooldown: ${cooldownMinutes}m remaining...`;
+    }
+    
+    overlayModule.setMessage(`⏳ Waiting ${cooldownMinutes} minutes for rate limit cooldown...`);
+    
+    // Countdown with updates every 30 seconds
+    const updateInterval = 30000; // 30 seconds
+    let remainingMs = cooldownMs;
+    
+    while (remainingMs > 0) {
+      await new Promise(resolve => setTimeout(resolve, Math.min(updateInterval, remainingMs)));
+      remainingMs -= updateInterval;
+      
+      const remainingMinutes = Math.ceil(remainingMs / 60000);
+      if (remainingMs > 0 && button) {
+        button.textContent = `⏳ Cooldown: ${remainingMinutes}m remaining...`;
+      }
+    }
+    
+    debug(`✅ [AUTO-RETRY] Cooldown complete, starting retry process`);
+    
+    if (button) {
+      button.textContent = `🔄 Retrying failed pages...`;
+    }
+    
+    overlayModule.setMessage(`🔄 Starting retry of ${retryablePages.length} failed pages...`);
+    
+    // Track retry results
+    const retryResults = {
+      successful: [],
+      failed: [],
+      total: retryablePages.length
+    };
+    
+    // Process each failed page
+    for (let i = 0; i < retryablePages.length; i++) {
+      const failedPage = retryablePages[i];
+      const pageNum = i + 1;
+      
+      debug(`\n🔄 [AUTO-RETRY] ======================================`);
+      debug(`🔄 [AUTO-RETRY] Retrying page ${pageNum}/${retryablePages.length}`);
+      debug(`🔄 [AUTO-RETRY] Title: ${failedPage.title}`);
+      debug(`🔄 [AUTO-RETRY] URL: ${failedPage.url}`);
+      debug(`🔄 [AUTO-RETRY] Placeholder ID: ${failedPage.placeholderPageId}`);
+      debug(`🔄 [AUTO-RETRY] ======================================\n`);
+      
+      if (button) {
+        button.textContent = `🔄 Retry ${pageNum}/${retryablePages.length}: ${failedPage.title.substring(0, 20)}...`;
+      }
+      
+      overlayModule.setMessage(`🔄 Retrying ${pageNum}/${retryablePages.length}: ${failedPage.title}...`);
+      
+      try {
+        // Navigate to the failed page URL
+        debug(`🔄 [AUTO-RETRY] Step 1: Navigating to ${failedPage.url}...`);
+        window.location.href = failedPage.url;
+        
+        // Wait for page load
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        
+        // Extract page content
+        debug(`🔄 [AUTO-RETRY] Step 2: Extracting content...`);
+        overlayModule.setMessage(`📝 Extracting content from ${failedPage.title}...`);
+        
+        const extractedData = await app.extractCurrentPageData();
+        
+        if (!extractedData) {
+          throw new Error('Failed to extract content from page');
+        }
+        
+        // PATCH update the placeholder page
+        debug(`🔄 [AUTO-RETRY] Step 3: PATCH updating placeholder page...`);
+        overlayModule.setMessage(`📤 Updating placeholder page in Notion...`);
+        
+        // Import PATCH function
+        const { patchNotionPage } = await Promise.resolve().then(function () { return proxyApi; });
+        
+        const patchResult = await patchNotionPage(
+          failedPage.placeholderPageId,
+          extractedData.title,
+          extractedData.contentHtml || extractedData.content,
+          failedPage.url
+        );
+        
+        if (patchResult.success) {
+          debug(`✅ [AUTO-RETRY] Successfully updated placeholder for "${failedPage.title}"`);
+          retryResults.successful.push({
+            title: failedPage.title,
+            url: failedPage.url,
+            pageId: failedPage.placeholderPageId
+          });
+          
+          showToast(
+            `✅ Retry ${pageNum}/${retryablePages.length} successful: ${failedPage.title}`,
+            3000
+          );
+        } else {
+          throw new Error(patchResult.error || 'PATCH update failed');
+        }
+        
+        // Brief delay between retries (30 seconds to be safe)
+        if (i < retryablePages.length - 1) {
+          debug(`⏳ [AUTO-RETRY] Waiting 30s before next retry...`);
+          if (button) {
+            button.textContent = `⏳ Waiting 30s...`;
+          }
+          await new Promise(resolve => setTimeout(resolve, 30000));
+        }
+        
+      } catch (retryError) {
+        debug(`❌ [AUTO-RETRY] Failed to retry "${failedPage.title}": ${retryError.message}`);
+        
+        retryResults.failed.push({
+          title: failedPage.title,
+          url: failedPage.url,
+          pageId: failedPage.placeholderPageId,
+          reason: retryError.message
+        });
+        
+        showToast(
+          `❌ Retry ${pageNum}/${retryablePages.length} failed: ${failedPage.title}`,
+          4000
+        );
+        
+        // Check if it's another rate limit
+        const isRateLimit = retryError.message.includes('Rate limit') || 
+                           retryError.message.includes('rate limited') ||
+                           retryError.message.includes('429');
+        
+        if (isRateLimit) {
+          debug(`⚠️ [AUTO-RETRY] Hit rate limit again during retry - stopping retry process`);
+          alert(
+            `⚠️ Rate Limit Hit During Retry\n\n` +
+            `Successfully retried: ${retryResults.successful.length} page(s)\n` +
+            `Failed: ${retryResults.failed.length + (retryablePages.length - i)} page(s)\n\n` +
+            `Remaining pages still need manual retry.`
+          );
+          break;
+        }
+        
+        // For non-rate-limit errors, continue with next page
+        debug(`🔄 [AUTO-RETRY] Continuing with next page despite error...`);
+      }
+    }
+    
+    // Show final summary
+    debug(`\n🔄 [AUTO-RETRY] ======================================`);
+    debug(`🔄 [AUTO-RETRY] RETRY PROCESS COMPLETE`);
+    debug(`🔄 [AUTO-RETRY] ======================================`);
+    debug(`✅ Successful: ${retryResults.successful.length}`);
+    debug(`❌ Failed: ${retryResults.failed.length}`);
+    debug(`📊 Total: ${retryResults.total}`);
+    
+    if (retryResults.successful.length > 0) {
+      debug(`\n✅ Successfully retried pages:`);
+      retryResults.successful.forEach((page, i) => {
+        debug(`  ${i + 1}. ${page.title}`);
+      });
+    }
+    
+    if (retryResults.failed.length > 0) {
+      debug(`\n❌ Failed retry pages:`);
+      retryResults.failed.forEach((page, i) => {
+        debug(`  ${i + 1}. ${page.title}`);
+        debug(`     Reason: ${page.reason}`);
+      });
+    }
+    
+    // Show completion alert
+    const summaryMessage = `🔄 Auto-Retry Complete!\n\n` +
+      `✅ Successfully updated: ${retryResults.successful.length} page(s)\n` +
+      `❌ Still failed: ${retryResults.failed.length} page(s)\n` +
+      `📊 Total attempted: ${retryResults.total} page(s)\n\n` +
+      (retryResults.failed.length > 0 
+        ? `Failed pages still need manual attention. Check console for details.`
+        : `All failed pages have been successfully updated!`);
+    
+    alert(summaryMessage);
+    
+    overlayModule.done({
+      success: retryResults.failed.length === 0,
+      pageUrl: null,
+      autoCloseMs: 5000,
+    });
+    
+    if (button) {
+      button.textContent = retryResults.failed.length === 0 
+        ? "✅ All retries successful"
+        : `⚠️ ${retryResults.failed.length} still failed`;
+      
+      // Reset button after a few seconds
+      setTimeout(() => {
+        if (button) button.textContent = "Start AutoExtract";
+      }, 10000);
+    }
+    
+    // Save any still-failed pages back to localStorage
+    if (retryResults.failed.length > 0 && typeof GM_setValue === 'function') {
+      GM_setValue('w2n_failed_pages', JSON.stringify(retryResults.failed));
+      debug(`💾 Remaining failed pages saved to storage`);
+    } else if (typeof GM_setValue === 'function') {
+      // Clear failed pages if all succeeded
+      GM_setValue('w2n_failed_pages', JSON.stringify([]));
+      debug(`🧹 Cleared failed pages from storage (all retries successful)`);
+    }
   }
 
   // ServiceNow Metadata Extraction Module
