@@ -1514,10 +1514,90 @@ router.post('/W2N', async (req, res) => {
             propertyUpdateSuccess = true;
             log(`✅ Validation properties updated successfully${propRetry > 0 ? ` (after ${propRetry} ${propRetry === 1 ? 'retry' : 'retries'})` : ''}`);
             
-            // FIX v11.0.27: Verify Validation property is not blank after update
-            // If the summary is empty/blank, auto-save the page for investigation
+            // FIX v11.0.28: Verify properties were actually set by retrieving the page
+            // This catches cases where empty strings are sent but Notion stores empty arrays
+            try {
+              log(`🔍 Verifying properties were actually set in Notion...`);
+              await new Promise(resolve => setTimeout(resolve, 500)); // Brief wait for Notion consistency
+              
+              const updatedPage = await notion.pages.retrieve({ page_id: response.id });
+              const validationProp = updatedPage.properties.Validation;
+              const statsProp = updatedPage.properties.Stats;
+              
+              // Check if Validation property is actually empty in Notion
+              const isValidationEmpty = !validationProp || 
+                                       !validationProp.rich_text || 
+                                       validationProp.rich_text.length === 0 ||
+                                       (validationProp.rich_text.length === 1 && !validationProp.rich_text[0].text.content);
+              
+              const isStatsEmpty = !statsProp || 
+                                  !statsProp.rich_text || 
+                                  statsProp.rich_text.length === 0;
+              
+              if (isValidationEmpty) {
+                log(`⚠️ WARNING: Validation property is EMPTY in Notion after update!`);
+                log(`   Property value: ${JSON.stringify(validationProp)}`);
+                log(`   This indicates validationResult.summary was blank/empty`);
+                log(`   Auto-saving page for investigation...`);
+                
+                // Treat as blank validation and auto-save
+                try {
+                  const fs = require('fs');
+                  const path = require('path');
+                  
+                  const fixturesDir = path.join(__dirname, '../../patch/pages/pages-to-update');
+                  if (!fs.existsSync(fixturesDir)) {
+                    fs.mkdirSync(fixturesDir, { recursive: true });
+                  }
+                  
+                  const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
+                  const sanitizedTitle = (payload.title || 'untitled')
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]+/g, '-')
+                    .replace(/^-+|-+$/g, '')
+                    .substring(0, 60);
+                  const filename = `${sanitizedTitle}-empty-validation-verified-${timestamp}.html`;
+                  const filepath = path.join(fixturesDir, filename);
+                  
+                  const htmlContent = `<!--
+Auto-saved: Validation property is EMPTY in Notion after property update (verified by retrieval)
+Page ID: ${response.id}
+Page URL: ${response.url}
+Page Title: ${payload.title}
+Created: ${new Date().toISOString()}
+Source URL: ${payload.url || 'N/A'}
+
+Validation Result Object:
+${JSON.stringify(validationResult, null, 2)}
+
+Retrieved Validation Property:
+${JSON.stringify(validationProp, null, 2)}
+
+Issue: Notion property has empty rich_text array []
+Root Cause: validationResult.summary was blank/empty when sent to Notion
+Expected: Summary should contain validation results or status message
+-->
+
+${payload.contentHtml || ''}
+`;
+                  
+                  fs.writeFileSync(filepath, htmlContent, 'utf-8');
+                  log(`✅ AUTO-SAVED: Page with empty validation saved to ${filename}`);
+                  savedToUpdateFolder = true;
+                } catch (saveError) {
+                  log(`❌ Failed to auto-save page with empty validation: ${saveError.message}`);
+                }
+              } else {
+                log(`✅ Validation property verified - content exists in Notion`);
+              }
+            } catch (verifyError) {
+              log(`⚠️ Failed to verify properties (non-fatal): ${verifyError.message}`);
+            }
+            
+            // LEGACY CHECK: Also check at assignment time for empty summary
+            // (This catches it before sending, but above check catches after Notion stores it)
             if (!validationResult.summary || validationResult.summary.trim() === '') {
-              log(`⚠️ WARNING: Validation summary is blank/empty after property update!`);
+              log(`⚠️ WARNING: Validation summary is blank/empty at assignment time!`);
               log(`   Page ID: ${response.id}`);
               log(`   Page Title: ${payload.title}`);
               log(`   This page will be auto-saved to pages-to-update for investigation`);
