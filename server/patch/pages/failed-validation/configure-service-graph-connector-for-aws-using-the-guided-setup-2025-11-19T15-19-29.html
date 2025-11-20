@@ -1,0 +1,528 @@
+<!--
+Auto-saved: Validation properties failed to update after 6 retries
+Page ID: 2b0a89fe-dba5-81ed-a67b-f34a9da04252
+Page URL: https://www.notion.so/Configure-Service-Graph-Connector-for-AWS-using-the-guided-setup-2b0a89fedba581eda67bf34a9da04252
+Page Title: Configure Service Graph Connector for AWS using the guided setup
+Created: 2025-11-19T15:19:29.654Z
+Source URL: https://www.servicenow.com/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/configure-aws-integration.html
+
+Validation Result:
+{
+  "success": false,
+  "hasErrors": true,
+  "issues": [
+    "Block count too low: expected at least 16, got 0",
+    "Table count mismatch: expected 2, got 0",
+    "Missing callouts: expected 4, got 0 (4 missing)"
+  ],
+  "warnings": [
+    "Ordered list item count differs: expected 92, got 0 (92 fewer - may be counting methodology difference)",
+    "Unordered list item count differs: expected 16, got 0 (16 fewer - may be counting methodology difference)",
+    "ℹ️ Paragraph count lower than expected: ~18 (±9), got 0 (may be filtered empty paragraphs or promoted to list items)"
+  ],
+  "stats": {
+    "totalBlocks": 0,
+    "blockTypes": {},
+    "headingCount": 0,
+    "fetchTimeMs": 156
+  },
+  "summary": "❌ Validation failed: 3 critical error(s), 3 informational warning(s)\n\n❌ Critical Errors:\n1. Block count too low: expected at least 16, got 0\n2. Table count mismatch: expected 2, got 0\n3. Missing callouts: expected 4, got 0 (4 missing)\n\nℹ️ Informational Warnings:\n1. Ordered list item count differs: expected 92, got 0 (92 fewer - may be counting methodology difference)\n2. Unordered list item count differs: expected 16, got 0 (16 fewer - may be counting methodology difference)\n3. ℹ️ Paragraph count lower than expected: ~18 (±9), got 0 (may be filtered empty paragraphs or promoted to list items)\n\n📊 Content Comparison (Source → Notion):\n• Ordered list items: 92 → 0\n• Unordered list items: 16 → 0\n• Paragraphs: 18 → 0\n• Headings: 1 → 0\n• Tables: 2 → 0\n• Images: 0 → 0\n• Callouts: 4 → 0",
+  "sourceCounts": {
+    "orderedListItems": 92,
+    "unorderedListItems": 16,
+    "totalListItems": 108,
+    "paragraphs": 18,
+    "headings": 1,
+    "tables": 2,
+    "images": 0,
+    "callouts": 4,
+    "codeBlocks": 1
+  },
+  "notionCounts": {
+    "orderedListItems": 0,
+    "unorderedListItems": 0,
+    "totalListItems": 0,
+    "paragraphs": 0,
+    "headings": 0,
+    "tables": 0,
+    "images": 0,
+    "callouts": 0,
+    "codeBlocks": 0
+  }
+}
+
+Error Details:
+- Primary Error: You have been rate limited. Please try again in a few minutes.
+-->
+
+<div class="zDocsTopicPageBody" data-prismjs-copy="Copy" data-prismjs-copy-error="Text could not be copied. Try using keyboard shortcuts like Ctrl + C to copy instead." data-prismjs-copy-success="Copied!"><div dir="ltr" class="zDocsTopicPageBodyContent"><div><article class="hascomments" data-page="bundle:yokohama-servicenow-platform/enus/product/configuration-management/task/configure-aws-integration.html" id="bundle:yokohama-servicenow-platform/enus/product/configuration-management/task/configure-aws-integration.html"><main role="main"><article role="article" class="dita" id="configure-aws-integration" aria-labelledby="title_configure-aws-integration">
+   
+   
+   
+   
+   <div class="body taskbody"><p class="shortdesc">Set up the <span class="ph">AWS</span> environment and scheduled jobs to pull in <span class="ph">AWS</span> data into the <span class="ph">CMDB</span>.</p>
+      <section class="section prereq"><div class="tasklabel"><p class="sectiontitle tasklabel">Before you begin</p></div>
+         <div class="note important note_important" id="configure-aws-integration__note_kqb_5tk_52c"><span class="note__title">Important:</span> Unless there are configuration issues, use the <span class="ph">SGC Central</span> view in the <span class="ph">CMDB Workspace</span> to configure the connection for the connector, as the guided setup method is being deprecated.</div>
+         <p class="p">To use this <span class="ph">Service Graph Connector</span>, you need a subscription to a Subscription Unit that is based in the <span class="ph">IT Operations Management</span> (<span class="ph">ITOM</span>) Visibility application or in the <span class="ph">ITOM</span> Discovery application. As defined in the section titled "Managed IT Resource Types" in <a class="xref true-external" href="https://www.servicenow.com/products/entitlements-packages.html" target="_blank">ServiceNow Subscription Unit Overview</a> for your subscription, for managed IT resources that are created or modified in the <span class="ph">CMDB</span> by this <span class="ph">Service Graph Connector</span>, but that aren’t yet managed by <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task//csh" href="/docs/csh?topicname=itom-license-module&amp;version=yokohama&amp;pubname=yokohama-it-operations-management" class="xref">ITOM Visibility or ITOM Discovery</a>, these resources will increase Subscription Unit consumption from that application. Review your current Subscription Unit consumption within ITOM
+        Visibility or ITOM Discovery to ensure available capacity.</p>
+         <div class="p">Dependencies and requirements:<ul class="ul">
+               <li class="li">The <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/concept/integration-commons-for-cmdb.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/integration-commons-for-cmdb.html" class="xref" title="The Integration Commons for CMDB (sn_cmdb_int_util) store app contains the CMDB Integrations Dashboard and a set of Robust Transform Engine (RTE) transforms and script includes.">Integration Commons for CMDB</a> store app, which is automatically installed.</li>
+               <li class="li">The CMDB CI class models store app, which is automatically installed. See <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/concept/cmdb-ci-class-models.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/cmdb-ci-class-models.html" class="xref" title="The CMDB contains base-system classes that store data about configuration items (CIs). The CMDB CI Class Models ServiceNow Store app adds class models that extend the CMDB class hierarchy, including class descriptions, identification rules, identifier entries, and dependent relationships if applicable.">CMDB CI Class Models</a>.</li>
+               <li class="li">Discovery Core plugin (com.snc.discovery.core), which is automatically installed by <span class="ph">Discovery</span>.</li>
+               <li class="li">The ITOM Discovery License plugin (com.snc.itom.discovery.license). You must activate this plugin.</li>
+               <li class="li">ITOM Licensing plugin (com.snc.itom.license). For more information, see <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task//csh" href="/docs/csh?topicname=t_ActivateTheDiscoveryPlugin&amp;version=yokohama&amp;pubname=yokohama-it-operations-management" class="xref">Request Discovery</a>.</li>
+            </ul></div>
+         <p class="p">Ensure that you’ve completed the prerequisites for setting up AWS. See <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task/sgc-cmdb-aws-task-overview.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/sgc-cmdb-aws-task-overview.html" class="xref" title="Configure your Amazon Web Services (AWS) environment to import data using the Service Graph Connector for AWS.">Configure the AWS environment</a>.</p>
+         <div class="note note note_note"><span class="note__title">Note:</span> When upgrading from an earlier version, ensure that you’ve updated the SSM documents and IAM permissions in your <span class="ph">AWS</span> instance.<ul class="ul" id="configure-aws-integration__ul_h52_dbp_jzb">
+               <li class="li">For updating SSM documents, run the <span class="ph filepath">SG-AWS-RunShellScript-Setup.yml</span>, <span class="ph filepath">SG-AWS-RunPowerShellScript-Setup.yml</span>, and <span class="ph filepath">SG-AWS-RunKubeCtlShellScript.yml</span> scripts.</li>
+               <li class="li">For updating the IAM permissions assigned to the SnowOrganizationAccountAccessRole role, run the <span class="ph filepath">CreateSnowOrganizationAccountAccessRoleInMemberAccount.yml</span> script.</li>
+            </ul></div>
+         <p class="p">Role required: admin</p>
+      </section>
+      <section class="section context"><div class="tasklabel"><p class="sectiontitle tasklabel">About this task</p></div>
+         <p class="p">For more information on the <span class="ph uicontrol">Service Graph Connector for AWS</span> setup instructions, see the following articles:</p>
+         <ul class="ul">
+            <li class="li"><a class="xref true-external" href="https://support.servicenow.com/kb_view.do?sysparm_article=KB1220597" target="_blank">Service Graph Connector for AWS - Setup Instructions [KB1220597]</a> article on the <span class="ph">Now Support</span> Knowledge Base.</li>
+            <li class="li"><a class="xref true-external" href="https://www.servicenow.com/community/cmdb-articles/service-graph-connector-for-aws-introduction/ta-p/2300757" target="_blank">Service Graph Connector for AWS - Introduction</a> on the <span class="ph">ServiceNow</span> Community site.</li>
+            <li class="li"><a class="xref true-external" href="https://www.servicenow.com/community/cmdb-articles/sgc-aws-release-2-0-features/ta-p/2511663" target="_blank">SGC-AWS - Release 2.0 Features</a> on the <span class="ph">ServiceNow</span> Community site.</li>
+         </ul>
+         <div class="p">If you upgrade the connector, complete the following tasks before the upgrade process:<ul class="ul" id="configure-aws-integration__ul_jzg_5jt_zzb">
+               <li class="li">If there are any customizations, delete the records associated with the <span class="ph">Service Graph Connector for AWS</span> from the Customer Updates [sys_update_xml] table. See <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task//csh" href="/docs/csh?topicname=r_CustomerUpdatesTable&amp;version=yokohama&amp;pubname=yokohama-platform-security" class="xref">Customer Updates table</a>.</li>
+               <li class="li">Upgrade any dependencies.</li>
+            </ul></div>
+         <div class="p">After you've installed the latest version of the <span class="ph">Service Graph Connector for AWS</span>:<ul class="ul" id="configure-aws-integration__ul_qjj_q4t_zzb">
+               <li class="li">Perform a full import of data from your <span class="ph">AWS</span> instance. Verify that the <span class="ph uicontrol">Use last run datetime</span> field value is cleared for all the <span class="ph">AWS</span> data sources in the Data Source [sys_data_source] table.</li>
+               <li class="li">Download and rerun the <span class="ph">AWS</span> scripts. See <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task/sgc-cmdb-aws-task-overview.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/sgc-cmdb-aws-task-overview.html" class="xref" title="Configure your Amazon Web Services (AWS) environment to import data using the Service Graph Connector for AWS.">Configure the AWS environment</a>.</li>
+            </ul></div>
+      </section>
+      <section><div class="tasklabel"><p class="sectiontitle tasklabel">Procedure</p></div><ol class="ol steps"><li class="li step stepexpand">
+            <span class="ph cmd">Ensure that you’ve selected the <span class="ph uicontrol">Service Graph Connector for AWS</span> application scope by using the application picker.</span>
+            <div class="itemgroup info">For more information, see <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task//csh" href="/docs/csh?topicname=c_ApplicationPicker&amp;version=yokohama&amp;pubname=yokohama-application-development" class="xref">Application picker</a>.</div>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Navigate to <span class="ph menucascade"><span class="ph uicontrol">All</span><abbr> &gt; </abbr><span class="ph uicontrol">Service Graph Connectors</span><abbr> &gt; </abbr><span class="ph uicontrol">AWS</span><abbr> &gt; </abbr><span class="ph uicontrol">Setup</span></span>.</span>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd"><a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task/sgc-cmdb-aws-task-overview.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/sgc-cmdb-aws-task-overview.html" class="xref" title="Configure your Amazon Web Services (AWS) environment to import data using the Service Graph Connector for AWS.">Configure the AWS environment</a>.</span>
+            <div class="itemgroup info"><div class="note note note_note"><span class="note__title">Note:</span> For the Download the scripts task, select <span class="ph uicontrol">Configure</span> to download the scripts.</div>After you’ve downloaded the scripts and configured the <span class="ph">AWS</span> environment, set the Download the scripts and AWS Setup Instructions tasks to complete.</div>
+         </li><li class="li step stepexpand" id="configure-aws-integration__aws-alias">
+            <span class="ph cmd">Configure the authentication credentials to authenticate requests sent to the <span class="ph">AWS</span> APIs.</span>
+            <ol type="a" class="ol substeps" id="configure-aws-integration__substeps_y1c_xj1_dxb">
+               <li class="li substep substepexpand" id="configure-aws-integration__aws-cred-0">
+                  <span class="ph cmd">Configure your <span class="ph">AWS</span> credentials.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i" id="configure-aws-integration__ol_hfg_3gy_prb">
+                        <li class="li">For the <span class="ph">Configure the connection</span> section of the <span class="ph">Service Graph Connector for AWS</span> page, select <span class="ph uicontrol">Get Started</span>.</li>
+                        <li class="li">For the <span class="ph">Configure the credentials</span> task, select <span class="ph uicontrol">Configure</span>.</li>
+                        <li class="li">In the <span class="ph uicontrol">Name</span> field, enter a name for the authentication. <p class="p"><kbd class="ph userinput">SG-AWS-Credentials-Org</kbd> is the default credential alias name. You can add multiple <span class="ph">AWS</span> instances. However, don’t modify the default connection alias.</p></li>
+                        <li class="li">Enter the access key ID and the secret access key in the <span class="ph uicontrol">Access Key ID</span> and <span class="ph uicontrol">Secret Access Key</span> fields respectively.<p class="p">The <span class="ph">AWS</span> access keys are long-term credentials for the IAM user and include two parts: an access key ID and a secret access key. You must use both the access key ID and the secret
+                              access key together to authenticate requests.</p></li>
+                        <li class="li">Return to the Configure the connection task page by selecting the back icon (&lt;).</li>
+                        <li class="li">Set the Configure the credentials task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                     </ol>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Test the <span class="ph">AWS</span> API connection to import data from the <span class="ph">AWS</span> application.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i" id="configure-aws-integration__ol_u4t_5gy_prb">
+                        <li class="li">For the <span class="ph">Test the connection</span> task in the <span class="ph">Configure the connection</span> section, select <span class="ph uicontrol">Configure</span>.</li>
+                        <li class="li">Select the <span class="ph uicontrol">Test Connection</span> related link.</li>
+                        <li class="li">When the <span class="ph uicontrol">Status</span> field is set to <span class="ph uicontrol">Success</span>, select the back icon (&lt;) to return to the guided setup.</li>
+                        <li class="li">Set the <span class="ph">Test the connection</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                     </ol>
+                  </div>
+               </li>
+               <li class="li substep substepexpand" id="configure-aws-integration__aws-prop">
+                  <span class="ph cmd">Update the required configuration properties for an <span class="ph">AWS</span> instance.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i" id="configure-aws-integration__ol_ac1_yrt_zzb">
+                        <li class="li">For the <span class="ph">Update configuration properties for instance</span> task, select <span class="ph uicontrol">Configure</span>.</li>
+                        <li class="li">On the SG-AWS Configuration Properties form that opens in a new tab, review, and modify the fields.<div class="table-wrap"><table count-columns="2" class="table frame-all" id="configure-aws-integration__table_rxc_xrt_zzb"><caption><span class="table--title-label">Table 1. </span><span class="title">SG-AWS Configuration Properties form</span></caption><colgroup><col><col></colgroup><thead class="thead">
+                                    <tr class="row">
+                                       <th class="entry colsep-1 rowsep-1" id="configure-aws-integration__table_rxc_xrt_zzb__entry__1">Field</th>
+                                       <th class="entry colsep-1 rowsep-1" id="configure-aws-integration__table_rxc_xrt_zzb__entry__2">Description</th>
+                                    </tr>
+                                 </thead><tbody class="tbody">
+                                    <tr class="row">
+                                       <td class="entry sub-head colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1 configure-aws-integration__table_rxc_xrt_zzb__entry__2" colspan="2">Connection Details</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1">Connection Alias</td>
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__2">Name to identify the <span class="ph">AWS</span> connection record. For example, <kbd class="ph userinput">SG_AWS_CredentialAlias_Org</kbd>. <p class="p">You can add multiple <span class="ph">AWS</span> instances. However, don’t modify the name for the default connection alias <kbd class="ph userinput">SG_AWS_CredentialAlias_Org</kbd>.</p></td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry sub-head colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1 configure-aws-integration__table_rxc_xrt_zzb__entry__2" colspan="2">Organization Details</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1">Organization Account</td>
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__2">Numeric account identifier of the <span class="ph">AWS</span> organization.</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1">Organization Name</td>
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__2">Name of the <span class="ph">AWS</span> organization.</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1">Organization Description</td>
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__2">Description of the <span class="ph">AWS</span> organization.</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry sub-head colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1 configure-aws-integration__table_rxc_xrt_zzb__entry__2" colspan="2">AWS Regions</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1">Regions</td>
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__2"><span class="ph">AWS</span> regions to collect the CI data.<p class="p">By default, the <span class="ph">Service Graph Connector for <span class="ph">AWS</span></span> runs through all the <span class="ph">AWS</span> regions to collect the CI data.</p><p class="p">You can enter <span class="ph">AWS</span> specific regions to speed up the CI data import process. For example, <code class="ph codeph">us-east1, us-east-2</code>.</p><p class="p">If this field is left empty, the
+                                                <span class="ph">Service Graph Connector for <span class="ph">AWS</span></span> pulls the resources from all the <span class="ph">AWS</span> regions.</p><p class="p">However, for the AWS GovCloud regions, don’t leave the <span class="ph uicontrol">Regions</span> field empty. The supported AWS GovCloud regions are <code class="ph codeph">us-gov-east-1</code>
+                                             and <code class="ph codeph">us-gov-west-1</code>.</p><p class="p">If you update the <span class="ph uicontrol">Regions</span> field value later, clear the value of the <span class="ph uicontrol">Last run datetime</span> field in all the data
+                                             sources related to the <span class="ph">Service Graph Connector for <span class="ph">AWS</span></span> to import a new set of data.</p></td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry sub-head colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1 configure-aws-integration__table_rxc_xrt_zzb__entry__2" colspan="2">STS Assume Role Name</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1">STS Role</td>
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__2">AWS Identity and Access Management (IAM) role name that is obtained by the <span class="ph">ServiceNow</span> user by calling the <span class="keyword apiname">AssumeRole</span> API offered by the <span class="ph">AWS</span> Security Token Service (STS). The <span class="keyword apiname">AssumeRole</span> API returns a set of temporary security credentials for the <span class="ph">ServiceNow</span> user to access the <span class="ph">AWS</span> resources.<div class="note note note_note"><span class="note__title">Note:</span> Enter the IAM role name but don’t prefix <code class="ph codeph">arn</code> in the name. If you leave this field is empty, the value of this field is
+                                             automatically set to <span class="ph uicontrol">SnowOrganizationAccountAccessRole</span>, which is the default IAM role name for the <span class="ph">ServiceNow</span> user.</div></td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry sub-head colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1 configure-aws-integration__table_rxc_xrt_zzb__entry__2" colspan="2">S3 Account Details</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1">S3 Account Id</td>
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__2">Numeric identifier of the <span class="ph">AWS</span> account that hosts the <span class="ph">Amazon</span> Simple Storage Service (<span class="ph">Amazon</span> S3) bucket.</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1">S3 Bucket Name</td>
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__2">Name of the <span class="ph">Amazon</span> S3 bucket that collects the details from <span class="ph">Amazon</span> EC2 instances.</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1">S3 Region</td>
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__2">Region where the <span class="ph">Amazon</span> S3 bucket resides.</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry sub-head colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1 configure-aws-integration__table_rxc_xrt_zzb__entry__2" colspan="2">SSM SendCommand Document Details</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1">SSM Send Command Linux Name</td>
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__2">Name of the document that defines the actions run by the <span class="ph">AWS</span> Systems Manager (SSM) on a Linux-based <span class="ph">Amazon</span> EC2 instance.</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1">SSM Send Command Windows Name</td>
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__2">Name of the document that defines the actions run by the <span class="ph">AWS</span> SSM on a Windows-based <span class="ph">Amazon</span> EC2 instance.</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry sub-head colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1 configure-aws-integration__table_rxc_xrt_zzb__entry__2" colspan="2">Management Account ID</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1">Management Account ID</td>
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__2">Management account in the <span class="ph">AWS</span> organization. The account calls the <span class="keyword apiname">ListAccounts</span> API associated with the <span class="ph">AWS</span> organization to collect CI information from all the accounts. For more information, see <a class="xref true-external" href="https://docs.aws.amazon.com/organizations/latest/APIReference/API_ListAccounts.html" target="_blank">ListAccounts</a> on the <span class="ph">AWS</span> documentation site.<p class="p">Enter a value for this field when the <span class="ph">ServiceNow</span> user was created in an <span class="ph">AWS</span> member account.</p></td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry sub-head colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1 configure-aws-integration__table_rxc_xrt_zzb__entry__2" colspan="2">Standalone Account ID Details</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1">Standalone Account ID</td>
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__2">ID of a member account in the <span class="ph">AWS</span> organization.<div class="note note note_note"><span class="note__title">Note:</span> When specifying a standalone account, AWS organization-related data such as the organization name, organization units, organization ID, and service accounts are not
+                                             imported. If you want to import the full data later, clear any value mentioned in the <span class="ph uicontrol">Standalone Account ID</span> field. See the <a class="xref true-external" href="https://hi.service-now.com/kb_view.do?sysparm_article=KB1642159" target="_blank">Service Graph Connector for AWS - Standalone Setup [KB1642159]</a> article in the <span class="ph">Now Support</span> Knowledge Base.</div></td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry sub-head colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1 configure-aws-integration__table_rxc_xrt_zzb__entry__2" colspan="2">AWS Config Aggregator Details</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1">Config Aggregator Account</td>
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__2"><span class="ph">AWS</span> account where the aggregator resource type in the <span class="ph">AWS</span> Config service has been configured.<p class="p">Enter a value in this field when you’re using an <span class="ph">AWS</span> Config aggregator.</p></td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1">Config Aggregator Name</td>
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__2">Name of the aggregator resource type. This field is available only when you enter a value in the <span class="ph uicontrol">Config Aggregator Account</span> field.</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1">Config Aggregator Region</td>
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__2">Region where the aggregator resource type resides. This field is available only when you enter a value in the <span class="ph uicontrol">Config Aggregator Account</span> field.</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry sub-head colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1 configure-aws-integration__table_rxc_xrt_zzb__entry__2" colspan="2">AWS Key Rotation Setup</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1">AWS Rotate Keys</td>
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__2">Option to enable the key rotation process.</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1">AWS Key Rotation Date</td>
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__2">Key rotation date. <span class="ph">Set the value to the required key rotation date for the first run. For subsequent runs, this field is automatically set to the rotation date.</span> This field is available only when you select the <span class="ph uicontrol">AWS Rotate Keys</span> check
+                                          box.</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1">AWS Key Rotation Period (in Days)</td>
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__2">Key rotation period in days. This field is available only when you select the <span class="ph uicontrol">AWS Rotate Keys</span> check box.</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1">AWS Key Rotation Status</td>
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__2">Status message of a key rotation displaying whether the rotation was a success or a failure. This field is automatically set to display the key rotation status message. This field is available
+                                          only when you select the <span class="ph uicontrol">AWS Rotate Keys</span> check box. If the rotation status is a failure, an email notification is triggered, if configured.</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1">Email accounts for receiving error notifications</td>
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__2">Comma-separated list of the email addresses of recipients who receive notifications about the <span class="ph">AWS</span> key rotation errors.</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1">Email account groups for receiving error notifications</td>
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__2">Comma-separated list of the <span class="ph">ServiceNow</span> groups who receive notifications about the <span class="ph">AWS</span> key rotation errors.</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry sub-head colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1 configure-aws-integration__table_rxc_xrt_zzb__entry__2" colspan="2">Gov Cloud Setup</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1">Is Gov Cloud</td>
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__2">Option to indicate that the connection setup is for the AWS GovCloud.</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry sub-head colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1 configure-aws-integration__table_rxc_xrt_zzb__entry__2" colspan="2">SSM EKS SendCommand Document Details</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1">EKS Cluster Names Document</td>
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__2">Name of the <span class="ph">AWS</span> SSM document to discover EKS clusters associated with EC2 Bastion hosts.</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__1">EKS Shell Script Document</td>
+                                       <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_rxc_xrt_zzb__entry__2">Name of the <span class="ph">AWS</span> SSM document to fetch CIs related to Kubernetes components, such as pods, services, and deployments, from EKS clusters.</td>
+                                    </tr>
+                                 </tbody></table></div></li>
+                        <li class="li">Select <span class="ph uicontrol">Save</span> and then <span class="ph uicontrol">Close</span> to close the tab and return to the guided setup tab.</li>
+                        <li class="li">Set the <span class="ph">Update configuration properties for instance</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                     </ol>
+                  </div>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand" id="configure-aws-integration__step-eks">
+            <span class="ph cmd">Configure the required EC2 resources for <span class="ph">Amazon Elastic Kubernetes Service (EKS)</span> to import EKS cluster data.</span>
+            <div class="itemgroup info">An <span class="ph">EKS EC2 resource</span> is a bastion host that has network access to EKS clusters. The EKS clusters aren't directly accessible to the connector. Therefore, you must provide the <span class="ph">EKS EC2 resource</span> details. For
+               importing EKS cluster data, the connector uses the SSM Send Command on <span class="ph">EKS EC2 resources</span> to run kubectl commands remotely.<div class="note note note_note"><span class="note__title">Note:</span> Ensure that you’ve configured your <span class="ph">AWS</span> environment for the EKS integration. For more information, see the <a class="xref true-external" href="https://support.servicenow.com/kb_view.do?sysparm_article=KB1437138" target="_blank">Service Graph Connector for AWS - Amazon EKS Integration [KB1437138]</a> article in the <span class="ph">Now Support</span> Knowledge Base.</div></div>
+            <ol type="a" class="ol substeps" id="configure-aws-integration__substeps_tnc_zmv_1yb">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">For the <span class="ph">Configure the EKS Resource Details</span> section of the <span class="ph">Service Graph Connector for AWS</span> page, select <span class="ph uicontrol">Get Started</span>.</span>
+               </li>
+               <li class="li substep substepexpand" id="configure-aws-integration__ec2">
+                  <span class="ph cmd">For the <span class="ph">Enter the EKS EC2 Resource Details</span> task, select <span class="ph uicontrol">Configure</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">On the form that opens in a new tab, fill in the fields.</span>
+                  <div class="itemgroup info">
+                     <div class="table-wrap"><div id="configure-aws-integration__table_dlp_xnv_1yb_wrapper" class="dataTables_wrapper no-footer"><div id="configure-aws-integration__table_dlp_xnv_1yb_filter" class="dataTables_filter"></div><div class="zDocsFilterTableDiv zDocsFilterColumnsTableDiv"><div><button type="button" data-toggle="dropdown" aria-label="Export table to a file" class="zDocsTopicPageTableExportButton"><svg aria-hidden="true" class="ico-ellipsis-v"><use xlink:href="#ico-ellipsis-v"></use></svg></button><div class="dropdown-menu zDocsDropdownMenu zDocsTopicPageTableExportMenu"><button type="button" aria-label="Export to Excel" class="dropdown-item">Export to Excel</button><button type="button" aria-label="Export to CSV" class="dropdown-item">Export to CSV</button></div></div></div><table count-columns="2" class="table frame-all dataTable no-footer" id="configure-aws-integration__table_dlp_xnv_1yb"><caption><span class="table--title-label">Table 2. </span><span class="title">SG-AWS-EKS-EC2-Resource form</span></caption><colgroup><col><col></colgroup><thead class="thead">
+                              <tr class="row"><th class="entry colsep-1 rowsep-1 sorting" id="configure-aws-integration__table_dlp_xnv_1yb__entry__1" tabindex="0" aria-controls="configure-aws-integration__table_dlp_xnv_1yb" rowspan="1" colspan="1" aria-label="Field: activate to sort column ascending">Field</th><th class="entry colsep-1 rowsep-1 sorting" id="configure-aws-integration__table_dlp_xnv_1yb__entry__2" tabindex="0" aria-controls="configure-aws-integration__table_dlp_xnv_1yb" rowspan="1" colspan="1" aria-label="Description: activate to sort column ascending">Description</th></tr>
+                           </thead><tbody class="tbody">
+                              
+                              
+                              
+                              
+                              
+                           <tr class="row odd">
+                                 <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_dlp_xnv_1yb__entry__1">EKS EC2 Resource Id</td>
+                                 <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_dlp_xnv_1yb__entry__2">Identifier of the <span class="ph">EKS EC2 resource</span>.</td>
+                              </tr><tr class="row even">
+                                 <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_dlp_xnv_1yb__entry__1">EC2 Account</td>
+                                 <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_dlp_xnv_1yb__entry__2">User name assigned to the <span class="ph">EKS EC2 resource</span> account.</td>
+                              </tr><tr class="row odd">
+                                 <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_dlp_xnv_1yb__entry__1">EC2 Region</td>
+                                 <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_dlp_xnv_1yb__entry__2">AWS region where the <span class="ph">EKS EC2 resource</span> is located.</td>
+                              </tr><tr class="row even">
+                                 <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_dlp_xnv_1yb__entry__1">Active</td>
+                                 <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_dlp_xnv_1yb__entry__2">Option to activate the <span class="ph">EKS EC2 resource</span>.<div class="note note note_note"><span class="note__title">Note:</span> Set to false, if you are not using the <span class="ph">EKS EC2 resource</span> resource.</div></td>
+                              </tr><tr class="row odd">
+                                 <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_dlp_xnv_1yb__entry__1">Connection</td>
+                                 <td class="entry colsep-1 rowsep-1" headers="configure-aws-integration__table_dlp_xnv_1yb__entry__2">Connection alias associated with the <span class="ph">AWS</span> environment setup and configured in step <a class="xref" href="#configure-aws-integration__aws-cred-0">4.a</a>.</td>
+                              </tr></tbody></table></div></div>
+                  </div>
+               </li>
+               <li class="li substep substepexpand" id="configure-aws-integration__ec2-end">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Submit</span> to return to the guided setup.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Repeat steps from <a class="xref" href="#configure-aws-integration__ec2">5.b</a> to <a class="xref" href="#configure-aws-integration__ec2-end">5.d</a> to add multiple <span class="ph">EKS EC2 resources</span>.</span>
+                  <div class="itemgroup info">All the <span class="ph">EKS EC2 resources</span> are added to the SG-AWS-EKS-Master [sn_aws_integ_sg_aws_eks_master] table.</div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Set the <span class="ph">Enter the EKS EC2 Resource Details</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</span>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Run the <span class="ph">AWS</span> diagnostic tool before running a scheduled import job to identify any issues in the <span class="ph">AWS</span> environment setup.</span>
+            <ol type="a" class="ol substeps" id="configure-aws-integration__substeps_xqz_lq1_dxb">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">For the <span class="ph">Service Graph AWS Diagnostic Tool</span> section of the <span class="ph">Service Graph Connector for AWS</span> page, select <span class="ph uicontrol">Get Started</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">For the <span class="ph">AWS Setup Diagnostic Tool</span> task, select <span class="ph uicontrol">Configure</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select the organization ID from the text field.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Run Diagnostic Test</span>.</span>
+                  <div class="itemgroup info">
+                     <div class="note tip note_tip"><span class="note__title">Tip:</span> Select one of the following options to exclude the corresponding test results from the diagnostic summary: <dl class="dl">
+                           
+                              <dt class="dt dlterm">Skip SSM setup tests</dt>
+                              <dd class="dd">Excludes the software inventory data from the summary results by not calling the <span class="keyword apiname">GetInventory</span> API. Select this option when you’ve opted out or not set up the configuration for SSM.</dd>
+                           
+                           
+                              <dt class="dt dlterm">Skip SSM Deep Discovery tests</dt>
+                              <dd class="dd">Excludes the deep discovery data from the summary results. Select this option when you’ve opted out or not set up the configuration for SSM deep discovery.</dd>
+                           
+                           
+                              <dt class="dt dlterm">Skip EKS setup tests</dt>
+                              <dd class="dd">Excludes the EKS data from the summary results by not running the kubectl commands. Select this option when you’ve opted out or not set up the EKS integration.</dd>
+                           
+                        </dl></div>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">(Optional) 
+                  <span class="ph cmd">View only EKS cluster test results by selecting <span class="ph uicontrol">View EKS Test Details</span>.</span>
+               </li>
+               <li class="li substep substepexpand">(Optional) 
+                  <span class="ph cmd">Preview any previous diagnostic tool results by selecting <span class="ph uicontrol">Load DT Results</span>, selecting a diagnostic ID, and then selecting <span class="ph uicontrol">Load Results</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">When you finish reviewing the diagnostic summary results, select the back button of your browser to return to the guided setup.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Set the <span class="ph">AWS Setup Diagnostic Tool</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</span>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Configure the scheduled jobs to import data from the <span class="ph">AWS</span> application.</span>
+            <ol type="a" class="ol substeps" id="configure-aws-integration__substeps_xhw_mt1_dxb">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">In the <span class="ph">Configure the scheduled import jobs</span> section of the <span class="ph">Service Graph Connector for AWS</span> page, select <span class="ph uicontrol">Get started</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">For the <span class="ph">Configure the scheduled job</span> task, select <span class="ph uicontrol">Configure</span>.</span>
+               </li>
+               <li class="li substep substepexpand" id="configure-aws-integration__select-job">
+                  <span class="ph cmd">Select the scheduled job that you want to activate.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">On the Scheduled Data Import form, verify the field values for the scheduled job.</span>
+                  <div class="itemgroup info">For more information, see <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task//csh" href="/docs/csh?topicname=t_ScheduleADataImport&amp;version=yokohama&amp;pubname=yokohama-integrate-applications#table_r53_5hm_xp" class="xref">Schedule a data import</a>.</div>
+               </li>
+               <li class="li substep substepexpand" id="configure-aws-integration__exe-job">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Update</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Repeat the steps <a class="xref" href="#configure-aws-integration__select-job">7.c</a> to <a class="xref" href="#configure-aws-integration__exe-job">7.e</a> for each scheduled job for data import.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select the back icon (&lt;) to return to the guided setup page.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Set the <span class="ph">Configure the scheduled job</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span> in the guided setup.</span>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">(Optional) 
+            <span class="ph cmd">Add multiple <span class="ph">AWS</span> instances.</span>
+            <ol type="a" class="ol substeps" id="configure-aws-integration__substeps_p3p_vlb_dxb">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">In the <span class="ph">Add Multiple Instances</span> section of the <span class="ph">Service Graph Connector for AWS</span> page, select <span class="ph uicontrol">Get Started</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Ensure that you have edit permissions for the Datasource [sys_data_source] table to create data sources for the new instance.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i" id="configure-aws-integration__ol_t5s_cc5_zzb">
+                        <li class="li">Select the <span class="ph uicontrol">Global</span> application scope by using the application picker.</li>
+                        <li class="li">For the <span class="ph">Update Data Source Access</span> task, select <span class="ph uicontrol">Configure</span>.</li>
+                        <li class="li">In the Application Access related list, select the <span class="ph uicontrol">Can create</span>, <span class="ph uicontrol">Can update</span>, and <span class="ph uicontrol">Can delete</span> check boxes, if not already selected.</li>
+                        <li class="li">Select <span class="ph uicontrol">Update</span> to close the tab and return to the guided setup.</li>
+                        <li class="li">Modify the application scope again to <span class="ph uicontrol">Service Graph Connector for AWS</span> by using the application picker.</li>
+                        <li class="li">Set the <span class="ph">Update Data Source Access</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                     </ol>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Update access for scheduled import jobs.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i" id="configure-aws-integration__ol_rmb_4c5_zzb">
+                        <li class="li">Select the <span class="ph uicontrol">Global</span> application scope by using the application picker.</li>
+                        <li class="li">For the <span class="ph">Update Scheduled Data Import Access</span> task, select <span class="ph uicontrol">Configure</span>.</li>
+                        <li class="li">In the Application Access related list, select the <span class="ph uicontrol">Can create</span>, <span class="ph uicontrol">Can update</span>, and <span class="ph uicontrol">Can delete</span> check boxes, if not already selected.</li>
+                        <li class="li">Select <span class="ph uicontrol">Update</span> to close the tab and return to the guided setup tab.</li>
+                        <li class="li">Set the <span class="ph">Update Scheduled Data Import Access </span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                        <li class="li">Modify the application scope again to <span class="ph uicontrol">Service Graph Connector for AWS</span> by using the application picker.</li>
+                     </ol>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Clear the cache of the Data Source [sys_data_source] and Scheduled Data Imports [scheduled_import_set] tables to enable creating a data source for the new connection in the <span class="ph">Service Graph Connector for AWS</span>.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i" id="configure-aws-integration__ol_lbg_jd5_zzb">
+                        <li class="li">For the <span class="ph">Clear Cache for Data Source and Scheduled Data Imports tables</span> task, select <span class="ph uicontrol">Configure</span>.</li>
+                        <li class="li">In the <span class="ph uicontrol">Run script</span> text box of the background
+                           script page, enter the following
+                           script:<div class="zDocsCodeExplanationContainer"><button type="button" class="zDocsAiActionsButton" data-toggle="modal" tabindex="0" aria-label="Explain this code" data-target="#zDocsCodeExplanationModal_yokohama_servicenow_platformproduct_configuration_management_task_configure_aws_integration_html_0"><svg class="ico-code-explanation" aria-hidden="true"><use xlink:href="#ico-code-explanation"></use></svg>Explain this code</button></div><pre class="language-plaintext" data-language="plaintext">GlideTableManager.invalidateTable("sys_data_source");
+      GlideCacheManager.flushTable("sys_data_source");
+
+      GlideTableManager.invalidateTable("scheduled_import_set");
+      GlideCacheManager.flushTable("scheduled_import_set");
+
+      GlideTableManager.invalidateTable("sys_db_object");
+      GlideCacheManager.flushTable("sys_db_object");</pre></li>
+                        <li class="li">Select <span class="ph uicontrol">Run Script</span> to run the background script in
+                           the <span class="ph uicontrol">global</span> scope.<p class="p">The script may take several
+                              minutes to execute.</p></li>
+                        <li class="li">After the script is executed, select <span class="ph uicontrol">Close</span>.</li>
+                        <li class="li">Set the <span class="ph">Clear Cache for Data Source and Scheduled Data Imports tables</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                        <li class="li">Modify the application scope again to <span class="ph uicontrol">Service Graph Connector for AWS</span> by using the application picker.</li>
+                     </ol>
+                  </div>
+               </li>
+               <li class="li substep substepexpand" id="configure-aws-integration__aws-cred">
+                  <span class="ph cmd">Create a credential alias for the new <span class="ph">AWS</span> connection in the <span class="ph">Service Graph Connector for AWS</span>.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i" id="configure-aws-integration__ul_njc_dnb_dxb">
+                        <li class="li">For the <span class="ph">Create new Connection &amp; Credentials Alias Record</span> task, select <span class="ph uicontrol">Configure</span>.</li>
+                        <li class="li">On the Connection &amp; Credential Aliases form that opens in a new tab, fill in the connection details.</li>
+                        <li class="li">Select <span class="ph uicontrol">Submit</span> and close the tab and return to the guided setup tab.</li>
+                        <li class="li">Set the <span class="ph">Create new Connection &amp; Credentials Alias Record</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                     </ol>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Create credentials for the new <span class="ph">AWS</span> credential alias.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i" id="configure-aws-integration__ul_r2y_fnb_dxb">
+                        <li class="li">For the <span class="ph">Create new Connection &amp; Credentials Alias Record</span> task, select <span class="ph uicontrol">Configure</span>.</li>
+                        <li class="li">On the Connections page of the <span class="ph">Workflow Studio</span>, select <span class="ph uicontrol">Add Connection</span>.</li>
+                        <li class="li">In the Create Connection window, fill in the connection name, access key, and secret key details.</li>
+                        <li class="li">Select <span class="ph uicontrol">Create Connection</span>.</li>
+                        <li class="li">Close the <span class="ph">Workflow Studio</span> and return to the guided setup tab.</li>
+                        <li class="li">Set the <span class="ph">Create new Connection &amp; Credentials Alias Record</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                     </ol>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Update properties for the new instance for the <span class="ph">Service Graph Connector for AWS</span> by selecting <span class="ph uicontrol">Configure</span> for the <span class="ph">Configure AWS environment for the new Instance</span> task.</span>
+                  <div class="itemgroup info">For more information, follow the step <a class="xref" href="#configure-aws-integration__aws-prop">4.c</a> discussed earlier for configuring the properties of the <span class="ph">AWS</span> connection available by default.<p class="p">When you're done updating the properties, set the <span class="ph">Configure AWS environment for the new Instance</span> task to complete by selecting
+                           <span class="ph uicontrol">Mark as Complete</span>.</p></div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Enter the EKS EC2 Resource details by selecting <span class="ph uicontrol">Configure</span> for the <span class="ph">Update EKS Resource Details</span> task.</span>
+                  <div class="itemgroup info">For more information, follow the step <a class="xref" href="#configure-aws-integration__step-eks">5</a> discussed earlier for configuring the EKS EC2 Resource details for the <span class="ph">AWS</span> connection available by default.<p class="p">When you're done updating the properties, set the <span class="ph">Update EKS Resource Details</span> task to complete by selecting <span class="ph uicontrol">Mark as
+                           Complete</span>.</p></div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Configure the scheduled imports for the new AWS instance.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i">
+                        <li class="li">For the <span class="ph">Configure the Scheduled Imports</span> task, select <span class="ph uicontrol">Configure</span>.</li>
+                        <li class="li">In the Scheduled Data Imports list that opens in a new tab, select the organization of the <span class="ph">AWS</span> instance that you want to configure.</li>
+                        <li class="li" id="configure-aws-integration__new-import-1">Select the scheduled data import that you want to activate.</li>
+                        <li class="li">On the Scheduled Data Import form, modify the field values for the scheduled job.</li>
+                        <li class="li" id="configure-aws-integration__new-import-2">Select <span class="ph uicontrol">Update</span>.</li>
+                        <li class="li">Repeat the steps <a class="xref" href="#configure-aws-integration__new-import-1">8.i.iii</a> to <a class="xref" href="#configure-aws-integration__new-import-2">8.i.v</a> for each scheduled job for data import.</li>
+                        <li class="li">Close the tab for the Scheduled Data Imports list and return to the guided setup tab.</li>
+                        <li class="li">Set the <span class="ph">Configure the Scheduled Imports</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span> in the guided setup.</li>
+                     </ol>
+                  </div>
+               </li>
+            </ol>
+         </li></ol></section>
+   </div>
+   <nav role="navigation"></nav><nav role="navigation" class="tasksNavigation"></nav>
+</article></main></article></div></div><div class="contentPlaceholder" style="height: 393.5px;"><div class="contentContainer zDocsSideBoxes withExpandCollapse undefined"><div class="contentWrapper" style="height: 393.5px;"><button aria-hidden="true" data-tooltip-id="zDocsMiniTocCollapseToolTip" data-tooltip-content="Hide Mini TOC" data-testid="expand-collapse-button" class="zDocsMiniTocCollapseButton" aria-label="Hide" aria-expanded="true"><svg aria-hidden="true" class="ico-angle-arrow-right"><use xlink:href="#ico-angle-arrow-right"></use></svg></button><div><h5 class=" css-g931ng" aria-level="5">Related Content</h5><ul><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/sgc-cmdb-aws-large-data-vol.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Handling import failures for large AWS resources</a><p>Manage the data source failure when importing resources from AWS.</p></li><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/sgc-cmdb-aws-memory.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Handling memory utilization errors for Service Graph Connector for AWS</a><p>You can use the SgAwsApplicationProperties script include to avoid memory utilization errors when importing a large number of configuration items (CIs) from an AWS instance via the Service Graph Connector for AWS.</p></li></ul></div></div></div></div></div>

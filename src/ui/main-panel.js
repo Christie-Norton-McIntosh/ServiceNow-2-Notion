@@ -2011,8 +2011,43 @@ function getCurrentPageId() {
   return pageId;
 }
 
-function stopAutoExtract(autoExtractState) {
+function stopAutoExtract(autoExtractState, reason = "Unknown") {
   debug("[AUTO-EXTRACT] 🛑 stopAutoExtract called - cleaning up");
+  debug(`[AUTO-EXTRACT] Stop reason: ${reason}`);
+  
+  // FIX v11.0.27: Save stop reason to persistent log for post-mortem analysis
+  try {
+    const stopLog = {
+      timestamp: new Date().toISOString(),
+      reason: reason,
+      totalProcessed: autoExtractState.totalProcessed || 0,
+      lastPageNum: autoExtractState.currentPageNum || 0,
+      duplicateCount: autoExtractState.duplicateCount || 0,
+      url: window.location.href
+    };
+    
+    // Get existing logs (keep last 10)
+    let logs = [];
+    try {
+      const existingLogs = GM_getValue("w2n_autoExtractStopLogs", "[]");
+      logs = JSON.parse(existingLogs);
+    } catch (e) {
+      logs = [];
+    }
+    
+    logs.push(stopLog);
+    if (logs.length > 10) {
+      logs = logs.slice(-10); // Keep only last 10 entries
+    }
+    
+    GM_setValue("w2n_autoExtractStopLogs", JSON.stringify(logs, null, 2));
+    debug("[PERSISTENT-LOG] 💾 Saved stop reason to persistent log");
+    
+    // Also log to console with special marker for easy searching
+    console.log("🔴 [AUTOEXTRACT-STOP-LOG] 🔴", stopLog);
+  } catch (logError) {
+    debug(`[PERSISTENT-LOG] ❌ Failed to save stop log: ${logError.message}`);
+  }
   
   autoExtractState.running = false;
   overlayModule.setProgress(100);

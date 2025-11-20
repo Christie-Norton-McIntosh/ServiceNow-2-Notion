@@ -1226,6 +1226,47 @@ window.ServiceNowToNotion = {
   app: () => app,
   version: PROVIDER_VERSION,
   debug: debug,
+  
+  // FIX v11.0.27: Add helper to view AutoExtract stop logs
+  viewStopLogs: () => {
+    try {
+      const logs = GM_getValue("w2n_autoExtractStopLogs", "[]");
+      const parsed = JSON.parse(logs);
+      
+      if (parsed.length === 0) {
+        console.log("📋 No AutoExtract stop logs found");
+        return [];
+      }
+      
+      console.log(`\n${'='.repeat(80)}`);
+      console.log(`📋 AutoExtract Stop Logs (last ${parsed.length} entries)`);
+      console.log(`${'='.repeat(80)}\n`);
+      
+      parsed.forEach((log, idx) => {
+        console.log(`[${idx + 1}] ${log.timestamp}`);
+        console.log(`    Reason: ${log.reason}`);
+        console.log(`    Pages Processed: ${log.totalProcessed}`);
+        console.log(`    Last Page: ${log.lastPageNum}`);
+        console.log(`    Duplicate Count: ${log.duplicateCount}`);
+        console.log(`    URL: ${log.url}`);
+        console.log('');
+      });
+      
+      console.log(`${'='.repeat(80)}`);
+      console.log(`Tip: Run window.ServiceNowToNotion.clearStopLogs() to clear history`);
+      console.log(`${'='.repeat(80)}\n`);
+      
+      return parsed;
+    } catch (error) {
+      console.error("Failed to retrieve stop logs:", error);
+      return [];
+    }
+  },
+  
+  clearStopLogs: () => {
+    GM_setValue("w2n_autoExtractStopLogs", "[]");
+    console.log("✅ AutoExtract stop logs cleared");
+  }
 };
 
 // Auto-initialize when script loads

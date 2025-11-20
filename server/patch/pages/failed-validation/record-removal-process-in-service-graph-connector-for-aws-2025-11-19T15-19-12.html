@@ -1,0 +1,76 @@
+<!--
+Auto-saved: Validation properties failed to update after 6 retries
+Page ID: 2b0a89fe-dba5-81d5-a231-f36eebf1b61b
+Page URL: https://www.notion.so/Record-removal-process-in-Service-Graph-Connector-for-AWS-2b0a89fedba581d5a231f36eebf1b61b
+Page Title: Record removal process in Service Graph Connector for AWS
+Created: 2025-11-19T15:19:12.253Z
+Source URL: https://www.servicenow.com/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/sgc-cmdb-aws-removal.html
+
+Validation Result:
+{
+  "success": false,
+  "hasErrors": true,
+  "issues": [
+    "Block count too low: expected at least 7, got 0"
+  ],
+  "warnings": [
+    "Unordered list item count differs: expected 6, got 0 (6 fewer - may be counting methodology difference)",
+    "ℹ️ Paragraph count lower than expected: ~5 (±3), got 0 (may be filtered empty paragraphs or promoted to list items)"
+  ],
+  "stats": {
+    "totalBlocks": 0,
+    "blockTypes": {},
+    "headingCount": 0,
+    "fetchTimeMs": 177
+  },
+  "summary": "❌ Validation failed: 1 critical error(s), 2 informational warning(s)\n\n❌ Critical Errors:\n1. Block count too low: expected at least 7, got 0\n\nℹ️ Informational Warnings:\n1. Unordered list item count differs: expected 6, got 0 (6 fewer - may be counting methodology difference)\n2. ℹ️ Paragraph count lower than expected: ~5 (±3), got 0 (may be filtered empty paragraphs or promoted to list items)\n\n📊 Content Comparison (Source → Notion):\n• Ordered list items: 0 → 0\n• Unordered list items: 6 → 0\n• Paragraphs: 5 → 0\n• Headings: 0 → 0\n• Tables: 0 → 0\n• Images: 0 → 0\n• Callouts: 0 → 0",
+  "sourceCounts": {
+    "orderedListItems": 0,
+    "unorderedListItems": 6,
+    "totalListItems": 6,
+    "paragraphs": 5,
+    "headings": 0,
+    "tables": 0,
+    "images": 0,
+    "callouts": 0,
+    "codeBlocks": 0
+  },
+  "notionCounts": {
+    "orderedListItems": 0,
+    "unorderedListItems": 0,
+    "totalListItems": 0,
+    "paragraphs": 0,
+    "headings": 0,
+    "tables": 0,
+    "images": 0,
+    "callouts": 0,
+    "codeBlocks": 0
+  }
+}
+
+Error Details:
+- Primary Error: You have been rate limited. Please try again in a few minutes.
+-->
+
+<div class="zDocsTopicPageBody" data-prismjs-copy="Copy" data-prismjs-copy-error="Text could not be copied. Try using keyboard shortcuts like Ctrl + C to copy instead." data-prismjs-copy-success="Copied!"><div dir="ltr" class="zDocsTopicPageBodyContent wide"><div><article class="hascomments" data-page="bundle:yokohama-servicenow-platform/enus/product/configuration-management/concept/sgc-cmdb-aws-removal.html" id="bundle:yokohama-servicenow-platform/enus/product/configuration-management/concept/sgc-cmdb-aws-removal.html"><main role="main"><article role="article" class="dita" id="sgc-cmdb-aws-removal" aria-labelledby="title_sgc-cmdb-aws-removal">
+  
+  
+  
+  
+  <div class="body conbody"><p class="shortdesc">The <span class="ph">Service Graph Connector for AWS</span> uses the optimized deletion approach to manage removal of records.</p>
+    <p class="p">Record removal is the process of handling data that is no longer needed. For any discovered resources deleted later after pulling data, the <span class="ph">Service Graph Connector for AWS</span> automatically updates the <span class="ph uicontrol">Install Status</span> field of the associated <span class="ph">CMDB</span> CI classes to indicate any retired or deleted records.</p>
+    <p class="p">Deletion of records in <span class="ph">Service Graph Connector for AWS</span> involves marking the install status of a record as <span class="ph uicontrol">retired</span> rather than permanently deleting it from the system. The record remains in the database, making it possible to reference
+      or restore it later. Deletion for <span class="ph">Service Graph Connector for AWS</span> relies on the Source [sys_object_source table], which can become inefficient with large datasets.</p>
+    <p class="p">To enhance the deletion process, you can enable the optimized deletion method that leverages the SG-AWS Extension Attributes [sn_aws_extension_attributes] table. This table is regularly purged of obsolete records, improving
+      performance and efficiency. The process still marks the install status of a record as <span class="ph uicontrol">retired</span> but the streamlined data structure reduces overhead, ensuring quicker processing and better system performance. See <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task/sgc-cmdb-aws-delete-cis.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/sgc-cmdb-aws-delete-cis.html" class="xref" title="Enable the sn_aws_integ.enableOptimizedDeletion system property for the optimized deletion of retired configuration items (CIs) in AWS during full import of data.">Enable optimized deletion of retired CIs in AWS</a>.</p>
+    <div class="p">Optimized deletion is enabled for all tables in the <span class="ph">Service Graph Connector for AWS</span>, except for the following tables:<ul class="ul" id="sgc-cmdb-aws-removal__ul_vvb_ynm_ygc">
+        <li class="li">Hardware Type [cmdb_ci_compute_template]</li>
+        <li class="li">Availability Zone [cmdb_ci_availability_zone]</li>
+        <li class="li">AWS Datacenter [cmdb_ci_aws_datacenter]</li>
+        <li class="li">Running Process [cmdb_running_process]</li>
+        <li class="li">TCP Connections [cmdb_tcp]</li>
+        <li class="li">Application [cmdb_ci_appl]</li>
+      </ul></div>
+    
+  </div>
+<nav role="navigation"></nav><nav role="navigation" class="tasksNavigation"></nav><nav role="navigation" class="related-links"></nav></article></main></article></div></div></div>
