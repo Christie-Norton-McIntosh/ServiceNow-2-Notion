@@ -1,0 +1,236 @@
+<!--
+Auto-saved: Validation properties failed to update after 6 retries
+Page ID: 2b1a89fe-dba5-818c-a74c-cb8babca18cd
+Page URL: https://www.notion.so/Configure-Service-Graph-Connector-for-Tanium-using-SGC-Central-2b1a89fedba5818ca74ccb8babca18cd
+Page Title: Configure Service Graph Connector for Tanium using SGC Central
+Created: 2025-11-20T05:30:09.147Z
+Source URL: https://www.servicenow.com/docs/bundle/yokohama-servicenow-platform/page/product/sgc-central/task/sgcc-configure-tanium.html
+
+Validation Result:
+{
+  "success": false,
+  "hasErrors": true,
+  "issues": [
+    "Block count too low: expected at least 15, got 0",
+    "Table count mismatch: expected 2, got 0",
+    "Missing callouts: expected 4, got 0 (4 missing)"
+  ],
+  "warnings": [
+    "Ordered list item count differs: expected 34, got 0 (34 fewer - may be counting methodology difference)",
+    "Unordered list item count differs: expected 5, got 0 (5 fewer - may be counting methodology difference)",
+    "ℹ️ Paragraph count lower than expected: ~12 (±6), got 0 (may be filtered empty paragraphs or promoted to list items)"
+  ],
+  "stats": {
+    "totalBlocks": 0,
+    "blockTypes": {},
+    "headingCount": 0,
+    "fetchTimeMs": 119
+  },
+  "summary": "❌ Validation failed: 3 critical error(s), 3 informational warning(s)\n\n❌ Critical Errors:\n1. Block count too low: expected at least 15, got 0\n2. Table count mismatch: expected 2, got 0\n3. Missing callouts: expected 4, got 0 (4 missing)\n\nℹ️ Informational Warnings:\n1. Ordered list item count differs: expected 34, got 0 (34 fewer - may be counting methodology difference)\n2. Unordered list item count differs: expected 5, got 0 (5 fewer - may be counting methodology difference)\n3. ℹ️ Paragraph count lower than expected: ~12 (±6), got 0 (may be filtered empty paragraphs or promoted to list items)\n\n📊 Content Comparison (Source → Notion):\n• Ordered list items: 34 → 0\n• Unordered list items: 5 → 0\n• Paragraphs: 12 → 0\n• Headings: 1 → 0\n• Tables: 2 → 0\n• Images: 0 → 0\n• Callouts: 4 → 0",
+  "sourceCounts": {
+    "orderedListItems": 34,
+    "unorderedListItems": 5,
+    "totalListItems": 39,
+    "paragraphs": 12,
+    "headings": 1,
+    "tables": 2,
+    "images": 0,
+    "callouts": 4,
+    "codeBlocks": 0
+  },
+  "notionCounts": {
+    "orderedListItems": 0,
+    "unorderedListItems": 0,
+    "totalListItems": 0,
+    "paragraphs": 0,
+    "headings": 0,
+    "tables": 0,
+    "images": 0,
+    "callouts": 0,
+    "codeBlocks": 0
+  }
+}
+
+Error Details:
+- Primary Error: You have been rate limited. Please try again in a few minutes.
+-->
+
+<div class="zDocsTopicPageBody" data-prismjs-copy="Copy" data-prismjs-copy-error="Text could not be copied. Try using keyboard shortcuts like Ctrl + C to copy instead." data-prismjs-copy-success="Copied!"><div dir="ltr" class="zDocsTopicPageBodyContent"><div><article class="hascomments" data-page="bundle:yokohama-servicenow-platform/enus/product/sgc-central/task/sgcc-configure-tanium.html" id="bundle:yokohama-servicenow-platform/enus/product/sgc-central/task/sgcc-configure-tanium.html"><main role="main"><article role="article" class="dita" id="sgcc-configure-tanium" aria-labelledby="title_sgcc-configure-tanium">
+   
+   
+   
+   
+   <div class="body taskbody"><p class="shortdesc">Set up scheduled import jobs to pull in <span class="ph">Tanium</span> data into your <span class="ph">Configuration Management Database (CMDB)</span>.</p>
+      <section class="section prereq" id="sgcc-configure-tanium__prereq"><div class="tasklabel"><p class="sectiontitle tasklabel">Before you begin</p></div>Install <span class="ph">Service Graph Connector for Tanium</span> version 1.7.0 or later from the <span class="ph">ServiceNow Store</span>. <span class="ph">For <span class="ph">ServiceNow Store</span> installation steps, see
+            <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/sgc-central/task//csh" href="/docs/csh?topicname=t_InstallApplications&amp;version=yokohama&amp;pubname=yokohama-platform-administration" class="xref">Install a ServiceNow Store
+            application</a>. </span>
+         <div class="p">Role required: The following table shows the roles required for each stage of the playbook.<div class="table-wrap"><table count-columns="2" class="table frame-all" id="sgcc-configure-tanium__table_ulb_zry_ygc"><caption><span class="table--title-label">Table 1. </span><span class="title">Role required for each playbook stage</span></caption><colgroup><col><col></colgroup><thead class="thead">
+                     <tr class="row">
+                        <th class="entry colsep-1 rowsep-1" id="sgcc-configure-tanium__table_ulb_zry_ygc__entry__1">Stage</th>
+                        <th class="entry colsep-1 rowsep-1" id="sgcc-configure-tanium__table_ulb_zry_ygc__entry__2">Role</th>
+                     </tr>
+                  </thead><tbody class="tbody">
+                     <tr class="row">
+                        <td class="entry colsep-1 rowsep-1" headers="sgcc-configure-tanium__table_ulb_zry_ygc__entry__1">Prerequisites</td>
+                        <td class="entry colsep-1 rowsep-1" headers="sgcc-configure-tanium__table_ulb_zry_ygc__entry__2">admin</td>
+                     </tr>
+                     <tr class="row">
+                        <td class="entry colsep-1 rowsep-1" headers="sgcc-configure-tanium__table_ulb_zry_ygc__entry__1">Setup</td>
+                        <td class="entry colsep-1 rowsep-1" headers="sgcc-configure-tanium__table_ulb_zry_ygc__entry__2">cmdb_inst_admin or admin</td>
+                     </tr>
+                  </tbody></table></div></div></section>
+      <section class="section context" id="sgcc-configure-tanium__context_mqx_twf_jcc"><div class="tasklabel"><p class="sectiontitle tasklabel">About this task</p></div>
+         <p class="p">The playbook experience for onboarding connectors is activated with <span class="ph">SGC Central</span> in the <span class="ph">CMDB Workspace</span>. To configure the <span class="ph">SGC Central</span> application, see <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/sgc-central/concept/sgcc-configuring.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/sgc-central/concept/sgcc-configuring.html" class="xref" title="Set up the SGC Central application for onboarding and maintaining Service Graph Connectors and monitoring the errors related to connections added using Service Graph Connectors.">Configuring SGC Central</a> and for more information on how to interact with a playbook, see <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/sgc-central/task//csh" href="/docs/csh?topicname=playbook-ui&amp;version=yokohama&amp;pubname=yokohama-build-workflows" class="xref">Interact with Playbook</a>.</p>
+      </section>
+      <section><div class="tasklabel"><p class="sectiontitle tasklabel">Procedure</p></div><ol class="ol steps"><li class="li step stepexpand">
+            <span class="ph cmd">Navigate to <span class="ph menucascade"><span class="ph uicontrol">Workspaces</span><abbr> &gt; </abbr><span class="ph uicontrol">CMDB Workspace</span></span>.</span>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">In the <span class="ph">CMDB Workspace</span>, select <span class="ph uicontrol">SGC Central</span>.</span>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">On the Overview page, select <span class="ph uicontrol">Create connection</span>.</span>
+            <div class="itemgroup info">
+               <div class="note tip note_tip"><span class="note__title">Tip:</span> Alternatively, you can select <span class="ph uicontrol">Create connection</span> on the All connections page.</div>
+            </div>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">On the Create connection window, select the <span class="ph">Tanium</span> connector type, and then select <span class="ph uicontrol">Create connection</span>.</span>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Complete the initial prerequisites when setting up a connection for the first time using a connector.</span>
+            <div class="itemgroup info">
+               <div class="note note note_note"><span class="note__title">Note:</span> This step is required only during the first-time setup. See <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/sgc-central/task/sgcc-first-time-setup.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/sgc-central/task/sgcc-first-time-setup.html" class="xref" title="Complete the prerequisites for setting up a connection for the first time using a Service Graph Connector within the SGC Central view of the CMDB Workspace.">Perform initial setup tasks when creating a connection in SGC Central</a>.</div>
+            </div>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Complete the prerequisites for setting up the <span class="ph">Tanium</span> environment.</span>
+            <ol type="a" class="ol substeps" id="sgcc-configure-tanium__substeps_w4l_p4v_4cc">
+               <li class="li substep substepexpand" id="sgcc-configure-tanium__prereq-activity">
+                  <span class="ph cmd">Create a custom view on your <span class="ph">Tanium</span> instance.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i" id="sgcc-configure-tanium__ol_lzp_hyt_bdc">
+                        <li class="li">In the <span class="ph uicontrol">Prerequisites</span> stage of the playbook, select the <span class="ph uicontrol">Create custom view</span> activity.</li>
+                        <li class="li">Create a custom view on your <span class="ph">Tanium</span> instance to be used in the <span class="ph uicontrol">Select view</span> activity later by referring to the <a class="xref true-external" href="https://help.tanium.com/bundle/ug_asset_cloud/page/asset/exportasset.html#servicenow_app" target="_blank">Tanium Asset User Guide for Cloud</a>.<div class="note note note_note"><span class="note__title">Note:</span> Copy the unmodifiable <span class="ph uicontrol">ServiceNow (reserved)</span> view from the <span class="ph">Tanium</span> instance to create the custom view.</div></li>
+                        <li class="li">After creating a view, select the <span class="ph uicontrol">I have created a custom view for this connection according to the instructions</span> check box.</li>
+                        <li class="li">After completing the <span class="ph uicontrol">Select view</span> activity, select <span class="ph uicontrol">Continue</span>.</li>
+                     </ol>
+                  </div>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Determine the type of authentication for the <span class="ph">Tanium</span> connection.</span>
+            <ol type="a" class="ol substeps" id="sgcc-configure-tanium__substeps_qb1_g22_bdc">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">In the <span class="ph uicontrol">Setup</span> stage of the playbook, select the <span class="ph uicontrol">Select alias template</span> activity.</span>
+                  <div class="itemgroup info">If needed, expand the <span class="ph uicontrol">Setup</span> stage to select an activity.</div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select an alias template for the connection.</span>
+                  <div class="itemgroup info">
+                     <ul class="ul" id="sgcc-configure-tanium__ul_msb_x22_bdc">
+                        <li class="li"><span class="ph uicontrol">Basic authentication</span>: Select when using Basic authentication that grants access to the <span class="ph">Tanium</span> data.</li>
+                        <li class="li"><span class="ph uicontrol">Token-based authentication</span>: Select when using an authentication token for the <span class="ph">Tanium</span> API to grants access to the <span class="ph">Tanium</span> data.</li>
+                     </ul>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Continue</span>.</span>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Enter connection details and test the API connection for importing <span class="ph">Tanium</span> data.</span>
+            <ol type="a" class="ol substeps" id="sgcc-configure-tanium__substeps_p1l_fnb_gcc">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">In the <span class="ph uicontrol">Setup</span> stage of the playbook, select the <span class="ph uicontrol">Configure and test connection</span> activity.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">On the form, fill in the fields.</span>
+                  <div class="itemgroup info">
+                     <div class="table-wrap"><div id="sgcc-configure-tanium__table_ahn_xtg_rmb_wrapper" class="dataTables_wrapper no-footer"><div id="sgcc-configure-tanium__table_ahn_xtg_rmb_filter" class="dataTables_filter"></div><div class="zDocsFilterTableDiv zDocsFilterColumnsTableDiv"><div><button type="button" data-toggle="dropdown" aria-label="Export table to a file" class="zDocsTopicPageTableExportButton"><svg aria-hidden="true" class="ico-ellipsis-v"><use xlink:href="#ico-ellipsis-v"></use></svg></button><div class="dropdown-menu zDocsDropdownMenu zDocsTopicPageTableExportMenu"><button type="button" aria-label="Export to Excel" class="dropdown-item">Export to Excel</button><button type="button" aria-label="Export to CSV" class="dropdown-item">Export to CSV</button></div></div></div><table count-columns="2" class="table frame-all dataTable no-footer" id="sgcc-configure-tanium__table_ahn_xtg_rmb"><caption><span class="table--title-label">Table 2. </span><span class="title">Create and test connection form</span></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                              <tr class="row"><th class="entry align-left sorting" id="sgcc-configure-tanium__table_ahn_xtg_rmb__entry__1" tabindex="0" aria-controls="sgcc-configure-tanium__table_ahn_xtg_rmb" rowspan="1" colspan="1" aria-label="Field: activate to sort column ascending">Field</th><th class="entry align-left sorting" id="sgcc-configure-tanium__table_ahn_xtg_rmb__entry__2" tabindex="0" aria-controls="sgcc-configure-tanium__table_ahn_xtg_rmb" rowspan="1" colspan="1" aria-label="Description: activate to sort column ascending">Description</th></tr>
+                           </thead><tbody class="tbody">
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+                           <tr class="row odd">
+                                 <td class="entry align-left" headers="sgcc-configure-tanium__table_ahn_xtg_rmb__entry__1">Connection name</td>
+                                 <td class="entry align-left" headers="sgcc-configure-tanium__table_ahn_xtg_rmb__entry__2">Name to identify the <span class="ph">Tanium</span> connection record.</td>
+                              </tr><tr class="row even">
+                                 <td class="entry align-left" headers="sgcc-configure-tanium__table_ahn_xtg_rmb__entry__1">Host name</td>
+                                 <td class="entry align-left" headers="sgcc-configure-tanium__table_ahn_xtg_rmb__entry__2">Base URL or IP address of the <span class="ph">Tanium</span> server.</td>
+                              </tr><tr class="row odd">
+                                 <td class="entry align-left" headers="sgcc-configure-tanium__table_ahn_xtg_rmb__entry__1">Username</td>
+                                 <td class="entry align-left" headers="sgcc-configure-tanium__table_ahn_xtg_rmb__entry__2"><span class="ph">Tanium</span> account user name that is used to authenticate the connection request.<p class="p">This field appears only when the <span class="ph uicontrol">Basic authentication</span> alias template was selected
+                                       in the <span class="ph uicontrol">Select alias template</span> activity.</p></td>
+                              </tr><tr class="row even">
+                                 <td class="entry align-left" headers="sgcc-configure-tanium__table_ahn_xtg_rmb__entry__1">Password</td>
+                                 <td class="entry align-left" headers="sgcc-configure-tanium__table_ahn_xtg_rmb__entry__2">Password associated with the user name required for authenticating requests.<p class="p">This field appears only when the <span class="ph uicontrol">Basic authentication</span> alias template was selected in the
+                                          <span class="ph uicontrol">Select alias template</span> activity.</p></td>
+                              </tr><tr class="row odd">
+                                 <td class="entry align-left" headers="sgcc-configure-tanium__table_ahn_xtg_rmb__entry__1">Token</td>
+                                 <td class="entry align-left" headers="sgcc-configure-tanium__table_ahn_xtg_rmb__entry__2">Authentication token for the <span class="ph">Tanium</span> API that grants access to the <span class="ph">Tanium</span> data.<p class="p">This field appears only when the <span class="ph uicontrol">Token-based authentication</span> alias template was selected in the <span class="ph uicontrol">Select alias template</span>
+                                       activity.</p></td>
+                              </tr><tr class="row even">
+                                 <td class="entry align-left" headers="sgcc-configure-tanium__table_ahn_xtg_rmb__entry__1">Use MID Server</td>
+                                 <td class="entry align-left" headers="sgcc-configure-tanium__table_ahn_xtg_rmb__entry__2">Option to use a MID Server.<div class="note note note_note"><span class="note__title">Note:</span> Use of a MID Server is optional.</div></td>
+                              </tr><tr class="row odd">
+                                 <td class="entry align-left" headers="sgcc-configure-tanium__table_ahn_xtg_rmb__entry__1">MID selection</td>
+                                 <td class="entry align-left" headers="sgcc-configure-tanium__table_ahn_xtg_rmb__entry__2">Name of the MID Server used by the connector.<p class="p">This field appears only when the <span class="ph uicontrol">Use MID Server</span> check box is selected.</p></td>
+                              </tr></tbody></table></div></div>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Update and test connection</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Once the connection test is complete, select <span class="ph uicontrol">Continue</span>.</span>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Select the view created on your <span class="ph">Tanium</span> instance.</span>
+            <ol type="a" class="ol substeps" id="sgcc-configure-tanium__substeps_bjy_5zt_bdc">
+               <li class="li substep">
+                  <span class="ph cmd">In the <span class="ph uicontrol">Setup</span> stage of the playbook, select the <span class="ph uicontrol">Select view</span> activity.</span>
+               </li>
+               <li class="li substep">
+                  <span class="ph cmd">In the <span class="ph uicontrol">View</span> field, select the custom view you created on the <span class="ph">Tanium</span> instance in the <a class="xref" href="#sgcc-configure-tanium__prereq-activity">Prerequisites activity</a>.</span>
+               </li>
+               <li class="li substep">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Continue</span>.</span>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Configure the import schedule to import data at regular intervals.</span>
+            <ol type="a" class="ol substeps" id="sgcc-configure-tanium__substeps_lf4_yvw_fcc">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">In the <span class="ph uicontrol">Setup</span> stage of the playbook, select the <span class="ph uicontrol">Configure import schedule</span> activity.</span>
+               </li>
+               <li class="li substep substepexpand" id="sgcc-configure-tanium__parent">
+                  <span class="ph cmd">Expand the Parent scheduled data import within the Import schedules list to select the <span class="ph uicontrol"><var class="keyword varname">Connection name</var> - SG-Tanium Usage</span> import schedule.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">In the <span class="ph">Configure import schedule</span> dialog box, select the <span class="ph uicontrol">Active</span> check box, and then fill in the run schedule and time details.</span>
+                  <div class="itemgroup info">
+                     <p class="p">For more information, see <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/sgc-central/task//csh" href="/docs/csh?topicname=t_ScheduleADataImport&amp;version=yokohama&amp;pubname=yokohama-integrate-applications#table_r53_5hm_xp" class="xref">Schedule a data import</a>.</p>
+                  </div>
+               </li>
+               <li class="li substep substepexpand" id="sgcc-configure-tanium__save">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Save</span>.</span>
+                  <div class="itemgroup info">Alternatively, select <span class="ph uicontrol">Execute Now</span> to execute the import schedule immediately.</div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Repeat steps <a class="xref" href="#sgcc-configure-tanium__parent">10.b</a> to <a class="xref" href="#sgcc-configure-tanium__save">10.d</a> for the <span class="ph uicontrol"><var class="keyword varname">Connection name</var> - SG-Tanium Hardware and Software</span> parent import schedule.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Continue</span>.</span>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">In the <span class="ph uicontrol">Setup</span> stage of the playbook, select the <span class="ph uicontrol">Confirm connection creation</span> activity to verify whether the connection was created.</span>
+         </li></ol></section>
+      <section class="section postreq" id="sgcc-configure-tanium__postreq_ckv_qxb_gcc"><div class="tasklabel"><p class="sectiontitle tasklabel">What to do next</p></div>
+         <p class="p">Select <span class="ph uicontrol">View all connections</span> to review the connection details. The configured connection appears in the Installed connections list.</p>
+      </section>
+   </div>
+   <nav role="navigation"></nav><nav role="navigation" class="tasksNavigation"></nav>
+</article></main></article></div></div><div class="contentPlaceholder" style="height: 393.5px;"><div class="contentContainer zDocsSideBoxes withExpandCollapse"><div class="contentWrapper" style="height: 393.5px;"><button aria-hidden="true" data-tooltip-id="zDocsMiniTocCollapseToolTip" data-tooltip-content="Hide Mini TOC" data-testid="expand-collapse-button" class="zDocsMiniTocCollapseButton" aria-label="Hide" aria-expanded="true"><svg aria-hidden="true" class="ico-angle-arrow-right"><use xlink:href="#ico-angle-arrow-right"></use></svg></button><div><h5 class=" css-g931ng" aria-level="5">Related Content</h5><ul><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/cmdb-integration-tanium.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Service Graph Connector for Tanium</a><p>Use the Service Graph Connector for Tanium to bring in hardware, software, and software usage data from a Tanium environment into your ServiceNow instance.</p></li><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/reference/cmdb-tanium-classes.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>CMDB classes targeted in Service Graph Connector for Tanium</a><p>When you complete setting up the connection, you can configure the integration to periodically pull data from Tanium. The data is saved in tables that extend from the Configuration item [cmdb_ci] table.</p></li><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/sgc-tanium-conn.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Accessing the connection details of Service Graph Connector for Tanium</a><p>You can access the connection details of the Service Graph Connector for Tanium in a single view using the common connection framework (CCF) included within the Integration Commons for CMDB (sn_cmdb_int_util) store app.</p></li></ul></div></div></div></div></div>

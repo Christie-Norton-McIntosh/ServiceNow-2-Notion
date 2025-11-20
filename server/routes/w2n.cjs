@@ -1391,23 +1391,65 @@ router.post('/W2N', async (req, res) => {
         
         log("🔍 Running post-creation validation...");
         
-        // Estimate expected block count range (±30% tolerance)
-        const expectedBlocks = children.length;
-        const minBlocks = Math.floor(expectedBlocks * 0.7);
-        const maxBlocks = Math.ceil(expectedBlocks * 1.5);
+        // FIX v11.0.30: Verify page was actually created with content before validation
+        let hasContent = false;
+        try {
+          log(`🔍 Verifying page has content blocks...`);
+          const blockCheck = await notion.blocks.children.list({
+            block_id: response.id,
+            page_size: 10
+          });
+          
+          hasContent = blockCheck.results && blockCheck.results.length > 0;
+          
+          if (!hasContent) {
+            log(`❌ WARNING: Page created but has NO BLOCKS - validation cannot run`);
+            validationResult = {
+              success: false,
+              hasErrors: true,
+              issues: ['Page creation succeeded but no blocks were uploaded - likely Notion API error or rate limit'],
+              warnings: [],
+              stats: { totalBlocks: 0 },
+              summary: '❌ CRITICAL: Page created but empty - no content blocks uploaded. This may indicate a Notion API error, rate limit, or network issue during block upload. Page needs to be re-created or PATCHed with content.'
+            };
+            
+            // Auto-save to pages-to-update for investigation
+            const timestamp = new Date().toISOString().replace(/:/g, '-').split('.')[0];
+            const sanitizedTitle = (payload.title || 'untitled').toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 50);
+            const filename = `${sanitizedTitle}-empty-page-${timestamp}.html`;
+            const filepath = path.join(__dirname, '../patch/pages/pages-to-update', filename);
+            
+            fs.writeFileSync(filepath, payload.contentHtml, 'utf-8');
+            log(`💾 Saved empty page HTML to: ${filename}`);
+          } else {
+            log(`✅ Page has ${blockCheck.results.length} blocks - proceeding with validation`);
+          }
+        } catch (pageCheckError) {
+          log(`⚠️ Error checking page content: ${pageCheckError.message}`);
+          // Fall through to validation (might be temporary API issue)
+          hasContent = true; // Assume content exists and let validation run
+        }
         
-        validationResult = await validateNotionPage(
-          notion,
-          response.id,
-          {
-            expectedMinBlocks: minBlocks,
-            expectedMaxBlocks: maxBlocks,
-            sourceHtml: extractionResult?.fixedHtml || payload.contentHtml // Use fixed HTML for accurate validation
-          },
-          log
-        );
-        
-        log(`✅ Validation function completed`);
+        // Only run full validation if page has content
+        if (hasContent) {
+          // Estimate expected block count range (±30% tolerance)
+          const expectedBlocks = children.length;
+          const minBlocks = Math.floor(expectedBlocks * 0.7);
+          const maxBlocks = Math.ceil(expectedBlocks * 1.5);
+          
+          validationResult = await validateNotionPage(
+            notion,
+            response.id,
+            {
+              expectedMinBlocks: minBlocks,
+              expectedMaxBlocks: maxBlocks,
+              sourceHtml: extractionResult?.fixedHtml || payload.contentHtml // Use fixed HTML for accurate validation
+            },
+            log
+          );
+          
+          log(`✅ Validation function completed`);
+        }
         
       } catch (validationError) {
         log(`⚠️ Validation failed with error: ${validationError.message}`);
@@ -2493,30 +2535,63 @@ router.patch('/W2N/:pageId', async (req, res) => {
       log(`   (Base: 2s + Markers: ${markerCount} × 300ms = ${validationDelay}ms)`);
       await new Promise(resolve => setTimeout(resolve, validationDelay));
       
+      // FIX v11.0.30: Verify page has content after PATCH before validation
+      let hasContent = false;
       try {
-        validationResult = await validateNotionPage(notion, pageId, {
-          sourceHtml: extractionResult.fixedHtml || html,
-          expectedTitle: pageTitle,
-          verbose: true
+        log(`🔍 Verifying page has content after PATCH...`);
+        const blockCheck = await notion.blocks.children.list({
+          block_id: pageId,
+          page_size: 10
         });
         
-        if (validationResult.valid) {
-          log(`✅ Validation passed`);
-        } else {
-          log(`⚠️ Validation warnings detected`);
-        }
-      } catch (valError) {
-        log(`⚠️ Validation failed (non-fatal): ${valError.message}`);
-        // FIX v11.0.29: Ensure validation result exists even on error
-        if (!validationResult) {
+        hasContent = blockCheck.results && blockCheck.results.length > 0;
+        
+        if (!hasContent) {
+          log(`❌ WARNING: PATCH completed but page has NO BLOCKS`);
           validationResult = {
             success: false,
             hasErrors: true,
-            issues: [`Validation error: ${valError.message}`],
+            issues: ['PATCH operation succeeded but no blocks were uploaded - content may have been deleted or upload failed'],
             warnings: [],
-            stats: null,
-            summary: `❌ Validation encountered an error: ${valError.message}`
+            stats: { totalBlocks: 0 },
+            summary: '❌ CRITICAL: PATCH completed but page is empty - no content blocks exist after update. This may indicate a Notion API error or that all blocks were accidentally deleted.'
           };
+        } else {
+          log(`✅ Page has ${blockCheck.results.length} blocks after PATCH - proceeding with validation`);
+        }
+      } catch (pageCheckError) {
+        log(`⚠️ Error checking page content: ${pageCheckError.message}`);
+        // Fall through to validation (might be temporary API issue)
+        hasContent = true; // Assume content exists and let validation run
+      }
+      
+      // Only run full validation if page has content
+      if (hasContent) {
+        try {
+          validationResult = await validateNotionPage(notion, pageId, {
+            sourceHtml: extractionResult.fixedHtml || html,
+            expectedTitle: pageTitle,
+            verbose: true
+          });
+          
+          if (validationResult.valid) {
+            log(`✅ Validation passed`);
+          } else {
+            log(`⚠️ Validation warnings detected`);
+          }
+        } catch (valError) {
+          log(`⚠️ Validation failed (non-fatal): ${valError.message}`);
+          // FIX v11.0.29: Ensure validation result exists even on error
+          if (!validationResult) {
+            validationResult = {
+              success: false,
+              hasErrors: true,
+              issues: [`Validation error: ${valError.message}`],
+              warnings: [],
+              stats: null,
+              summary: `❌ Validation encountered an error: ${valError.message}`
+            };
+          }
         }
       }
     }
