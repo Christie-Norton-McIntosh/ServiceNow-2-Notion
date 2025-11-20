@@ -7,6 +7,8 @@ set -euo pipefail
 
 PATCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 UPDATED_DIR="$PATCH_DIR/pages/updated-pages"
+PAGE_NOT_FOUND_DIR="$PATCH_DIR/pages/page-not-found"
+mkdir -p "$PAGE_NOT_FOUND_DIR"
 API="http://localhost:3004/api/W2N"
 VAL="http://localhost:3004/api/validate"
 
@@ -55,7 +57,12 @@ for FP in "$UPDATED_DIR"/*.html; do
       ((VFAIL++))
     fi
   else
-    echo "❌ PATCH FAIL $FILE -> $PAGEIDCLEAN (HTTP $CODE)"
+    if [[ "$CODE" == "404" ]]; then
+      echo "⚠️ PATCH 404 (page not found) $FILE -> $PAGEIDCLEAN - moving to page-not-found/"
+      mv "$FP" "$PAGE_NOT_FOUND_DIR/" || true
+    else
+      echo "❌ PATCH FAIL $FILE -> $PAGEIDCLEAN (HTTP $CODE)"
+    fi
     ((FAIL++))
   fi
 

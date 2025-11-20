@@ -9,6 +9,9 @@ ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 UPDATED_DIR="$ROOT_DIR/patch/pages/updated-pages"
 PAGES_DIR="$ROOT_DIR/patch/pages/pages-to-update"
 DELAY=0.3  # 300ms between requests
+PAGE_NOT_FOUND_DIR="$ROOT_DIR/patch/pages/page-not-found"
+
+mkdir -p "$PAGE_NOT_FOUND_DIR"
 
 # === Color codes ===
 RED='\033[0;31m'
@@ -156,6 +159,9 @@ except:
       echo -e "  ↳ ${YELLOW}Server unavailable; skipping move for now.${NC}"
       # Still add to refresh list - page exists, just can't validate right now
       PAGE_IDS_TO_REFRESH+=("$page_id")
+    elif [ "$http_code" = "404" ]; then
+      echo -e "  ↳ ${YELLOW}Page not found (404) - moving to page-not-found/${NC}"
+      mv "$f" "$PAGE_NOT_FOUND_DIR/" && echo "  ↳ Moved to page-not-found/" || true
     else
       # Move file back to pages-to-update
       mv "$f" "$PAGES_DIR/" && echo -e "  ↳ ${YELLOW}Moved back to pages-to-update/${NC}" && moved=$((moved + 1))
