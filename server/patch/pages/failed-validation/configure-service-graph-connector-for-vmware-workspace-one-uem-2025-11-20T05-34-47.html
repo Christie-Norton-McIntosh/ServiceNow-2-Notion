@@ -1,0 +1,523 @@
+<!--
+Auto-saved: Validation properties failed to update after 6 retries
+Page ID: 2b1a89fe-dba5-81b0-85ff-c1f159bb36ca
+Page URL: https://www.notion.so/Configure-Service-Graph-Connector-for-VMware-Workspace-ONE-UEM-2b1a89fedba581b085ffc1f159bb36ca
+Page Title: Configure Service Graph Connector for VMware Workspace ONE UEM
+Created: 2025-11-20T05:34:47.198Z
+Source URL: https://www.servicenow.com/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/configure-workspace-one-integration.html
+
+Validation Result:
+{
+  "success": false,
+  "hasErrors": true,
+  "issues": [
+    "Block count too low: expected at least 10, got 0",
+    "Table count mismatch: expected 7, got 0",
+    "Missing callouts: expected 4, got 0 (4 missing)"
+  ],
+  "warnings": [
+    "Ordered list item count differs: expected 115, got 0 (115 fewer - may be counting methodology difference)",
+    "Unordered list item count differs: expected 42, got 0 (42 fewer - may be counting methodology difference)",
+    "ℹ️ Paragraph count lower than expected: ~15 (±8), got 0 (may be filtered empty paragraphs or promoted to list items)"
+  ],
+  "stats": {
+    "totalBlocks": 0,
+    "blockTypes": {},
+    "headingCount": 0,
+    "fetchTimeMs": 137
+  },
+  "summary": "❌ Validation failed: 3 critical error(s), 3 informational warning(s)\n\n❌ Critical Errors:\n1. Block count too low: expected at least 10, got 0\n2. Table count mismatch: expected 7, got 0\n3. Missing callouts: expected 4, got 0 (4 missing)\n\nℹ️ Informational Warnings:\n1. Ordered list item count differs: expected 115, got 0 (115 fewer - may be counting methodology difference)\n2. Unordered list item count differs: expected 42, got 0 (42 fewer - may be counting methodology difference)\n3. ℹ️ Paragraph count lower than expected: ~15 (±8), got 0 (may be filtered empty paragraphs or promoted to list items)\n\n📊 Content Comparison (Source → Notion):\n• Ordered list items: 115 → 0\n• Unordered list items: 42 → 0\n• Paragraphs: 15 → 0\n• Headings: 0 → 0\n• Tables: 7 → 0\n• Images: 0 → 0\n• Callouts: 4 → 0",
+  "sourceCounts": {
+    "orderedListItems": 115,
+    "unorderedListItems": 42,
+    "totalListItems": 157,
+    "paragraphs": 15,
+    "headings": 0,
+    "tables": 7,
+    "images": 0,
+    "callouts": 4,
+    "codeBlocks": 1
+  },
+  "notionCounts": {
+    "orderedListItems": 0,
+    "unorderedListItems": 0,
+    "totalListItems": 0,
+    "paragraphs": 0,
+    "headings": 0,
+    "tables": 0,
+    "images": 0,
+    "callouts": 0,
+    "codeBlocks": 0
+  }
+}
+
+Error Details:
+- Primary Error: You have been rate limited. Please try again in a few minutes.
+-->
+
+<div class="zDocsTopicPageBody" data-prismjs-copy="Copy" data-prismjs-copy-error="Text could not be copied. Try using keyboard shortcuts like Ctrl + C to copy instead." data-prismjs-copy-success="Copied!"><div dir="ltr" class="zDocsTopicPageBodyContent wide"><div><article class="hascomments" data-page="bundle:yokohama-servicenow-platform/enus/product/configuration-management/task/configure-workspace-one-integration.html" id="bundle:yokohama-servicenow-platform/enus/product/configuration-management/task/configure-workspace-one-integration.html"><main role="main"><article role="article" class="dita" id="configure-workspace-one-integration" aria-labelledby="title_configure-workspace-one-integration">
+   
+   
+   
+   
+   <div class="body taskbody"><p class="shortdesc">Use the <span class="ph">Service Graph Connector for VMware Workspace ONE UEM</span> to pull mobile and computing devices data from <span class="ph"><span class="ph">VMware</span>
+         <span class="ph">Workspace ONE Unified Endpoint Management (UEM)</span></span> into your <span class="ph">ServiceNow</span> instance.</p>
+      <section class="section prereq" id="configure-workspace-one-integration__prereq_np3_cv3_kqb"><div class="tasklabel"><p class="sectiontitle tasklabel">Before you begin</p></div>
+         <p class="p">To use this <span class="ph">Service Graph Connector</span>, you need a subscription to a Subscription Unit that is based in the <span class="ph">IT Operations Management</span> (<span class="ph">ITOM</span>) Visibility application or in the <span class="ph">ITOM</span> Discovery application. As defined in the section titled "Managed IT Resource Types" in <a class="xref true-external" href="https://www.servicenow.com/products/entitlements-packages.html" target="_blank">ServiceNow Subscription Unit Overview</a> for your subscription, for managed IT resources that are created or modified in the <span class="ph">CMDB</span> by this <span class="ph">Service Graph Connector</span>, but that aren’t yet managed by <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task//csh" href="/docs/csh?topicname=itom-license-module&amp;version=yokohama&amp;pubname=yokohama-it-operations-management" class="xref">ITOM Visibility or ITOM Discovery</a>, these resources will increase Subscription Unit consumption from that application. Review your current Subscription Unit consumption within ITOM
+        Visibility or ITOM Discovery to ensure available capacity.</p>
+         <div class="p">Dependencies and requirements:<ul class="ul" id="configure-workspace-one-integration__ul_evf_gh1_wmb">
+               <li class="li">The <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/concept/integration-commons-for-cmdb.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/integration-commons-for-cmdb.html" class="xref" title="The Integration Commons for CMDB (sn_cmdb_int_util) store app contains the CMDB Integrations Dashboard and a set of Robust Transform Engine (RTE) transforms and script includes.">Integration
+                            Commons for CMDB</a> store app, which is automatically
+                        installed.</li>
+               <li class="li">The CMDB CI class models store app, which is automatically installed. See <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/concept/cmdb-ci-class-models.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/cmdb-ci-class-models.html" class="xref" title="The CMDB contains base-system classes that store data about configuration items (CIs). The CMDB CI Class Models ServiceNow Store app adds class models that extend the CMDB class hierarchy, including class descriptions, identification rules, identifier entries, and dependent relationships if applicable.">CMDB CI Class Models</a>.</li>
+               <li class="li">The ITOM Discovery License plugin (com.snc.itom.discovery.license). You must
+                        activate this plugin.</li>
+               <li class="li">ITOM Licensing plugin (com.snc.itom.license). For more information, see
+                            <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task//csh" href="/docs/csh?topicname=t_ActivateTheDiscoveryPlugin&amp;version=yokohama&amp;pubname=yokohama-it-operations-management" class="xref">Request
+                            Discovery</a>.</li>
+               <li class="li">The Datastream Action plugin (com.glide.hub.action_type.datastream), which
+                        is automatically installed.</li>
+            </ul></div>
+         <p class="p">Roles required: admin</p>
+         <div class="p">When using client credentials for authentication, obtain the OAuth credentials from your <span class="ph">VMware</span>
+            <span class="ph">Workspace ONE UEM</span> administrator. Make a note of the following details:<ul class="ul" id="configure-workspace-one-integration__ul_tg4_xg1_bgc">
+               <li class="li">Application (client) ID</li>
+               <li class="li">Client Secret</li>
+               <li class="li">Token URL</li>
+            </ul></div>
+         <p class="p">For information about how to get OAuth credentials, see the <a class="xref true-external" href="https://docs.vmware.com/en/VMware-Workspace-ONE-UEM/services/UEM_ConsoleBasics/GUID-BF20C949-5065-4DCF-889D-1E0151016B5A.html" target="_blank">VMware documentation site</a>.</p>
+      </section>
+      <section class="section context" id="configure-workspace-one-integration__context_ayt_tvv_kqb"><div class="tasklabel"><p class="sectiontitle tasklabel">About this task</p></div>
+         <p class="p">To configure the <span class="ph">Service Graph Connector for VMware Workspace ONE UEM</span>, you must configure either OAuth authentication credentials or basic authentication credentials.</p>
+      </section>
+      <section id="configure-workspace-one-integration__steps_o5k_lw1_1gc"><div class="tasklabel"><p class="sectiontitle tasklabel">Procedure</p></div><ol class="ol steps" id="configure-workspace-one-integration__steps_o5k_lw1_1gc"><li class="li step stepexpand">
+            <span class="ph cmd">Navigate to <span class="ph menucascade"><span class="ph uicontrol">All</span><abbr> &gt; </abbr><span class="ph uicontrol">Service Graph Connectors</span><abbr> &gt; </abbr><span class="ph uicontrol">Workspace ONE UEM</span><abbr> &gt; </abbr><span class="ph uicontrol">Setup</span></span>.</span>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">On the Getting started page, select <span class="ph uicontrol">Get Started</span>.</span>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">In the <span class="ph">Configure the Connection and Credentials</span> section of the <span class="ph">Service Graph Connector for VMware Workspace ONE UEM</span> page, select <span class="ph uicontrol">Get Started</span>.</span>
+         </li><li class="li step stepexpand" id="configure-workspace-one-integration__step_vdc_nfh_cgc">
+            <span class="ph cmd">Configure authentication credentials for the connection.</span>
+            <div class="itemgroup info">You can configure either a basic authentication connection or an OAuth connection.</div>
+            <ol type="a" class="ol substeps" id="configure-workspace-one-integration__substeps_qpq_ngk_bgc">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">For the <span class="ph">Set authentication type</span> task, select <span class="ph uicontrol">Configure</span>.</span>
+                  <div class="itemgroup info">
+                     <ul class="ul" id="configure-workspace-one-integration__ul_qh2_wx1_1gc">
+                        <li class="li">To enable basic authentication, set the value of the <span class="keyword parmname">auth_type</span> connection property to <kbd class="ph userinput">basic</kbd>.</li>
+                        <li class="li">To enable OAuth authentication, set the value of the <span class="keyword parmname">auth_type</span> connection property to <kbd class="ph userinput">oauth</kbd>.</li>
+                     </ul>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Update</span>, and navigate back to the guided setup page.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Set the <span class="ph">Set authentication type</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</span>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand" id="configure-workspace-one-integration__step_n4j_nfh_cgc">
+            <span class="ph cmd">Configure the credentials for authentication.</span>
+            <ul class="ul choices" id="configure-workspace-one-integration__choices_fpr_5gk_bgc">
+               <li class="li choice">Configure a basic authentication connection.<ol class="ol" type="a" id="configure-workspace-one-integration__ol_gyq_jk1_bgc">
+                     <li class="li">For the <span class="ph">Configure the Basic Auth Credentials</span> task, select <span class="ph uicontrol">Configure</span>.</li>
+                     <li class="li">On the form, fill in the fields.<div class="table-wrap"><table count-columns="2" class="table frame-all" id="configure-workspace-one-integration__table_vbr_lk1_bgc"><caption></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                                 <tr class="row">
+                                    <th class="entry align-left" id="configure-workspace-one-integration__table_vbr_lk1_bgc__entry__1">Field</th>
+                                    <th class="entry align-left" id="configure-workspace-one-integration__table_vbr_lk1_bgc__entry__2">Description</th>
+                                 </tr>
+                              </thead><tbody class="tbody">
+                                 <tr class="row">
+                                    <td class="entry align-left" headers="configure-workspace-one-integration__table_vbr_lk1_bgc__entry__1">Name</td>
+                                    <td class="entry align-left" headers="configure-workspace-one-integration__table_vbr_lk1_bgc__entry__2">Name of the authentication.<p class="p">For example, <kbd class="ph userinput">WorkspaceOneUEM Basic Auth Credentials</kbd>.</p></td>
+                                 </tr>
+                                 <tr class="row">
+                                    <td class="entry align-left" headers="configure-workspace-one-integration__table_vbr_lk1_bgc__entry__1">User name</td>
+                                    <td class="entry align-left" headers="configure-workspace-one-integration__table_vbr_lk1_bgc__entry__2">Your <span class="ph">VMware</span>
+                                       <span class="ph">Workspace ONE UEM</span> user name.</td>
+                                 </tr>
+                                 <tr class="row">
+                                    <td class="entry align-left" headers="configure-workspace-one-integration__table_vbr_lk1_bgc__entry__1">Password</td>
+                                    <td class="entry align-left" headers="configure-workspace-one-integration__table_vbr_lk1_bgc__entry__2">Your <span class="ph">VMware</span>
+                                       <span class="ph">Workspace ONE UEM</span> password.</td>
+                                 </tr>
+                              </tbody></table></div></li>
+                     <li class="li">Select <span class="ph uicontrol">Update</span>, and navigate back to the guided setup page.</li>
+                     <li class="li">Set the <span class="ph">Configure the Basic Auth Credentials</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                     <li class="li">For the <span class="ph">Configure API key</span> task, select <span class="ph uicontrol">Configure</span> to configure an API key for the basic authentication connection.</li>
+                     <li class="li">In the <span class="ph uicontrol">API Key</span> field, enter your <span class="ph">VMware</span>
+                        <span class="ph">Workspace ONE UEM</span> API key or tenant code.</li>
+                     <li class="li">Select <span class="ph uicontrol">Update</span>, and navigate back to the guided setup page.</li>
+                     <li class="li">Set the <span class="ph">Configure API key</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                  </ol></li>
+               <li class="li choice">Configure an OAuth connection.<ol class="ol" type="a" id="configure-workspace-one-integration__ol_iq1_zgk_bgc">
+                     <li class="li">For the <span class="ph">Configure the OAuth Credentials</span> task, select <span class="ph uicontrol">Configure</span>.</li>
+                     <li class="li">On the form, fill in the fields.<div class="table-wrap"><table count-columns="2" class="table frame-all" id="configure-workspace-one-integration__table_bbq_srm_bgc"><caption></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                                 <tr class="row">
+                                    <th class="entry align-left" id="configure-workspace-one-integration__table_bbq_srm_bgc__entry__1">Field</th>
+                                    <th class="entry align-left" id="configure-workspace-one-integration__table_bbq_srm_bgc__entry__2">Description</th>
+                                 </tr>
+                              </thead><tbody class="tbody">
+                                 <tr class="row">
+                                    <td class="entry align-left" headers="configure-workspace-one-integration__table_bbq_srm_bgc__entry__1">Name</td>
+                                    <td class="entry align-left" headers="configure-workspace-one-integration__table_bbq_srm_bgc__entry__2">Name of the authentication.<p class="p">For example, <kbd class="ph userinput">WorkspaceOneUEM OAuth Provider</kbd>.</p></td>
+                                 </tr>
+                                 <tr class="row">
+                                    <td class="entry align-left" headers="configure-workspace-one-integration__table_bbq_srm_bgc__entry__1">Client ID</td>
+                                    <td class="entry align-left" headers="configure-workspace-one-integration__table_bbq_srm_bgc__entry__2">Application (client) ID of your <span class="ph">VMware</span>
+                                       <span class="ph">Workspace ONE UEM</span> client application as noted in the <a class="xref" href="#configure-workspace-one-integration__prereq_np3_cv3_kqb">Before you begin</a> section.</td>
+                                 </tr>
+                                 <tr class="row">
+                                    <td class="entry align-left" headers="configure-workspace-one-integration__table_bbq_srm_bgc__entry__1">Client Secret</td>
+                                    <td class="entry align-left" headers="configure-workspace-one-integration__table_bbq_srm_bgc__entry__2">Client secret of your <span class="ph">VMware</span>
+                                       <span class="ph">Workspace ONE UEM</span> client application as noted in the <a class="xref" href="#configure-workspace-one-integration__prereq_np3_cv3_kqb">Before you begin</a> section.</td>
+                                 </tr>
+                              </tbody></table></div></li>
+                     <li class="li">Select <span class="ph uicontrol">Update</span>, and navigate back to the guided setup page.</li>
+                     <li class="li">Set the <span class="ph">Configure the OAuth Credentials</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                  </ol></li>
+            </ul>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Establish an HTTP connection to send requests to the <span class="ph">VMware</span>
+               <span class="ph">Workspace ONE UEM</span> API.</span>
+            <ol type="a" class="ol substeps" id="configure-workspace-one-integration__substeps_ymc_chk_bgc">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">For the <span class="ph">Configure HTTP connection</span> task, select <span class="ph uicontrol">Configure</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">On the <span class="ph">HTTP(s) Connection</span> form, specify the host name of your <span class="ph">VMware</span>
+                     <span class="ph">Workspace ONE UEM</span> instance in the <span class="ph uicontrol">Host</span> field.</span>
+                  <div class="itemgroup info">
+                     
+                     <div class="note note note_note"><span class="note__title">Note:</span> The HTTP connection is pre-configured to use the authentication credentials that were configured in steps <a class="xref" href="#configure-workspace-one-integration__step_vdc_nfh_cgc">4</a> and <a class="xref" href="#configure-workspace-one-integration__step_n4j_nfh_cgc">5</a>.</div>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Update</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Set the <span class="ph">Configure HTTP Connection</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</span>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Test the connection.</span>
+            <ol type="a" class="ol substeps" id="configure-workspace-one-integration__substeps_vvp_3hk_bgc">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">For the <span class="ph">Test the Connection</span> task, select <span class="ph uicontrol">Configure</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select the <span class="ph uicontrol">Test Connection</span> related link to start the testing process.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">When the <span class="ph uicontrol">Status</span> field is set to <span class="ph uicontrol">Success</span>, navigate back to the guided setup page.</span>
+                  <div class="itemgroup info">If any of the tests have errors, follow the suggestions for remediation.</div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Set the <span class="ph">Test the Connection</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</span>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Set up the scheduled import job.</span>
+            <ol type="a" class="ol substeps" id="configure-workspace-one-integration__substeps_e1q_khk_bgc">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">For the <span class="ph">Configure the scheduled job</span> task, select <span class="ph uicontrol">Configure</span>.</span>
+                  <div class="itemgroup info">The <span class="ph">SG-Workspace ONE UEM Devices and Apps</span> scheduled job is set to inactive by default.</div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select the <span class="ph uicontrol">SG-Workspace ONE UEM Devices and Apps</span> scheduled job.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">On the Scheduled Data Import form, verify the field values for the scheduled job.</span>
+                  <div class="itemgroup info">For more information, see <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task//csh" href="/docs/csh?topicname=t_ScheduleADataImport&amp;version=yokohama&amp;pubname=yokohama-integrate-applications#table_r53_5hm_xp" class="xref">Schedule a data import</a>.</div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select the <span class="ph uicontrol">Active</span> check box to activate the <span class="ph">SG-Workspace ONE UEM Devices and Apps</span> scheduled job.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">In the <span class="ph uicontrol">Run</span> field, select <span class="ph uicontrol">Periodically</span> to specify how often the job should run.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Update</span>.</span>
+                  <div class="itemgroup info">Alternatively, select <span class="ph uicontrol">Execute Now</span> to execute the import schedule immediately.</div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Set the <span class="ph">Configure the scheduled job</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</span>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">(Optional) 
+            <span class="ph cmd">Add multiple instances.</span>
+            <div class="itemgroup info">
+               <div class="note note note_note"><span class="note__title">Note:</span> If you don't need to add multiple instances, you can skip this step.</div>
+            </div>
+            <ol type="a" class="ol substeps" id="configure-workspace-one-integration__substeps_hlf_gfd_1gc">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">In the <span class="ph">Add multiple instances</span> section of the <span class="ph">Service Graph Connector for VMware Workspace ONE UEM</span> page, select <span class="ph uicontrol">Get Started</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">For the <span class="ph">Update scheduled data import access</span> task, select <span class="ph uicontrol">Configure</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select the Scheduled data import [scheduled_import_set] table.</span>
+               </li>
+               <li class="li substep substepexpand" id="configure-workspace-one-integration__substep_v4t_kfd_1gc">
+                  <span class="ph cmd">Select the <span class="ph uicontrol">Global</span> application scope by using the application picker.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">In the Application Access related list, select the <span class="ph uicontrol">Can create</span>, <span class="ph uicontrol">Can update</span>, and <span class="ph uicontrol">Can delete</span> check boxes, if not already selected.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Update</span>, and then navigate back to the guided setup.</span>
+               </li>
+               <li class="li substep substepexpand" id="configure-workspace-one-integration__substep_mzy_kfd_1gc">
+                  <span class="ph cmd">Modify the application scope again to <span class="ph uicontrol">Service Graph Connector for VMware Workspace ONE UEM</span> by using the application picker.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Set the <span class="ph">Update scheduled data import access</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">For the <span class="ph">Update Data Source Access</span> task, select <span class="ph uicontrol">Configure</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select the Data Source [sys_data_source] table.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Repeat steps <a class="xref" href="#configure-workspace-one-integration__substep_v4t_kfd_1gc">9.d</a> to <a class="xref" href="#configure-workspace-one-integration__substep_mzy_kfd_1gc">9.g</a>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Set the <span class="ph">Update Data Source Access</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Clear the cache for the new connection.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i" id="configure-workspace-one-integration__ol_ngd_khd_1gc">
+                        <li class="li">For the <span class="ph">Clear cache for Data Source and Import Set tables</span> task, select <span class="ph uicontrol">Configure</span>.</li>
+                        <li class="li">Select the <span class="ph uicontrol">Global</span> application scope by using the application picker.</li>
+                        <li class="li">In the <span class="ph uicontrol">Run script</span> text box of the background script page, enter the following script:<div class="zDocsCodeExplanationContainer"><button type="button" class="zDocsAiActionsButton" data-toggle="modal" tabindex="0" aria-label="Explain this code" data-target="#zDocsCodeExplanationModal_yokohama_servicenow_platformproduct_configuration_management_task_configure_workspace_one_integration_html_0"><svg class="ico-code-explanation" aria-hidden="true"><use xlink:href="#ico-code-explanation"></use></svg>Explain this code</button></div><pre class="language-plaintext" data-language="plaintext">GlideTableManager.invalidateTable("sys_data_source");      
+      GlideCacheManager.flushTable("sys_data_source");
+      GlideTableManager.invalidateTable("scheduled_import_set");      
+      GlideCacheManager.flushTable("scheduled_import_set");
+      GlideTableManager.invalidateTable("sys_db_object");      
+      GlideCacheManager.flushTable("sys_db_object");</pre></li>
+                        <li class="li">Select <span class="ph uicontrol">Run Script</span> to run the background script.<p class="p">The script may take several minutes to execute.</p></li>
+                        <li class="li">After the script is executed, select <span class="ph uicontrol">Close</span>.</li>
+                        <li class="li">Modify the application scope again to <span class="ph uicontrol">Service Graph Connector for VMware Workspace ONE UEM</span> by using the application picker.</li>
+                        <li class="li">Set the <span class="ph">Clear cache for Data Source and Import Set tables</span> task to complete by selecting <span class="ph uicontrol">Mark as complete</span>.</li>
+                     </ol>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Configure the connection for the <span class="ph">VMware</span>
+                     <span class="ph">Workspace ONE UEM</span> instance.</span>
+                  <div class="itemgroup info">
+                     <p class="p">You can configure either a basic authentication connection or an OAuth connection.</p>
+                     <ul class="ul" id="configure-workspace-one-integration__ul_yc4_thd_1gc">
+                        <li class="li">Configure a basic authentication connection.<ol class="ol" type="i" id="configure-workspace-one-integration__ol_cvk_k3d_1gc">
+                              <li class="li">For the <span class="ph">Add basic authentication connection</span> task, select <span class="ph uicontrol">Configure</span>.</li>
+                              <li class="li">To create a new connection, select <span class="ph uicontrol">Add Connection</span>.</li>
+                              <li class="li">In the Connection Information section of the Create Connection window, fill in the fields.<div class="p">
+                                    <div class="table-wrap"><table count-columns="2" class="table frame-all" id="configure-workspace-one-integration__table_kzt_k3d_1gc"><caption><span class="table--title-label">Table 1. </span><span class="title">Connection Information</span></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                                             <tr class="row">
+                                                <th class="entry align-left" id="configure-workspace-one-integration__table_kzt_k3d_1gc__entry__1">Field</th>
+                                                <th class="entry align-left" id="configure-workspace-one-integration__table_kzt_k3d_1gc__entry__2">Description</th>
+                                             </tr>
+                                          </thead><tbody class="tbody">
+                                             <tr class="row">
+                                                <td class="entry align-left" headers="configure-workspace-one-integration__table_kzt_k3d_1gc__entry__1">Connection name</td>
+                                                <td class="entry align-left" headers="configure-workspace-one-integration__table_kzt_k3d_1gc__entry__2">Name to identify the <span class="ph">VMware</span>
+                                                   <span class="ph">Workspace ONE UEM</span> connection record.</td>
+                                             </tr>
+                                             <tr class="row">
+                                                <td class="entry align-left" headers="configure-workspace-one-integration__table_kzt_k3d_1gc__entry__1">Connection URL</td>
+                                                <td class="entry align-left" headers="configure-workspace-one-integration__table_kzt_k3d_1gc__entry__2">Connection URL of your <span class="ph">VMware</span>
+                                                   <span class="ph">Workspace ONE UEM</span> connection.<p class="p">Use the format <span class="ph filepath">https://<var class="keyword varname">host-name</var>/API</span> for the connection URL.</p></td>
+                                             </tr>
+                                          </tbody></table></div>
+                                 </div></li>
+                              <li class="li">In the Credential Information section of the Create Connection window, fill in the fields.<div class="p">
+                                    <div class="table-wrap"><table count-columns="2" class="table frame-all" id="configure-workspace-one-integration__table_sjc_l3d_1gc"><caption><span class="table--title-label">Table 2. </span><span class="title">Credential Information</span></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                                             <tr class="row">
+                                                <th class="entry colsep-1 rowsep-1" id="configure-workspace-one-integration__table_sjc_l3d_1gc__entry__1">Field</th>
+                                                <th class="entry colsep-1 rowsep-1" id="configure-workspace-one-integration__table_sjc_l3d_1gc__entry__2">Description</th>
+                                             </tr>
+                                          </thead><tbody class="tbody">
+                                             <tr class="row">
+                                                <td class="entry colsep-1 rowsep-1" headers="configure-workspace-one-integration__table_sjc_l3d_1gc__entry__1">Username</td>
+                                                <td class="entry colsep-1 rowsep-1" headers="configure-workspace-one-integration__table_sjc_l3d_1gc__entry__2"><span class="ph">VMware</span>
+                                                   <span class="ph">Workspace ONE UEM</span> account user name that is used to authenticate the connection request.</td>
+                                             </tr>
+                                             <tr class="row">
+                                                <td class="entry colsep-1 rowsep-1" headers="configure-workspace-one-integration__table_sjc_l3d_1gc__entry__1">Password</td>
+                                                <td class="entry colsep-1 rowsep-1" headers="configure-workspace-one-integration__table_sjc_l3d_1gc__entry__2">Password that is used to authenticate the connection request.</td>
+                                             </tr>
+                                          </tbody></table></div>
+                                 </div></li>
+                              <li class="li">Select <span class="ph uicontrol">Create Connection</span>.</li>
+                              <li class="li">Navigate back to the guided setup, and set the <span class="ph">Add basic authentication connection</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                              <li class="li">For the <span class="ph">Configure API key</span> task, select <span class="ph uicontrol">Configure</span> to configure an API key for the basic authentication connection.</li>
+                              <li class="li">Select the <span class="ph uicontrol">API Key</span> record that corresponds to the connection alias for the new basic authentication connection.</li>
+                              <li class="li">Set the API key, and then select <span class="ph uicontrol">Update</span>.</li>
+                              <li class="li">Navigate back to the guided setup, and set the <span class="ph">Configure API key</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                           </ol></li>
+                        <li class="li">Configure an OAuth connection.<ol class="ol" type="i" id="configure-workspace-one-integration__ol_xmz_j3d_1gc">
+                              <li class="li">For the <span class="ph">Add an OAuth connection</span> task, select <span class="ph uicontrol">Configure</span>.</li>
+                              <li class="li">To create a new connection, select <span class="ph uicontrol">Add Connection</span>.</li>
+                              <li class="li">In the Connection Information section of the Create Connection window, fill in the fields.<div class="table-wrap"><table count-columns="2" class="table frame-all" id="configure-workspace-one-integration__table_bzk_l3d_1gc"><caption><span class="table--title-label">Table 3. </span><span class="title">Connection Information</span></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                                          <tr class="row">
+                                             <th class="entry colsep-1 rowsep-1" id="configure-workspace-one-integration__table_bzk_l3d_1gc__entry__1">Field</th>
+                                             <th class="entry colsep-1 rowsep-1" id="configure-workspace-one-integration__table_bzk_l3d_1gc__entry__2">Description</th>
+                                          </tr>
+                                       </thead><tbody class="tbody">
+                                          <tr class="row">
+                                             <td class="entry colsep-1 rowsep-1" headers="configure-workspace-one-integration__table_bzk_l3d_1gc__entry__1">Connection Name</td>
+                                             <td class="entry colsep-1 rowsep-1" headers="configure-workspace-one-integration__table_bzk_l3d_1gc__entry__2">Name to identify the <span class="ph">VMware</span>
+                                                <span class="ph">Workspace ONE UEM</span> connection record.</td>
+                                          </tr>
+                                          <tr class="row">
+                                             <td class="entry colsep-1 rowsep-1" headers="configure-workspace-one-integration__table_bzk_l3d_1gc__entry__1">Connection URL</td>
+                                             <td class="entry colsep-1 rowsep-1" headers="configure-workspace-one-integration__table_bzk_l3d_1gc__entry__2">Connection URL of your <span class="ph">VMware</span>
+                                                <span class="ph">Workspace ONE UEM</span> controller.<p class="p">Use the format <span class="ph filepath">https://<var class="keyword varname">host-name</var>/API</span> for the connection URL.</p></td>
+                                          </tr>
+                                       </tbody></table></div></li>
+                              <li class="li">In the Credential Information section of the Create Connection window, fill in the fields.<div class="table-wrap"><table count-columns="2" class="table frame-all" id="configure-workspace-one-integration__table_h1s_l3d_1gc"><caption><span class="table--title-label">Table 4. </span><span class="title">Credential Information</span></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                                          <tr class="row">
+                                             <th class="entry colsep-1 rowsep-1" id="configure-workspace-one-integration__table_h1s_l3d_1gc__entry__1">Field</th>
+                                             <th class="entry colsep-1 rowsep-1" id="configure-workspace-one-integration__table_h1s_l3d_1gc__entry__2">Description</th>
+                                          </tr>
+                                       </thead><tbody class="tbody">
+                                          <tr class="row">
+                                             <td class="entry colsep-1 rowsep-1" headers="configure-workspace-one-integration__table_h1s_l3d_1gc__entry__1">OAuth Client ID</td>
+                                             <td class="entry colsep-1 rowsep-1" headers="configure-workspace-one-integration__table_h1s_l3d_1gc__entry__2">Application (client) ID of your <span class="ph">VMware</span>
+                                                <span class="ph">Workspace ONE UEM</span> client application as noted in the <a class="xref" href="#configure-workspace-one-integration__prereq_np3_cv3_kqb">Before you begin</a> section.</td>
+                                          </tr>
+                                          <tr class="row">
+                                             <td class="entry colsep-1 rowsep-1" headers="configure-workspace-one-integration__table_h1s_l3d_1gc__entry__1">OAuth Client Secret</td>
+                                             <td class="entry colsep-1 rowsep-1" headers="configure-workspace-one-integration__table_h1s_l3d_1gc__entry__2">Client secret of your <span class="ph">VMware</span>
+                                                <span class="ph">Workspace ONE UEM</span> client application as noted in the <a class="xref" href="#configure-workspace-one-integration__prereq_np3_cv3_kqb">Before you begin</a> section.</td>
+                                          </tr>
+                                       </tbody></table></div><p class="p">For information about how to get OAuth credentials, see the <a class="xref true-external" href="https://docs.vmware.com/en/VMware-Workspace-ONE-UEM/services/UEM_ConsoleBasics/GUID-BF20C949-5065-4DCF-889D-1E0151016B5A.html" target="_blank">VMware documentation site</a>.</p></li>
+                              <li class="li">Select <span class="ph uicontrol">Create and Get OAuth Token</span>.</li>
+                              <li class="li">Navigate back to the guided setup, and set the <span class="ph">Add an OAuth connection</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                           </ol></li>
+                     </ul>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Test the newly added connections.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i" id="configure-workspace-one-integration__ol_zrz_qkd_1gc">
+                        <li class="li">For the <span class="ph">Test connections</span> task, select <span class="ph uicontrol">Configure</span>.</li>
+                        <li class="li">From the <span class="ph uicontrol">Name</span> column, select the new connection.</li>
+                        <li class="li">Select the <span class="ph uicontrol">Test Connection</span> related link to start the testing process.</li>
+                        <li class="li">When the <span class="ph uicontrol">Status</span> field is set to <span class="ph uicontrol">Success</span>, return to the guided setup page.<div class="note note note_note"><span class="note__title">Note:</span> If any of the tests have errors, follow the suggestions for remediation.</div></li>
+                        <li class="li">Set the <span class="ph">Test connections</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                     </ol>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Configure the scheduled job to import data from the <span class="ph">VMware</span>
+                     <span class="ph">Workspace ONE UEM</span> application.</span>
+                  <div class="itemgroup info">
+                     <p class="p">The <span class="ph">SG-Workspace ONE UEM Devices and Apps</span> scheduled job is set to inactive by default.</p>
+                     <ol class="ol" type="i" id="configure-workspace-one-integration__ol_bc3_gld_1gc">
+                        <li class="li">For the <span class="ph">Configure import schedule</span> task, select <span class="ph uicontrol">Configure</span>.</li>
+                        <li class="li">Select the <span class="ph uicontrol">SG-Workspace ONE UEM Devices and Apps</span> scheduled job.</li>
+                        <li class="li">On the Scheduled Data Import form, verify the field values for the scheduled job.<p class="p">For more information, see <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task//csh" href="/docs/csh?topicname=t_ScheduleADataImport&amp;version=yokohama&amp;pubname=yokohama-integrate-applications#table_r53_5hm_xp" class="xref">Schedule a data import</a>.</p></li>
+                        <li class="li">Select the <span class="ph uicontrol">Active</span> check box to activate the <span class="ph">SG-Workspace ONE UEM Devices and Apps</span> scheduled job.</li>
+                        <li class="li">In the <span class="ph uicontrol">Run</span> field, select <span class="ph uicontrol">Periodically</span> to specify how often the job should run.</li>
+                        <li class="li">Select <span class="ph uicontrol">Update</span>.<p class="p">Alternatively, select <span class="ph uicontrol">Execute Now</span> to execute the import schedule immediately.</p></li>
+                     </ol>
+                  </div>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">(Optional) 
+            <span class="ph cmd">Configure additional settings.</span>
+            <ol type="a" class="ol substeps" id="configure-workspace-one-integration__substeps_sc1_s31_bgc">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">In the <span class="ph">Configure additional settings (optional)</span> section of the <span class="ph">Service Graph Connector for VMware Workspace ONE UEM</span> page, select <span class="ph uicontrol">Get Started</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">For the <span class="ph">Configure duplicate detection rules</span> task, select <span class="ph uicontrol">Configure</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">On the CMDB Duplicate Row Rule form, select <span class="ph uicontrol">Active</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Update the <span class="ph">Value</span> field to <span class="ph filepath">true</span> to activate the duplicate detection rule during data import.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select <span class="ph uicontrol">OK</span>, and navigate back to the guided setup.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">To remove fields from being evaluated, add the field names as a comma-separated list in the Ignore Fields column on the CMDB Duplicate Row Rules form.</span>
+                  <div class="itemgroup info">Use this option for fields that change with every import.</div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Set the <span class="ph">Configure duplicate detection rules</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">For the <span class="ph">Enable software import</span> task, select <span class="ph uicontrol">Configure</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select the connection record for which you want to enable the import of software data.</span>
+                  <div class="itemgroup info">The <span class="keyword parmname">turn_off_software_import</span> connection property is set to <span class="ph filepath">true</span> by default.</div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Set the <span class="keyword parmname">turn_off_software_import</span> connection property value to <span class="ph filepath">false</span> to import software data.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Set the <span class="ph">Enable software import</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">For the <span class="ph">Import non-managed software</span> task, select <span class="ph uicontrol">Configure</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select the connection record for which you want to import non-managed software data.</span>
+                  <div class="itemgroup info">By default, software records that have the <span class="ph uicontrol">IsManaged</span> field set to <span class="ph filepath">false</span> aren't imported.</div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Set the <span class="keyword parmname">managed_apps_only</span> connection property value to <span class="ph filepath">false</span> to import non-managed software data.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Set the <span class="ph">Import non-managed software</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">For the <span class="ph">Import apps based on software status value</span> task, select <span class="ph uicontrol">Configure</span>.</span>
+                  <div class="itemgroup info">By default, the connector imports applications that have the status value <span class="ph filepath">2</span>, <span class="ph filepath">3</span>, or <span class="ph filepath">5</span>.<div class="table-wrap"><div id="configure-workspace-one-integration__table_w4d_1t4_bgc_wrapper" class="dataTables_wrapper no-footer"><div id="configure-workspace-one-integration__table_w4d_1t4_bgc_filter" class="dataTables_filter"></div><div class="zDocsFilterTableDiv zDocsFilterColumnsTableDiv"><div><button type="button" data-toggle="dropdown" aria-label="Export table to a file" class="zDocsTopicPageTableExportButton"><svg aria-hidden="true" class="ico-ellipsis-v"><use xlink:href="#ico-ellipsis-v"></use></svg></button><div class="dropdown-menu zDocsDropdownMenu zDocsTopicPageTableExportMenu"><button type="button" aria-label="Export to Excel" class="dropdown-item">Export to Excel</button><button type="button" aria-label="Export to CSV" class="dropdown-item">Export to CSV</button></div></div></div><table count-columns="2" class="table frame-all dataTable no-footer" id="configure-workspace-one-integration__table_w4d_1t4_bgc"><caption><span class="table--title-label">Table 5. </span><span class="title">Status values of applications</span></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                              <tr class="row"><th class="entry colsep-1 rowsep-1 sorting" id="configure-workspace-one-integration__table_w4d_1t4_bgc__entry__1" tabindex="0" aria-controls="configure-workspace-one-integration__table_w4d_1t4_bgc" rowspan="1" colspan="1" aria-label="Status: activate to sort column ascending">Status</th><th class="entry colsep-1 rowsep-1 sorting" id="configure-workspace-one-integration__table_w4d_1t4_bgc__entry__2" tabindex="0" aria-controls="configure-workspace-one-integration__table_w4d_1t4_bgc" rowspan="1" colspan="1" aria-label="Value: activate to sort column ascending">Value</th></tr>
+                           </thead><tbody class="tbody">
+                              
+                              
+                              
+                              
+                              
+                           <tr class="row odd">
+                                 <td class="entry colsep-1 rowsep-1" headers="configure-workspace-one-integration__table_w4d_1t4_bgc__entry__1">Pending Install</td>
+                                 <td class="entry colsep-1 rowsep-1" headers="configure-workspace-one-integration__table_w4d_1t4_bgc__entry__2">1</td>
+                              </tr><tr class="row even">
+                                 <td class="entry colsep-1 rowsep-1" headers="configure-workspace-one-integration__table_w4d_1t4_bgc__entry__1">Installed</td>
+                                 <td class="entry colsep-1 rowsep-1" headers="configure-workspace-one-integration__table_w4d_1t4_bgc__entry__2">2</td>
+                              </tr><tr class="row odd">
+                                 <td class="entry colsep-1 rowsep-1" headers="configure-workspace-one-integration__table_w4d_1t4_bgc__entry__1">Pending Removal</td>
+                                 <td class="entry colsep-1 rowsep-1" headers="configure-workspace-one-integration__table_w4d_1t4_bgc__entry__2">3</td>
+                              </tr><tr class="row even">
+                                 <td class="entry colsep-1 rowsep-1" headers="configure-workspace-one-integration__table_w4d_1t4_bgc__entry__1">Removed</td>
+                                 <td class="entry colsep-1 rowsep-1" headers="configure-workspace-one-integration__table_w4d_1t4_bgc__entry__2">4</td>
+                              </tr><tr class="row odd">
+                                 <td class="entry colsep-1 rowsep-1" headers="configure-workspace-one-integration__table_w4d_1t4_bgc__entry__1">Unknown</td>
+                                 <td class="entry colsep-1 rowsep-1" headers="configure-workspace-one-integration__table_w4d_1t4_bgc__entry__2">5</td>
+                              </tr></tbody></table></div></div></div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select the connection record for which you want to update the set of imported applications.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Set the <span class="keyword parmname">import_apps_with_status</span> connection property value to the required software status values (as a comma-separated list).</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Set the <span class="ph">Import apps based on software status value</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</span>
+               </li>
+            </ol>
+         </li></ol></section>
+      
+   </div>
+</article></main></article></div></div></div>

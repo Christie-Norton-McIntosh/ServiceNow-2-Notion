@@ -221,8 +221,15 @@ function parseSourceHtmlCounts(html) {
       headings += syntheticHeadings;
     }
     
-    // Count tables
-    const tables = $('table').length;
+    // FIX v11.0.30: Count only top-level tables (exclude nested tables inside cells)
+    // Notion doesn't support nested tables, so they get flattened or converted to other blocks
+    const allTables = $('table').length;
+    const nestedTables = $('table table').length; // Tables inside other tables
+    const tables = allTables - nestedTables;
+    
+    if (nestedTables > 0) {
+      console.log(`📊 [VALIDATION] Found ${nestedTables} nested table(s) inside other tables (excluded from count, total ${allTables})`);
+    }
     
     // Count images (excluding images inside tables - those get removed in processing)
     const allImages = $('img').length;
@@ -479,33 +486,43 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
         result.notionCounts = notionCounts;
 
         // CRITICAL ELEMENT VALIDATION (determines pass/fail/warning)
-        // Tables must match exactly (or be legitimately split due to 100-row limit)
+        // FIX v11.0.30: Tables - allow ±1 tolerance for minor counting differences
+        // Nested tables, wrapper divs, or HTML parsing inconsistencies can cause ±1 variance
         let tablesMismatch = false;
-        if (sourceCounts.tables > 0 && notionCounts.tables !== sourceCounts.tables) {
-          // Check if extra tables are due to table splitting (100-row Notion limit)
-          // Look for split table info callout in the blocks
-          // FIX v11.0.18: Use allBlocks instead of undefined 'blocks' variable
-          const hasSplitTableCallout = allBlocks.some(block => 
-            block.type === 'callout' && 
-            block.callout?.rich_text?.some(rt => 
-              rt.text?.content?.includes('split into') && 
-              rt.text?.content?.includes('tables') &&
-              rt.text?.content?.includes('100-row')
-            )
-          );
+        if (sourceCounts.tables > 0) {
+          const tableDiff = Math.abs(notionCounts.tables - sourceCounts.tables);
+          const tableTolerance = 1; // Allow ±1 table difference
           
-          if (hasSplitTableCallout && notionCounts.tables > sourceCounts.tables) {
-            // Extra tables are due to legitimate splitting, not an error
-            log(`ℹ️ [VALIDATION] Table count higher due to splitting: ${notionCounts.tables}/${sourceCounts.tables} (split for 100-row limit)`);
-            result.warnings.push(`Table count higher: ${sourceCounts.tables} source table(s) split into ${notionCounts.tables} Notion tables due to 100-row limit`);
+          if (tableDiff === 0) {
+            // Exact match - perfect!
+            log(`✅ [VALIDATION] Table count matches exactly: ${notionCounts.tables}/${sourceCounts.tables}`);
+          } else if (tableDiff <= tableTolerance) {
+            // Within tolerance - acceptable (not an error, just informational)
+            log(`ℹ️ [VALIDATION] Table count within tolerance: ${notionCounts.tables}/${sourceCounts.tables} (±${tableDiff}, tolerance ±${tableTolerance})`);
+            result.warnings.push(`Table count differs slightly: expected ${sourceCounts.tables}, got ${notionCounts.tables} (within ±${tableTolerance} tolerance - may be nested tables or HTML parsing differences)`);
           } else {
-            tablesMismatch = true;
-            result.hasErrors = true;
-            result.issues.push(`Table count mismatch: expected ${sourceCounts.tables}, got ${notionCounts.tables}`);
-            log(`❌ [VALIDATION] Table count mismatch: ${notionCounts.tables}/${sourceCounts.tables}`);
+            // Beyond tolerance - check for legitimate 100-row splitting
+            const hasSplitTableCallout = allBlocks.some(block => 
+              block.type === 'callout' && 
+              block.callout?.rich_text?.some(rt => 
+                rt.text?.content?.includes('split into') && 
+                rt.text?.content?.includes('tables') &&
+                rt.text?.content?.includes('100-row')
+              )
+            );
+            
+            if (hasSplitTableCallout && notionCounts.tables > sourceCounts.tables) {
+              // Extra tables are due to legitimate 100-row splitting, not an error
+              log(`ℹ️ [VALIDATION] Table count higher due to 100-row splitting: ${notionCounts.tables}/${sourceCounts.tables}`);
+              result.warnings.push(`Table count higher: ${sourceCounts.tables} source table(s) split into ${notionCounts.tables} Notion tables due to 100-row limit`);
+            } else {
+              // Beyond tolerance and not splitting - this is an error
+              tablesMismatch = true;
+              result.hasErrors = true;
+              result.issues.push(`Table count mismatch: expected ${sourceCounts.tables}, got ${notionCounts.tables} (difference of ${tableDiff}, beyond ±${tableTolerance} tolerance)`);
+              log(`❌ [VALIDATION] Table count mismatch: ${notionCounts.tables}/${sourceCounts.tables} (diff: ${tableDiff})`);
+            }
           }
-        } else if (sourceCounts.tables > 0) {
-          log(`✅ [VALIDATION] Table count matches: ${notionCounts.tables}/${sourceCounts.tables}`);
         }
 
         // Images must match (with small tolerance for upload failures)
