@@ -4168,7 +4168,9 @@ async function extractContentFromHtml(html) {
         }
         
         // Create numbered list item with text and children
-  const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'paragraph', 'to_do', 'toggle', 'image', 'table'];
+        // FIX v11.0.26: Remove 'table' from supportedAsChildren - Notion API doesn't support tables as direct children of list items
+        // Tables break list context and reset numbering. They should use markers for deep nesting orchestration instead.
+  const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'paragraph', 'to_do', 'toggle', 'image'];
         const validChildren = nestedChildren.filter(b => b && b.type && supportedAsChildren.includes(b.type));
         console.log(`🔍 [Orphan LI] validChildren: ${validChildren.length}/${nestedChildren.length} blocks (types: ${validChildren.map(b => b.type).join(', ')})`);
         

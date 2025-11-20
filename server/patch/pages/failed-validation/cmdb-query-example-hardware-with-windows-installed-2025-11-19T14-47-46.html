@@ -1,0 +1,135 @@
+<!--
+Auto-saved: Validation properties failed to update after 6 retries
+Page ID: 2b0a89fe-dba5-81c6-989d-c6f618c8a1e6
+Page URL: https://www.notion.so/CMDB-query-example-hardware-with-Windows-installed-2b0a89fedba581c6989dc6f618c8a1e6
+Page Title: CMDB query example — hardware with Windows installed
+Created: 2025-11-19T14:47:46.330Z
+Source URL: https://www.servicenow.com/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/cmdb-query-builder-sample3-app-ser_1.html
+
+Validation Result:
+{
+  "success": false,
+  "hasErrors": true,
+  "issues": [
+    "Block count too low: expected at least 14, got 0",
+    "Missing callouts: expected 2, got 0 (2 missing)"
+  ],
+  "warnings": [
+    "Ordered list item count differs: expected 23, got 0 (23 fewer - may be counting methodology difference)",
+    "Unordered list item count differs: expected 4, got 0 (4 fewer - may be counting methodology difference)",
+    "ℹ️ Paragraph count lower than expected: ~9 (±5), got 0 (may be filtered empty paragraphs or promoted to list items)"
+  ],
+  "stats": {
+    "totalBlocks": 0,
+    "blockTypes": {},
+    "headingCount": 0,
+    "fetchTimeMs": 279
+  },
+  "summary": "❌ Validation failed: 2 critical error(s), 3 informational warning(s)\n\n❌ Critical Errors:\n1. Block count too low: expected at least 14, got 0\n2. Missing callouts: expected 2, got 0 (2 missing)\n\nℹ️ Informational Warnings:\n1. Ordered list item count differs: expected 23, got 0 (23 fewer - may be counting methodology difference)\n2. Unordered list item count differs: expected 4, got 0 (4 fewer - may be counting methodology difference)\n3. ℹ️ Paragraph count lower than expected: ~9 (±5), got 0 (may be filtered empty paragraphs or promoted to list items)\n\n📊 Content Comparison (Source → Notion):\n• Ordered list items: 23 → 0\n• Unordered list items: 4 → 0\n• Paragraphs: 9 → 0\n• Headings: 0 → 0\n• Tables: 0 → 0\n• Images: 0 → 0\n• Callouts: 2 → 0",
+  "sourceCounts": {
+    "orderedListItems": 23,
+    "unorderedListItems": 4,
+    "totalListItems": 27,
+    "paragraphs": 9,
+    "headings": 0,
+    "tables": 0,
+    "images": 0,
+    "callouts": 2,
+    "codeBlocks": 0
+  },
+  "notionCounts": {
+    "orderedListItems": 0,
+    "unorderedListItems": 0,
+    "totalListItems": 0,
+    "paragraphs": 0,
+    "headings": 0,
+    "tables": 0,
+    "images": 0,
+    "callouts": 0,
+    "codeBlocks": 0
+  }
+}
+
+Error Details:
+- Primary Error: You have been rate limited. Please try again in a few minutes.
+-->
+
+<div class="zDocsTopicPageBody" data-prismjs-copy="Copy" data-prismjs-copy-error="Text could not be copied. Try using keyboard shortcuts like Ctrl + C to copy instead." data-prismjs-copy-success="Copied!"><div dir="ltr" class="zDocsTopicPageBodyContent wide"><div><article class="hascomments" data-page="bundle:yokohama-servicenow-platform/enus/product/configuration-management/task/cmdb-query-builder-sample3-app-ser.html" id="bundle:yokohama-servicenow-platform/enus/product/configuration-management/task/cmdb-query-builder-sample3-app-ser.html"><main role="main"><article role="article" class="dita" id="cmdb-query-builder-sample3-app-ser" aria-labelledby="title_cmdb-query-builder-sample3-app-ser">
+   
+   
+   
+   <div class="body taskbody"><p class="shortdesc">Use this example to build a CMDB query to find all hardware in my service offering that has Microsoft Windows installed.</p>
+      <section class="section prereq" id="cmdb-query-builder-sample3-app-ser__prereq_t4n_tpx_nsb"><div class="tasklabel"><p class="sectiontitle tasklabel">Before you begin</p></div>
+         <p class="p">Role required: none</p>
+      </section>
+      <section id="cmdb-query-builder-sample3-app-ser__steps_ip3_s5p_41c"><div class="tasklabel"><p class="sectiontitle tasklabel">Procedure</p></div><ol class="ol steps" id="cmdb-query-builder-sample3-app-ser__steps_ip3_s5p_41c"><li class="li step stepexpand">
+            <span class="ph cmd">Navigate to <span class="ph menucascade"><span class="ph uicontrol">All</span><abbr> &gt; </abbr><span class="ph uicontrol">Configuration</span><abbr> &gt; </abbr><span class="ph uicontrol">CMDB Query Builder</span></span> and then select <span class="ph uicontrol">Create new</span>.</span>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Enter <kbd class="ph userinput">All hardware in my service offering that has Windows installed</kbd> as the query name.</span>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Choose <span class="ph uicontrol">CMDB Query</span> and then select <span class="ph uicontrol">Create</span>.</span>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">In the <span class="ph uicontrol">CMDB Classes</span> list, locate the following classes, and then drag them to the canvas:</span>
+            <div class="itemgroup info">
+               <div class="note tip note_tip"><span class="note__title">Tip:</span> Use the search box to find items quickly.</div>
+               <ul class="ul" id="cmdb-query-builder-sample3-app-ser__ul_nsj_zlw_nlb">
+                  <li class="li"><span class="ph uicontrol">Service</span></li>
+                  <li class="li"><span class="ph uicontrol">Service Offering</span></li>
+                  <li class="li"><span class="ph uicontrol">Application Service</span></li>
+                  <li class="li">Searching for infrastructure, <span class="ph uicontrol">Hardware</span></li>
+               </ul>
+            </div>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Connect the Service node to the Service Offering node.</span>
+            <div class="itemgroup info">
+               <p class="p">In the Properties sidebar, select <span class="ph uicontrol">Add Relationship Type</span> and select the <span class="ph uicontrol">Connect to::Connected by</span> relationship.</p>
+            </div>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Connect the Serviced Offering node to the Application Service node.</span>
+            <div class="itemgroup info">
+               <p class="p">In the Properties right-side bar, select <span class="ph uicontrol">Add Relationship Type</span> and select the <span class="ph uicontrol">Connect to::Connected by</span> relationship.</p>
+            </div>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Select the Application Service node.</span>
+            <div class="itemgroup info">
+               <p class="p">In the Properties right-side bar, select <span class="ph uicontrol">Convert attached nodes to pattern</span> to include all CIs within the application service, in the query.</p>
+            </div>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Connect the Application Service node to the Hardware node.</span>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">All infrastructure under Service,</span>
+            
+            
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Select <span class="ph uicontrol">Save</span>.</span>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Select <span class="ph uicontrol">Run</span> and then review the results.</span>
+            <div class="itemgroup info">
+               <p class="p">You can select <span class="ph uicontrol">Column options</span> of the Service column header, and select to <span class="ph uicontrol">Group by Service</span>. Then expand a service to see all the hardware infrastructure under that service.</p>
+            </div>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Return to the CMDB Query Builder window, to expand the query to include only infrastructure CIs on which Windows is installed.</span>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Select <span class="ph uicontrol">Non-CMDB Tables</span>, locate the <span class="ph uicontrol">Software Instance</span> class, and drag it to the canvas.</span>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Connect the Hardware node to the Software Instance node.</span>
+            <div class="itemgroup info">
+               <p class="p">In the Properties right-side bar, set <span class="ph uicontrol">Use CI reference column</span> to <span class="ph uicontrol">Installed on</span>.</p>
+            </div>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Point to the Software Instance node, and select on the <span class="ph uicontrol">Apply filters</span> icon that appears.</span>
+            <ol type="a" class="ol substeps" id="cmdb-query-builder-sample3-app-ser__substeps_gvd_kvp_41c">
+               <li class="li substep">
+                  <span class="ph cmd">In the Filters section, add the condition <span class="ph uicontrol">[Product Name.Name] [is] [windows]</span>.</span>
+               </li>
+               <li class="li substep">
+                  <span class="ph cmd">Close the Filters section.</span>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Select <span class="ph uicontrol">Save</span>.</span>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Select <span class="ph uicontrol">Run</span> and review the new results.</span>
+         </li></ol></section>
+   </div>
+</article></main></article></div></div></div>

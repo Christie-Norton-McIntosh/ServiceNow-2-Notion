@@ -246,6 +246,17 @@ async function orchestrateDeepNesting(pageId, markerMap) {
       log(`🖼️ [IMAGE-DEBUG] Marker "${marker}" has ${imageCount} image block(s) out of ${blocksToAppend.length} total`);
     }
     
+    // DEBUG: Log if this marker has table blocks
+    const tableCount = blocksToAppend.filter(b => b && b.type === 'table').length;
+    if (tableCount > 0) {
+      log(`📊 [TABLE-DEBUG] Marker "${marker}" has ${tableCount} table block(s) out of ${blocksToAppend.length} total`);
+      blocksToAppend.filter(b => b.type === 'table').forEach((table, idx) => {
+        const tableWidth = table.table?.table_width || 'unknown';
+        const tableRows = table.table?.children?.length || 0;
+        log(`📊 [TABLE-DEBUG]   Table ${idx+1}: ${tableWidth} cols x ${tableRows} rows`);
+      });
+    }
+    
     try {
       const parentInfo = await findParentListItemByMarker(pageId, marker);
       const parentId = parentInfo ? parentInfo.parentId : null;
@@ -272,6 +283,10 @@ async function orchestrateDeepNesting(pageId, markerMap) {
       
       if (imageCount > 0) {
         log(`🖼️ [IMAGE-DEBUG] Parent found! Will append ${imageCount} image(s) to parent ${parentId}`);
+      }
+      
+      if (tableCount > 0) {
+        log(`📊 [TABLE-DEBUG] Parent found! Will append ${tableCount} table(s) to parent ${parentId}`);
       }
       
       // Log marker details for debugging
@@ -442,6 +457,11 @@ async function orchestrateDeepNesting(pageId, markerMap) {
           result.appended || 0
         } blocks for marker sn2n:${marker}`
       );
+      
+      // DEBUG: Log successful table append
+      if (tableCount > 0) {
+        log(`📊 [TABLE-DEBUG] ✅ Successfully appended ${tableCount} table(s) to parent ${parentId}`);
+      }
       
       // Attempt to clean up the inline marker from the paragraph we used to locate the parent
       if (paragraphId) {

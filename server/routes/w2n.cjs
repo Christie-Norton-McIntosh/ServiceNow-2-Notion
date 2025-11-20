@@ -453,9 +453,8 @@ router.post('/W2N', async (req, res) => {
       log("🎥 Videos detected in content during HTML conversion");
     }
 
-    // v11.0.21 FIX: Strip private keys BEFORE deduplication (matches PATCH endpoint)
-    // This ensures deduplication works on clean blocks without internal metadata
-    deepStripPrivateKeys(children);
+    // v11.0.27 FIX: DO NOT strip private keys yet - we need _sn2n_marker for collectAndStripMarkers
+    // Private keys will be stripped after marker collection (see below, after removeCollectedBlocks)
 
     // Compute expected callout count from source HTML so dedupe can be conditional.
     // Use Cheerio to robustly detect callout-like elements (class contains 'note' or 'callout',
@@ -795,6 +794,13 @@ router.post('/W2N', async (req, res) => {
         `🔖 Removed ${removedCount} collected trailing block(s) from initial children`
       );
     }
+    
+    // v11.0.27 FIX: NOW strip private keys after marker collection is complete
+    // This ensures _sn2n_marker properties are preserved during collection
+    // but removed before sending to Notion API
+    deepStripPrivateKeys(children);
+    log(`✅ Stripped private keys from ${children.length} children after marker collection`);
+    
     if (Object.keys(markerMap).length > 0) {
       log(
         `🔖 Found ${
@@ -1356,11 +1362,32 @@ router.post('/W2N', async (req, res) => {
       log(`========================================\n`);
       
       try {
-        // Delay to allow Notion's API to fully process page creation and deduplication
-        // Increased from 500ms to 2000ms to prevent "got 0 blocks" false positives
-        // Notion's eventual consistency can take 1-2 seconds for complex pages
-        log("⏳ Waiting 2s for Notion API to process page creation...");
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Dynamic wait time based on orchestration complexity
+        // Base: 2s for initial page creation
+        // +300ms per marker processed (orchestration PATCH requests)
+        // +500ms if deduplication ran (additional PATCH requests)
+        // Max: 10s to prevent excessive delays
+        // This accounts for Notion's eventual consistency across multiple API operations
+        const markerCount = Object.keys(markerMap).length;
+        const baseWait = 2000; // 2 seconds base
+        const extraWaitPerMarker = 300; // 300ms per marker (orchestration PATCH)
+        const dedupeWait = 500; // 500ms if deduplication ran
+        
+        let waitTime = baseWait;
+        if (markerCount > 0) {
+          waitTime += (markerCount * extraWaitPerMarker);
+          log(`   +${markerCount * extraWaitPerMarker}ms for ${markerCount} markers (orchestration)`);
+        }
+        // Always add dedupe wait since it runs after orchestration
+        waitTime += dedupeWait;
+        log(`   +${dedupeWait}ms for post-orchestration deduplication`);
+        
+        // Cap at 10 seconds
+        waitTime = Math.min(waitTime, 10000);
+        
+        log(`⏳ Waiting ${waitTime}ms for Notion API to process page creation and orchestration...`);
+        log(`   (Base: 2s + Markers: ${markerCount} × 300ms + Dedupe: 500ms = ${waitTime}ms)`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
         
         log("🔍 Running post-creation validation...");
         
@@ -1486,6 +1513,58 @@ router.post('/W2N', async (req, res) => {
             
             propertyUpdateSuccess = true;
             log(`✅ Validation properties updated successfully${propRetry > 0 ? ` (after ${propRetry} ${propRetry === 1 ? 'retry' : 'retries'})` : ''}`);
+            
+            // FIX v11.0.27: Verify Validation property is not blank after update
+            // If the summary is empty/blank, auto-save the page for investigation
+            if (!validationResult.summary || validationResult.summary.trim() === '') {
+              log(`⚠️ WARNING: Validation summary is blank/empty after property update!`);
+              log(`   Page ID: ${response.id}`);
+              log(`   Page Title: ${payload.title}`);
+              log(`   This page will be auto-saved to pages-to-update for investigation`);
+              
+              try {
+                const fs = require('fs');
+                const path = require('path');
+                
+                const fixturesDir = path.join(__dirname, '../../patch/pages/pages-to-update');
+                if (!fs.existsSync(fixturesDir)) {
+                  fs.mkdirSync(fixturesDir, { recursive: true });
+                }
+                
+                const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
+                const sanitizedTitle = (payload.title || 'untitled')
+                  .toLowerCase()
+                  .replace(/[^a-z0-9]+/g, '-')
+                  .replace(/^-+|-+$/g, '')
+                  .substring(0, 60);
+                const filename = `${sanitizedTitle}-blank-validation-${timestamp}.html`;
+                const filepath = path.join(fixturesDir, filename);
+                
+                const htmlContent = `<!--
+Auto-saved: Validation property is blank/empty after successful property update
+Page ID: ${response.id}
+Page URL: ${response.url}
+Page Title: ${payload.title}
+Created: ${new Date().toISOString()}
+Source URL: ${payload.url || 'N/A'}
+
+Validation Result Object:
+${JSON.stringify(validationResult, null, 2)}
+
+Issue: validationResult.summary is empty or blank
+Expected: Summary should contain validation results or status message
+-->
+
+${payload.contentHtml || ''}
+`;
+                
+                fs.writeFileSync(filepath, htmlContent, 'utf-8');
+                log(`✅ AUTO-SAVED: Page with blank validation saved to ${filename}`);
+                savedToUpdateFolder = true;
+              } catch (saveError) {
+                log(`❌ Failed to auto-save page with blank validation: ${saveError.message}`);
+              }
+            }
           } catch (propError) {
             const isLastRetry = propRetry >= maxPropertyRetries;
             // FIX v11.0.7: Extended backoff to handle transient Notion API issues (max 32s)
@@ -1499,16 +1578,16 @@ router.post('/W2N', async (req, res) => {
               log(`   Page URL: ${response.url}`);
               log(`${'='.repeat(80)}\n`);
               
-              // FIX v11.0.19: Auto-save page to pages-to-update when validation properties fail
-              // This ensures the page gets flagged for re-extraction even if properties can't be set
+              // FIX v11.0.24: Auto-save page to failed-validation when validation properties fail
+              // This ensures the page gets flagged for revalidation even if properties can't be set
               // REMOVED: Fallback 1 (Error checkbox only) and Fallback 2 (callout block)
               // Reason: With auto-save tracking, partial validation is misleading
               try {
                 const fs = require('fs');
                 const path = require('path');
                 
-                // Create pages-to-update directory if it doesn't exist
-                const pagesDir = path.join(__dirname, '..', 'patch', 'pages', 'pages-to-update');
+                // Create failed-validation directory if it doesn't exist
+                const pagesDir = path.join(__dirname, '..', 'patch', 'pages', 'failed-validation');
                 if (!fs.existsSync(pagesDir)) {
                   fs.mkdirSync(pagesDir, { recursive: true });
                 }
@@ -1544,14 +1623,14 @@ ${payload.contentHtml || ''}
                 fs.writeFileSync(filepath, htmlContent, 'utf-8');
                 log(`✅ AUTO-SAVED: Page saved to ${filename}`);
                 log(`   Location: ${filepath}`);
-                log(`   This page will be picked up by batch PATCH workflow`);
+                log(`   This page will be added to failed-validation folder for revalidation`);
                 
                 // Also log to persistent failure tracking file
                 const failureLog = path.join(__dirname, '..', 'patch', 'logs', 'validation-property-failures.log');
                 const logEntry = `${new Date().toISOString()} | ${response.id} | "${payload.title}" | ${response.url} | ${filename}\n`;
                 fs.appendFileSync(failureLog, logEntry, 'utf-8');
                 log(`📝 Logged to validation-property-failures.log`);
-                savedToUpdateFolder = true; // FIX v11.0.19: Mark as saved
+                savedToUpdateFolder = true; // FIX v11.0.24: Mark as saved
                 
               } catch (saveError) {
                 log(`❌ FAILED TO AUTO-SAVE PAGE: ${saveError.message}`);
@@ -2118,19 +2197,143 @@ router.patch('/W2N/:pageId', async (req, res) => {
       log(`[PATCH-PROGRESS] STEP 3 Skipped: No deep nesting markers present`);
     }
     
-    // STEP 3.5: Marker sweep
+    // STEP 3.5: Post-orchestration deduplication (FIX v11.0.25)
+    // Run deduplication BEFORE marker sweep to clean up duplicate callouts/blocks
+    // This matches POST behavior and prevents validation mismatches
+    // (POST dedups before validation, PATCH should too)
+    operationPhase = 'running post-orchestration deduplication';
+    log(`🔧 STEP 3.5: Running post-orchestration deduplication (matches POST behavior)`);
+    
+    try {
+      // Fetch the current page blocks
+      const pageBlocks = await notion.blocks.children.list({ block_id: pageId, page_size: 100 });
+      let allBlocks = pageBlocks.results || [];
+      
+      // Fetch remaining pages if needed
+      let cursor = pageBlocks.next_cursor;
+      while (cursor) {
+        const nextPage = await notion.blocks.children.list({ 
+          block_id: pageId, 
+          start_cursor: cursor,
+          page_size: 100 
+        });
+        allBlocks = allBlocks.concat(nextPage.results || []);
+        cursor = nextPage.next_cursor;
+      }
+      
+      log(`   Fetched ${allBlocks.length} blocks from page (will NOT deduplicate page root siblings)`);
+      
+      // Import deduplication utilities
+      const dedupeUtil = require('../utils/dedupe.cjs');
+      
+      // For each block with children, deduplicate its children
+      const blockTypesWithChildren = ['numbered_list_item', 'bulleted_list_item', 'callout', 'toggle', 'quote', 'column'];
+      
+      // Recursive function to deduplicate children at all nesting levels
+      async function deduplicateBlockChildren(blockId, blockType, depth = 0) {
+        const indent = '  '.repeat(depth);
+        const childrenResp = await notion.blocks.children.list({ block_id: blockId, page_size: 100 });
+        const children = childrenResp.results || [];
+        
+        if (children.length > 1) {
+          const duplicateIds = [];
+          
+          // Context-aware deduplication
+          const isListItem = blockType === 'numbered_list_item' || blockType === 'bulleted_list_item';
+          const isPageRoot = blockType === 'page';
+          
+          let prevChild = null;
+          let prevKey = null;
+          
+          for (const child of children) {
+            // Skip deduplication for images/tables in list items (procedural context)
+            if (isListItem && !isPageRoot && (child.type === 'image' || child.type === 'table')) {
+              log(`${indent}  ✓ Preserving ${child.type} in ${blockType} (procedural context)`);
+              prevChild = child;
+              prevKey = null;
+              continue;
+            }
+            
+            // Skip deduplication for list items at page root (different lists)
+            if (isPageRoot && (child.type === 'numbered_list_item' || child.type === 'bulleted_list_item')) {
+              log(`${indent}  ✓ Preserving ${child.type} at page root (different lists)`);
+              prevChild = child;
+              prevKey = null;
+              continue;
+            }
+            
+            // Skip deduplication for tables/images at page root (different sections)
+            if (isPageRoot && (child.type === 'table' || child.type === 'image')) {
+              log(`${indent}  ✓ Preserving ${child.type} at page root (different sections)`);
+              prevChild = child;
+              prevKey = null;
+              continue;
+            }
+            
+            const key = dedupeUtil.computeBlockKey(child);
+            
+            // Only mark as duplicate if IMMEDIATELY PREVIOUS block has the same key
+            if (prevKey && key === prevKey && prevChild) {
+              duplicateIds.push(child.id);
+              log(`${indent}  🔎 Found consecutive duplicate ${child.type}: ${child.id}`);
+            } else {
+              prevChild = child;
+              prevKey = key;
+            }
+          }
+          
+          // Delete duplicates
+          for (const dupId of duplicateIds) {
+            try {
+              await notion.blocks.delete({ block_id: dupId });
+              log(`${indent}  🚫 Deleted duplicate child block: ${dupId}`);
+            } catch (deleteError) {
+              log(`${indent}  ❌ Failed to delete duplicate ${dupId}: ${deleteError.message}`);
+            }
+          }
+          
+          if (duplicateIds.length > 0) {
+            log(`${indent}Removed ${duplicateIds.length} duplicate(s) from ${blockType}`);
+          }
+        }
+        
+        // Recursively check children of children
+        for (const child of children) {
+          if (blockTypesWithChildren.includes(child.type) && child.has_children) {
+            await deduplicateBlockChildren(child.id, child.type, depth + 1);
+          }
+        }
+      }
+      
+      // First, deduplicate at the PAGE ROOT LEVEL
+      log(`🔍 Deduplicating page root level...`);
+      await deduplicateBlockChildren(pageId, 'page', 0);
+      
+      // Then deduplicate children of specific block types
+      for (const block of allBlocks) {
+        if (blockTypesWithChildren.includes(block.type) && block.has_children) {
+          await deduplicateBlockChildren(block.id, block.type, 0);
+        }
+      }
+      
+      log("✅ Post-orchestration deduplication complete");
+    } catch (dedupError) {
+      log(`⚠️ Post-orchestration deduplication failed: ${dedupError.message}`);
+    }
+    
+    // STEP 3.6: Marker sweep
     // ALWAYS run marker sweep for PATCH operations to clean inherited markers from previous page versions
     // PATCH deletes all blocks and re-creates them, which can leave orphaned markers from the old version
     operationPhase = 'sweeping for residual markers';
     const hasMarkers = markerMap && Object.keys(markerMap).length > 0;
     const reason = hasMarkers ? 'orchestration markers present' : 'PATCH safety sweep (cleans inherited markers)';
-    log(`🧹 STEP 3.5: Preparing marker sweep (${reason})`);
+    log(`🧹 STEP 3.6: Preparing marker sweep (${reason})`);
 
     // Wait 1 second before marker sweep to reduce conflicts
     log(`⏸️  Waiting 1s before marker sweep to reduce conflicts...`);
     await new Promise(resolve => setTimeout(resolve, 1000));
 
-    log(`🧹 STEP 3.5: Running final marker sweep to clean any residual markers`);
+    log(`🧹 STEP 3.6: Running final marker sweep to clean any residual markers`);
     try {
       // Use global context function (hot-reload safe - doesn't require relative paths)
       const sweepResult = await global.sweepAndRemoveMarkersFromPage(pageId);
@@ -2180,9 +2383,25 @@ router.patch('/W2N/:pageId', async (req, res) => {
       operationPhase = 'validating updated page';
       log(`🔍 STEP 5: Validating updated page`);
       
-      // Shorter delay for PATCH (1s instead of 2s for POST) - PATCH operations are simpler
-      const validationDelay = 1000;
-      log(`   Waiting ${validationDelay}ms for Notion's eventual consistency...`);
+      // Dynamic wait time based on orchestration complexity (same as POST)
+      // Base: 2s for uploads + deduplication
+      // +300ms per marker processed (orchestration PATCH requests)
+      // Max: 10s to prevent excessive delays
+      const markerCount = markerMap ? Object.keys(markerMap).length : 0;
+      const baseWait = 2000; // Base for uploads + deduplication
+      const extraWaitPerMarker = 300; // 300ms per marker (orchestration PATCH)
+      
+      let validationDelay = baseWait;
+      if (markerCount > 0) {
+        validationDelay += (markerCount * extraWaitPerMarker);
+        log(`   +${markerCount * extraWaitPerMarker}ms for ${markerCount} markers (orchestration)`);
+      }
+      
+      // Cap at 10 seconds
+      validationDelay = Math.min(validationDelay, 10000);
+      
+      log(`⏳ Waiting ${validationDelay}ms for Notion's eventual consistency...`);
+      log(`   (Base: 2s + Markers: ${markerCount} × 300ms = ${validationDelay}ms)`);
       await new Promise(resolve => setTimeout(resolve, validationDelay));
       
       try {
