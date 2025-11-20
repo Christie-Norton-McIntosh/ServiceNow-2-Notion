@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.24
+// @version      11.0.26
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.24";
+    window.BUILD_VERSION = "11.0.26";
 (function () {
 
   // Configuration constants and default settings
@@ -4283,10 +4283,6 @@
                 
                 // If we get here without throwing, it succeeded
                 processingSuccess = true;
-                
-                autoExtractState.totalProcessed++;
-                debug(`[AUTO-EXTRACT] ✅ Page ${currentPageNum} saved to Notion`);
-                overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
               } catch (processingError) {
                 // Check if this is a rate limit error
                 const errorMessage = processingError.message || '';
@@ -4321,14 +4317,46 @@
                   
                   debug(`🔄 [RATE-LIMIT] Retrying page ${currentPageNum} after cooldown...`);
                 } else {
-                  // Not a rate limit error, or we've exhausted retries - rethrow
-                  throw processingError;
+                  // Not a rate limit error, or we've exhausted retries
+                  // Save to failed pages queue and continue with next page
+                  debug(`⚠️ [RATE-LIMIT] Exhausted retries for page ${currentPageNum}, marking as failed and continuing...`);
+                  
+                  // Initialize failedPages array if it doesn't exist
+                  if (!autoExtractState.failedPages) {
+                    autoExtractState.failedPages = [];
+                  }
+                  
+                  // Add to failed pages queue
+                  autoExtractState.failedPages.push({
+                    pageNumber: currentPageNum,
+                    title: extractedData?.title || 'Unknown',
+                    url: currentUrl,
+                    reason: errorMessage.substring(0, 200), // Truncate long error messages
+                    timestamp: new Date().toISOString(),
+                    errorType: isRateLimit ? 'rate_limit' : 'other'
+                  });
+                  
+                  showToast(
+                    `⚠️ Page ${currentPageNum} failed (${isRateLimit ? 'rate limit' : 'error'}). Continuing with next page...`,
+                    4000
+                  );
+                  
+                  // Mark as NOT successful but DON'T throw - continue with next page
+                  processingSuccess = false;
+                  break; // Exit retry loop
                 }
               }
             }
             
+            // If processing failed after all retries, log it but DON'T stop AutoExtract
             if (!processingSuccess) {
-              throw new Error(`Failed to process page ${currentPageNum} after ${maxRateLimitRetries} rate limit retries`);
+              debug(`⚠️ [AUTO-EXTRACT] Page ${currentPageNum} failed after retries - continuing with next page`);
+              // Don't throw - just continue to navigation
+            } else {
+              // Only increment totalProcessed on success
+              autoExtractState.totalProcessed++;
+              debug(`[AUTO-EXTRACT] ✅ Page ${currentPageNum} saved to Notion`);
+              overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
             }
           }
         } else {
@@ -4489,7 +4517,11 @@
         debug(`❌ Error in AutoExtract loop:`, error);
         const errorMessage = `❌ AutoExtract ERROR: ${error.message}\n\nTotal pages processed: ${autoExtractState.totalProcessed}`;
         alert(errorMessage);
-        stopAutoExtract(autoExtractState);
+        
+        // Pass error details to stop reason for persistent logging
+        const stopReason = `Error: ${error.message.substring(0, 100)}`;
+        stopAutoExtract(autoExtractState, stopReason);
+        
         if (button)
           button.textContent = `❌ Error: ${error.message.substring(0, 20)}...`;
         overlayModule.error({
@@ -4548,7 +4580,13 @@
       autoCloseMs: 5000,
     });
     
-    stopAutoExtract(autoExtractState);
+    // Pass completion reason with stats
+    const failedCount = autoExtractState.failedPages?.length || 0;
+    const stopReason = failedCount > 0 
+      ? `Completed with ${failedCount} failed page(s)`
+      : `Completed successfully`;
+    stopAutoExtract(autoExtractState, stopReason);
+    
     if (button) button.textContent = "Start AutoExtract";
   }
 
