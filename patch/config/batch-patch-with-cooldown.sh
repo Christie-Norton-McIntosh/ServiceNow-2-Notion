@@ -148,8 +148,9 @@ for html_file in "$SRC_DIR"/*.html; do
         fi
       fi
     fi
-    if [[ "$dry_http_code" == "404" ]]; then
-      echo "  ⚠️  Validation HTTP 404: Page not found - moving to page-not-found/" | tee -a "$LOG_FILE"
+    # Treat Notion 'object_not_found' or block-not-found messages as page-not-found too
+    if [[ "$dry_http_code" == "404" ]] || echo "$dry_body" | grep -qiE 'object_not_found|Could not find block with ID'; then
+      echo "  ⚠️  Validation indicates page not found (404/object_not_found) - moving to page-not-found/" | tee -a "$LOG_FILE"
       mv "$html_file" "$PAGE_NOT_FOUND_DIR/" || true
       continue
     fi
@@ -279,10 +280,16 @@ for html_file in "$SRC_DIR"/*.html; do
         has_errors=$(echo "$validation_result" | jq -r '.hasErrors // false')
         
         if [[ "$has_errors" != "false" ]]; then
-          echo "  ❌ PATCH completed but post-PATCH validation failed" | tee -a "$LOG_FILE"
-          echo "     Validation errors: $(echo "$validation_result" | jq -r '.errors | length')" | tee -a "$LOG_FILE"
-          failed_patch=$((failed_patch+1))
-          # Keep file in pages-to-update for retry
+          # If validation body indicates object_not_found or similar Notion message, treat as page-not-found
+          if echo "$patch_body" | grep -qiE 'object_not_found|Could not find block with ID'; then
+            echo "  ⚠️ PATCH completed but Notion indicates page/object not found - moving to page-not-found/" | tee -a "$LOG_FILE"
+            mv "$html_file" "$PAGE_NOT_FOUND_DIR/" || true
+          else
+            echo "  ❌ PATCH completed but post-PATCH validation failed" | tee -a "$LOG_FILE"
+            echo "     Validation errors: $(echo "$validation_result" | jq -r '.errors | length')" | tee -a "$LOG_FILE"
+            failed_patch=$((failed_patch+1))
+            # Keep file in pages-to-update for retry
+          fi
         else
           echo "  ✅ PATCH successful with clean validation" | tee -a "$LOG_FILE"
           mv "$html_file" "$DST_DIR/"
@@ -307,8 +314,9 @@ for html_file in "$SRC_DIR"/*.html; do
           fi
         fi
       else
-        if [[ "$patch_http_code" == "404" ]]; then
-          echo "  ⚠️  PATCH HTTP 404: Page not found - moving to page-not-found/" | tee -a "$LOG_FILE"
+        # If Notion returns object_not_found or block-not-found text in the body treat as page-not-found
+        if [[ "$patch_http_code" == "404" ]] || echo "$patch_body" | grep -qiE 'object_not_found|Could not find block with ID'; then
+          echo "  ⚠️  PATCH HTTP 404/object_not_found: Page not found - moving to page-not-found/" | tee -a "$LOG_FILE"
           mv "$html_file" "$PAGE_NOT_FOUND_DIR/" || true
         else
           echo "  ❌ PATCH HTTP error: $patch_http_code" | tee -a "$LOG_FILE"
