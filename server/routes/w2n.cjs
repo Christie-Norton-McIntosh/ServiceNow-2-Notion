@@ -1459,6 +1459,15 @@ router.post('/W2N', async (req, res) => {
         };
       }
       
+      // FIX v11.0.29: Ensure validationResult.summary is NEVER empty (prevents empty arrays in Notion)
+      if (!validationResult.summary || validationResult.summary.trim() === '') {
+        log(`⚠️ WARNING: Validation summary is empty - using default message`);
+        validationResult.summary = '⚠️ Validation completed but no summary was generated';
+        validationResult.hasErrors = true;
+        if (!validationResult.issues) validationResult.issues = [];
+        validationResult.issues.push('Internal error: validation summary was empty');
+      }
+      
       if (validationResult) {
         // FIX v11.0.7: Increased retries from 3 to 5 and longer delays to handle transient Notion API issues
         // Pages were being "skipped" for validation when property updates failed after 3 attempts
@@ -2498,6 +2507,17 @@ router.patch('/W2N/:pageId', async (req, res) => {
         }
       } catch (valError) {
         log(`⚠️ Validation failed (non-fatal): ${valError.message}`);
+        // FIX v11.0.29: Ensure validation result exists even on error
+        if (!validationResult) {
+          validationResult = {
+            success: false,
+            hasErrors: true,
+            issues: [`Validation error: ${valError.message}`],
+            warnings: [],
+            stats: null,
+            summary: `❌ Validation encountered an error: ${valError.message}`
+          };
+        }
       }
     }
     
@@ -2505,6 +2525,27 @@ router.patch('/W2N/:pageId', async (req, res) => {
     
     // STEP 6: Update Validation property with PATCH indicator
     // FIX v11.0.24: Always update properties (validationResult always exists now)
+    // FIX v11.0.29: Ensure validationResult.summary is NEVER empty (prevents empty arrays in Notion)
+    if (!validationResult) {
+      log(`⚠️ WARNING: validationResult is null - creating default result`);
+      validationResult = {
+        success: false,
+        hasErrors: true,
+        issues: ['Internal error: validation result was null'],
+        warnings: [],
+        stats: null,
+        summary: '❌ Internal error: validation result was not created properly'
+      };
+    }
+    
+    if (!validationResult.summary || validationResult.summary.trim() === '') {
+      log(`⚠️ WARNING: Validation summary is empty - using default message`);
+      validationResult.summary = '⚠️ Validation completed but no summary was generated';
+      validationResult.hasErrors = true;
+      if (!validationResult.issues) validationResult.issues = [];
+      validationResult.issues.push('Internal error: validation summary was empty');
+    }
+    
     try {
       const propertyUpdates = {};
       

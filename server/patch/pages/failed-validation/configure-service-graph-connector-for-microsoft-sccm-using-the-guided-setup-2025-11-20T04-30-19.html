@@ -1,0 +1,403 @@
+<!--
+Auto-saved: Validation properties failed to update after 6 retries
+Page ID: 2b1a89fe-dba5-81a0-85f2-f86e19b6d4bd
+Page URL: https://www.notion.so/Configure-Service-Graph-Connector-for-Microsoft-SCCM-using-the-guided-setup-2b1a89fedba581a085f2f86e19b6d4bd
+Page Title: Configure Service Graph Connector for Microsoft SCCM using the guided setup
+Created: 2025-11-20T04:30:19.387Z
+Source URL: https://www.servicenow.com/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/configure-sccm-integration.html
+
+Validation Result:
+{
+  "success": false,
+  "hasErrors": true,
+  "issues": [
+    "Block count too low: expected at least 16, got 0",
+    "Table count mismatch: expected 2, got 0",
+    "Missing callouts: expected 10, got 0 (10 missing)"
+  ],
+  "warnings": [
+    "Ordered list item count differs: expected 83, got 0 (83 fewer - may be counting methodology difference)",
+    "Unordered list item count differs: expected 23, got 0 (23 fewer - may be counting methodology difference)",
+    "ℹ️ Paragraph count lower than expected: ~17 (±9), got 0 (may be filtered empty paragraphs or promoted to list items)"
+  ],
+  "stats": {
+    "totalBlocks": 0,
+    "blockTypes": {},
+    "headingCount": 0,
+    "fetchTimeMs": 140
+  },
+  "summary": "❌ Validation failed: 3 critical error(s), 3 informational warning(s)\n\n❌ Critical Errors:\n1. Block count too low: expected at least 16, got 0\n2. Table count mismatch: expected 2, got 0\n3. Missing callouts: expected 10, got 0 (10 missing)\n\nℹ️ Informational Warnings:\n1. Ordered list item count differs: expected 83, got 0 (83 fewer - may be counting methodology difference)\n2. Unordered list item count differs: expected 23, got 0 (23 fewer - may be counting methodology difference)\n3. ℹ️ Paragraph count lower than expected: ~17 (±9), got 0 (may be filtered empty paragraphs or promoted to list items)\n\n📊 Content Comparison (Source → Notion):\n• Ordered list items: 83 → 0\n• Unordered list items: 23 → 0\n• Paragraphs: 17 → 0\n• Headings: 1 → 0\n• Tables: 2 → 0\n• Images: 0 → 0\n• Callouts: 10 → 0",
+  "sourceCounts": {
+    "orderedListItems": 83,
+    "unorderedListItems": 23,
+    "totalListItems": 106,
+    "paragraphs": 17,
+    "headings": 1,
+    "tables": 2,
+    "images": 0,
+    "callouts": 10,
+    "codeBlocks": 0
+  },
+  "notionCounts": {
+    "orderedListItems": 0,
+    "unorderedListItems": 0,
+    "totalListItems": 0,
+    "paragraphs": 0,
+    "headings": 0,
+    "tables": 0,
+    "images": 0,
+    "callouts": 0,
+    "codeBlocks": 0
+  }
+}
+
+Error Details:
+- Primary Error: You have been rate limited. Please try again in a few minutes.
+-->
+
+<div class="zDocsTopicPageBody" data-prismjs-copy="Copy" data-prismjs-copy-error="Text could not be copied. Try using keyboard shortcuts like Ctrl + C to copy instead." data-prismjs-copy-success="Copied!"><div dir="ltr" class="zDocsTopicPageBodyContent"><div><article class="hascomments" data-page="bundle:yokohama-servicenow-platform/enus/product/configuration-management/task/configure-sccm-integration.html" id="bundle:yokohama-servicenow-platform/enus/product/configuration-management/task/configure-sccm-integration.html"><main role="main"><article role="article" class="dita" id="configure-sccm-integration" aria-labelledby="title_configure-sccm-integration">
+   
+   
+   
+   
+   <div class="body taskbody"><p class="shortdesc">Set up and validate data source connection credentials to import <span class="ph"><span class="ph">Microsoft</span> SCCM</span> data into your <span class="ph">CMDB</span>.</p>
+      <section class="section prereq"><div class="tasklabel"><p class="sectiontitle tasklabel">Before you begin</p></div>
+         <div class="note important note_important" id="configure-sccm-integration__note_kqb_5tk_52c"><span class="note__title">Important:</span> Unless there are configuration issues, use the <span class="ph">SGC Central</span> view in the <span class="ph">CMDB Workspace</span> to configure the connection for the connector, as the guided setup method is being deprecated.</div>
+         <p class="p">Confirm that you are in the <span class="ph">Service Graph Connector for Microsoft SCCM</span> application scope by using the application picker.</p>
+         <div class="note note note_note"><span class="note__title">Note:</span> If you’re currently using a version of the <span class="ph"><span class="ph">Microsoft</span> SCCM</span> plugin, see <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task/update-2016-plugin-sccm.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/update-2016-plugin-sccm.html" class="xref" title="Deactivate the scheduled imports and pull records so that you can upgrade from the Microsoft SCCM 2016 plugin or an earlier version of the plugin to the Service Graph Connector for Microsoft SCCM.">Upgrade from the legacy SCCM plugin to the Service Graph Connector for Microsoft SCCM</a>.</div>
+         <div class="p">Dependencies and requirements:<ul class="ul" id="configure-sccm-integration__ul_evf_gh1_wmb">
+               <li class="li">The <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/concept/integration-commons-for-cmdb.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/integration-commons-for-cmdb.html" class="xref" title="The Integration Commons for CMDB (sn_cmdb_int_util) store app contains the CMDB Integrations Dashboard and a set of Robust Transform Engine (RTE) transforms and script includes.">Integration
+                            Commons for CMDB</a> store app, which is automatically
+                        installed.</li>
+               <li class="li">The CMDB CI class models store app, which is automatically installed. See <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/concept/cmdb-ci-class-models.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/cmdb-ci-class-models.html" class="xref" title="The CMDB contains base-system classes that store data about configuration items (CIs). The CMDB CI Class Models ServiceNow Store app adds class models that extend the CMDB class hierarchy, including class descriptions, identification rules, identifier entries, and dependent relationships if applicable.">CMDB CI Class Models</a>.</li>
+               
+               <li class="li">Integration - JDBC (com.snc.integration.jdbc)</li>
+               
+               
+               <li class="li"><span class="ph">Windows</span>
+                  <span class="ph">MID Server</span> required for access to the SCCM environment.</li>
+            </ul></div>
+         <div class="p">To access <span class="ph"><span class="ph">Microsoft</span> SCCM</span> data, you must have appropriate access to the <span class="ph"><span class="ph">Microsoft</span> SCCM</span> database. You must have sufficient credentials to query the SQL Server that contains the <span class="ph"><span class="ph">Microsoft</span> SCCM</span> database. You must do the following: <ol class="ol" id="configure-sccm-integration__ol_nv1_wvp_dpb">
+               <li class="li">Create a SQL Server account to connect to the <span class="ph"><span class="ph">Microsoft</span> SCCM</span> database on the MID Server to use the data sources.</li>
+               <li class="li">Connect to your <span class="ph"><span class="ph">Microsoft</span> SCCM</span> SQL Server and configure the following:<ol class="ol" type="a" id="configure-sccm-integration__ol_vbv_jyy_smb">
+                     <li class="li">Add a new login user name and password for SQL authentication.</li>
+                     <li class="li">Choose the <span class="ph"><span class="ph">Microsoft</span> SCCM</span> database that <span class="ph">ServiceNow</span> data sources will connect to.</li>
+                     <li class="li">Assign the <span class="ph">db_datareader</span> role membership to the <span class="ph"><span class="ph">Microsoft</span> SCCM</span> user.</li>
+                  </ol></li>
+            </ol></div>
+         <div class="note note note_note"><span class="note__title">Note:</span> If you have the <span class="ph">Service Graph Connector for Microsoft SCCM</span> version 2.1.6 or earlier versions installed in your production environment, contact <span class="ph">Customer Service and Support</span> for additional steps to remove the SCCM Discovery Source from being included when calculating the subscription unit consumption.</div>
+         <p class="p">Starting with <span class="ph">Service Graph Connector for Microsoft SCCM</span> version 3.0.4, support for multi-instance is introduced, enabling <span class="ph">Service Graph Connector for Microsoft SCCM</span> to connect to and import data from multiple <span class="ph"><span class="ph">Microsoft</span> SCCM</span> instances. This feature involves dynamically creating data sources and scheduled imports, requiring the granting of additional permissions. <span class="ph">For more information about how to complete these steps, see <a class="xref true-external" href="https://support.servicenow.com/kb?id=kb_article_view&amp;sysparm_article=KB1001248" target="_blank">Service Graph Connector for Microsoft 3.0 Setup Guidelines [KB1001248]</a> in <span class="ph">Now Support</span>.</span></p>
+         <p class="p">Air gap connections are available from version 3.7.0 of the <span class="ph">Service Graph Connector for Microsoft SCCM</span>. You can add either standard data sources or air gap data sources by using <span class="ph">SGC Central</span>. Before you set up air gap data sources, you must configure the air gap solution for the <span class="ph">Service Graph Connector for Microsoft SCCM</span> in your high-secure server and low-secure server. See <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/concept/sgc-sccm-airgap.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/sgc-sccm-airgap.html" class="xref" title="Air gap connections for the Service Graph Connector for Microsoft SCCM enable safe and controlled data transfer without compromising security.​">Configuring air gap connections for Microsoft SCCM</a>.</p>
+         <p class="p">Role required: admin</p>
+      </section>
+      <section><div class="tasklabel"><p class="sectiontitle tasklabel">Procedure</p></div><ol class="ol steps"><li class="li step stepexpand">
+            <span class="ph cmd">Navigate to <span class="ph menucascade"><span class="ph uicontrol">All</span><abbr> &gt; </abbr><span class="ph uicontrol">Service Graph Connectors</span><abbr> &gt; </abbr><span class="ph uicontrol">SCCM</span><abbr> &gt; </abbr><span class="ph uicontrol">Setup</span></span>.</span>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">On the Getting Started page, select <span class="ph uicontrol">Get Started</span>.</span>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">On the <span class="ph">Service Graph Connector for Microsoft SCCM</span> page, in the Configure Data source and Scheduled data import access section, select the task <span class="ph uicontrol">Configure Data source access</span>.</span>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Update the data source access to enable creating data sources and scheduled data imports for a new connection in the <span class="ph">Service Graph Connector for Microsoft SCCM</span>.</span>
+            <ol type="a" class="ol substeps" id="configure-sccm-integration__substeps_mkr_ywr_lrb">
+               <li class="li substep">
+                  <span class="ph cmd">For the Configure Data source access task, select <span class="ph uicontrol">Configure</span>.</span>
+               </li>
+               <li class="li substep" id="configure-sccm-integration__global">
+                  <span class="ph cmd">Select the <span class="ph uicontrol">Global</span> application scope by using the application picker.</span>
+               </li>
+               <li class="li substep">
+                  <span class="ph cmd">In the Application Access related list, select the <span class="ph uicontrol">Can create</span>, <span class="ph uicontrol">Can update</span>, and <span class="ph uicontrol">Can delete</span> check boxes, if not already selected.</span>
+               </li>
+               <li class="li substep">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Update</span> to close the tab and return to the guided setup.</span>
+               </li>
+               <li class="li substep" id="configure-sccm-integration__app">
+                  <span class="ph cmd">Modify the application scope again to <span class="ph uicontrol">Service Graph Connector for Microsoft SCCM</span> by using the application picker.</span>
+               </li>
+               <li class="li substep">
+                  <span class="ph cmd">Set the <span class="ph uicontrol">Update Data Source Access</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</span>
+               </li>
+               <li class="li substep">
+                  <span class="ph cmd">Repeat the steps <a class="xref" href="#configure-sccm-integration__global">4.b</a> to <a class="xref" href="#configure-sccm-integration__app">4.e</a> for the Update Scheduled data import access task with the Scheduled data import [scheduled_data_set] table and set the task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</span>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Configure the authentication credentials and configuration used for connecting to the <span class="ph">Microsoft</span> SCCM database.</span>
+            <ol type="a" class="ol substeps" id="configure-sccm-integration__substeps_z1f_jpg_ndc">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Use a user name and password to establish a JDBC connection to the SCCM database.</span>
+                  <div class="itemgroup info">
+                     <div class="note note note_note"><span class="note__title">Note:</span> Perform this step only when you want to use a user name and password to establish a JDBC connection. Otherwise, select <span class="ph uicontrol">Skip</span> to skip the step.</div>
+                     <ol class="ol" type="i" id="configure-sccm-integration__ol_fnc_wsg_ndc">
+                        <li class="li">For the <span class="ph">Configure connection</span> task in the <span class="ph">Configure the connection</span> section, select <span class="ph uicontrol">Configure</span>.</li>
+                        <li class="li">Configure the connection.<ul class="ul" id="configure-sccm-integration__ul_l2v_gfh_ndc">
+                              <li class="li">To configure the connection available by default, select <span class="ph uicontrol">Configure</span> for the <span class="ph">SCCM JDBC Connection Credentials</span> connection.</li>
+                              <li class="li">To create another connection, select <span class="ph uicontrol">Add Connection</span>.<div class="note note note_note"><span class="note__title">Note:</span> You can create multiple connections by selecting <span class="ph uicontrol">Add Connection</span>. If not redirected to the connection
+                                    setup, on the <span class="ph">Workflow Studio</span> Integrations page search for <span class="ph">SCCM JDBC Connection Credentials</span> to modify the default connection or add another connection.</div></li>
+                           </ul></li>
+                        <li class="li">On the form, fill in the fields.<div class="table-wrap"><table count-columns="2" class="table frame-all" id="configure-sccm-integration__table_u3c_zqg_ndc"><caption><span class="table--title-label">Table 1. </span><span class="title">Configure Connection or Create Connection form</span></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                                    <tr class="row">
+                                       <th class="entry align-left" id="configure-sccm-integration__table_u3c_zqg_ndc__entry__1">Field</th>
+                                       <th class="entry align-left" id="configure-sccm-integration__table_u3c_zqg_ndc__entry__2">Description</th>
+                                    </tr>
+                                 </thead><tbody class="tbody">
+                                    <tr class="row">
+                                       <td class="entry sub-head align-left" headers="configure-sccm-integration__table_u3c_zqg_ndc__entry__1 configure-sccm-integration__table_u3c_zqg_ndc__entry__2" colspan="2">Connection Information</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_u3c_zqg_ndc__entry__1">Connection name</td>
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_u3c_zqg_ndc__entry__2">Name to identify the <span class="ph"><span class="ph">Microsoft</span> SCCM</span> connection record.<p class="p">For example, <kbd class="ph userinput">SG-SCCM connection</kbd>.</p></td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_u3c_zqg_ndc__entry__1">Query timeout</td>
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_u3c_zqg_ndc__entry__2">Number of seconds the JDBC driver waits for a query to complete.<p class="p"><code class="ph codeph">0</code> indicates no timeout. If the timeout is exceeded, the integration considers the JDBC result inaccessible and
+                                             marks the result as an error.</p></td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_u3c_zqg_ndc__entry__1">Connection timeout</td>
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_u3c_zqg_ndc__entry__2">Number of seconds before the MID Server connection cache pool closes the connection and removes the connection.<p class="p"><code class="ph codeph">0</code> indicates no timeout.</p></td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_u3c_zqg_ndc__entry__1">Format</td>
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_u3c_zqg_ndc__entry__2">JDBC driver used for connecting to the <span class="ph"><span class="ph">Microsoft</span> SCCM</span> database.<p class="p"><span class="ph"><span class="ph">Microsoft</span> SCCM</span> uses <span class="ph">Microsoft</span> SQL Server as its database backend. This field is automatically set to <span class="ph uicontrol">com.microsoft.sqlserver.jdbc.SQLServerDriver</span>. Leave the field value as
+                                             is.</p></td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_u3c_zqg_ndc__entry__1">Host</td>
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_u3c_zqg_ndc__entry__2">Network address of the server where the <span class="ph">Microsoft</span> SQL Server database is located.</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_u3c_zqg_ndc__entry__1">Database name</td>
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_u3c_zqg_ndc__entry__2">Name of the <span class="ph">Microsoft</span> SQL Server database that <span class="ph"><span class="ph">Microsoft</span> SCCM</span> uses.</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_u3c_zqg_ndc__entry__1">Override default port</td>
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_u3c_zqg_ndc__entry__2">Custom port of the <span class="ph">Microsoft</span> SQL Server instance.<p class="p">The default port for <span class="ph">Microsoft</span> SQL Server is 1433</p></td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_u3c_zqg_ndc__entry__1">Instance name</td>
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_u3c_zqg_ndc__entry__2"><span class="ph">Microsoft</span> SQL Server instance.</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_u3c_zqg_ndc__entry__1">Use MID Server</td>
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_u3c_zqg_ndc__entry__2">Option to use the MID Server for accessing the JDBC server.</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_u3c_zqg_ndc__entry__1">MID Server</td>
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_u3c_zqg_ndc__entry__2">MID Server for the connection.<div class="note note note_note"><span class="note__title">Note:</span> It’s required to select a MID Server for an Integrated Authentication connection.<p class="p">For the <span class="ph uicontrol">SCCM JDBC Connection Credentials</span>
+                                                option.</p></div></td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry sub-head align-left" headers="configure-sccm-integration__table_u3c_zqg_ndc__entry__1 configure-sccm-integration__table_u3c_zqg_ndc__entry__2" colspan="2">Credential Information</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_u3c_zqg_ndc__entry__1">Username</td>
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_u3c_zqg_ndc__entry__2">User name for connecting to the JDBC server.</td>
+                                    </tr>
+                                    <tr class="row">
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_u3c_zqg_ndc__entry__1">Password</td>
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_u3c_zqg_ndc__entry__2">Password for the JDBC server.</td>
+                                    </tr>
+                                 </tbody></table></div></li>
+                        <li class="li">Save your changes.<ul class="ul" id="configure-sccm-integration__ul_ilc_rgh_ndc">
+                              <li class="li">For the default connection, select <span class="ph uicontrol">Configure Connection</span>.</li>
+                              <li class="li">For a new connection, select <span class="ph uicontrol">Create Connection</span>.</li>
+                           </ul></li>
+                        <li class="li">Navigate back to the guided setup and set the <span class="ph">Configure connection</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                     </ol>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Use Windows JDBC-integrated authentication, which uses domain credentials, for authenticating a JDBC connection to the SCCM database.</span>
+                  <div class="itemgroup info">
+                     <div class="note note note_note"><span class="note__title">Note:</span> Perform this step if you need the JDBC connection with integrated authentication. Otherwise, select <span class="ph uicontrol">Skip</span> to skip the step.</div>
+                     <ol class="ol" type="i" id="configure-sccm-integration__ol_fgr_htg_ndc">
+                        <li class="li">For the <span class="ph">Configure connection (Integrated authentication)</span> task in the <span class="ph">Configure the connection</span> section, select <span class="ph uicontrol">Configure</span>.</li>
+                        <li class="li">Configure the connection.<ul class="ul" id="configure-sccm-integration__ul_l53_kgh_ndc">
+                              <li class="li">To configure the connection available by default, select <span class="ph uicontrol">Configure</span> for the <span class="ph">SCCM JDBC Conn Cred (Integrated Auth)</span> connection.</li>
+                              <li class="li">To create another connection, select <span class="ph uicontrol">Add Connection</span>.<div class="note note note_note"><span class="note__title">Note:</span> You can create multiple connections by selecting <span class="ph uicontrol">Add Connection</span>. If not redirected to the connection
+                                    setup, on the <span class="ph">Workflow Studio</span> Integrations page section search for <span class="ph">SCCM JDBC Conn Cred (Integrated Auth)</span> to modify the default connection or add another connection.</div></li>
+                           </ul></li>
+                        <li class="li">On the form, fill in the fields.<div class="table-wrap"><div id="configure-sccm-integration__table_ggr_htg_ndc_wrapper" class="dataTables_wrapper no-footer"><div id="configure-sccm-integration__table_ggr_htg_ndc_filter" class="dataTables_filter"></div><div class="zDocsFilterTableDiv zDocsFilterColumnsTableDiv"><div><button type="button" data-toggle="dropdown" aria-label="Export table to a file" class="zDocsTopicPageTableExportButton"><svg aria-hidden="true" class="ico-ellipsis-v"><use xlink:href="#ico-ellipsis-v"></use></svg></button><div class="dropdown-menu zDocsDropdownMenu zDocsTopicPageTableExportMenu"><button type="button" aria-label="Export to Excel" class="dropdown-item">Export to Excel</button><button type="button" aria-label="Export to CSV" class="dropdown-item">Export to CSV</button></div></div></div><table count-columns="2" class="table frame-all dataTable no-footer" id="configure-sccm-integration__table_ggr_htg_ndc"><caption><span class="table--title-label">Table 2. </span><span class="title">Configure Connection or Create Connection form</span></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                                    <tr class="row"><th class="entry align-left sorting" id="configure-sccm-integration__table_ggr_htg_ndc__entry__1" tabindex="0" aria-controls="configure-sccm-integration__table_ggr_htg_ndc" rowspan="1" colspan="1" aria-label="Field: activate to sort column ascending">Field</th><th class="entry align-left sorting" id="configure-sccm-integration__table_ggr_htg_ndc__entry__2" tabindex="0" aria-controls="configure-sccm-integration__table_ggr_htg_ndc" rowspan="1" colspan="1" aria-label="Description: activate to sort column ascending">Description</th></tr>
+                                 </thead><tbody class="tbody">
+                                    
+                                    
+                                    
+                                    
+                                    
+                                    
+                                    
+                                    
+                                 <tr class="row odd">
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_ggr_htg_ndc__entry__1">Connection name</td>
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_ggr_htg_ndc__entry__2">Name to identify the <span class="ph"><span class="ph">Microsoft</span> SCCM</span> connection record.</td>
+                                    </tr><tr class="row even">
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_ggr_htg_ndc__entry__1">Query timeout</td>
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_ggr_htg_ndc__entry__2">Number of seconds the JDBC driver waits for a query to complete.<p class="p"><code class="ph codeph">0</code> indicates no timeout. If the timeout is exceeded, the integration considers the JDBC result inaccessible and
+                                             marks the result as an error.</p></td>
+                                    </tr><tr class="row odd">
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_ggr_htg_ndc__entry__1">Connection timeout</td>
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_ggr_htg_ndc__entry__2">Number of seconds before the MID Server connection cache pool closes the connection and removes the connection.<p class="p"><code class="ph codeph">0</code> indicates no timeout.</p></td>
+                                    </tr><tr class="row even">
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_ggr_htg_ndc__entry__1">Host</td>
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_ggr_htg_ndc__entry__2">Network address of the server where the <span class="ph">Microsoft</span> SQL Server database is located.</td>
+                                    </tr><tr class="row odd">
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_ggr_htg_ndc__entry__1">Database name</td>
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_ggr_htg_ndc__entry__2">Name of the <span class="ph">Microsoft</span> SQL Server database that <span class="ph"><span class="ph">Microsoft</span> SCCM</span> uses.</td>
+                                    </tr><tr class="row even">
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_ggr_htg_ndc__entry__1">Override default port</td>
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_ggr_htg_ndc__entry__2">Custom port of the <span class="ph">Microsoft</span> SQL Server instance.<p class="p">The default port for <span class="ph">Microsoft</span> SQL Server is 1433</p></td>
+                                    </tr><tr class="row odd">
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_ggr_htg_ndc__entry__1">Instance name</td>
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_ggr_htg_ndc__entry__2"><span class="ph">Microsoft</span> SQL Server instance.</td>
+                                    </tr><tr class="row even">
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_ggr_htg_ndc__entry__1">MID Server</td>
+                                       <td class="entry align-left" headers="configure-sccm-integration__table_ggr_htg_ndc__entry__2">MID Server for the connection.<div class="note note note_note"><span class="note__title">Note:</span> It’s required to select a MID Server for an Integrated Authentication connection.<p class="p">For the <span class="ph uicontrol">SCCM JDBC Connection Credentials</span>
+                                                option.</p></div></td>
+                                    </tr></tbody></table></div></div></li>
+                        <li class="li">Save your changes.<ul class="ul" id="configure-sccm-integration__ul_iq2_wfh_ndc">
+                              <li class="li">For the default connection, select <span class="ph uicontrol">Configure Connection</span>.</li>
+                              <li class="li">For a new connection, select <span class="ph uicontrol">Create Connection</span>.</li>
+                           </ul></li>
+                        <li class="li">Navigate back to the guided setup and set the <span class="ph">Configure connection (Integrated authentication)</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                     </ol>
+                  </div>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Configure the connection and connector properties to map attributes and manage data imports.</span>
+            <ol type="a" class="ol substeps" id="configure-sccm-integration__substeps_y2h_wvg_ndc">
+               <li class="li substep substepexpand">(Optional) 
+                  <span class="ph cmd">Enable mapping asset tags from <span class="ph"><span class="ph">Microsoft</span> SCCM</span> to the asset tag attribute in the Computer [cmdb_ci_computer] class.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i" id="configure-sccm-integration__ol_zsv_wvg_ndc">
+                        <li class="li">For the <span class="ph">Configure Connection Properties</span> task in the <span class="ph">Configure Data Source and Scheduled Data Import</span> section, select <span class="ph uicontrol">Configure</span>.</li>
+                        <li class="li">In the Name column, select the connection.</li>
+                        <li class="li">In the <span class="ph">Service Graph Connection Properties</span> related list, select <span class="ph uicontrol">asset_tag</span> in the Property column.</li>
+                        <li class="li">In the <span class="ph uicontrol">Value</span> field, enter <kbd class="ph userinput">true</kbd> to enable mapping asset tags.</li>
+                        <li class="li">Select <span class="ph uicontrol">Update</span>.</li>
+                        <li class="li">Navigate back to guided setup and set the <span class="ph">Configure Connection Properties</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                     </ol>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Test the Computer Identity data source to verify that all data sources are properly connected.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i" id="configure-sccm-integration__ol_gq1_vwg_ndc">
+                        <li class="li">For the <span class="ph">Validate Data Sources</span> task in the <span class="ph">Configure Data Source and Scheduled Data Import</span> section, select <span class="ph uicontrol">Configure</span>.</li>
+                        <li class="li">In the Name column, select the Computer Identity data source associated with the connection.</li>
+                        <li class="li">Select <span class="ph uicontrol">Test Load 20 Records</span>.</li>
+                        <li class="li">When the <span class="ph uicontrol">State</span> field is set to <span class="ph uicontrol">Complete</span> and the <span class="ph uicontrol">Completion code</span> field is set to <span class="ph uicontrol">Success</span>, select the <span class="ph uicontrol">Return to
+                              data source</span> link.</li>
+                        <li class="li">Navigate back to guided setup and set the <span class="ph">Validate Data Sources</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                     </ol>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Ensure that all data from the Computer Identity source is imported without the date time filtering during the next test load.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i" id="configure-sccm-integration__ol_ikb_txg_ndc">
+                        <li class="li">For the <span class="ph">Reset 'Last run datetime' in test load data source </span> task in the <span class="ph">Configure Data Source and Scheduled Data Import</span> section, select <span class="ph uicontrol">Configure</span>.</li>
+                        <li class="li">In the Name column, select the Computer Identity data source associated with the connection.</li>
+                        <li class="li">Clear the <span class="ph uicontrol">Use last run datetime</span> check box.</li>
+                        <li class="li">Select <span class="ph uicontrol">Update</span>.</li>
+                        <li class="li">Navigate back to guided setup and set the <span class="ph">Reset 'Last run datetime' in test load data source </span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                     </ol>
+                  </div>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">(Optional) 
+            <span class="ph cmd">Configure the process for importing disk data when the <span class="ph">Discovery</span> application is running.</span>
+            <ol type="a" class="ol substeps" id="configure-sccm-integration__substeps_bbp_3mr_nyb">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Avoid creating duplicate records in the CMDB Disks [cmdb_ci_disk] table.</span>
+                  <div class="itemgroup info">
+                     <div class="note note note_note"><span class="note__title">Note:</span> You can avoid creating duplicate records in the CMDB Disks [cmdb_ci_disk] table when the <span class="ph">Discovery</span> application is running by configuring the <span class="keyword parmname">sn_sccm_integrate.sccm_disks_managed</span> property and setting its value to <code class="ph codeph">true</code>. By default, the property value
+                        is set to <code class="ph codeph">false</code>.</div>
+                     <ol class="ol" type="i" id="configure-sccm-integration__ol_mq2_2n3_rcc">
+                        <li class="li">For the <span class="ph">Configure Disk Data Imports</span> task in the <span class="ph">Configure Disk Data Imports</span> section, select <span class="ph uicontrol">Configure</span>.</li>
+                        <li class="li">On the System Property page, set the value of the <span class="keyword parmname">sn_sccm_integrate.sccm_disks_managed</span> property to <kbd class="ph userinput">true</kbd>.</li>
+                        <li class="li">Select <span class="ph uicontrol">Update</span>.</li>
+                        <li class="li">Set the <span class="ph">Configure Disk Data Imports</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                     </ol>
+                     <div class="note note note_note"><span class="note__title">Note:</span> Any existing disk records are updated only after the next hardware scan is executed in the Microsoft SCCM instance.</div>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">(Optional) 
+                  <span class="ph cmd">Transform imported disk name to disk number format.</span>
+                  <div class="itemgroup info">
+                     <div class="note note note_note"><span class="note__title">Note:</span> You can set the imported disk name to the format <code class="ph codeph">Disk #<var class="keyword varname">&lt;disknumber&gt;</var></code>. Where <var class="keyword varname">&lt;disknumber&gt;</var> is the number extracted from the imported disk name.</div>
+                     <ol class="ol" type="i" id="configure-sccm-integration__ol_pxl_j43_rcc">
+                        <li class="li">Select the <span class="ph uicontrol">Integration Commons for CMDB</span> application scope from the application picker.</li>
+                        <li class="li">For the <span class="ph">Configure Disk Name Transformation</span> task in the <span class="ph">Configure Disk Data Imports</span> section, select <span class="ph uicontrol">Configure</span>.</li>
+                        <li class="li">On the System Property page, set the value of the <span class="keyword parmname">sn_cmdb_int_util.transform_disk_name_to_discovery_format</span> property to <kbd class="ph userinput">true</kbd>.</li>
+                        <li class="li">Select <span class="ph uicontrol">Update</span>.</li>
+                        <li class="li">From the application picker, select the <span class="ph">Service Graph Connector for Microsoft SCCM</span> application scope.</li>
+                        <li class="li">Set the <span class="ph">Configure Disk Name Transformation</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                     </ol>
+                  </div>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Configure the scheduled data imports.</span>
+            <div class="itemgroup info">
+               <div class="note note note_note"><span class="note__title">Note:</span> If the <span class="ph uicontrol">Use Integrated Authentication</span> check box is selected for the data source, the run as user for the scheduled data import job must have the import_admin role. For more information, see the <a class="xref true-external" href="https://support.servicenow.com/kb_view.do?sysparm_article=KB1312810" target="_blank">"Use Integrated Authentication" is being unchecked when you run the scheduled import related to SG-SCCM or SG-SCCM Computer Identity Data Source [KB1312810]</a> article in the <span class="ph">Now Support</span> Knowledge Base.</div>
+            </div>
+            <ol type="a" class="ol substeps" id="configure-sccm-integration__substeps_fqt_5ws_lrb">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">For the <span class="ph">Configure scheduled jobs</span> task in the Configure scheduled jobs task section, select <span class="ph uicontrol">Configure</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">On the Scheduled Data Import form, verify the field values for the scheduled job.</span>
+                  <div class="itemgroup info">For more information, see <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task//csh" href="/docs/csh?topicname=t_ScheduleADataImport&amp;version=yokohama&amp;pubname=yokohama-integrate-applications#table_r53_5hm_xp" class="xref">Schedule a data import</a>.<p class="p">All other <span class="ph">Service Graph Connector for Microsoft SCCM</span> scheduled jobs that are active will run in their specified order after the Computer Identity scheduled job is finished running. Select the <span class="ph uicontrol">Active</span> check box for a
+                        scheduled job to activate the job.</p><div class="note important note_important"><span class="note__title">Important:</span> If you are upgrading to the <span class="ph">Service Graph Connector for Microsoft SCCM</span>, deactivate the existing 'SG-SCCM Computer Identity scheduled data import'. Additionally, you cannot use the baseline scheduled data import or data sources that have a name starting
+                        with 'SG-SCCM' because they are used as templates for creating an instance of data sources and scheduled data imports.</div></div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Update</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Set the <span class="ph">Configure Scheduled data imports</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</span>
+               </li>
+               <li class="li substep substepexpand">(Optional) 
+                  <span class="ph cmd">When upgrading the <span class="ph">Service Graph Connector for Microsoft SCCM</span>, deactivate the existing SG-SCCM Computer Identity scheduled data import.</span>
+                  <div class="itemgroup info">For the <span class="ph">Deactivate Legacy Scheduled Data Imports</span> task, select <span class="ph uicontrol">Configure</span>.</div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">In the Name column, select the SG-SCCM Computer Identity scheduled data import and clear the <span class="ph uicontrol">Active</span> check box.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Set the <span class="ph">Deactivate Legacy Scheduled Data Imports</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</span>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">(Optional) 
+            <span class="ph cmd">Customize the Instance Data source SQL statement.</span>
+            <ol type="a" class="ol substeps">
+               <li class="li substep">
+                  <span class="ph cmd">For the <span class="ph">Customizing Data source SQL statement</span> task in the Customize Instance Data source SQL statement section, select <span class="ph uicontrol">Configure</span>.</span>
+               </li>
+               <li class="li substep">
+                  <span class="ph cmd">Select the name of the instance in which you want to customize the SQL
+                            statement.</span>
+               </li>
+               <li class="li substep">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Update</span>.</span>
+               </li>
+               <li class="li substep">
+                  <span class="ph cmd">Set the <span class="ph">Customizing Data source SQL statement</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</span>
+               </li>
+            </ol>
+         </li></ol></section>
+      <section class="section tasktroubleshooting" id="configure-sccm-integration__tasktroubleshooting_j35_tqf_41c">
+         <div class="p">To resolve issues when configuring the connector, you can view the following additional resources:<ul class="ul" id="configure-sccm-integration__ul_iyc_djz_31c">
+               <li class="li"><a class="xref true-external" href="https://support.servicenow.com/kb?id=kb_article_view&amp;sysparm_article=KB0780988" target="_blank">How to identify and delete duplicate CMDB CI Relationship records or ones that have orphan or missing parent/child relationships [KB0780988]</a> in the <span class="ph">Now Support</span> Knowledge Base</li>
+               <li class="li"><a class="xref true-external" href="https://support.servicenow.com/kb?id=kb_article_view&amp;sysparm_article=KB0746309" target="_blank">How to delete sys_object_source records [KB0746309 ]</a> in the <span class="ph">Now Support</span> Knowledge Base</li>
+               <li class="li"><a class="xref true-external" href="https://support.servicenow.com/kb?id=kb_article_view&amp;sysparm_article=KB0958768" target="_blank">Duplicate software installs with different Discovery Source [KB0958768]</a> in the <span class="ph">Now Support</span> Knowledge Base</li>
+               <li class="li"><a class="xref true-external" href="https://support.servicenow.com/kb?id=kb_article_view&amp;sysparm_article=KB1277555" target="_blank">Assigned To Field Doesn't Get Updated For Computer CIs in Service Graph Connector for SCCM [KB1277555]</a> in the <span class="ph">Now Support</span> Knowledge Base</li>
+               <li class="li"><a class="xref true-external" href="https://www.servicenow.com/community/cmdb-blog/service-graph-connector-for-microsoft-sccm-software-usages-data/ba-p/2274907" target="_blank">Service Graph connector for Microsoft SCCM software usages data import</a> blog post on the <span class="ph">ServiceNow Community</span> site</li>
+            </ul></div>
+      </section>
+   </div>
+   <nav role="navigation"></nav><nav role="navigation" class="tasksNavigation"></nav>
+</article></main></article></div></div><div class="contentPlaceholder" style="height: 491px;"><div class="contentContainer zDocsSideBoxes withExpandCollapse"><div class="contentWrapper" style="height: 491px;"><button aria-hidden="true" data-tooltip-id="zDocsMiniTocCollapseToolTip" data-tooltip-content="Hide Mini TOC" data-testid="expand-collapse-button" class="zDocsMiniTocCollapseButton" aria-label="Hide" aria-expanded="true"><svg aria-hidden="true" class="ico-angle-arrow-right"><use xlink:href="#ico-angle-arrow-right"></use></svg></button><div><h5 class=" css-g931ng" aria-level="5">Related Content</h5><ul><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/cmdb-integration-sccm.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Service Graph Connector for Microsoft SCCM</a><p>Use the Service Graph Connector for Microsoft SCCM to pull data from Microsoft System Center Configuration Manager (SCCM) into your ServiceNow instance.</p></li><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/reference/cmdb-sccm-classes.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>CMDB classes targeted in Service Graph Connector for Microsoft SCCM</a><p>When you complete setting up the connection, you can configure the integration to periodically pull data from Microsoft SCCM. The data is saved in tables that extend from the Configuration item [cmdb_ci] table.</p></li><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/sgc-central/task/sgcc-configure-sccm-integ.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Configure Service Graph Connector for Microsoft SCCM using SGC Central</a><p>Use the playbook available with the SGC Central application to set up the Service Graph Connector for Microsoft SCCM for pulling in Microsoft SCCM data into the CMDB.</p></li><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/enable-software-editions-sccm.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Enable Software Editions in Service Graph Connector for Microsoft SCCM</a><p>Enable software editions so that you can gather edition information for products such as Adobe Acrobat, Microsoft SQL Server, and Windows Exchange Server into the Service Graph Connector for Microsoft SCCM.</p></li><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/sgc-cmdb-sccm-conn.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Accessing the connection details of Service Graph Connector for Microsoft SCCM</a><p>You can access the connection details of the Service Graph Connector for Microsoft SCCM in a single view using the common connection framework (CCF) included within the Integration Commons for CMDB (sn_cmdb_int_util) store app.</p></li><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/sgc-sccm-airgap.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Configuring air gap connections for Microsoft SCCM</a><p>Air gap connections for the Service Graph Connector for Microsoft SCCM enable safe and controlled data transfer without compromising security.​</p></li></ul></div></div></div></div></div>
