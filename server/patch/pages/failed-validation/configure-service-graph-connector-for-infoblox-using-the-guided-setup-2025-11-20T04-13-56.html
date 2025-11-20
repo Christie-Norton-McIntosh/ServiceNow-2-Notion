@@ -1,0 +1,342 @@
+<!--
+Auto-saved: Validation properties failed to update after 6 retries
+Page ID: 2b1a89fe-dba5-81f1-b1b2-fab6bbd7c279
+Page URL: https://www.notion.so/Configure-Service-Graph-Connector-for-Infoblox-using-the-guided-setup-2b1a89fedba581f1b1b2fab6bbd7c279
+Page Title: Configure Service Graph Connector for Infoblox using the guided setup
+Created: 2025-11-20T04:13:56.819Z
+Source URL: https://www.servicenow.com/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/sgc-configure-infoblox-integration.html
+
+Validation Result:
+{
+  "success": false,
+  "hasErrors": true,
+  "issues": [
+    "Block count too low: expected at least 7, got 0",
+    "Table count mismatch: expected 2, got 0",
+    "Missing callouts: expected 4, got 0 (4 missing)"
+  ],
+  "warnings": [
+    "Ordered list item count differs: expected 89, got 0 (89 fewer - may be counting methodology difference)",
+    "Unordered list item count differs: expected 6, got 0 (6 fewer - may be counting methodology difference)",
+    "ℹ️ Paragraph count lower than expected: ~11 (±6), got 0 (may be filtered empty paragraphs or promoted to list items)"
+  ],
+  "stats": {
+    "totalBlocks": 0,
+    "blockTypes": {},
+    "headingCount": 0,
+    "fetchTimeMs": 282
+  },
+  "summary": "❌ Validation failed: 3 critical error(s), 3 informational warning(s)\n\n❌ Critical Errors:\n1. Block count too low: expected at least 7, got 0\n2. Table count mismatch: expected 2, got 0\n3. Missing callouts: expected 4, got 0 (4 missing)\n\nℹ️ Informational Warnings:\n1. Ordered list item count differs: expected 89, got 0 (89 fewer - may be counting methodology difference)\n2. Unordered list item count differs: expected 6, got 0 (6 fewer - may be counting methodology difference)\n3. ℹ️ Paragraph count lower than expected: ~11 (±6), got 0 (may be filtered empty paragraphs or promoted to list items)\n\n📊 Content Comparison (Source → Notion):\n• Ordered list items: 89 → 0\n• Unordered list items: 6 → 0\n• Paragraphs: 11 → 0\n• Headings: 0 → 0\n• Tables: 2 → 0\n• Images: 0 → 0\n• Callouts: 4 → 0",
+  "sourceCounts": {
+    "orderedListItems": 89,
+    "unorderedListItems": 6,
+    "totalListItems": 95,
+    "paragraphs": 11,
+    "headings": 0,
+    "tables": 2,
+    "images": 0,
+    "callouts": 4,
+    "codeBlocks": 1
+  },
+  "notionCounts": {
+    "orderedListItems": 0,
+    "unorderedListItems": 0,
+    "totalListItems": 0,
+    "paragraphs": 0,
+    "headings": 0,
+    "tables": 0,
+    "images": 0,
+    "callouts": 0,
+    "codeBlocks": 0
+  }
+}
+
+Error Details:
+- Primary Error: You have been rate limited. Please try again in a few minutes.
+-->
+
+<div class="zDocsTopicPageBody" data-prismjs-copy="Copy" data-prismjs-copy-error="Text could not be copied. Try using keyboard shortcuts like Ctrl + C to copy instead." data-prismjs-copy-success="Copied!"><div dir="ltr" class="zDocsTopicPageBodyContent wide"><div><article class="hascomments" data-page="bundle:yokohama-servicenow-platform/enus/product/configuration-management/task/sgc-configure-infoblox-integration.html" id="bundle:yokohama-servicenow-platform/enus/product/configuration-management/task/sgc-configure-infoblox-integration.html"><main role="main"><article role="article" class="dita" id="sgc-configure-infoblox-integration" aria-labelledby="title_sgc-configure-infoblox-integration">
+   
+   
+   
+   
+   <div class="body taskbody"><p class="shortdesc">Pull in data from <span class="ph">Infoblox</span> into your <span class="ph">CMDB</span>.</p>
+      <section class="section prereq"><div class="tasklabel"><p class="sectiontitle tasklabel">Before you begin</p></div>
+         <div class="note important note_important" id="sgc-configure-infoblox-integration__note_kqb_5tk_52c"><span class="note__title">Important:</span> Unless there are configuration issues, use the <span class="ph">SGC Central</span> view in the <span class="ph">CMDB Workspace</span> to configure the connection for the connector, as the guided setup method is being deprecated.</div>
+         <p class="p">To use this <span class="ph">Service Graph Connector</span>, you need a subscription to a Subscription Unit that is based in the <span class="ph">IT Operations Management</span> (<span class="ph">ITOM</span>) Visibility application or in the <span class="ph">ITOM</span> Discovery application. As defined in the section titled "Managed IT Resource Types" in <a class="xref true-external" href="https://www.servicenow.com/products/entitlements-packages.html" target="_blank">ServiceNow Subscription Unit Overview</a> for your subscription, for managed IT resources that are created or modified in the <span class="ph">CMDB</span> by this <span class="ph">Service Graph Connector</span>, but that aren’t yet managed by <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task//csh" href="/docs/csh?topicname=itom-license-module&amp;version=yokohama&amp;pubname=yokohama-it-operations-management" class="xref">ITOM Visibility or ITOM Discovery</a>, these resources will increase Subscription Unit consumption from that application. Review your current Subscription Unit consumption within ITOM
+        Visibility or ITOM Discovery to ensure available capacity.</p>
+         <div class="p">Dependencies and requirements:<ul class="ul" id="sgc-configure-infoblox-integration__ul_igl_nfr_sqb">
+               <li class="li">The <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/concept/integration-commons-for-cmdb.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/integration-commons-for-cmdb.html" class="xref" title="The Integration Commons for CMDB (sn_cmdb_int_util) store app contains the CMDB Integrations Dashboard and a set of Robust Transform Engine (RTE) transforms and script includes.">Integration Commons for CMDB</a> store app, which is automatically installed.</li>
+               <li class="li">The CMDB CI class models store app, which is automatically installed. See <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/concept/cmdb-ci-class-models.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/cmdb-ci-class-models.html" class="xref" title="The CMDB contains base-system classes that store data about configuration items (CIs). The CMDB CI Class Models ServiceNow Store app adds class models that extend the CMDB class hierarchy, including class descriptions, identification rules, identifier entries, and dependent relationships if applicable.">CMDB CI Class Models</a>.</li>
+               <li class="li">The ITOM Discovery License plugin (com.snc.itom.discovery.license). You must activate this plugin.</li>
+               <li class="li">ITOM Licensing plugin (com.snc.itom.license). For more information, see <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task//csh" href="/docs/csh?topicname=t_ActivateTheDiscoveryPlugin&amp;version=yokohama&amp;pubname=yokohama-it-operations-management" class="xref">Request Discovery</a>.</li>
+               <li class="li">The Datastream Action plugin (com.glide.hub.action_type.datastream), which is automatically installed.</li>
+               <li class="li">Observability Commons for <span class="ph">CMDB</span> (sn_observability), which is only required for event ingestion. This must be installed prior to installing the connector for Event Management to work. For more information, see <a class="xref true-external" href="https://store.servicenow.com/sn_appstore_store.do#!/store/application/97e04562072020107add6a77c4a9351a" target="_blank">Observability Commons for CMDB</a> on the <span class="ph">ServiceNow Store</span>.</li>
+            </ul></div>
+         <div class="note note note_note"><span class="note__title">Note:</span> If you have an earlier version of the <span class="ph">Service Graph Connector for Infoblox</span>, then don’t migrate data from the old connector. You must uninstall the previous version and run the new integration.</div>
+         <p class="p">Role required: admin</p>
+      </section>
+      <section><div class="tasklabel"><p class="sectiontitle tasklabel">Procedure</p></div><ol class="ol steps"><li class="li step stepexpand">
+            <span class="ph cmd">Ensure that the application scope is set to the <span class="ph"> Service Graph Connector for <span class="ph">Infoblox</span></span> application by using the application picker.</span>
+            <div class="itemgroup info">For more information, see <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task//csh" href="/docs/csh?topicname=c_ApplicationPicker&amp;version=yokohama&amp;pubname=yokohama-application-development" class="xref">Application picker</a>.</div>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Navigate to <span class="ph menucascade"><span class="ph uicontrol">All</span><abbr> &gt; </abbr><span class="ph uicontrol">Service Graph Connectors</span><abbr> &gt; </abbr><span class="ph uicontrol">Infoblox</span><abbr> &gt; </abbr><span class="ph uicontrol">Setup</span></span>.</span>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">On the Getting started page, select <span class="ph uicontrol">Get Started</span>.</span>
+         </li><li class="li step stepexpand" id="sgc-configure-infoblox-integration__datadog-alias">
+            <span class="ph cmd">Configure the authentication credentials and HTTP connection details for sending requests to the <span class="ph">Infoblox</span> API.</span>
+            <ol type="a" class="ol substeps">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Configure your <span class="ph">Infoblox</span> authentication credentials.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i" id="sgc-configure-infoblox-integration__ol_hfg_3gy_prb">
+                        <li class="li">In the <span class="ph">Configure the connection</span> section of the <span class="ph">Service Graph Connector for Infoblox</span> page, select <span class="ph uicontrol">Get Started</span>.</li>
+                        <li class="li">For the <span class="ph">Configure Infoblox authentication credentials</span> task, select <span class="ph uicontrol">Configure</span>
+                           <span class="ph">to open the Basic Auth Credentials page opens in a new browser tab</span>.</li>
+                        <li class="li">In the <span class="ph uicontrol">Name</span> field, enter a name for the authentication. <p class="p">For example, <kbd class="ph userinput">Infoblox Credential</kbd>.</p></li>
+                        <li class="li">In the <span class="ph uicontrol">User name</span> field, enter the user name that is used to authenticate the HTTP request when this authentication profile is enabled.</li>
+                        <li class="li">In the <span class="ph uicontrol">Password</span> field, enter the password for the user name that is used to authenticate the HTTP request.</li>
+                        <li class="li">Select <span class="ph uicontrol">Update</span><span class="ph"> to return to the guided setup page</span>.</li>
+                        <li class="li">Set the <span class="ph">Configure Infoblox authentication credentials</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                     </ol>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Configure the <span class="ph">Infoblox</span> connection settings.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i" id="sgc-configure-infoblox-integration__ol_u4t_5gy_prb">
+                        <li class="li">For the <span class="ph">Configure Infoblox HTTP connection</span> task, select <span class="ph uicontrol">Configure</span><span class="ph"> to open the HTTP(s) Connection page in a new browser tab</span>.</li>
+                        <li class="li">Review the fields and in the <span class="ph uicontrol">Name</span> field and enter the <span class="ph">Infoblox</span> instance name.</li>
+                        <li class="li">Use the URL builder to build the connection string or in the <span class="ph uicontrol">Connection URL</span> field, enter the <span class="ph">Infoblox</span> base URL in the following format: <code class="ph codeph">https://<var class="keyword varname">&lt;base-URL&gt;</var></code>.</li>
+                        <li class="li">In the <span class="ph uicontrol">api_version</span> field of the Attributes section, enter the <a class="xref true-external" href="https://ipam.illinois.edu/wapidoc/" target="_blank">version of WAPI</a> you’re using.</li>
+                        <li class="li">In the <span class="ph uicontrol">network_view</span> field of the Attributes section, enter the network views for which data is to be imported.<p class="p">For multiple views, separate the views with commas. For example:
+                                 <code class="ph codeph">view1,view2</code>. If you leave this field empty, the data sources import data from all the network views.</p></li>
+                        <li class="li">Select <span class="ph uicontrol">Update</span><span class="ph"> to return to the guided setup page</span>.</li>
+                        <li class="li">Set the <span class="ph">Configure Infoblox HTTP connection</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                     </ol>
+                     <p class="p">For more information about the <span class="ph">Infoblox</span> API, see the <a class="xref true-external" href="https://www.infoblox.com/wp-content/uploads/infoblox-deployment-infoblox-rest-api.pdf" target="_blank">Infoblox Developer documentation</a>.</p>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Configure the connection properties.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i" id="sgc-configure-infoblox-integration__ol_fbb_dfz_xxb">
+                        <li class="li">For the <span class="ph">Configure connection properties</span> task, select <span class="ph uicontrol">Configure</span> to open the <span class="ph">Service Graph Connections</span> page in a new browser tab.</li>
+                        <li class="li">To review and modify the property details, select a property from the <span class="ph uicontrol">Property</span> column in the Service Graph Connection Properties related list.</li>
+                        <li class="li">Select <span class="ph uicontrol">Update</span> on the Service Graph Connection Properties page.</li>
+                        <li class="li">Select <span class="ph uicontrol">Update</span> on the Service Graph Connections page to return to the guided setup page.</li>
+                        <li class="li">Set the <span class="ph">Configure connection properties</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                     </ol>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Test the <span class="ph">Infoblox</span> API connection to import data from the <span class="ph">Infoblox</span> application.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i" id="sgc-configure-infoblox-integration__ol_rrf_sb4_1xb">
+                        <li class="li">In the <span class="ph">Configure the connection</span> section of the <span class="ph">Service Graph Connector for Infoblox</span> page, select <span class="ph uicontrol">Continue</span>.</li>
+                        <li class="li">For the <span class="ph">Test the connection</span> task, select <span class="ph uicontrol">Configure</span><span class="ph"> to open the Service Graph Connections page in a new browser tab</span>.</li>
+                        <li class="li">Select <span class="ph uicontrol">Test Connection</span>.</li>
+                        <li class="li">When the <span class="ph uicontrol">Status</span> field is set to <span class="ph uicontrol">Success</span>, select <span class="ph uicontrol">Update</span> to close the <span class="ph">Test the connection</span> dialog box and
+                           return to the guided setup page.<p class="p">If any of the tests have errors, follow the suggestions for remediation.</p></li>
+                        
+                        
+                        <li class="li">Set the <span class="ph">Test the connection</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                     </ol>
+                  </div>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">(Optional) 
+            <span class="ph cmd">Add multiple instances.</span>
+            <div class="itemgroup info">
+               <div class="note note note_note"><span class="note__title">Note:</span> If you don't need to add multiple instances, you can skip this step.</div>
+            </div>
+            <ol type="a" class="ol substeps" id="sgc-configure-infoblox-integration__substeps_lkv_bfv_zfc">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">In the <span class="ph">Add Multiple Instances</span> section of the <span class="ph">Service Graph Connector for Infoblox</span> page, select <span class="ph uicontrol">Get Started</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">For the <span class="ph">Update Data Source Access</span> task, select <span class="ph uicontrol">Configure</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select the Data Source [sys_data_source] table.</span>
+               </li>
+               <li class="li substep substepexpand" id="sgc-configure-infoblox-integration__substep_cyy_1hv_zfc">
+                  <span class="ph cmd">Select the <span class="ph uicontrol">Global</span> application scope by using the application picker.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">In the Application Access related list, select the <span class="ph uicontrol">Can create</span>, <span class="ph uicontrol">Can update</span>, and <span class="ph uicontrol">Can delete</span> check boxes, if not already selected.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Update</span> to close the tab and return to the guided setup.</span>
+               </li>
+               <li class="li substep substepexpand" id="sgc-configure-infoblox-integration__substep_j1l_bhv_zfc">
+                  <span class="ph cmd">Modify the application scope again to <span class="ph uicontrol">Service Graph Connector for Infoblox</span> by using the application picker.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Set the <span class="ph">Update Data Source Access</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">For the <span class="ph">Update Scheduled Data Import Access</span> task, select <span class="ph uicontrol">Configure</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select the Scheduled data import [scheduled_import_set] table.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Repeat steps <a class="xref" href="#sgc-configure-infoblox-integration__substep_cyy_1hv_zfc">5.d</a> to <a class="xref" href="#sgc-configure-infoblox-integration__substep_j1l_bhv_zfc">5.g</a>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Set the <span class="ph">Update Scheduled Data Import Access</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Clear the cache for the new connection.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i" id="sgc-configure-infoblox-integration__ol_jjb_hfv_zfc">
+                        <li class="li">For the <span class="ph">Clear Cache for Data Source and Scheduled Data Imports tables</span> task, select <span class="ph uicontrol">Configure</span>.</li>
+                        <li class="li">Select the <span class="ph uicontrol">Global</span> application scope by using the application picker.</li>
+                        <li class="li">In the <span class="ph uicontrol">Run script</span> text box of the background script page, enter the following script:<div class="zDocsCodeExplanationContainer"><button type="button" class="zDocsAiActionsButton" data-toggle="modal" tabindex="0" aria-label="Explain this code" data-target="#zDocsCodeExplanationModal_yokohama_servicenow_platformproduct_configuration_management_task_sgc_configure_infoblox_integration_html_0"><svg class="ico-code-explanation" aria-hidden="true"><use xlink:href="#ico-code-explanation"></use></svg>Explain this code</button></div><pre class="language-plaintext" data-language="plaintext">GlideTableManager.invalidateTable("sys_data_source");
+GlideCacheManager.flushTable("sys_data_source");
+
+GlideTableManager.invalidateTable("scheduled_import_set");
+GlideCacheManager.flushTable("scheduled_import_set");
+
+GlideTableManager.invalidateTable("sys_db_object");
+GlideCacheManager.flushTable("sys_db_object");</pre></li>
+                        <li class="li">Select <span class="ph uicontrol">Run Script</span> to run the background script.<p class="p">The script may take several minutes to execute.</p></li>
+                        <li class="li">After the script is executed, select <span class="ph uicontrol">Close</span>.</li>
+                        <li class="li">Modify the application scope again to <span class="ph uicontrol">Service Graph Connector for Infoblox</span> by using the application picker.</li>
+                        <li class="li">Set the <span class="ph">Clear Cache for Data Source and Scheduled Data Imports tables</span> task to complete by selecting <span class="ph uicontrol">Mark as complete</span>.</li>
+                     </ol>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Add a basic authentication connection to the new <span class="ph">Infoblox</span> instance.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i" id="sgc-configure-infoblox-integration__ol_jph_x2v_zfc">
+                        <li class="li">For the <span class="ph">Add Another Basic Auth Connection</span> task, select <span class="ph uicontrol">Configure</span>.</li>
+                        <li class="li">To create a new connection, select <span class="ph uicontrol">Add Connection</span>.</li>
+                        <li class="li">In the Connection Information section of the Create Connection window, fill in the fields.<div class="p">
+                              <div class="table-wrap"><div id="sgc-configure-infoblox-integration__table_x3l_r3v_zfc_wrapper" class="dataTables_wrapper no-footer"><div id="sgc-configure-infoblox-integration__table_x3l_r3v_zfc_filter" class="dataTables_filter"></div><div class="zDocsFilterTableDiv zDocsFilterColumnsTableDiv"><div><button type="button" data-toggle="dropdown" aria-label="Export table to a file" class="zDocsTopicPageTableExportButton"><svg aria-hidden="true" class="ico-ellipsis-v"><use xlink:href="#ico-ellipsis-v"></use></svg></button><div class="dropdown-menu zDocsDropdownMenu zDocsTopicPageTableExportMenu"><button type="button" aria-label="Export to Excel" class="dropdown-item">Export to Excel</button><button type="button" aria-label="Export to CSV" class="dropdown-item">Export to CSV</button></div></div></div><table count-columns="2" class="table frame-all dataTable no-footer" id="sgc-configure-infoblox-integration__table_x3l_r3v_zfc"><caption><span class="table--title-label">Table 1. </span><span class="title">Connection Information</span></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                                       <tr class="row"><th class="entry align-left sorting" id="sgc-configure-infoblox-integration__table_x3l_r3v_zfc__entry__1" tabindex="0" aria-controls="sgc-configure-infoblox-integration__table_x3l_r3v_zfc" rowspan="1" colspan="1" aria-label="Field: activate to sort column ascending">Field</th><th class="entry align-left sorting" id="sgc-configure-infoblox-integration__table_x3l_r3v_zfc__entry__2" tabindex="0" aria-controls="sgc-configure-infoblox-integration__table_x3l_r3v_zfc" rowspan="1" colspan="1" aria-label="Description: activate to sort column ascending">Description</th></tr>
+                                    </thead><tbody class="tbody">
+                                       
+                                       
+                                       
+                                       
+                                       
+                                    <tr class="row odd">
+                                          <td class="entry align-left" headers="sgc-configure-infoblox-integration__table_x3l_r3v_zfc__entry__1">Connection name</td>
+                                          <td class="entry align-left" headers="sgc-configure-infoblox-integration__table_x3l_r3v_zfc__entry__2">Name to identify the <span class="ph">Infoblox</span> connection record.</td>
+                                       </tr><tr class="row even">
+                                          <td class="entry align-left" headers="sgc-configure-infoblox-integration__table_x3l_r3v_zfc__entry__1">Connection URL</td>
+                                          <td class="entry align-left" headers="sgc-configure-infoblox-integration__table_x3l_r3v_zfc__entry__2"><span class="ph">Infoblox</span> base URL in the following format: <code class="ph codeph"><var class="keyword varname">&lt;base-URL&gt;</var></code>.</td>
+                                       </tr><tr class="row odd">
+                                          <td class="entry align-left" headers="sgc-configure-infoblox-integration__table_x3l_r3v_zfc__entry__1">Use MID Server</td>
+                                          <td class="entry align-left" headers="sgc-configure-infoblox-integration__table_x3l_r3v_zfc__entry__2">Option to use a MID Server.<div class="note note note_note"><span class="note__title">Note:</span> Use of a MID Server is optional.</div></td>
+                                       </tr><tr class="row even">
+                                          <td class="entry align-left" headers="sgc-configure-infoblox-integration__table_x3l_r3v_zfc__entry__1">MID Selection</td>
+                                          <td class="entry align-left" headers="sgc-configure-infoblox-integration__table_x3l_r3v_zfc__entry__2">Name of the MID Server used by the connector.<p class="p">This field appears only when the <span class="ph uicontrol">Use MID server</span> check box is selected.</p></td>
+                                       </tr><tr class="row odd">
+                                          <td class="entry align-left" headers="sgc-configure-infoblox-integration__table_x3l_r3v_zfc__entry__1">MID Application</td>
+                                          <td class="entry align-left" headers="sgc-configure-infoblox-integration__table_x3l_r3v_zfc__entry__2">Name of the MID application used by the connector.<p class="p">This field appears only when the <span class="ph uicontrol">Use MID server</span> check box is selected.</p></td>
+                                       </tr></tbody></table></div></div>
+                           </div></li>
+                        <li class="li">In the Credential Information section of the Create Connection window, fill in the fields.<div class="p">
+                              <div class="table-wrap"><table count-columns="2" class="table frame-all" id="sgc-configure-infoblox-integration__table_ogj_hjv_zfc"><caption><span class="table--title-label">Table 2. </span><span class="title">Credential Information</span></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                                       <tr class="row">
+                                          <th class="entry colsep-1 rowsep-1" id="sgc-configure-infoblox-integration__table_ogj_hjv_zfc__entry__1">Field</th>
+                                          <th class="entry colsep-1 rowsep-1" id="sgc-configure-infoblox-integration__table_ogj_hjv_zfc__entry__2">Description</th>
+                                       </tr>
+                                    </thead><tbody class="tbody">
+                                       <tr class="row">
+                                          <td class="entry colsep-1 rowsep-1" headers="sgc-configure-infoblox-integration__table_ogj_hjv_zfc__entry__1">Username</td>
+                                          <td class="entry colsep-1 rowsep-1" headers="sgc-configure-infoblox-integration__table_ogj_hjv_zfc__entry__2"><span class="ph">Infoblox</span> account user name that is used to authenticate the connection request.</td>
+                                       </tr>
+                                       <tr class="row">
+                                          <td class="entry colsep-1 rowsep-1" headers="sgc-configure-infoblox-integration__table_ogj_hjv_zfc__entry__1">Password</td>
+                                          <td class="entry colsep-1 rowsep-1" headers="sgc-configure-infoblox-integration__table_ogj_hjv_zfc__entry__2">Password that is used to authenticate the connection request.</td>
+                                       </tr>
+                                    </tbody></table></div>
+                           </div></li>
+                        <li class="li">Select <span class="ph uicontrol">Create Connection</span>.</li>
+                        <li class="li">Navigate back to the guided setup, and set the <span class="ph">Add Another Basic Auth Connection</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                     </ol>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Test the newly added connections.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i" id="sgc-configure-infoblox-integration__ol_cjg_v2v_zfc">
+                        <li class="li">For the <span class="ph">Test connections</span> task, select <span class="ph uicontrol">Configure</span>.</li>
+                        <li class="li">From the <span class="ph uicontrol">Name</span> column, select the new connection.</li>
+                        <li class="li">Select the <span class="ph uicontrol">Test Connection</span> related link to start the testing process.</li>
+                        <li class="li">When the <span class="ph uicontrol">Status</span> field is set to <span class="ph uicontrol">Success</span>, return to the guided setup page.<div class="note note note_note"><span class="note__title">Note:</span> If any of the tests have errors, follow the suggestions for remediation.</div></li>
+                        <li class="li">Set the <span class="ph">Test connections</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                     </ol>
+                  </div>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Configure the IP address management tasks and user groups.</span>
+            <ol type="a" class="ol substeps" id="sgc-configure-infoblox-integration__substeps_orm_d1d_bxb">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Enable properties to create an IP address management task when deleting or inserting a network.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i" id="sgc-configure-infoblox-integration__ol_a2q_21d_bxb">
+                        <li class="li">In the <span class="ph">Configure IP address management tasks</span> section of the <span class="ph">Service Graph Connector for Infoblox</span> page, select <span class="ph uicontrol">Get Started</span>.</li>
+                        <li class="li">For <span class="ph">Enable creating a task</span>, select <span class="ph uicontrol">Configure</span><span class="ph"> to open the Enable create Task page in a new browser tab</span>.</li>
+                        <li class="li">Select the <span class="ph uicontrol">Create a task when a network is deleted</span> and <span class="ph uicontrol">Create a task when a network is inserted</span> check boxes to enable properties for creating IP address management
+                           tasks when deleting and inserting a network, respectively.</li>
+                        <li class="li">Select <span class="ph uicontrol">Save</span>.</li>
+                        <li class="li">Close the Enable create Task page tab and return to the guided setup page.</li>
+                        
+                        <li class="li">Set <span class="ph">Enable creating a task</span> to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                     </ol>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Configure the user group for IP address management tasks.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i" id="sgc-configure-infoblox-integration__ol_gvp_1bd_bxb">
+                        <li class="li">For the <span class="ph">Configure the user group for IP address management tasks</span> task, select <span class="ph uicontrol">Configure</span><span class="ph"> to open the <span class="ph">SG Infoblox Connection</span> page in a new browser tab</span>.</li>
+                        <li class="li">In the <span class="ph uicontrol">Connection alias</span> field, review and change the connection alias.</li>
+                        <li class="li">In the <span class="ph uicontrol">Task user group</span> field, change the assignment group for the connection alias.<div class="note note note_note"><span class="note__title">Note:</span> By default, the user group for the IP address management tasks is assigned to the IP Address
+                              Management user group. To change the default assignment group, change the task user group for the connection alias.</div></li>
+                        <li class="li">Select <span class="ph uicontrol">Update</span><span class="ph"> to return to the guided setup page</span>.</li>
+                        <li class="li">Set the <span class="ph">Configure the user group for IP address management tasks </span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                     </ol>
+                  </div>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Configure the scheduled jobs to import data from the <span class="ph">Infoblox</span> application.</span>
+            <ol type="a" class="ol substeps" id="sgc-configure-infoblox-integration__substeps_s1x_jgm_qwb">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">In the <span class="ph">Set up scheduled import jobs</span> section of the <span class="ph">Service Graph Connector for Infoblox</span> page, select <span class="ph uicontrol">Get started</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">For the <span class="ph">Configure the scheduled jobs</span> task, select <span class="ph uicontrol">Configure</span><span class="ph"> to open the <span class="ph">Scheduled Data Imports</span> page in a new browser tab</span>.</span>
+               </li>
+               <li class="li substep substepexpand" id="sgc-configure-infoblox-integration__select-job">
+                  <span class="ph cmd">From the <span class="ph uicontrol">Name</span> column, select the scheduled job that you want to activate.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">On the Scheduled Data Import form, verify the field values for the scheduled job.</span>
+                  <div class="itemgroup info">For more information, see <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task//csh" href="/docs/csh?topicname=t_ScheduleADataImport&amp;version=yokohama&amp;pubname=yokohama-integrate-applications#table_r53_5hm_xp" class="xref">Schedule a data import</a>.</div>
+               </li>
+               <li class="li substep substepexpand" id="sgc-configure-infoblox-integration__exe-job">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Update</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Repeat the steps <a class="xref" href="#sgc-configure-infoblox-integration__select-job">7.c</a> to <a class="xref" href="#sgc-configure-infoblox-integration__exe-job">7.e</a> for each scheduled job for data import.</span>
+               </li>
+               
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Close the <span class="ph">Scheduled Data Imports</span> page tab and return to the guided setup page.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Set the <span class="ph">Configure the scheduled jobs</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span> in the guided setup.</span>
+               </li>
+            </ol>
+         </li></ol></section>
+   </div>
+</article></main></article></div></div></div>

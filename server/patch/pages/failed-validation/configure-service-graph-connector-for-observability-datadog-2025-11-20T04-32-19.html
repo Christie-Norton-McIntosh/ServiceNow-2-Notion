@@ -1,0 +1,204 @@
+<!--
+Auto-saved: Validation properties failed to update after 6 retries
+Page ID: 2b1a89fe-dba5-8109-a5fc-f50559b27fd7
+Page URL: https://www.notion.so/Configure-Service-Graph-Connector-for-Observability-Datadog-2b1a89fedba58109a5fcf50559b27fd7
+Page Title: Configure Service Graph Connector for Observability - Datadog
+Created: 2025-11-20T04:32:19.414Z
+Source URL: https://www.servicenow.com/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/sgc-configure-datadog-integration.html
+
+Validation Result:
+{
+  "success": false,
+  "hasErrors": true,
+  "issues": [
+    "Block count too low: expected at least 8, got 0",
+    "Table count mismatch: expected 1, got 0",
+    "Missing callouts: expected 3, got 0 (3 missing)"
+  ],
+  "warnings": [
+    "Ordered list item count differs: expected 39, got 0 (39 fewer - may be counting methodology difference)",
+    "Unordered list item count differs: expected 9, got 0 (9 fewer - may be counting methodology difference)",
+    "ℹ️ Paragraph count lower than expected: ~13 (±7), got 0 (may be filtered empty paragraphs or promoted to list items)"
+  ],
+  "stats": {
+    "totalBlocks": 0,
+    "blockTypes": {},
+    "headingCount": 0,
+    "fetchTimeMs": 314
+  },
+  "summary": "❌ Validation failed: 3 critical error(s), 3 informational warning(s)\n\n❌ Critical Errors:\n1. Block count too low: expected at least 8, got 0\n2. Table count mismatch: expected 1, got 0\n3. Missing callouts: expected 3, got 0 (3 missing)\n\nℹ️ Informational Warnings:\n1. Ordered list item count differs: expected 39, got 0 (39 fewer - may be counting methodology difference)\n2. Unordered list item count differs: expected 9, got 0 (9 fewer - may be counting methodology difference)\n3. ℹ️ Paragraph count lower than expected: ~13 (±7), got 0 (may be filtered empty paragraphs or promoted to list items)\n\n📊 Content Comparison (Source → Notion):\n• Ordered list items: 39 → 0\n• Unordered list items: 9 → 0\n• Paragraphs: 13 → 0\n• Headings: 1 → 0\n• Tables: 1 → 0\n• Images: 0 → 0\n• Callouts: 3 → 0",
+  "sourceCounts": {
+    "orderedListItems": 39,
+    "unorderedListItems": 9,
+    "totalListItems": 48,
+    "paragraphs": 13,
+    "headings": 1,
+    "tables": 1,
+    "images": 0,
+    "callouts": 3,
+    "codeBlocks": 0
+  },
+  "notionCounts": {
+    "orderedListItems": 0,
+    "unorderedListItems": 0,
+    "totalListItems": 0,
+    "paragraphs": 0,
+    "headings": 0,
+    "tables": 0,
+    "images": 0,
+    "callouts": 0,
+    "codeBlocks": 0
+  }
+}
+
+Error Details:
+- Primary Error: You have been rate limited. Please try again in a few minutes.
+-->
+
+<div class="zDocsTopicPageBody" data-prismjs-copy="Copy" data-prismjs-copy-error="Text could not be copied. Try using keyboard shortcuts like Ctrl + C to copy instead." data-prismjs-copy-success="Copied!"><div dir="ltr" class="zDocsTopicPageBodyContent"><div><article class="hascomments" data-page="bundle:yokohama-servicenow-platform/enus/product/configuration-management/task/sgc-configure-datadog-integration.html" id="bundle:yokohama-servicenow-platform/enus/product/configuration-management/task/sgc-configure-datadog-integration.html"><main role="main"><article role="article" class="dita" id="sgc-configure-datadog-integration" aria-labelledby="title_sgc-configure-datadog-integration">
+   
+   
+   
+   
+   <div class="body taskbody"><p class="shortdesc">Pull in data from <span class="ph">Datadog</span> into your <span class="ph">Configuration Management Database (CMDB)</span>.</p>
+      <section class="section prereq"><div class="tasklabel"><p class="sectiontitle tasklabel">Before you begin</p></div>
+         
+         <p class="p">To use this <span class="ph">Service Graph Connector</span>, you need a subscription to a Subscription Unit that is based in the <span class="ph">IT Operations Management</span> (<span class="ph">ITOM</span>) Visibility application or in the <span class="ph">ITOM</span> Discovery application. As defined in the section titled "Managed IT Resource Types" in <a class="xref true-external" href="https://www.servicenow.com/products/entitlements-packages.html" target="_blank">ServiceNow Subscription Unit Overview</a> for your subscription, for managed IT resources that are created or modified in the <span class="ph">CMDB</span> by this <span class="ph">Service Graph Connector</span>, but that aren’t yet managed by <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task//csh" href="/docs/csh?topicname=itom-license-module&amp;version=yokohama&amp;pubname=yokohama-it-operations-management" class="xref">ITOM Visibility or ITOM Discovery</a>, these resources will increase Subscription Unit consumption from that application. Review your current Subscription Unit consumption within ITOM
+        Visibility or ITOM Discovery to ensure available capacity.</p>
+         <div class="p">Dependencies and requirements:<ul class="ul" id="sgc-configure-datadog-integration__ul_igl_nfr_sqb">
+               <li class="li">The <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/concept/integration-commons-for-cmdb.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/integration-commons-for-cmdb.html" class="xref" title="The Integration Commons for CMDB (sn_cmdb_int_util) store app contains the CMDB Integrations Dashboard and a set of Robust Transform Engine (RTE) transforms and script includes.">Integration Commons for CMDB</a> store app, which is automatically installed.</li>
+               <li class="li">The CMDB CI class models store app, which is automatically installed. See <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/concept/cmdb-ci-class-models.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/cmdb-ci-class-models.html" class="xref" title="The CMDB contains base-system classes that store data about configuration items (CIs). The CMDB CI Class Models ServiceNow Store app adds class models that extend the CMDB class hierarchy, including class descriptions, identification rules, identifier entries, and dependent relationships if applicable.">CMDB CI Class Models</a>.</li>
+               <li class="li">The ITOM Discovery License plugin (com.snc.itom.discovery.license). You must activate this plugin.</li>
+               <li class="li">ITOM Licensing plugin (com.snc.itom.license). For more information, see <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task//csh" href="/docs/csh?topicname=t_ActivateTheDiscoveryPlugin&amp;version=yokohama&amp;pubname=yokohama-it-operations-management" class="xref">Request Discovery</a>.</li>
+               <li class="li">The Datastream Action plugin (com.glide.hub.action_type.datastream), which is automatically installed.</li>
+               <li class="li">Observability Commons for <span class="ph">CMDB</span> (sn_observability), which is only required for event ingestion. This must be installed prior to installing the connector for Event Management to work. For more information, see <a class="xref true-external" href="https://store.servicenow.com/sn_appstore_store.do#!/store/application/97e04562072020107add6a77c4a9351a" target="_blank">Observability Commons for CMDB</a> on the <span class="ph">ServiceNow Store</span>.</li>
+            </ul></div>
+         <div class="note note note_note"><span class="note__title">Note:</span> If you have an earlier version of the <span class="ph">Service Graph Connector for Observability - Datadog</span>, then don’t migrate data from the old connector. You must uninstall the previous version and run the new integration.</div>
+         <p class="p">Role required: admin</p>
+      </section>
+      <section><div class="tasklabel"><p class="sectiontitle tasklabel">Procedure</p></div><ol class="ol steps"><li class="li step">
+            <span class="ph cmd">Navigate to <span class="ph menucascade"><span class="ph uicontrol">All</span><abbr> &gt; </abbr><span class="ph uicontrol">Service Graph Connectors</span><abbr> &gt; </abbr><span class="ph uicontrol">Observability Datadog</span><abbr> &gt; </abbr><span class="ph uicontrol">Setup</span></span>.</span>
+         </li><li class="li step">
+            <span class="ph cmd">On the Getting started page, select <span class="ph uicontrol">Get Started</span>.</span>
+         </li><li class="li step" id="sgc-configure-datadog-integration__datadog-alias">
+            <span class="ph cmd">Configure the authentication credentials and the host name to send requests to the <span class="ph">Datadog</span> API.</span>
+            <ol type="a" class="ol substeps">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Configure your <span class="ph">Datadog</span> credentials.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i" id="sgc-configure-datadog-integration__ol_hfg_3gy_prb">
+                        <li class="li">In the <span class="ph">Configure the Connection</span> section of the <span class="ph">Datadog Integration with CMDB</span> page, select <span class="ph uicontrol">Get Started</span>.</li>
+                        <li class="li">For the <span class="ph">Configure the Credentials</span> task, select <span class="ph uicontrol">Configure</span>.</li>
+                        <li class="li">In the <span class="ph uicontrol">Connection name</span> field, enter a name for the <span class="ph">connection</span>. <div class="note note note_note"><span class="note__title">Note:</span> Do not modify the name of the default connection.</div></li>
+                        <li class="li">In the <span class="ph uicontrol">Connection URL</span> field, enter the base URL or IP address for <span class="ph">Datadog</span>.</li>
+                        <li class="li">In the <span class="ph uicontrol">API key</span> field, enter the <span class="ph">Datadog</span> API token.</li>
+                        <li class="li">In the <span class="ph uicontrol">Application key</span> field, enter the <span class="ph">application key</span> used for connecting to the <span class="ph">Datadog</span> API.</li>
+                        <li class="li">Select <span class="ph uicontrol">Update</span>.</li>
+                        <li class="li">Set the <span class="ph">Configure the Credentials</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</li>
+                     </ol>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Test the connection.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i" id="sgc-configure-datadog-integration__ol_hnn_xyx_rfc">
+                        <li class="li">For the <span class="ph">Test Connection</span> task, select <span class="ph uicontrol">Configure</span>.</li>
+                        <li class="li">Test the connection by selecting the <span class="ph uicontrol">Test Connection</span> related link.<p class="p">Testing the connection might take a few moments. The page is refreshed to show the test results.</p></li>
+                        <li class="li">When the <span class="ph uicontrol">Status</span> field is set to <span class="ph uicontrol">Success</span>, select <span class="ph uicontrol">Update</span>.<p class="p">If any of the tests have errors, follow the suggestions for remediation.</p></li>
+                        <li class="li">Set the <span class="ph">Test Connection</span> task to complete by selecting <span class="ph uicontrol">Mark as complete</span>.</li>
+                     </ol>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">(Optional) 
+                  <span class="ph cmd">Add a filter for the <span class="ph">SGO-Datadog Hosts</span> [sn_datadog_integra_datadog_hosts] data source.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i" id="sgc-configure-datadog-integration__ol_dhj_wzx_rfc">
+                        <li class="li">For the <span class="ph">Create Hosts Filter</span> task, select <span class="ph uicontrol">Configure</span>.</li>
+                        <li class="li">Enter a comma-separated list of host tags in <code class="ph codeph">key:value</code> format in the <span class="ph uicontrol">Value</span> field to define a filter for pulling host data from <span class="ph">Datadog</span>.<p class="p">For example, <kbd class="ph userinput">datadog:monitored,env:production</kbd>.</p></li>
+                        <li class="li">Select <span class="ph uicontrol">Update</span>.</li>
+                        <li class="li">Set the <span class="ph">Create Hosts Filter</span> task to complete by selecting <span class="ph uicontrol">Mark as complete</span>.</li>
+                     </ol>
+                  </div>
+               </li>
+               
+            </ol>
+         </li><li class="li step">
+            <span class="ph cmd">Configure the webhook and monitors for <span class="ph">Observability <span class="ph">Datadog</span></span>.</span>
+            <ol type="a" class="ol substeps" id="sgc-configure-datadog-integration__substeps_jqr_lmz_nwb">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">In the <span class="ph">Configure Observability</span> section of the <span class="ph">Datadog Integration with CMDB</span> page, select <span class="ph uicontrol">Get started</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">For the <span class="ph">Configure the Webhooks and Monitors</span> task, select <span class="ph uicontrol">Configure</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">In the Datadog Webhooks list, select <span class="ph uicontrol">New</span> to add a <span class="ph">Datadog</span> webhook.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Fill in the fields.</span>
+                  <div class="itemgroup info">
+                     <div class="table-wrap"><table count-columns="2" class="table frame-all" id="sgc-configure-datadog-integration__table_ctf_lpz_nwb"><caption><span class="table--title-label">Table 1. </span><span class="title">New record form</span></caption><colgroup><col><col></colgroup><thead class="thead">
+                              <tr class="row">
+                                 <th class="entry colsep-1 rowsep-1" id="sgc-configure-datadog-integration__table_ctf_lpz_nwb__entry__1">Field</th>
+                                 <th class="entry colsep-1 rowsep-1" id="sgc-configure-datadog-integration__table_ctf_lpz_nwb__entry__2">Description</th>
+                              </tr>
+                           </thead><tbody class="tbody">
+                              <tr class="row">
+                                 <td class="entry colsep-1 rowsep-1" headers="sgc-configure-datadog-integration__table_ctf_lpz_nwb__entry__1">Name</td>
+                                 <td class="entry colsep-1 rowsep-1" headers="sgc-configure-datadog-integration__table_ctf_lpz_nwb__entry__2">Name of the <span class="ph">Datadog</span> webhook.</td>
+                              </tr>
+                              <tr class="row">
+                                 <td class="entry colsep-1 rowsep-1" headers="sgc-configure-datadog-integration__table_ctf_lpz_nwb__entry__1">Connection Alias</td>
+                                 <td class="entry colsep-1 rowsep-1" headers="sgc-configure-datadog-integration__table_ctf_lpz_nwb__entry__2">Search for and select the connection and credential alias that you created in step <a class="xref" href="#sgc-configure-datadog-integration__datadog-alias">3</a>.</td>
+                              </tr>
+                           </tbody></table></div>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Submit</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Populate the Datadog Webhooks list by selecting the <span class="ph uicontrol">Synchronize Monitors</span> related link on the Datadog Webhook page.</span>
+                  <div class="itemgroup info">
+                     <div class="note note note_note"><span class="note__title">Note:</span> In the Datadog Webhooks list, don't select <span class="ph uicontrol">New</span> to add a monitor as this option is not used in this scenario.</div>
+                  </div>
+               </li>
+               <li class="li substep substepexpand" id="sgc-configure-datadog-integration__substep-datadog-monitor1">
+                  <span class="ph cmd">In the <span class="ph uicontrol">Name</span> column of the Datadog Webhooks list, select a monitor.</span>
+               </li>
+               <li class="li substep substepexpand" id="sgc-configure-datadog-integration__substep-datadog-monitor2">
+                  <span class="ph cmd">On the Datadog Monitors page, select the <span class="ph uicontrol">Webhook Active</span> check box, and then select <span class="ph uicontrol">Update</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Repeat steps <a class="xref" href="#sgc-configure-datadog-integration__substep-datadog-monitor1">4.g</a> and <a class="xref" href="#sgc-configure-datadog-integration__substep-datadog-monitor2">4.h</a> for all the monitors in the Datadog Webhooks list.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">On the Datadog Webhook page, select <span class="ph uicontrol">Update</span> to save your changes.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Set the <span class="ph">Configure the Webhooks and Monitors</span> task to complete by selecting <span class="ph uicontrol">Mark as Complete</span>.</span>
+               </li>
+            </ol>
+         </li><li class="li step">
+            <span class="ph cmd">Set up scheduled import jobs.</span>
+            <ol type="a" class="ol substeps" id="sgc-configure-datadog-integration__substeps_twb_wsw_4gc">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Navigate to <span class="ph menucascade"><span class="ph uicontrol">All</span><abbr> &gt; </abbr><span class="ph uicontrol">Service Graph Connectors</span><abbr> &gt; </abbr><span class="ph uicontrol">Observability Datadog</span><abbr> &gt; </abbr><span class="ph uicontrol">Import Schedules</span></span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select the name of the scheduled import that you want to activate.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">On the Scheduled Data Import form, verify the field values for the scheduled job and select the <span class="ph uicontrol">Active</span> check box.</span>
+                  <div class="itemgroup info">
+                     <p class="p">For more information, see <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task//csh" href="/docs/csh?topicname=t_ScheduleADataImport&amp;version=yokohama&amp;pubname=yokohama-integrate-applications#table_r53_5hm_xp" class="xref">Schedule a data import</a>.</p>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Update</span>.</span>
+               </li>
+            </ol>
+         </li></ol></section>
+   </div>
+   <nav role="navigation"></nav><nav role="navigation" class="tasksNavigation"></nav>
+</article></main></article></div></div><div class="contentPlaceholder" style="height: 393.5px;"><div class="contentContainer zDocsSideBoxes withExpandCollapse"><div class="contentWrapper" style="height: 393.5px;"><button aria-hidden="true" data-tooltip-id="zDocsMiniTocCollapseToolTip" data-tooltip-content="Hide Mini TOC" data-testid="expand-collapse-button" class="zDocsMiniTocCollapseButton" aria-label="Hide" aria-expanded="true"><svg aria-hidden="true" class="ico-angle-arrow-right"><use xlink:href="#ico-angle-arrow-right"></use></svg></button><div><h5 class=" css-g931ng" aria-level="5">Related Content</h5><ul><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/sgc-cmdb-integration-datadog.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Service Graph Connector for Observability - Datadog</a><p>Use the Service Graph Connector for Observability - Datadog to ingest CMDB data from a Datadog installation using REST APIs. Push events from Datadog into ServiceNow with Event Management.</p></li><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/reference/sgc-cmdb-datadog-classes.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>CMDB classes targeted in Service Graph Connector for Observability - Datadog</a><p>When you complete setting up the connection, the data is automatically pulled from Datadog. The data is saved in target tables.</p></li><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/sgc-datadog-conn.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Accessing the connection details of Service Graph Connector for Observability - Datadog</a><p>You can access the connection details of the Service Graph Connector for Observability - Datadog in a single view using the common connection framework (CCF) included within the Integration Commons for CMDB (sn_cmdb_int_util) store app.</p></li></ul></div></div></div></div></div>

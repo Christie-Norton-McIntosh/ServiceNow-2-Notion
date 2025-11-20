@@ -668,6 +668,18 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
     log(`❌ [VALIDATION] Error during validation: ${error.message}`);
   }
 
+  // FIX v11.0.29: SAFEGUARD - Ensure summary is NEVER empty
+  // This prevents empty strings from being sent to Notion, which would store as empty arrays
+  if (!result.summary || result.summary.trim() === '') {
+    log(`⚠️ [VALIDATION] Summary is empty - using fallback message`);
+    result.summary = '⚠️ Validation ran but no summary was generated';
+    result.hasErrors = true;
+    if (!result.issues) result.issues = [];
+    result.issues.push('Internal error: validation summary was empty');
+  }
+  
+  log(`🔍 [VALIDATION] Final summary (${result.summary.length} chars): ${result.summary.substring(0, 100)}...`);
+
   return result;
 }
 

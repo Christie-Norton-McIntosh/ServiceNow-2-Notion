@@ -1,0 +1,301 @@
+<!--
+Auto-saved: Validation properties failed to update after 6 retries
+Page ID: 2b1a89fe-dba5-815c-aa39-c0150fc9db1b
+Page URL: https://www.notion.so/Configure-Service-Graph-Connector-for-Microsoft-Azure-using-SGC-Central-2b1a89fedba5815caa39c0150fc9db1b
+Page Title: Configure Service Graph Connector for Microsoft Azure using SGC Central
+Created: 2025-11-20T04:14:35.010Z
+Source URL: https://www.servicenow.com/docs/bundle/yokohama-servicenow-platform/page/product/sgc-central/task/sgcc-configure-azure-integ.html
+
+Validation Result:
+{
+  "success": false,
+  "hasErrors": true,
+  "issues": [
+    "Block count too low: expected at least 18, got 0",
+    "Table count mismatch: expected 3, got 0",
+    "Missing callouts: expected 4, got 0 (4 missing)"
+  ],
+  "warnings": [
+    "Ordered list item count differs: expected 49, got 0 (49 fewer - may be counting methodology difference)",
+    "Unordered list item count differs: expected 14, got 0 (14 fewer - may be counting methodology difference)",
+    "ℹ️ Paragraph count lower than expected: ~20 (±10), got 0 (may be filtered empty paragraphs or promoted to list items)"
+  ],
+  "stats": {
+    "totalBlocks": 0,
+    "blockTypes": {},
+    "headingCount": 0,
+    "fetchTimeMs": 148
+  },
+  "summary": "❌ Validation failed: 3 critical error(s), 3 informational warning(s)\n\n❌ Critical Errors:\n1. Block count too low: expected at least 18, got 0\n2. Table count mismatch: expected 3, got 0\n3. Missing callouts: expected 4, got 0 (4 missing)\n\nℹ️ Informational Warnings:\n1. Ordered list item count differs: expected 49, got 0 (49 fewer - may be counting methodology difference)\n2. Unordered list item count differs: expected 14, got 0 (14 fewer - may be counting methodology difference)\n3. ℹ️ Paragraph count lower than expected: ~20 (±10), got 0 (may be filtered empty paragraphs or promoted to list items)\n\n📊 Content Comparison (Source → Notion):\n• Ordered list items: 49 → 0\n• Unordered list items: 14 → 0\n• Paragraphs: 20 → 0\n• Headings: 1 → 0\n• Tables: 3 → 0\n• Images: 0 → 0\n• Callouts: 4 → 0",
+  "sourceCounts": {
+    "orderedListItems": 49,
+    "unorderedListItems": 14,
+    "totalListItems": 63,
+    "paragraphs": 20,
+    "headings": 1,
+    "tables": 3,
+    "images": 0,
+    "callouts": 4,
+    "codeBlocks": 0
+  },
+  "notionCounts": {
+    "orderedListItems": 0,
+    "unorderedListItems": 0,
+    "totalListItems": 0,
+    "paragraphs": 0,
+    "headings": 0,
+    "tables": 0,
+    "images": 0,
+    "callouts": 0,
+    "codeBlocks": 0
+  }
+}
+
+Error Details:
+- Primary Error: You have been rate limited. Please try again in a few minutes.
+-->
+
+<div class="zDocsTopicPageBody" data-prismjs-copy="Copy" data-prismjs-copy-error="Text could not be copied. Try using keyboard shortcuts like Ctrl + C to copy instead." data-prismjs-copy-success="Copied!"><div dir="ltr" class="zDocsTopicPageBodyContent"><div><article class="hascomments" data-page="bundle:yokohama-servicenow-platform/enus/product/sgc-central/task/sgcc-configure-azure-integ.html" id="bundle:yokohama-servicenow-platform/enus/product/sgc-central/task/sgcc-configure-azure-integ.html"><main role="main"><article role="article" class="dita" id="sgcc-configure-azure-integ" aria-labelledby="title_sgcc-configure-azure-integ">
+   
+   
+   
+   
+   <div class="body taskbody"><p class="shortdesc">Use the playbook available with the <span class="ph">SGC Central</span> application to set up the <span class="ph">Service Graph Connector for Microsoft Azure</span> for pulling in <span class="ph">Microsoft Azure</span> data into the <span class="ph">CMDB</span>.</p>
+      <section class="section prereq"><div class="tasklabel"><p class="sectiontitle tasklabel">Before you begin</p></div>Install <span class="ph">Service Graph Connector for Microsoft Azure</span> version 1.9.0 or later from the <span class="ph">ServiceNow Store</span>. <span class="ph">For <span class="ph">ServiceNow Store</span> installation steps, see
+            <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/sgc-central/task//csh" href="/docs/csh?topicname=t_InstallApplications&amp;version=yokohama&amp;pubname=yokohama-platform-administration" class="xref">Install a ServiceNow Store
+            application</a>. </span><div class="note important note_important"><span class="note__title">Important:</span> After the initial import of <span class="ph">Azure</span> data, the application performs a delta import of data. However, you can perform a full pull of data anytime later by disabling the delta synchronization and setting the
+               <span class="keyword parmname">sn_sg_azure_integ.is_delta_sync_enabled</span> property to <code class="ph codeph">false</code>. For more information, see <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/concept/sgc-cmdb-azure-data-sync.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/sgc-cmdb-azure-data-sync.html" class="xref" title="You can configure the system property for synchronizing only delta data from an Azure instance.">Configuring data synchronization in Service Graph Connector for Microsoft Azure</a>.</div><div class="p">Role required: The following table shows the roles required for each stage of the playbook.<div class="table-wrap"><table count-columns="2" class="table frame-all" id="sgcc-configure-azure-integ__table_ulb_zry_ygc"><caption><span class="table--title-label">Table 1. </span><span class="title">Role required for each playbook stage</span></caption><colgroup><col><col></colgroup><thead class="thead">
+                     <tr class="row">
+                        <th class="entry colsep-1 rowsep-1" id="sgcc-configure-azure-integ__table_ulb_zry_ygc__entry__1">Stage</th>
+                        <th class="entry colsep-1 rowsep-1" id="sgcc-configure-azure-integ__table_ulb_zry_ygc__entry__2">Role</th>
+                     </tr>
+                  </thead><tbody class="tbody">
+                     <tr class="row">
+                        <td class="entry colsep-1 rowsep-1" headers="sgcc-configure-azure-integ__table_ulb_zry_ygc__entry__1">Prerequisites</td>
+                        <td class="entry colsep-1 rowsep-1" headers="sgcc-configure-azure-integ__table_ulb_zry_ygc__entry__2">admin</td>
+                     </tr>
+                     <tr class="row">
+                        <td class="entry colsep-1 rowsep-1" headers="sgcc-configure-azure-integ__table_ulb_zry_ygc__entry__1">Setup</td>
+                        <td class="entry colsep-1 rowsep-1" headers="sgcc-configure-azure-integ__table_ulb_zry_ygc__entry__2">cmdb_inst_admin or admin</td>
+                     </tr>
+                  </tbody></table></div></div></section>
+      <section class="section context" id="sgcc-configure-azure-integ__context_m2f_ggk_wbc"><div class="tasklabel"><p class="sectiontitle tasklabel">About this task</p></div>
+         <p class="p">The playbook experience for onboarding connectors is activated with <span class="ph">SGC Central</span> in the <span class="ph">CMDB Workspace</span>. To configure the <span class="ph">SGC Central</span> application, see <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/sgc-central/concept/sgcc-configuring.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/sgc-central/concept/sgcc-configuring.html" class="xref" title="Set up the SGC Central application for onboarding and maintaining Service Graph Connectors and monitoring the errors related to connections added using Service Graph Connectors.">Configuring SGC Central</a> and for more information on how to interact with a playbook, see <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/sgc-central/task//csh" href="/docs/csh?topicname=playbook-ui&amp;version=yokohama&amp;pubname=yokohama-build-workflows" class="xref">Interact with Playbook</a>.</p>
+         <p class="p">The connector uses the <span class="ph">Azure Management APIs</span> for the complete pull of data from <span class="ph">Azure</span>. However, to pull delta changes from <span class="ph">Azure</span>, the <span class="ph">Azure Resource Graph APIs</span> are used. The domain name system (DNS) is Microsoft Azure Management, but the path is a resource graph.</p>
+      </section>
+      <section><div class="tasklabel"><p class="sectiontitle tasklabel">Procedure</p></div><ol class="ol steps"><li class="li step stepexpand">
+            <span class="ph cmd">Navigate to <span class="ph menucascade"><span class="ph uicontrol">Workspaces</span><abbr> &gt; </abbr><span class="ph uicontrol">CMDB Workspace</span></span>.</span>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">In the <span class="ph">CMDB Workspace</span>, select <span class="ph uicontrol">SGC Central</span>.</span>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">On the Overview page, select <span class="ph uicontrol">Create connection</span>.</span>
+            <div class="itemgroup info">
+               <div class="note tip note_tip"><span class="note__title">Tip:</span> Alternatively, you can select <span class="ph uicontrol">Create connection</span> on the All connections page.</div>
+            </div>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">On the Create connection window, select the <span class="ph">Microsoft Azure</span> connector type and then select <span class="ph uicontrol">Create connection</span>.</span>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Complete the initial prerequisites when setting up a connection for the first time using a connector.</span>
+            <div class="itemgroup info">
+               <div class="note note note_note"><span class="note__title">Note:</span> This step is required only during the first-time setup. See <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/sgc-central/task/sgcc-first-time-setup.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/sgc-central/task/sgcc-first-time-setup.html" class="xref" title="Complete the prerequisites for setting up a connection for the first time using a Service Graph Connector within the SGC Central view of the CMDB Workspace.">Perform initial setup tasks when creating a connection in SGC Central</a>.</div>
+            </div>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Complete the prerequisites for setting up the <span class="ph">Azure</span> environment.</span>
+            <ol type="a" class="ol substeps" id="sgcc-configure-azure-integ__substeps_tsw_kvq_fcc">
+               <li class="li substep substepexpand" id="sgcc-configure-azure-integ__prereq-azure">
+                  <span class="ph cmd">Complete the instructions required for setting up the <span class="ph">Azure</span> environment.</span>
+                  <div class="itemgroup info">
+                     <ol class="ol" type="i" id="sgcc-configure-azure-integ__ol_l2w_kkr_pcc">
+                        <li class="li">In the <span class="ph uicontrol">Prerequisites</span> stage of the playbook, select the <span class="ph uicontrol">Review setup instructions</span> activity.</li>
+                        <li class="li">Obtain the OAuth credentials including client ID, client secret, and token URL from your <span class="ph">Microsoft Azure</span> administrator.</li>
+                        <li class="li">For importing hardware data, grant the <code class="ph codeph">User.Read</code> permission on the <span class="keyword apiname">Microsoft Graph</span> API in the <span class="ph">Azure</span> environment. Also, ensure that the IAM policy for the <span class="ph">Azure</span> subscription has the Reader role. See <a class="xref true-external" href="https://learn.microsoft.com/en-us/azure/role-based-access-control/role-assignments-portal-subscription-admin" target="_blank">Assign a user as an administrator of an Azure subscription with conditions</a> on the <span class="ph">Microsoft Azure</span> documentation site.</li>
+                        <li class="li">For importing software data, grant the <code class="ph codeph">Data.Read</code> permission on the <span class="keyword apiname">Log Analytics</span> API in the <span class="ph">Azure</span> environment. In addition, set up a Log Analytics workspace in the <span class="ph">Azure</span> environment.</li>
+                        <li class="li">After completing the <span class="ph uicontrol">Review setup instructions</span> activity, select <span class="ph uicontrol">Continue</span>.</li>
+                     </ol>
+                  </div>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Determine whether to import only hardware data or both hardware and software data.</span>
+            <ol type="a" class="ol substeps" id="sgcc-configure-azure-integ__substeps_phc_gkw_fcc">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">In the <span class="ph uicontrol">Setup</span> stage of the playbook, select the <span class="ph uicontrol">Select services</span> activity.</span>
+                  <div class="itemgroup info">If needed, expand the <span class="ph uicontrol">Setup</span> stage to select an activity.</div>
+               </li>
+               <li class="li substep substepexpand" id="sgcc-configure-azure-integ__prereq-sw">(Optional) 
+                  <span class="ph cmd">To import both hardware and software data, select the <span class="ph uicontrol">Hardware and software</span> check box.</span>
+                  <div class="itemgroup info">
+                     <div class="note note note_note"><span class="note__title">Note:</span> Importing software data requires a hardware connection. <p class="p">If you need to import only hardware data, the <span class="ph uicontrol">Hardware only</span> check box is already selected by default.</p></div>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Continue</span>.</span>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Enter the connection details and test the API connection for importing hardware data.</span>
+            <ol type="a" class="ol substeps" id="sgcc-configure-azure-integ__substeps_vrw_2tk_wbc">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">In the <span class="ph uicontrol">Setup</span> stage of the playbook, select the <span class="ph uicontrol">Create and test hardware connection</span> activity.</span>
+               </li>
+               <li class="li substep substepexpand" id="sgcc-configure-azure-integ__hw-id">
+                  <span class="ph cmd">On the form, fill in the fields.</span>
+                  <div class="itemgroup info">
+                     <div class="table-wrap"><div id="sgcc-configure-azure-integ__table_npd_v2z_swb_wrapper" class="dataTables_wrapper no-footer"><div id="sgcc-configure-azure-integ__table_npd_v2z_swb_filter" class="dataTables_filter"></div><div class="zDocsFilterTableDiv zDocsFilterColumnsTableDiv"><div><button type="button" data-toggle="dropdown" aria-label="Export table to a file" class="zDocsTopicPageTableExportButton"><svg aria-hidden="true" class="ico-ellipsis-v"><use xlink:href="#ico-ellipsis-v"></use></svg></button><div class="dropdown-menu zDocsDropdownMenu zDocsTopicPageTableExportMenu"><button type="button" aria-label="Export to Excel" class="dropdown-item">Export to Excel</button><button type="button" aria-label="Export to CSV" class="dropdown-item">Export to CSV</button></div></div></div><table count-columns="2" class="table frame-all dataTable no-footer" id="sgcc-configure-azure-integ__table_npd_v2z_swb"><caption><span class="table--title-label">Table 2. </span><span class="title">Create and test hardware connection form</span></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                              <tr class="row"><th class="entry sorting" id="sgcc-configure-azure-integ__table_npd_v2z_swb__entry__1" tabindex="0" aria-controls="sgcc-configure-azure-integ__table_npd_v2z_swb" rowspan="1" colspan="1" aria-label="Field: activate to sort column ascending">Field</th><th class="entry sorting" id="sgcc-configure-azure-integ__table_npd_v2z_swb__entry__2" tabindex="0" aria-controls="sgcc-configure-azure-integ__table_npd_v2z_swb" rowspan="1" colspan="1" aria-label="Description: activate to sort column ascending">Description</th></tr>
+                           </thead><tbody class="tbody">
+                              
+                              
+                              
+                              
+                              
+                           <tr class="row odd">
+                                 <td class="entry" headers="sgcc-configure-azure-integ__table_npd_v2z_swb__entry__1">Connection name</td>
+                                 <td class="entry" headers="sgcc-configure-azure-integ__table_npd_v2z_swb__entry__2">Name to identify the hardware connection record.<p class="p">For example, <kbd class="ph userinput">SG-Azure hardware connection</kbd>.</p></td>
+                              </tr><tr class="row even">
+                                 <td class="entry" headers="sgcc-configure-azure-integ__table_npd_v2z_swb__entry__1">Connection URL</td>
+                                 <td class="entry" headers="sgcc-configure-azure-integ__table_npd_v2z_swb__entry__2">Base URL to connect to your <span class="ph">Azure</span> client application. <div class="note note note_note"><span class="note__title">Note:</span> This field is automatically set to the URL to connect to the application. Leave the field value as is.</div></td>
+                              </tr><tr class="row odd">
+                                 <td class="entry" headers="sgcc-configure-azure-integ__table_npd_v2z_swb__entry__1">OAuth client ID</td>
+                                 <td class="entry" headers="sgcc-configure-azure-integ__table_npd_v2z_swb__entry__2">Application (client) ID of your <span class="ph">Azure</span> client application as noted in step <a class="xref" href="#sgcc-configure-azure-integ__prereq-azure">6.a</a>.</td>
+                              </tr><tr class="row even">
+                                 <td class="entry" headers="sgcc-configure-azure-integ__table_npd_v2z_swb__entry__1">OAuth client secret</td>
+                                 <td class="entry" headers="sgcc-configure-azure-integ__table_npd_v2z_swb__entry__2">Client secret of your <span class="ph">Azure</span> client application as noted in step <a class="xref" href="#sgcc-configure-azure-integ__prereq-azure">6.a</a>.</td>
+                              </tr><tr class="row odd">
+                                 <td class="entry" headers="sgcc-configure-azure-integ__table_npd_v2z_swb__entry__1">OAuth token URL</td>
+                                 <td class="entry" headers="sgcc-configure-azure-integ__table_npd_v2z_swb__entry__2">Callback URL for the <span class="ph">Azure</span> client application.<div class="p">Based on the region of your <span class="ph">Azure</span> client application, enter the token URL in one of the following formats: <ul class="ul" id="sgcc-configure-azure-integ__ul_nwf_hg3_yxb">
+                                          <li class="li">Global<div class="zDocsCodeExplanationContainer"><button type="button" class="zDocsAiActionsButton" data-toggle="modal" tabindex="0" aria-label="Explain this code" data-target="#zDocsCodeExplanationModal_yokohama_servicenow_platformproduct_sgc_central_task_sgcc_configure_azure_integ_html_0"> • Explain this code</button></div><pre class="language-plaintext" data-language="plaintext">https://login.microsoftonline.com/&lt;tenantid&gt;/oauth2/v2.0/token</pre></li>
+                                          <li class="li">US Government<div class="zDocsCodeExplanationContainer"><button type="button" class="zDocsAiActionsButton" data-toggle="modal" tabindex="0" aria-label="Explain this code" data-target="#zDocsCodeExplanationModal_yokohama_servicenow_platformproduct_sgc_central_task_sgcc_configure_azure_integ_html_1"> • Explain this code</button></div><pre class="language-plaintext" data-language="plaintext">https://login.microsoftonline.us/&lt;tenantid&gt;/oauth2/v2.0/token</pre></li>
+                                          <li class="li">China<div class="zDocsCodeExplanationContainer"><button type="button" class="zDocsAiActionsButton" data-toggle="modal" tabindex="0" aria-label="Explain this code" data-target="#zDocsCodeExplanationModal_yokohama_servicenow_platformproduct_sgc_central_task_sgcc_configure_azure_integ_html_2"> • Explain this code</button></div><pre class="language-plaintext" data-language="plaintext">https://login.partner.microsoftonline.cn/&lt;tenantid&gt;/oauth2/v2.0/token</pre></li>
+                                          <li class="li">Germany<div class="zDocsCodeExplanationContainer"><button type="button" class="zDocsAiActionsButton" data-toggle="modal" tabindex="0" aria-label="Explain this code" data-target="#zDocsCodeExplanationModal_yokohama_servicenow_platformproduct_sgc_central_task_sgcc_configure_azure_integ_html_3"> • Explain this code</button></div><pre class="language-plaintext" data-language="plaintext">https://login.microsoftonline.de/&lt;tenantid&gt;/oauth2/v2.0/token</pre></li>
+                                       </ul></div>Where <var class="keyword varname">&lt;tenantid&gt;</var> is the tenant ID of your <span class="ph">Azure</span> client application as noted in step <a class="xref" href="#sgcc-configure-azure-integ__prereq-azure">6.a</a>.</td>
+                              </tr></tbody></table></div></div>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Create and test connection</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Once the connection test is complete, select <span class="ph uicontrol">Continue</span>.</span>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Configure the import schedule to import hardware data at regular intervals.</span>
+            <ol type="a" class="ol substeps" id="sgcc-configure-azure-integ__substeps_lf4_yvw_fcc">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">In the <span class="ph uicontrol">Setup</span> stage of the playbook, select the <span class="ph uicontrol">Configure hardware import schedule</span> activity.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Configure import schedule</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Expand the Parent scheduled data import within the Import schedules list to select the <span class="ph uicontrol"><var class="keyword varname">Connection name</var>-SG-Azure Subscriptions</span> import schedule.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">In the <span class="ph">Configure import schedule</span> dialog box, select the <span class="ph uicontrol">Active</span> check box, and then fill in the run schedule and time details.</span>
+                  <div class="itemgroup info">
+                     <p class="p">For more information, see <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/sgc-central/task//csh" href="/docs/csh?topicname=t_ScheduleADataImport&amp;version=yokohama&amp;pubname=yokohama-integrate-applications#table_r53_5hm_xp" class="xref">Schedule a data import</a>.</p>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Save</span>.</span>
+                  <div class="itemgroup info">Alternatively, select <span class="ph uicontrol">Execute Now</span> to execute the import schedule immediately.</div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Continue</span>.</span>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Enter the connection details and test the API connection for importing software data.</span>
+            <div class="itemgroup info">
+               <p class="p">The <span class="ph uicontrol">Create and test software connection</span> activity for importing software data appears only when the <span class="ph uicontrol">Hardware and software</span> check box is selected in step <a class="xref" href="#sgcc-configure-azure-integ__prereq-sw">7.b</a>.</p>
+            </div>
+            <ol type="a" class="ol substeps" id="sgcc-configure-azure-integ__substeps_uw2_jzw_fcc">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">In the <span class="ph uicontrol">Setup</span> stage of the playbook, select the <span class="ph uicontrol">Create and test software connection</span> activity.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">On the form, fill in the fields.</span>
+                  <div class="itemgroup info">
+                     <div class="table-wrap"><div id="sgcc-configure-azure-integ__table_vw2_jzw_fcc_wrapper" class="dataTables_wrapper no-footer"><div id="sgcc-configure-azure-integ__table_vw2_jzw_fcc_filter" class="dataTables_filter"></div><div class="zDocsFilterTableDiv zDocsFilterColumnsTableDiv"><div><button type="button" data-toggle="dropdown" aria-label="Export table to a file" class="zDocsTopicPageTableExportButton"><svg aria-hidden="true" class="ico-ellipsis-v"><use xlink:href="#ico-ellipsis-v"></use></svg></button><div class="dropdown-menu zDocsDropdownMenu zDocsTopicPageTableExportMenu"><button type="button" aria-label="Export to Excel" class="dropdown-item">Export to Excel</button><button type="button" aria-label="Export to CSV" class="dropdown-item">Export to CSV</button></div></div></div><table count-columns="2" class="table frame-all dataTable no-footer" id="sgcc-configure-azure-integ__table_vw2_jzw_fcc"><caption><span class="table--title-label">Table 3. </span><span class="title">Create and test software connection form</span></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                              <tr class="row"><th class="entry sorting" id="sgcc-configure-azure-integ__table_vw2_jzw_fcc__entry__1" tabindex="0" aria-controls="sgcc-configure-azure-integ__table_vw2_jzw_fcc" rowspan="1" colspan="1" aria-label="Field: activate to sort column ascending">Field</th><th class="entry sorting" id="sgcc-configure-azure-integ__table_vw2_jzw_fcc__entry__2" tabindex="0" aria-controls="sgcc-configure-azure-integ__table_vw2_jzw_fcc" rowspan="1" colspan="1" aria-label="Description: activate to sort column ascending">Description</th></tr>
+                           </thead><tbody class="tbody">
+                              
+                              
+                              
+                              
+                              
+                              
+                           <tr class="row odd">
+                                 <td class="entry" headers="sgcc-configure-azure-integ__table_vw2_jzw_fcc__entry__1">Software connection name</td>
+                                 <td class="entry" headers="sgcc-configure-azure-integ__table_vw2_jzw_fcc__entry__2">Name to identify the software connection record.<p class="p">For example, <kbd class="ph userinput">SG-Azure software connection</kbd>.</p></td>
+                              </tr><tr class="row even">
+                                 <td class="entry" headers="sgcc-configure-azure-integ__table_vw2_jzw_fcc__entry__1">Hardware connection name</td>
+                                 <td class="entry" headers="sgcc-configure-azure-integ__table_vw2_jzw_fcc__entry__2">Name of the hardware connection record.<div class="note note note_note"><span class="note__title">Note:</span> This field is automatically set to the hardware connection name specified in step <a class="xref" href="#sgcc-configure-azure-integ__hw-id">8.b</a>.</div></td>
+                              </tr><tr class="row odd">
+                                 <td class="entry" headers="sgcc-configure-azure-integ__table_vw2_jzw_fcc__entry__1">Connection URL</td>
+                                 <td class="entry" headers="sgcc-configure-azure-integ__table_vw2_jzw_fcc__entry__2">Base URL to connect to the Log Analytics workspace in the following format: <pre class="language-plaintext" data-language="plaintext">https://api.loganalytics.io/v1/workspaces/&lt;workspace_id&gt;</pre>Where <code class="ph codeph">&lt;workspace_id&gt;</code>
+                                    is the ID of the Log Analytics workspace as noted in step <a class="xref" href="#sgcc-configure-azure-integ__prereq-azure">6.a</a>. <div class="note note note_note"><span class="note__title">Note:</span> This field is automatically set to the URL to connect to the Log Analytics workspace. Replace the <code class="ph codeph">&lt;workspace_id&gt;</code> variable in the auto-generated URL
+                                       with the workspace ID of your Log Analytics workspace.</div></td>
+                              </tr><tr class="row even">
+                                 <td class="entry" headers="sgcc-configure-azure-integ__table_vw2_jzw_fcc__entry__1">OAuth client ID</td>
+                                 <td class="entry" headers="sgcc-configure-azure-integ__table_vw2_jzw_fcc__entry__2">Application (client) ID of your <span class="ph">Azure</span> client application as noted in step <a class="xref" href="#sgcc-configure-azure-integ__prereq-azure">6.a</a>.</td>
+                              </tr><tr class="row odd">
+                                 <td class="entry" headers="sgcc-configure-azure-integ__table_vw2_jzw_fcc__entry__1">OAuth client secret</td>
+                                 <td class="entry" headers="sgcc-configure-azure-integ__table_vw2_jzw_fcc__entry__2">Client secret of your <span class="ph">Azure</span> client application as noted in step <a class="xref" href="#sgcc-configure-azure-integ__prereq-azure">6.a</a>.</td>
+                              </tr><tr class="row even">
+                                 <td class="entry" headers="sgcc-configure-azure-integ__table_vw2_jzw_fcc__entry__1">OAuth token URL</td>
+                                 <td class="entry" headers="sgcc-configure-azure-integ__table_vw2_jzw_fcc__entry__2">Token URL of your <span class="ph">Azure</span> client application.<div class="p">Based on the region of your <span class="ph">Azure</span> client application, enter the token URL in one of the following formats: <ul class="ul" id="sgcc-configure-azure-integ__ul_ww2_jzw_fcc">
+                                          <li class="li">Global<div class="zDocsCodeExplanationContainer"><button type="button" class="zDocsAiActionsButton" data-toggle="modal" tabindex="0" aria-label="Explain this code" data-target="#zDocsCodeExplanationModal_yokohama_servicenow_platformproduct_sgc_central_task_sgcc_configure_azure_integ_html_4"> • Explain this code</button></div><pre class="language-plaintext" data-language="plaintext">https://login.microsoftonline.com/&lt;tenantid&gt;/oauth2/v2.0/token</pre></li>
+                                          <li class="li">US Government<div class="zDocsCodeExplanationContainer"><button type="button" class="zDocsAiActionsButton" data-toggle="modal" tabindex="0" aria-label="Explain this code" data-target="#zDocsCodeExplanationModal_yokohama_servicenow_platformproduct_sgc_central_task_sgcc_configure_azure_integ_html_5"> • Explain this code</button></div><pre class="language-plaintext" data-language="plaintext">https://login.microsoftonline.us/&lt;tenantid&gt;/oauth2/v2.0/token</pre></li>
+                                          <li class="li">China<div class="zDocsCodeExplanationContainer"><button type="button" class="zDocsAiActionsButton" data-toggle="modal" tabindex="0" aria-label="Explain this code" data-target="#zDocsCodeExplanationModal_yokohama_servicenow_platformproduct_sgc_central_task_sgcc_configure_azure_integ_html_6"> • Explain this code</button></div><pre class="language-plaintext" data-language="plaintext">https://login.partner.microsoftonline.cn/&lt;tenantid&gt;/oauth2/v2.0/token</pre></li>
+                                          <li class="li">Germany<div class="zDocsCodeExplanationContainer"><button type="button" class="zDocsAiActionsButton" data-toggle="modal" tabindex="0" aria-label="Explain this code" data-target="#zDocsCodeExplanationModal_yokohama_servicenow_platformproduct_sgc_central_task_sgcc_configure_azure_integ_html_7"> • Explain this code</button></div><pre class="language-plaintext" data-language="plaintext">https://login.microsoftonline.de/&lt;tenantid&gt;/oauth2/v2.0/token</pre></li>
+                                       </ul></div>Where <var class="keyword varname">&lt;tenantid&gt;</var> is the tenant ID of your <span class="ph">Azure</span> client application as noted in step <a class="xref" href="#sgcc-configure-azure-integ__prereq-azure">6.a</a>.</td>
+                              </tr></tbody></table></div></div>
+                  </div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Create and test connection</span>.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Once the connection test is complete, select <span class="ph uicontrol">Continue</span>.</span>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Configure the import schedule to import software data at regular intervals.</span>
+            <div class="itemgroup info">
+               <p class="p">The <span class="ph uicontrol">Configure software import schedule</span> activity for importing software data appears only when the <span class="ph uicontrol">Hardware and software</span> check box is selected in step <a class="xref" href="#sgcc-configure-azure-integ__prereq-sw">7.b</a>.</p>
+            </div>
+            <ol type="a" class="ol substeps" id="sgcc-configure-azure-integ__substeps_mbb_qcx_fcc">
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">In the <span class="ph uicontrol">Setup</span> stage of the playbook, select the <span class="ph uicontrol">Configure software import schedule</span> activity.</span>
+               </li>
+               <li class="li substep substepexpand" id="sgcc-configure-azure-integ__parent">
+                  <span class="ph cmd">Expand the Parent scheduled data import within the Import schedules list to select the <span class="ph uicontrol"><var class="keyword varname">Connection name</var>-SG-Azure TCP</span> import schedule.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">In the <span class="ph">Configure import schedule</span> dialog box, select the <span class="ph uicontrol">Active</span> check box, and then fill in the run schedule and time details.</span>
+                  <div class="itemgroup info">
+                     <p class="p">For more information, see <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/sgc-central/task//csh" href="/docs/csh?topicname=t_ScheduleADataImport&amp;version=yokohama&amp;pubname=yokohama-integrate-applications#table_r53_5hm_xp" class="xref">Schedule a data import</a>.</p>
+                  </div>
+               </li>
+               <li class="li substep substepexpand" id="sgcc-configure-azure-integ__save">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Save</span>.</span>
+                  <div class="itemgroup info">Alternatively, select <span class="ph uicontrol">Execute Now</span> to execute the import schedule immediately.</div>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Repeat steps <a class="xref" href="#sgcc-configure-azure-integ__parent">11.b</a> to <a class="xref" href="#sgcc-configure-azure-integ__save">11.d</a> for any other parent import schedule if not already set to active.</span>
+               </li>
+               <li class="li substep substepexpand">
+                  <span class="ph cmd">Select <span class="ph uicontrol">Continue</span>.</span>
+               </li>
+            </ol>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">In the <span class="ph uicontrol">Setup</span> stage of the playbook, select the <span class="ph uicontrol">Connection setup complete</span> activity to verify whether the connection was created.</span>
+         </li></ol></section>
+      <section class="section postreq" id="sgcc-configure-azure-integ__postreq_ckv_qxb_gcc"><div class="tasklabel"><p class="sectiontitle tasklabel">What to do next</p></div>
+         <p class="p">Select <span class="ph uicontrol">View all connections</span> to review the connection details. The created connection appears in the Installed connections list.</p>
+      </section>
+   </div>
+   <nav role="navigation"></nav><nav role="navigation" class="tasksNavigation"></nav>
+</article></main></article></div></div><div class="contentPlaceholder" style="height: 467px;"><div class="contentContainer zDocsSideBoxes withExpandCollapse"><div class="contentWrapper" style="height: 467px;"><button aria-hidden="true" data-tooltip-id="zDocsMiniTocCollapseToolTip" data-tooltip-content="Hide Mini TOC" data-testid="expand-collapse-button" class="zDocsMiniTocCollapseButton" aria-label="Hide" aria-expanded="true"><svg aria-hidden="true" class="ico-angle-arrow-right"><use xlink:href="#ico-angle-arrow-right"></use></svg></button><div><h5 class=" css-g931ng" aria-level="5">Related Content</h5><ul><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/cmdb-integration-azure.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Service Graph Connector for Microsoft Azure</a><p>Use the Service Graph Connector for Microsoft Azure to pull data from Microsoft Azure into your CMDB.</p></li><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/reference/cmdb-azure-classes.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>CMDB classes targeted in Service Graph Connector for Microsoft Azure</a><p>When you complete setting up the connection, you can configure the integration to periodically pull data from Microsoft Azure. The data is saved in tables that extend from the Configuration item [cmdb_ci] table.</p></li><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/reference/cmdb-sgc-azure-resource-types.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Supported Microsoft Azure resource types</a><p>Several Microsoft Azure resource types are imported as CMDB data.</p></li><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/reference/cmdb-sgc-azure-props.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Service Graph Connector for Microsoft Azure properties</a><p>Service Graph Connector for Microsoft Azure properties control the behavior of the connector.</p></li><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/sgc-cmdb-azure-conn.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Accessing the connection details of Service Graph Connector for Microsoft Azure</a><p>You can access the connection details of the Service Graph Connector for Microsoft Azure in a single view using the common connection framework (CCF) included within the Integration Commons for CMDB (sn_cmdb_int_util) store app.</p></li><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/sgc-cmdb-azure-add-features.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Additional features within the Service Graph Connector for Microsoft Azure</a><p>Use the additional features available within the Service Graph Connector for Microsoft Azure to maximize its use for importing data.</p></li></ul></div></div></div></div></div>
