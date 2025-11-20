@@ -55,9 +55,10 @@ archived/
 # Keep manual-samples in git, but ignore auto-captured failures
 tests/fixtures/validation-failures/*.html
 
-# Allow tracking of dist if explicitly needed by unignoring
-# !/dist/README.md
-patch/pages-to-update
-patch/complete
-patch/pages
-patch/logs
+# Patch workflow directories (auto-generated HTML files from failed extractions)
+# These are working files that should not be tracked in git
+patch/pages/pages-to-update/
+patch/pages/failed-validation/
+patch/pages/updated-pages/
+patch/pages/problematic-files/
+patch/logs/

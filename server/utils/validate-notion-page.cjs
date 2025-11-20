@@ -486,22 +486,16 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
         result.notionCounts = notionCounts;
 
         // CRITICAL ELEMENT VALIDATION (determines pass/fail/warning)
-        // FIX v11.0.30: Tables - allow ±1 tolerance for minor counting differences
-        // Nested tables, wrapper divs, or HTML parsing inconsistencies can cause ±1 variance
+        // Tables - STRICT validation (must match exactly unless split for 100-row limit)
         let tablesMismatch = false;
         if (sourceCounts.tables > 0) {
           const tableDiff = Math.abs(notionCounts.tables - sourceCounts.tables);
-          const tableTolerance = 1; // Allow ±1 table difference
           
           if (tableDiff === 0) {
             // Exact match - perfect!
             log(`✅ [VALIDATION] Table count matches exactly: ${notionCounts.tables}/${sourceCounts.tables}`);
-          } else if (tableDiff <= tableTolerance) {
-            // Within tolerance - acceptable (not an error, just informational)
-            log(`ℹ️ [VALIDATION] Table count within tolerance: ${notionCounts.tables}/${sourceCounts.tables} (±${tableDiff}, tolerance ±${tableTolerance})`);
-            result.warnings.push(`Table count differs slightly: expected ${sourceCounts.tables}, got ${notionCounts.tables} (within ±${tableTolerance} tolerance - may be nested tables or HTML parsing differences)`);
           } else {
-            // Beyond tolerance - check for legitimate 100-row splitting
+            // Check for legitimate 100-row splitting
             const hasSplitTableCallout = allBlocks.some(block => 
               block.type === 'callout' && 
               block.callout?.rich_text?.some(rt => 
@@ -516,10 +510,10 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
               log(`ℹ️ [VALIDATION] Table count higher due to 100-row splitting: ${notionCounts.tables}/${sourceCounts.tables}`);
               result.warnings.push(`Table count higher: ${sourceCounts.tables} source table(s) split into ${notionCounts.tables} Notion tables due to 100-row limit`);
             } else {
-              // Beyond tolerance and not splitting - this is an error
+              // Mismatch and not splitting - this is an error
               tablesMismatch = true;
               result.hasErrors = true;
-              result.issues.push(`Table count mismatch: expected ${sourceCounts.tables}, got ${notionCounts.tables} (difference of ${tableDiff}, beyond ±${tableTolerance} tolerance)`);
+              result.issues.push(`Table count mismatch: expected ${sourceCounts.tables}, got ${notionCounts.tables}`);
               log(`❌ [VALIDATION] Table count mismatch: ${notionCounts.tables}/${sourceCounts.tables} (diff: ${tableDiff})`);
             }
           }

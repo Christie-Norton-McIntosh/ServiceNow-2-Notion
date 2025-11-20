@@ -1417,7 +1417,7 @@ router.post('/W2N', async (req, res) => {
             const timestamp = new Date().toISOString().replace(/:/g, '-').split('.')[0];
             const sanitizedTitle = (payload.title || 'untitled').toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 50);
             const filename = `${sanitizedTitle}-empty-page-${timestamp}.html`;
-            const filepath = path.join(__dirname, '../patch/pages/pages-to-update', filename);
+            const filepath = path.join(__dirname, '../../patch/pages/pages-to-update', filename);
             
             fs.writeFileSync(filepath, payload.contentHtml, 'utf-8');
             log(`💾 Saved empty page HTML to: ${filename}`);
