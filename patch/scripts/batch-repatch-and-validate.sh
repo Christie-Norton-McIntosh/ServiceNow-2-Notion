@@ -57,8 +57,9 @@ for FP in "$UPDATED_DIR"/*.html; do
       ((VFAIL++))
     fi
   else
-    if [[ "$CODE" == "404" ]]; then
-      echo "⚠️ PATCH 404 (page not found) $FILE -> $PAGEIDCLEAN - moving to page-not-found/"
+    # If Notion indicates object_not_found or block-not-found in the response body treat as page-not-found
+    if [[ "$CODE" == "404" ]] || echo "$BODY" | grep -qiE 'object_not_found|Could not find block with ID'; then
+      echo "⚠️ PATCH 404/object_not_found (page not found) $FILE -> $PAGEIDCLEAN - moving to page-not-found/"
       mv "$FP" "$PAGE_NOT_FOUND_DIR/" || true
     else
       echo "❌ PATCH FAIL $FILE -> $PAGEIDCLEAN (HTTP $CODE)"

@@ -159,8 +159,8 @@ except:
       echo -e "  ↳ ${YELLOW}Server unavailable; skipping move for now.${NC}"
       # Still add to refresh list - page exists, just can't validate right now
       PAGE_IDS_TO_REFRESH+=("$page_id")
-    elif [ "$http_code" = "404" ]; then
-      echo -e "  ↳ ${YELLOW}Page not found (404) - moving to page-not-found/${NC}"
+    elif echo "$body" | grep -qiE 'object_not_found|Could not find block with ID'; then
+      echo -e "  ↳ ${YELLOW}Page not found (Notion object_not_found or block-not-found) - moving to page-not-found/${NC}"
       mv "$f" "$PAGE_NOT_FOUND_DIR/" && echo "  ↳ Moved to page-not-found/" || true
     else
       # Move file back to pages-to-update
