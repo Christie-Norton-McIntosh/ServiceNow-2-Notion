@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.30
+// @version      11.0.31
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.30";
+    window.BUILD_VERSION = "11.0.31";
 (function () {
 
   // Configuration constants and default settings
@@ -6111,8 +6111,10 @@
       debug(`[UPDATE-EXISTING] Extracted page ID: ${pageId}`);
       
       // Show loading overlay
-      overlayModule.show();
-      overlayModule.setMessage('📝 Extracting current ServiceNow page content...');
+      overlayModule.start({
+        title: 'Updating Notion Page',
+        message: '📝 Extracting current ServiceNow page content...'
+      });
       
       // Get app instance
       const app = window.ServiceNowToNotion?.app?.();
