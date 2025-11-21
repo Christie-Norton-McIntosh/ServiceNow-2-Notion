@@ -1,6 +1,6 @@
 {
   "name": "servicenow-2-notion",
-  "version": "11.0.34",
+  "version": "11.0.35",
   "description": "Modular ServiceNow content extractor for Universal Workflow",
   "type": "module",
   "main": "src/main.js",
