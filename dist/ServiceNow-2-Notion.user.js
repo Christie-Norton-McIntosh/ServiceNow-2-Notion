@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.33
+// @version      11.0.34
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.33";
+    window.BUILD_VERSION = "11.0.34";
 (function () {
 
   // Configuration constants and default settings
@@ -2958,7 +2958,7 @@
         <select id="w2n-database-select" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px;">
           <option value="${config.databaseId || ""}">${config.databaseName || "(no database)"}</option>
         </select>
-        <div id="w2n-selected-database-label" style="margin-top:8px;font-size:12px;color:#6b7280;">Database: ${config.databaseName || "(no database)"}</div>
+        <div id="w2n-selected-database-label" style="margin-top:8px;font-size:12px;color:#6b7280;">ID: ${config.databaseId || "(no database)"}</div>
         <div style="margin-top:8px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
           <button id="w2n-refresh-dbs" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">Refresh</button>
           <button id="w2n-search-dbs" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">Search</button>
@@ -3176,7 +3176,7 @@
 
             // Update UI
             databaseSelect.innerHTML = `<option value="${matchingDb.id}">${config.databaseName}</option>`;
-            databaseLabel.textContent = `Database: ${config.databaseName}`;
+            databaseLabel.textContent = `ID: ${matchingDb.id}`;
 
             debug(
               `✅ Set target database to: ${config.databaseName} (${matchingDb.id})`
@@ -3222,7 +3222,7 @@
 
           // Update UI
           databaseSelect.innerHTML = `<option value="${cleanDbId}">${config.databaseName}</option>`;
-          databaseLabel.textContent = `Database: ${config.databaseName}`;
+          databaseLabel.textContent = `ID: ${cleanDbId}`;
 
           debug(
             `✅ Set target database to: ${config.databaseName} (${cleanDbId})`
