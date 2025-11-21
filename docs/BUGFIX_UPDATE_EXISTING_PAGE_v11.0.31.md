@@ -1,11 +1,11 @@
-# Bugfix: Update Existing Page Overlay Error — v11.0.31
+# Bugfix: Update Existing Page Errors — v11.0.31 & v11.0.32
 
 **Date**: November 21, 2025  
 **Type**: Bugfix  
 **Severity**: Critical (feature broken)  
 **Impact**: Update Existing Page button
 
-## Issue
+## Issue 1 (v11.0.31): Overlay Module Error
 
 **Error Message**:
 ```
@@ -147,9 +147,110 @@ To prevent similar issues:
 3. **Look for similar usage** in existing code
 4. **Use console for API discovery**: `console.log(overlayModule)`
 
+## Issue 2 (v11.0.32): Content Extraction Error
+
+**Error Message**:
+```
+❌ Error updating page: html.match is not a function
+```
+
+**Cause**: The `handleUpdateExistingPage()` function was passing the wrong content format to `patchNotionPage()`. It was passing `extractedData.content` (an object) instead of `extractedData.content.combinedHtml` (the HTML string).
+
+**Affected Version**: v11.0.31
+
+**Impact**: The "Update Existing Page" button would fail after extraction, when trying to send the PATCH request.
+
+### Root Cause
+
+The `extractCurrentPageData()` function returns a nested structure:
+
+```javascript
+{
+  title: "Page Title",
+  content: {
+    combinedHtml: "<html>...</html>",  // The actual HTML string
+    html: "...",                        // Fallback HTML
+    sections: [...]
+  }
+}
+```
+
+But the code was trying to use `extractedData.content` directly:
+
+```javascript
+// ❌ WRONG (v11.0.31)
+const patchResult = await patchNotionPage(
+  pageId,
+  extractedData.title,
+  extractedData.contentHtml || extractedData.content,  // content is an object!
+  currentUrl
+);
+```
+
+This passed an object to the PATCH function, which tried to call `.match()` on it, causing the error.
+
+### Fix Applied (v11.0.32)
+
+**File**: `src/ui/main-panel.js`  
+**Function**: `handleUpdateExistingPage()`  
+**Line**: ~3367
+
+**Before** (v11.0.31):
+```javascript
+debug(`[UPDATE-EXISTING] Extracted: ${extractedData.title}`);
+debug(`[UPDATE-EXISTING] Content length: ${(extractedData.contentHtml || extractedData.content || '').length} chars`);
+
+const patchResult = await patchNotionPage(
+  pageId,
+  extractedData.title,
+  extractedData.contentHtml || extractedData.content,
+  currentUrl
+);
+```
+
+**After** (v11.0.32):
+```javascript
+debug(`[UPDATE-EXISTING] Extracted: ${extractedData.title}`);
+
+// Extract HTML content from the nested structure
+const contentHtml = extractedData.content?.combinedHtml || 
+                    extractedData.content?.html || 
+                    extractedData.contentHtml || 
+                    '';
+
+debug(`[UPDATE-EXISTING] Content length: ${contentHtml.length} chars`);
+
+if (!contentHtml || contentHtml.length === 0) {
+  throw new Error('No content extracted from page');
+}
+
+const patchResult = await patchNotionPage(
+  pageId,
+  extractedData.title,
+  contentHtml,  // Now correctly passing HTML string
+  currentUrl
+);
+```
+
+### Improvements
+
+1. **Correct content extraction**: Uses `content.combinedHtml` first, then fallbacks
+2. **Validation**: Checks if content is empty before proceeding
+3. **Better error message**: Clear error if no content extracted
+4. **Proper type handling**: Ensures string is passed to PATCH function
+
 ---
 
-**Status**: ✅ Fixed in v11.0.31  
+## Summary of Fixes
+
+| Version | Issue | Fix |
+|---------|-------|-----|
+| v11.0.31 | `overlayModule.show is not a function` | Changed to `overlayModule.start()` |
+| v11.0.32 | `html.match is not a function` | Extract HTML from `content.combinedHtml` |
+
+---
+
+**Status**: ✅ All issues fixed in v11.0.32  
 **Testing**: Required (manual verification)  
-**Severity**: High → Resolved  
-**Version**: 11.0.31 (built and deployed)
+**Severity**: Critical → Resolved  
+**Current Version**: 11.0.32 (built and deployed)
