@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.32
+// @version      11.0.33
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.32";
+    window.BUILD_VERSION = "11.0.33";
 (function () {
 
   // Configuration constants and default settings
@@ -3163,10 +3163,11 @@
             // Update config with new database
             const config = getConfig();
             config.databaseId = matchingDb.id;
+            // Extract database name from Notion API title structure
             config.databaseName =
               typeof matchingDb.title === "string"
                 ? matchingDb.title
-                : "Unknown Database";
+                : matchingDb.title?.[0]?.plain_text || "Unknown Database";
 
             // Save to storage
             if (typeof GM_setValue === "function") {
@@ -3209,7 +3210,11 @@
           // Update config with validated database
           const config = getConfig();
           config.databaseId = cleanDbId;
-          config.databaseName = dbDetails.title || "Database by ID";
+          // Extract database name from Notion API title structure
+          config.databaseName = 
+            typeof dbDetails.title === "string"
+              ? dbDetails.title
+              : dbDetails.title?.[0]?.plain_text || "Database by ID";
 
           if (typeof GM_setValue === "function") {
             GM_setValue("notionConfig", config);
