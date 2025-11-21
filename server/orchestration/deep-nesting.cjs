@@ -484,7 +484,7 @@ async function orchestrateDeepNesting(pageId, markerMap) {
             const maxConflictRetries = 3;
             
             let rateLimitRetries = 0;
-            const maxRateLimitRetries = 5;
+            const maxRateLimitRetries = 8; // FIX v11.0.6: Increased from 5 to 8 for better rate limit recovery
             while (!updateSuccess && (conflictRetries <= maxConflictRetries || rateLimitRetries <= maxRateLimitRetries)) {
               try {
                 await notion.blocks.update({
@@ -498,8 +498,10 @@ async function orchestrateDeepNesting(pageId, markerMap) {
               } catch (updateError) {
                 if (updateError.status === 429 && rateLimitRetries < maxRateLimitRetries) {
                   rateLimitRetries++;
-                  const delay = Math.min(1000 * Math.pow(2, rateLimitRetries - 1), 5000);
-                  log(`⏳ Orchestrator: rate limit on paragraph ${paragraphId}, retry ${rateLimitRetries}/${maxRateLimitRetries} after ${delay}ms`);
+                  // FIX v11.0.6: Extended exponential backoff (15s base, max 120s)
+                  // Delays: 15s, 22.5s, 33.75s, 50.6s, 75.9s, 113.8s, 120s, 120s
+                  const delay = Math.min(15000 * Math.pow(1.5, rateLimitRetries - 1), 120000);
+                  log(`⏳ 🚦 Orchestrator: rate limit on paragraph ${paragraphId}, retry ${rateLimitRetries}/${maxRateLimitRetries} after ${Math.round(delay / 1000)}s`);
                   await new Promise(resolve => setTimeout(resolve, delay));
                 } else if (updateError.code === 'conflict_error' && conflictRetries < maxConflictRetries) {
                   conflictRetries++;
@@ -529,7 +531,7 @@ async function orchestrateDeepNesting(pageId, markerMap) {
         let success = false;
         
         let rateLimitRetries = 0;
-        const maxRateLimitRetries = 5;
+        const maxRateLimitRetries = 8; // FIX v11.0.6: Increased from 5 to 8 for better rate limit recovery
         while ((retries > 0 || rateLimitRetries <= maxRateLimitRetries) && !success) {
           try {
             const block = await notion.blocks.retrieve({ block_id: parentId });
@@ -564,8 +566,9 @@ async function orchestrateDeepNesting(pageId, markerMap) {
               delay *= 2; // Exponential backoff for non-conflict errors
             } else if (e && e.status === 429 && rateLimitRetries < maxRateLimitRetries) {
               rateLimitRetries++;
-              const rlDelay = Math.min(1000 * Math.pow(2, rateLimitRetries - 1), 5000);
-              log(`⏳ Orchestrator: rate limit on block ${parentId}, retry ${rateLimitRetries}/${maxRateLimitRetries} after ${rlDelay}ms`);
+              // FIX v11.0.6: Extended exponential backoff (15s base, max 120s)
+              const rlDelay = Math.min(15000 * Math.pow(1.5, rateLimitRetries - 1), 120000);
+              log(`⏳ 🚦 Orchestrator: rate limit on block ${parentId}, retry ${rateLimitRetries}/${maxRateLimitRetries} after ${Math.round(rlDelay / 1000)}s`);
               await new Promise(resolve => setTimeout(resolve, rlDelay));
               // give one more normal retry after rate limit backoff
               retries = Math.max(retries, 1);

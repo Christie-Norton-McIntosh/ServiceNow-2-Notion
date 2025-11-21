@@ -58,19 +58,27 @@ export function injectMainPanel() {
       const panelWidth = 320;
       const panelHeight = 200; // Estimated minimum height
       
-      if (savedPosition.left < margin || 
-          savedPosition.top < margin ||
-          savedPosition.left + panelWidth > window.innerWidth - margin ||
-          savedPosition.top + panelHeight > window.innerHeight - margin) {
-        // Saved position is off-screen, reset it
-        savedPosition = null;
-        localStorage.removeItem('w2n-panel-position');
-      } else {
-        // Apply saved position
-        panel.style.left = `${savedPosition.left}px`;
-        panel.style.top = `${savedPosition.top}px`;
-        panel.style.right = 'auto'; // Override default right positioning
+      // Check if position is valid for current viewport
+      const isOnScreen = (
+        savedPosition.left >= margin && 
+        savedPosition.top >= margin &&
+        savedPosition.left + panelWidth <= window.innerWidth - margin &&
+        savedPosition.top + panelHeight <= window.innerHeight - margin
+      );
+      
+      if (!isOnScreen) {
+        // Position is off-screen, adjust it to fit
+        let adjustedLeft = Math.max(margin, Math.min(savedPosition.left, window.innerWidth - panelWidth - margin));
+        let adjustedTop = Math.max(margin, Math.min(savedPosition.top, window.innerHeight - panelHeight - margin));
+        
+        savedPosition = { left: adjustedLeft, top: adjustedTop };
+        localStorage.setItem('w2n-panel-position', JSON.stringify(savedPosition));
       }
+      
+      // Apply saved or adjusted position
+      panel.style.left = `${savedPosition.left}px`;
+      panel.style.top = `${savedPosition.top}px`;
+      panel.style.right = 'auto'; // Override default right positioning
     }
   } catch (e) {
     debug("Failed to restore panel position from localStorage:", e);
@@ -121,7 +129,7 @@ export function injectMainPanel() {
 
       <div style="display:grid; gap:8px; margin-bottom:16px;">
         <button id="w2n-capture-page" style="width:100%; padding:12px; background:#10b981; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">📄 Save Current Page</button>
-        <button id="w2n-capture-description" style="width:100%; padding:12px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">📖 Download PDF</button>
+        <button id="w2n-update-existing-page" style="width:100%; padding:12px; background:#8b5cf6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">🔄 Update Existing Page</button>
       </div>
 
       <div style="border-top:1px solid #e5e7eb; padding-top:16px;">
@@ -233,6 +241,19 @@ export function setupMainPanel(panel) {
       debug("Failed to open icon cover modal:", e);
     }
   };
+
+  // Update Existing Page button handler
+  const updateExistingBtn = panel.querySelector("#w2n-update-existing-page");
+  if (updateExistingBtn) {
+    updateExistingBtn.onclick = async () => {
+      try {
+        await handleUpdateExistingPage();
+      } catch (e) {
+        debug("Failed to update existing page:", e);
+        alert(`❌ Error updating page: ${e.message}`);
+      }
+    };
+  }
 
   // Database button handlers
   const refreshBtn = panel.querySelector("#w2n-refresh-dbs");
@@ -533,17 +554,14 @@ function enablePanelDrag(panel) {
     let newLeft = startLeft + dx;
     let newTop = startTop + dy;
 
-    // clamp to viewport with 8px margin
+    // clamp to viewport with 8px margin - ensure panel stays fully visible
     const margin = 8;
     const rect = panel.getBoundingClientRect();
-    newLeft = Math.min(
-      Math.max(margin, newLeft),
-      window.innerWidth - rect.width - margin
-    );
-    newTop = Math.min(
-      Math.max(margin, newTop),
-      window.innerHeight - rect.height - margin + window.scrollY
-    );
+    const maxLeft = Math.max(margin, window.innerWidth - rect.width - margin);
+    const maxTop = Math.max(margin, window.innerHeight - rect.height - margin);
+    
+    newLeft = Math.min(Math.max(margin, newLeft), maxLeft);
+    newTop = Math.min(Math.max(margin, newTop), maxTop);
 
     panel.style.left = `${Math.round(newLeft)}px`;
     panel.style.top = `${Math.round(newTop)}px`;
@@ -574,6 +592,71 @@ function enablePanelDrag(panel) {
   window.addEventListener("pointerup", onPointerUp);
   // pointercancel also
   window.addEventListener("pointercancel", onPointerUp);
+  
+  // Add window resize handler to keep panel on screen
+  const onWindowResize = () => {
+    // Don't adjust while dragging
+    if (dragging) return;
+    
+    const margin = 8;
+    const rect = panel.getBoundingClientRect();
+    const computed = window.getComputedStyle(panel);
+    
+    // Calculate current position
+    let currentLeft = rect.left;
+    let currentTop = rect.top;
+    
+    // Check if panel is off-screen or too close to edges
+    const maxLeft = Math.max(margin, window.innerWidth - rect.width - margin);
+    const maxTop = Math.max(margin, window.innerHeight - rect.height - margin);
+    
+    let needsAdjustment = false;
+    let newLeft = currentLeft;
+    let newTop = currentTop;
+    
+    // Clamp to viewport
+    if (currentLeft < margin) {
+      newLeft = margin;
+      needsAdjustment = true;
+    } else if (currentLeft > maxLeft) {
+      newLeft = maxLeft;
+      needsAdjustment = true;
+    }
+    
+    if (currentTop < margin) {
+      newTop = margin;
+      needsAdjustment = true;
+    } else if (currentTop > maxTop) {
+      newTop = maxTop;
+      needsAdjustment = true;
+    }
+    
+    if (needsAdjustment) {
+      panel.style.left = `${Math.round(newLeft)}px`;
+      panel.style.top = `${Math.round(newTop)}px`;
+      panel.style.right = 'auto';
+      
+      // Save adjusted position
+      try {
+        localStorage.setItem('w2n-panel-position', JSON.stringify({
+          left: newLeft,
+          top: newTop
+        }));
+      } catch (e) {
+        console.warn('[W2N] Failed to save adjusted panel position:', e);
+      }
+    }
+  };
+  
+  // Debounce resize handler to avoid excessive updates
+  let resizeTimeout;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(onWindowResize, 100);
+  });
+  
+  // Run once on initialization to ensure panel is on screen
+  setTimeout(onWindowResize, 100);
 }
 
 // Attach drag enable when panel is initialized
@@ -3197,5 +3280,157 @@ async function retryFailedPages(failedPages, button) {
     // Clear failed pages if all succeeded
     GM_setValue('w2n_failed_pages', JSON.stringify([]));
     debug(`🧹 Cleared failed pages from storage (all retries successful)`);
+  }
+}
+
+/**
+ * Extract Notion page ID from a URL
+ * Supports various Notion URL formats:
+ * - https://www.notion.so/workspace/Page-Title-abc123def456...
+ * - https://www.notion.so/Page-Title-abc123def456...
+ * - https://notion.so/abc123def456...
+ * - abc123def456... (just the ID)
+ */
+function extractPageIdFromUrl(input) {
+  if (!input || typeof input !== 'string') {
+    throw new Error('Invalid input: must provide a Notion page URL or ID');
+  }
+  
+  const trimmed = input.trim();
+  
+  // If it's already a valid 32-character UUID (with or without hyphens)
+  const uuidPattern = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
+  if (uuidPattern.test(trimmed)) {
+    // Remove hyphens and return
+    return trimmed.replace(/-/g, '');
+  }
+  
+  // Extract from Notion URL
+  // Pattern: last segment after last hyphen is the page ID (32 chars, may have hyphens)
+  const urlPattern = /([0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+  const match = trimmed.match(urlPattern);
+  
+  if (match) {
+    // Remove hyphens from matched ID
+    return match[1].replace(/-/g, '');
+  }
+  
+  throw new Error('Could not extract page ID from input. Please provide a valid Notion page URL or 32-character page ID.');
+}
+
+/**
+ * Handle the "Update Existing Page" button click
+ * Prompts user for Notion page URL, extracts current ServiceNow content, and PATCHes the page
+ */
+async function handleUpdateExistingPage() {
+  debug('\n🔄 [UPDATE-EXISTING] Starting manual page update...');
+  
+  // Prompt for Notion page URL or ID
+  const userInput = prompt(
+    '🔄 Update Existing Notion Page\n\n' +
+    'Paste the Notion page URL or ID:\n' +
+    '(e.g., https://notion.so/Page-Title-abc123... or abc123def456...)\n\n' +
+    'This will replace the page content with freshly extracted data from the current ServiceNow page.'
+  );
+  
+  if (!userInput || userInput.trim() === '') {
+    debug('[UPDATE-EXISTING] User cancelled');
+    return;
+  }
+  
+  try {
+    // Extract page ID from input
+    const pageId = extractPageIdFromUrl(userInput);
+    debug(`[UPDATE-EXISTING] Extracted page ID: ${pageId}`);
+    
+    // Show loading overlay
+    overlayModule.start({
+      title: 'Updating Notion Page',
+      message: '📝 Extracting current ServiceNow page content...'
+    });
+    
+    // Get app instance
+    const app = window.ServiceNowToNotion?.app?.();
+    if (!app) {
+      throw new Error('ServiceNow-2-Notion app not initialized');
+    }
+    
+    // Extract current page data
+    debug('[UPDATE-EXISTING] Extracting page data...');
+    const extractedData = await app.extractCurrentPageData();
+    
+    if (!extractedData) {
+      throw new Error('Failed to extract content from current page');
+    }
+    
+    debug(`[UPDATE-EXISTING] Extracted: ${extractedData.title}`);
+    
+    // Extract HTML content from the nested structure
+    const contentHtml = extractedData.content?.combinedHtml || 
+                        extractedData.content?.html || 
+                        extractedData.contentHtml || 
+                        '';
+    
+    debug(`[UPDATE-EXISTING] Content length: ${contentHtml.length} chars`);
+    
+    if (!contentHtml || contentHtml.length === 0) {
+      throw new Error('No content extracted from page');
+    }
+    
+    // Get current page URL
+    const currentUrl = window.location.href;
+    
+    overlayModule.setMessage(`📤 Updating Notion page: ${extractedData.title}...`);
+    
+    // Import PATCH function
+    const { patchNotionPage } = await import('../api/proxy-api.js');
+    
+    // PATCH the page
+    debug(`[UPDATE-EXISTING] Sending PATCH request to update page ${pageId}...`);
+    const patchResult = await patchNotionPage(
+      pageId,
+      extractedData.title,
+      contentHtml,
+      currentUrl
+    );
+    
+    if (patchResult.success) {
+      debug(`✅ [UPDATE-EXISTING] Successfully updated page: ${extractedData.title}`);
+      debug(`   Page URL: ${patchResult.url || 'N/A'}`);
+      
+      overlayModule.done({
+        success: true,
+        pageUrl: patchResult.url || `https://notion.so/${pageId}`,
+        autoCloseMs: 5000,
+      });
+      
+      showToast(
+        `✅ Successfully updated: ${extractedData.title}`,
+        5000
+      );
+      
+      // Show success alert with details
+      alert(
+        '✅ Page Updated Successfully!\n\n' +
+        `Title: ${extractedData.title}\n` +
+        `Page ID: ${pageId}\n\n` +
+        'The Notion page has been updated with fresh content from this ServiceNow page.'
+      );
+      
+    } else {
+      throw new Error(patchResult.error || 'PATCH update failed');
+    }
+    
+  } catch (error) {
+    debug(`❌ [UPDATE-EXISTING] Error: ${error.message}`);
+    
+    overlayModule.done({
+      success: false,
+      pageUrl: null,
+      autoCloseMs: 5000,
+    });
+    
+    // Re-throw to be caught by button handler
+    throw error;
   }
 }
