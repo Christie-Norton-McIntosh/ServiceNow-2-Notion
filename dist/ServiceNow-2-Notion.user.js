@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.29
+// @version      11.0.30
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.29";
+    window.BUILD_VERSION = "11.0.30";
 (function () {
 
   // Configuration constants and default settings
@@ -2902,19 +2902,27 @@
         const panelWidth = 320;
         const panelHeight = 200; // Estimated minimum height
         
-        if (savedPosition.left < margin || 
-            savedPosition.top < margin ||
-            savedPosition.left + panelWidth > window.innerWidth - margin ||
-            savedPosition.top + panelHeight > window.innerHeight - margin) {
-          // Saved position is off-screen, reset it
-          savedPosition = null;
-          localStorage.removeItem('w2n-panel-position');
-        } else {
-          // Apply saved position
-          panel.style.left = `${savedPosition.left}px`;
-          panel.style.top = `${savedPosition.top}px`;
-          panel.style.right = 'auto'; // Override default right positioning
+        // Check if position is valid for current viewport
+        const isOnScreen = (
+          savedPosition.left >= margin && 
+          savedPosition.top >= margin &&
+          savedPosition.left + panelWidth <= window.innerWidth - margin &&
+          savedPosition.top + panelHeight <= window.innerHeight - margin
+        );
+        
+        if (!isOnScreen) {
+          // Position is off-screen, adjust it to fit
+          let adjustedLeft = Math.max(margin, Math.min(savedPosition.left, window.innerWidth - panelWidth - margin));
+          let adjustedTop = Math.max(margin, Math.min(savedPosition.top, window.innerHeight - panelHeight - margin));
+          
+          savedPosition = { left: adjustedLeft, top: adjustedTop };
+          localStorage.setItem('w2n-panel-position', JSON.stringify(savedPosition));
         }
+        
+        // Apply saved or adjusted position
+        panel.style.left = `${savedPosition.left}px`;
+        panel.style.top = `${savedPosition.top}px`;
+        panel.style.right = 'auto'; // Override default right positioning
       }
     } catch (e) {
       debug("Failed to restore panel position from localStorage:", e);
@@ -2965,7 +2973,6 @@
 
       <div style="display:grid; gap:8px; margin-bottom:16px;">
         <button id="w2n-capture-page" style="width:100%; padding:12px; background:#10b981; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">📄 Save Current Page</button>
-        <button id="w2n-capture-description" style="width:100%; padding:12px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">📖 Download PDF</button>
         <button id="w2n-update-existing-page" style="width:100%; padding:12px; background:#8b5cf6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">🔄 Update Existing Page</button>
       </div>
 
@@ -3391,17 +3398,14 @@
       let newLeft = startLeft + dx;
       let newTop = startTop + dy;
 
-      // clamp to viewport with 8px margin
+      // clamp to viewport with 8px margin - ensure panel stays fully visible
       const margin = 8;
       const rect = panel.getBoundingClientRect();
-      newLeft = Math.min(
-        Math.max(margin, newLeft),
-        window.innerWidth - rect.width - margin
-      );
-      newTop = Math.min(
-        Math.max(margin, newTop),
-        window.innerHeight - rect.height - margin + window.scrollY
-      );
+      const maxLeft = Math.max(margin, window.innerWidth - rect.width - margin);
+      const maxTop = Math.max(margin, window.innerHeight - rect.height - margin);
+      
+      newLeft = Math.min(Math.max(margin, newLeft), maxLeft);
+      newTop = Math.min(Math.max(margin, newTop), maxTop);
 
       panel.style.left = `${Math.round(newLeft)}px`;
       panel.style.top = `${Math.round(newTop)}px`;
@@ -3432,6 +3436,71 @@
     window.addEventListener("pointerup", onPointerUp);
     // pointercancel also
     window.addEventListener("pointercancel", onPointerUp);
+    
+    // Add window resize handler to keep panel on screen
+    const onWindowResize = () => {
+      // Don't adjust while dragging
+      if (dragging) return;
+      
+      const margin = 8;
+      const rect = panel.getBoundingClientRect();
+      window.getComputedStyle(panel);
+      
+      // Calculate current position
+      let currentLeft = rect.left;
+      let currentTop = rect.top;
+      
+      // Check if panel is off-screen or too close to edges
+      const maxLeft = Math.max(margin, window.innerWidth - rect.width - margin);
+      const maxTop = Math.max(margin, window.innerHeight - rect.height - margin);
+      
+      let needsAdjustment = false;
+      let newLeft = currentLeft;
+      let newTop = currentTop;
+      
+      // Clamp to viewport
+      if (currentLeft < margin) {
+        newLeft = margin;
+        needsAdjustment = true;
+      } else if (currentLeft > maxLeft) {
+        newLeft = maxLeft;
+        needsAdjustment = true;
+      }
+      
+      if (currentTop < margin) {
+        newTop = margin;
+        needsAdjustment = true;
+      } else if (currentTop > maxTop) {
+        newTop = maxTop;
+        needsAdjustment = true;
+      }
+      
+      if (needsAdjustment) {
+        panel.style.left = `${Math.round(newLeft)}px`;
+        panel.style.top = `${Math.round(newTop)}px`;
+        panel.style.right = 'auto';
+        
+        // Save adjusted position
+        try {
+          localStorage.setItem('w2n-panel-position', JSON.stringify({
+            left: newLeft,
+            top: newTop
+          }));
+        } catch (e) {
+          console.warn('[W2N] Failed to save adjusted panel position:', e);
+        }
+      }
+    };
+    
+    // Debounce resize handler to avoid excessive updates
+    let resizeTimeout;
+    window.addEventListener("resize", () => {
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(onWindowResize, 100);
+    });
+    
+    // Run once on initialization to ensure panel is on screen
+    setTimeout(onWindowResize, 100);
   }
 
   // Attach drag enable when panel is initialized
