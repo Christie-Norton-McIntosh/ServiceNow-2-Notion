@@ -905,11 +905,57 @@ router.post('/W2N', async (req, res) => {
       };
     }
 
+    // FIX v11.0.5: Adaptive pre-creation delay based on content complexity
+    // Prevents rate limiting for complex pages with many list items, tables, callouts
+    const calculateComplexity = (blocks) => {
+      let score = 0;
+      const totalBlocks = blocks.length;
+      const listItems = blocks.filter(b => b.type.includes('list_item')).length;
+      const tables = blocks.filter(b => b.type === 'table').length;
+      const callouts = blocks.filter(b => b.type === 'callout').length;
+      
+      // Scoring: 1 point per 10 blocks, 5 points per table, 2 points per callout
+      score += totalBlocks / 10;
+      score += tables * 5;
+      score += callouts * 2;
+      
+      // Extra penalty for list-heavy content (indication of deep nesting)
+      if (listItems > 100) {
+        score += (listItems - 100) / 20;
+      }
+      
+      // Convert score to delay: 1 point = 500ms, max 30s
+      const delayMs = Math.min(Math.round(score * 500), 30000);
+      
+      return { 
+        score: Math.round(score), 
+        delayMs, 
+        totalBlocks, 
+        listItems, 
+        tables, 
+        callouts 
+      };
+    };
+    
+    const contentComplexity = calculateComplexity(children);
+    
+    if (contentComplexity.delayMs > 0) {
+      log(`⏳ [RATE-LIMIT-PROTECTION] Complex content detected (score: ${contentComplexity.score}/100)`);
+      log(`   Total blocks: ${contentComplexity.totalBlocks}`);
+      log(`   List items: ${contentComplexity.listItems}`);
+      log(`   Tables: ${contentComplexity.tables}`);
+      log(`   Callouts: ${contentComplexity.callouts}`);
+      log(`   Pre-creation delay: ${contentComplexity.delayMs}ms to avoid rate limits`);
+      
+      await new Promise(resolve => setTimeout(resolve, contentComplexity.delayMs));
+      log(`   ✅ Pre-creation delay complete, proceeding with page creation...`);
+    }
+
     // Create the page with initial blocks (with retry for network errors AND rate limiting)
     let response;
     let retryCount = 0;
     const maxRetries = 2;
-    const maxRateLimitRetries = 5; // Allow more retries for rate limiting
+    const maxRateLimitRetries = 8; // FIX v11.0.5: Increased from 5 to 8 for better rate limit recovery
     let rateLimitRetryCount = 0;
     
     while (retryCount <= maxRetries || rateLimitRetryCount <= maxRateLimitRetries) {
@@ -940,13 +986,17 @@ router.post('/W2N', async (req, res) => {
         
         if (isRateLimited && rateLimitRetryCount < maxRateLimitRetries) {
           rateLimitRetryCount++;
-          // Extract retry-after header or use exponential backoff
-          const retryAfter = error.headers?.['retry-after'] || (rateLimitRetryCount * 10);
-          const waitSeconds = Math.min(parseInt(retryAfter) || (rateLimitRetryCount * 10), 60);
           
-          log(`⚠️ 🚦 RATE LIMIT HIT (attempt ${rateLimitRetryCount}/${maxRateLimitRetries + 1})`);
+          // FIX v11.0.5: Extended retry delays with exponential backoff (no 60s cap)
+          // Delays: 15s, 22.5s, 33.75s, 50.6s, 75.9s, 113.8s, 120s, 120s (total: ~651s / 10.85min)
+          const baseDelay = 15; // Start at 15s (up from 10s)
+          const retryAfter = error.headers?.['retry-after'];
+          const exponentialDelay = Math.min(baseDelay * Math.pow(1.5, rateLimitRetryCount - 1), 120);
+          const waitSeconds = retryAfter ? parseInt(retryAfter) : exponentialDelay;
+          
+          log(`⚠️ 🚦 RATE LIMIT HIT (attempt ${rateLimitRetryCount}/${maxRateLimitRetries})`);
           log(`   Page: "${payload.title}"`);
-          log(`   Waiting ${waitSeconds} seconds before retry...`);
+          log(`   Waiting ${Math.round(waitSeconds)}s before retry (exponential backoff)...`);
           log(`   💡 Tip: Notion API has rate limits. AutoExtract will automatically retry.`);
           
           // Wait before retrying
@@ -961,9 +1011,10 @@ router.post('/W2N', async (req, res) => {
         } else {
           // Non-retryable error or max retries exceeded
           if (isRateLimited) {
-            log(`❌ Rate limit exceeded after ${rateLimitRetryCount} retries`);
-            log(`   💡 This page will be marked for manual retry`);
-            error.message = `Rate limit exceeded: ${error.message}. Page "${payload.title}" needs to be processed manually after cooldown.`;
+            log(`❌ Rate limit exceeded after ${rateLimitRetryCount} retries (~${Math.round(rateLimitRetryCount * 15 * 1.5 / 60)} min total delay)`);
+            log(`   💡 This page will be auto-saved for manual retry after cooldown`);
+            log(`   Page complexity: ${contentComplexity.score}/100 (${contentComplexity.listItems} list items, ${contentComplexity.tables} tables)`);
+            error.message = `Rate limit exceeded after extended retries: ${error.message}. Page "${payload.title}" needs manual retry after cooldown.`;
           }
           throw error;
         }

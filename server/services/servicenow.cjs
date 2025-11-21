@@ -1161,6 +1161,9 @@ async function extractContentFromHtml(html) {
     };
   }
 
+  // Track processed tables to prevent duplicates
+  const processedTableIds = new Set();
+  
   // Process elements in document order by walking the DOM tree
   async function processElement(element, isNested = false) {
     const $elem = $(element);
@@ -1489,6 +1492,18 @@ async function extractContentFromHtml(html) {
       // Table - extract images from table cells and add as separate blocks
       const tableHtml = $.html($elem);
       const tableId = $elem.attr('id') || 'no-id';
+      
+      // Generate unique fingerprint for table (use ID + first 100 chars of HTML)
+      const tableFingerprint = tableId + '::' + tableHtml.substring(0, 100);
+      
+      // Check if this table was already processed
+      if (processedTableIds.has(tableFingerprint)) {
+        console.log(`⏭️ [TABLE-DUPLICATE] Skipping already-processed table: id="${tableId}"`);
+        $elem.remove();
+        // Return empty to skip processing this duplicate
+      } else {
+      
+      processedTableIds.add(tableFingerprint);
       const tablePreview = tableHtml.substring(0, 100).replace(/\s+/g, ' ');
       console.log(`📊 Processing <table id="${tableId}">: ${tablePreview}...`);
       
@@ -1572,6 +1587,8 @@ async function extractContentFromHtml(html) {
         console.log(`⚠️ Error stack: ${error.stack}`);
       }
       $elem.remove(); // Mark as processed
+      
+      } // End of else block for non-duplicate table processing
       
     } else if (tagName === 'pre') {
       // Code block - detect language from class attribute
@@ -1942,6 +1959,24 @@ async function extractContentFromHtml(html) {
     } else if (tagName === 'div' && ($elem.hasClass('p') || $elem.hasClass('sectiondiv'))) {
       // ServiceNow wrapper divs (div.p, div.sectiondiv) - process children recursively
       // These are semantic wrappers that should be transparent, not converted to paragraphs
+      
+      // FIX: Check for nested tables that might be hidden in div.table-wrap
+      const nestedTables = $elem.find('table').toArray();
+      if (nestedTables.length > 0) {
+        console.log(`🔍 [TABLE-EXTRACT] Found ${nestedTables.length} nested table(s) in <div class="${$elem.attr('class')}">`);
+        
+        // Extract tables directly and process other content
+        for (const table of nestedTables) {
+          const $table = $(table);
+          const tableBlocks = await processElement(table);
+          if (tableBlocks && Array.isArray(tableBlocks)) {
+            processedBlocks.push(...tableBlocks);
+          }
+          // Remove table from elem so it's not processed again as text
+          $table.remove();
+        }
+      }
+      
       const children = $elem.find('> *').toArray();
       const childTypes = children.map(c => c.name + ($(c).attr('class') ? `.${$(c).attr('class').split(' ')[0]}` : '')).join(', ');
       console.log(`🔍 [DIV-P-FIX] Processing <div class="${$elem.attr('class')}"> with ${children.length} children: [${childTypes}]`);
