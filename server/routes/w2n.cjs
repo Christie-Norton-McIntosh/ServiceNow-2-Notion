@@ -71,6 +71,7 @@ router.post('/W2N', async (req, res) => {
   
   try {
     const payload = req.body;
+    let savedToUpdateFolder = false; // FIX v11.0.33: Track if page was auto-saved (moved to function scope)
     log("📝 Processing W2N request for:", payload.title);
     
     // CRITICAL DEBUG: Log payload structure
@@ -914,18 +915,30 @@ router.post('/W2N', async (req, res) => {
       const tables = blocks.filter(b => b.type === 'table').length;
       const callouts = blocks.filter(b => b.type === 'callout').length;
       
-      // Scoring: 1 point per 10 blocks, 5 points per table, 2 points per callout
+      // Base scoring: 1 point per 10 blocks, 5 points per table, 2 points per callout
       score += totalBlocks / 10;
       score += tables * 5;
       score += callouts * 2;
       
-      // Extra penalty for list-heavy content (indication of deep nesting)
-      if (listItems > 100) {
-        score += (listItems - 100) / 20;
+      // FIX v11.0.6: Enhanced list-heavy content detection with tiered scaling
+      // Pages with >200 list items (e.g., Dynatrace guided-setup with 251 lists) need special handling
+      if (listItems > 200) {
+        // Critical: >200 list items = likely deep nesting requiring extensive orchestration
+        // Add 2 points per list item over 200 (40x penalty vs base scoring)
+        score += (listItems - 200) * 2;
+        log(`   ⚠️ CRITICAL: List-heavy page detected (${listItems} list items)`);
+      } else if (listItems > 100) {
+        // Warning: >100 list items = moderate orchestration overhead
+        // Add 0.5 points per list item over 100 (10x penalty vs base scoring)
+        score += (listItems - 100) * 0.5;
+        log(`   ⚠️ WARNING: Many list items detected (${listItems} list items)`);
       }
       
-      // Convert score to delay: 1 point = 500ms, max 30s
-      const delayMs = Math.min(Math.round(score * 500), 30000);
+      // FIX v11.0.6: Increased max delay to 90s for list-heavy pages (was 30s)
+      // At 251 list items: score ~130, delay ~65s
+      // At 150 list items: score ~65, delay ~32s
+      // At 100 list items: score ~50, delay ~25s
+      const delayMs = Math.min(Math.round(score * 500), 90000);
       
       return { 
         score: Math.round(score), 
@@ -1413,31 +1426,38 @@ router.post('/W2N', async (req, res) => {
       log(`========================================\n`);
       
       try {
-        // Dynamic wait time based on orchestration complexity
-        // Base: 2s for initial page creation
+        // Dynamic wait time based on orchestration complexity and page size
+        // FIX v11.0.34: Increased base wait to account for Notion's eventual consistency
+        // Pages were failing POST validation but passing PATCH (identical content)
+        // Root cause: POST validation ran too soon after page creation + chunked appends
+        // PATCH takes longer (delete + upload) giving Notion time to become consistent
+        // 
+        // Wait time formula:
+        // Base: 5s for initial page creation + chunked block appends
         // +300ms per marker processed (orchestration PATCH requests)
-        // +500ms if deduplication ran (additional PATCH requests)
-        // Max: 10s to prevent excessive delays
-        // This accounts for Notion's eventual consistency across multiple API operations
+        // +1s if page has >100 blocks (needs chunked append settling time)
+        // Max: 15s to prevent excessive delays while ensuring consistency
         const markerCount = Object.keys(markerMap).length;
-        const baseWait = 2000; // 2 seconds base
+        const totalBlocks = children.length;
+        const baseWait = 5000; // 5 seconds base (increased from 2s - v11.0.34)
         const extraWaitPerMarker = 300; // 300ms per marker (orchestration PATCH)
-        const dedupeWait = 500; // 500ms if deduplication ran
+        const largePageWait = totalBlocks > 100 ? 1000 : 0; // +1s for pages >100 blocks
         
         let waitTime = baseWait;
         if (markerCount > 0) {
           waitTime += (markerCount * extraWaitPerMarker);
           log(`   +${markerCount * extraWaitPerMarker}ms for ${markerCount} markers (orchestration)`);
         }
-        // Always add dedupe wait since it runs after orchestration
-        waitTime += dedupeWait;
-        log(`   +${dedupeWait}ms for post-orchestration deduplication`);
+        if (largePageWait > 0) {
+          waitTime += largePageWait;
+          log(`   +${largePageWait}ms for large page (${totalBlocks} blocks - chunked appends)`);
+        }
         
-        // Cap at 10 seconds
-        waitTime = Math.min(waitTime, 10000);
+        // Cap at 15 seconds (increased from 10s - v11.0.34)
+        waitTime = Math.min(waitTime, 15000);
         
         log(`⏳ Waiting ${waitTime}ms for Notion API to process page creation and orchestration...`);
-        log(`   (Base: 2s + Markers: ${markerCount} × 300ms + Dedupe: 500ms = ${waitTime}ms)`);
+        log(`   (Base: 5s + Markers: ${markerCount} × 300ms + Large page: ${largePageWait}ms = ${waitTime}ms)`);
         await new Promise(resolve => setTimeout(resolve, waitTime));
         
         log("🔍 Running post-creation validation...");
@@ -1566,7 +1586,7 @@ router.post('/W2N', async (req, res) => {
         // Pages were being "skipped" for validation when property updates failed after 3 attempts
         const maxPropertyRetries = 5;
         let propertyUpdateSuccess = false;
-        let savedToUpdateFolder = false; // FIX v11.0.19: Track if page was auto-saved
+        // savedToUpdateFolder now declared at function scope (removed duplicate declaration - v11.0.33)
         
         for (let propRetry = 0; propRetry <= maxPropertyRetries && !propertyUpdateSuccess; propRetry++) {
           try {
@@ -1912,6 +1932,91 @@ ${payload.contentHtml || ''}
       log(`${'='.repeat(80)}\n`);
     }
     
+    // FIX v11.0.31: FINAL CATCH-ALL - Verify Validation property was actually set
+    // This catches pages created without validation enabled, API errors, or any other edge case
+    if (!savedToUpdateFolder) { // Only check if not already saved
+      try {
+        log(`🔍 [FINAL-CHECK] Verifying Validation property was set...`);
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for Notion consistency
+        
+        const finalPageCheck = await notion.pages.retrieve({ page_id: response.id });
+        const finalValidationProp = finalPageCheck.properties.Validation;
+        
+        const isFinallyBlank = !finalValidationProp || 
+                               !finalValidationProp.rich_text || 
+                               finalValidationProp.rich_text.length === 0 ||
+                               (finalValidationProp.rich_text.length === 1 && 
+                                (!finalValidationProp.rich_text[0].text || 
+                                 !finalValidationProp.rich_text[0].text.content ||
+                                 finalValidationProp.rich_text[0].text.content.trim() === ''));
+        
+        if (isFinallyBlank) {
+          log(`❌ [FINAL-CHECK] CRITICAL: Validation property is BLANK after all processing!`);
+          log(`   This indicates a failure in the validation/property update flow`);
+          log(`   Auto-saving page for re-extraction...`);
+          
+          try {
+            const fixturesDir = path.join(__dirname, '../../patch/pages/pages-to-update');
+            if (!fs.existsSync(fixturesDir)) {
+              fs.mkdirSync(fixturesDir, { recursive: true });
+            }
+            
+            const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
+            const sanitizedTitle = (payload.title || 'untitled')
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/^-+|-+$/g, '')
+              .substring(0, 60);
+            const filename = `${sanitizedTitle}-blank-validation-final-${timestamp}.html`;
+            const filepath = path.join(fixturesDir, filename);
+            
+            const htmlContent = `<!--
+[FINAL-CHECK] Auto-saved: Validation property is BLANK after complete page creation flow
+Page ID: ${response.id}
+Page URL: ${response.url}
+Page Title: ${payload.title}
+Created: ${new Date().toISOString()}
+Source URL: ${payload.url || 'N/A'}
+
+Diagnosis: Validation property never got set or was cleared
+Possible Causes:
+  1. Page created without SN2N_VALIDATE_OUTPUT=1 enabled
+  2. Validation result was null/undefined
+  3. Property update silently failed without throwing error
+  4. Notion API consistency issue
+
+Retrieved Validation Property:
+${JSON.stringify(finalValidationProp, null, 2)}
+
+Action Required: Re-extract this page with validation enabled
+-->
+
+${payload.contentHtml || ''}
+`;
+            
+            fs.writeFileSync(filepath, htmlContent, 'utf-8');
+            log(`✅ [FINAL-CHECK] AUTO-SAVED: Page with blank validation saved to ${filename}`);
+            savedToUpdateFolder = true; // Mark as saved
+            
+            log(`\n${'='.repeat(80)}`);
+            log(`⚠️⚠️⚠️ [FINAL-CHECK] ACTION REQUIRED: Page auto-saved to pages-to-update folder`);
+            log(`   Page ID: ${response.id}`);
+            log(`   Title: ${payload.title}`);
+            log(`   Reason: Validation property is BLANK after all processing`);
+            log(`   Location: patch/pages/pages-to-update/`);
+            log(`   Next Steps: Re-extract page with validation enabled`);
+            log(`${'='.repeat(80)}\n`);
+          } catch (saveError) {
+            log(`❌ [FINAL-CHECK] Failed to auto-save page with blank validation: ${saveError.message}`);
+          }
+        } else {
+          log(`✅ [FINAL-CHECK] Validation property confirmed present in Notion`);
+        }
+      } catch (finalCheckError) {
+        log(`⚠️ [FINAL-CHECK] Failed to verify validation property (non-fatal): ${finalCheckError.message}`);
+      }
+    }
+    
     // Final summary
     log(`📋 Final page structure summary:`);
     log(`   - Initial blocks sent: ${children.length}`);
@@ -1984,19 +2089,24 @@ router.patch('/W2N/:pageId', async (req, res) => {
   }
   global._sn2n_callout_tracker = new Set();
 
-  // Heartbeat interval + cleanup hoisted so catch block can access
+  // FIX v11.0.5: Move cleanup to function scope so catch block can access it
+  // Previous bug: cleanup() was defined inside try block, causing ReferenceError in catch
   let patchStartTime = Date.now();
   let operationPhase = 'initializing';
-  let heartbeatInterval = setInterval(() => {
-    const elapsed = Math.floor((Date.now() - patchStartTime) / 1000);
-    log(`💓 [${elapsed}s] PATCH in progress - ${operationPhase}...`);
-  }, 10000);
+  let heartbeatInterval = null;
+  
   const cleanup = () => {
     if (heartbeatInterval) {
       clearInterval(heartbeatInterval);
       heartbeatInterval = null;
     }
   };
+  
+  // Start heartbeat after cleanup is defined
+  heartbeatInterval = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - patchStartTime) / 1000);
+    log(`💓 [${elapsed}s] PATCH in progress - ${operationPhase}...`);
+  }, 10000);
 
   try {
     const payload = req.body;
@@ -2058,6 +2168,46 @@ router.patch('/W2N/:pageId', async (req, res) => {
     
     // Strip private keys before deduplication
     deepStripPrivateKeys(extractedBlocks);
+    
+    // FIX v11.0.6: Apply same complexity-based delay to PATCH as POST
+    // Prevents rate limiting during block deletion and re-upload
+    const calculateComplexityForPatch = (blocks) => {
+      let score = 0;
+      const totalBlocks = blocks.length;
+      const listItems = blocks.filter(b => b.type.includes('list_item')).length;
+      const tables = blocks.filter(b => b.type === 'table').length;
+      const callouts = blocks.filter(b => b.type === 'callout').length;
+      
+      score += totalBlocks / 10;
+      score += tables * 5;
+      score += callouts * 2;
+      
+      if (listItems > 200) {
+        score += (listItems - 200) * 2;
+        log(`   ⚠️ CRITICAL: List-heavy PATCH detected (${listItems} list items)`);
+      } else if (listItems > 100) {
+        score += (listItems - 100) * 0.5;
+        log(`   ⚠️ WARNING: Many list items in PATCH (${listItems} list items)`);
+      }
+      
+      const delayMs = Math.min(Math.round(score * 500), 90000);
+      
+      return { score: Math.round(score), delayMs, totalBlocks, listItems, tables, callouts };
+    };
+    
+    const patchComplexity = calculateComplexityForPatch(extractedBlocks);
+    
+    if (patchComplexity.delayMs > 0) {
+      log(`⏳ [RATE-LIMIT-PROTECTION] Complex PATCH content detected (score: ${patchComplexity.score}/100)`);
+      log(`   Total blocks: ${patchComplexity.totalBlocks}`);
+      log(`   List items: ${patchComplexity.listItems}`);
+      log(`   Tables: ${patchComplexity.tables}`);
+      log(`   Callouts: ${patchComplexity.callouts}`);
+      log(`   Pre-PATCH delay: ${patchComplexity.delayMs}ms to avoid rate limits`);
+      
+      await new Promise(resolve => setTimeout(resolve, patchComplexity.delayMs));
+      log(`   ✅ Pre-PATCH delay complete, proceeding with update...`);
+    }
     
     // Deduplicate blocks
     const beforeDedupeCount = extractedBlocks.length;
@@ -2721,6 +2871,77 @@ router.patch('/W2N/:pageId', async (req, res) => {
       // Don't throw - page was updated successfully, just property update failed
     }
     
+    // FIX v11.0.31: FINAL CATCH-ALL for PATCH - Verify Validation property was actually set
+    try {
+      log(`🔍 [FINAL-CHECK-PATCH] Verifying Validation property was set...`);
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for Notion consistency
+      
+      const finalPageCheck = await notion.pages.retrieve({ page_id: pageId });
+      const finalValidationProp = finalPageCheck.properties.Validation;
+      
+      const isFinallyBlank = !finalValidationProp || 
+                             !finalValidationProp.rich_text || 
+                             finalValidationProp.rich_text.length === 0 ||
+                             (finalValidationProp.rich_text.length === 1 && 
+                              (!finalValidationProp.rich_text[0].text || 
+                               !finalValidationProp.rich_text[0].text.content ||
+                               finalValidationProp.rich_text[0].text.content.trim() === ''));
+      
+      if (isFinallyBlank) {
+        log(`❌ [FINAL-CHECK-PATCH] CRITICAL: Validation property is BLANK after PATCH!`);
+        log(`   Auto-saving page for re-extraction...`);
+        
+        try {
+          const fixturesDir = path.join(__dirname, '../../patch/pages/pages-to-update');
+          if (!fs.existsSync(fixturesDir)) {
+            fs.mkdirSync(fixturesDir, { recursive: true });
+          }
+          
+          const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
+          const sanitizedTitle = (pageTitle || 'untitled')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .substring(0, 60);
+          const filename = `${sanitizedTitle}-blank-validation-patch-${timestamp}.html`;
+          const filepath = path.join(fixturesDir, filename);
+          
+          const htmlContent = `<!--
+[FINAL-CHECK-PATCH] Auto-saved: Validation property is BLANK after PATCH operation
+Page ID: ${pageId}
+Page Title: ${pageTitle}
+PATCH Completed: ${new Date().toISOString()}
+Source URL: ${payload.url || 'N/A'}
+
+Diagnosis: Validation property update failed during PATCH
+Retrieved Validation Property:
+${JSON.stringify(finalValidationProp, null, 2)}
+
+Action Required: Re-PATCH this page with validation enabled
+-->
+
+${html || ''}
+`;
+          
+          fs.writeFileSync(filepath, htmlContent, 'utf-8');
+          log(`✅ [FINAL-CHECK-PATCH] AUTO-SAVED: ${filename}`);
+          
+          log(`\n${'='.repeat(80)}`);
+          log(`⚠️⚠️⚠️ [FINAL-CHECK-PATCH] Page auto-saved to pages-to-update folder`);
+          log(`   Page ID: ${pageId}`);
+          log(`   Title: ${pageTitle}`);
+          log(`   Reason: Validation property is BLANK after PATCH`);
+          log(`${'='.repeat(80)}\n`);
+        } catch (saveError) {
+          log(`❌ [FINAL-CHECK-PATCH] Failed to auto-save: ${saveError.message}`);
+        }
+      } else {
+        log(`✅ [FINAL-CHECK-PATCH] Validation property confirmed present`);
+      }
+    } catch (finalCheckError) {
+      log(`⚠️ [FINAL-CHECK-PATCH] Failed to verify validation property (non-fatal): ${finalCheckError.message}`);
+    }
+    
     // Success response
     cleanup(); // Stop heartbeat
     const totalPatchTime = ((Date.now() - patchStartTime) / 1000).toFixed(1);
@@ -2744,19 +2965,39 @@ router.patch('/W2N/:pageId', async (req, res) => {
     
   } catch (error) {
     cleanup(); // Stop heartbeat on error
-    log(`❌ PATCH W2N Error:`, error.message);
     
+    // Enhanced error logging (added in v11.0.5)
+    log("❌ Error during PATCH operation");
+    log(`   Phase: ${operationPhase}`);
+    log(`   Page ID: ${pageId}`);
+    log(`   Title: ${pageTitle || 'Unknown'}`);
+    log(`   Error: ${error.message}`);
+    log(`   Stack: ${error.stack}`);
+    
+    // Log Notion API error details if available
+    if (error.code) {
+      log(`   Notion Error Code: ${error.code}`);
+    }
+    if (error.status) {
+      log(`   HTTP Status: ${error.status}`);
+    }
     if (error.body) {
       try {
-        const parsed = JSON.parse(error.body);
-        log("❌ Notion error body:", JSON.stringify(parsed, null, 2));
+        const parsed = typeof error.body === 'string' ? JSON.parse(error.body) : error.body;
+        log(`   Notion Error Body: ${JSON.stringify(parsed, null, 2)}`);
       } catch (parseErr) {
-        log("❌ Failed to parse Notion error body:", parseErr.message);
-        log("❌ Raw error body:", error.body);
+        log(`   Raw Error Body: ${error.body}`);
       }
     }
     
-    return sendError(res, "PAGE_UPDATE_FAILED", error.message, null, 500);
+    // Return appropriate error response
+    return sendError(res, "PAGE_UPDATE_FAILED", error.message, {
+      pageId,
+      title: pageTitle,
+      phase: operationPhase,
+      errorCode: error.code,
+      errorStatus: error.status
+    }, error.status || 500);
   }
 });
 

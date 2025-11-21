@@ -1095,6 +1095,22 @@ async function extractContentFromHtml(html) {
     
     console.log(`✅ Unwrapped ${wrapperCount} DataTables wrapper divs using Cheerio (${pass} passes)`);
     
+    // Remove "On this page" mini TOC sections using Cheerio (more reliable than regex)
+    const miniTOCs = $('.miniTOC');
+    if (miniTOCs.length > 0) {
+      console.log(`🧹 Removing ${miniTOCs.length} miniTOC elements`);
+      miniTOCs.remove();
+    }
+    
+    // Remove zDocsSideBoxes that contain "On this page" text
+    $('.zDocsSideBoxes').each((i, el) => {
+      const text = $(el).text();
+      if (text.includes('On this page')) {
+        console.log(`🧹 Removing zDocsSideBoxes containing "On this page"`);
+        $(el).remove();
+      }
+    });
+    
     // DIAGNOSTIC: Count tables after unwrapping
     const tableCount = $('table').length;
     console.log(`📊 Tables found in Cheerio DOM after unwrapping: ${tableCount}`);
