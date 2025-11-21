@@ -212,45 +212,73 @@ class ServiceNowToNotionApp {
       return;
     }
 
-    const button = createEl(
-      "button",
-      {
-        id: "W2N-save-button",
-        title: `ServiceNow-2-Notion v${PROVIDER_VERSION} - Save current page to Notion`,
-        style: `
-        background-color: ${BRANDING.primaryColor};
-        color: white;
-        border: none;
-        border-radius: 6px;
-        padding: 8px 16px;
-        font-size: 14px;
-        font-weight: bold;
+    // Create a compact, outline-style main button with SVG icon for better integration
+    const button = createEl("button", {
+      id: "W2N-save-button",
+      title: `ServiceNow-2-Notion v${PROVIDER_VERSION} - Save current page to Notion`,
+      style: `
+        background: transparent;
+        color: ${BRANDING.primaryColor};
+        border: 1px solid ${BRANDING.primaryColor};
+        border-radius: 4px;
+        padding: 6px 10px;
+        height: 32px;
+        font-size: 13px;
+        font-weight: 600;
         cursor: pointer;
-        margin-left: 10px;
+        margin-right: 10px;
         display: inline-flex;
         align-items: center;
-        gap: 6px;
-        transition: all 0.2s ease;
+        gap: 8px;
+        transition: all 0.12s ease;
       `,
-      },
-      "💾 Save to Notion"
-    );
+    });
+
+    // Compose icon (floppy disk) + label for better visuals
+    const iconSpan = document.createElement('span');
+    iconSpan.style.display = 'inline-flex';
+    iconSpan.style.width = '16px';
+    iconSpan.style.height = '16px';
+    iconSpan.style.alignItems = 'center';
+    iconSpan.style.justifyContent = 'center';
+    iconSpan.innerHTML = `
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="${BRANDING.primaryColor}" xmlns="http://www.w3.org/2000/svg">
+        <path d="M5 3h11l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
+        <path d="M12 17a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" fill="#fff" />
+      </svg>
+    `;
+
+    const labelSpan = document.createElement('span');
+    labelSpan.textContent = 'Save';
+    labelSpan.style.lineHeight = '16px';
+
+    button.appendChild(iconSpan);
+    button.appendChild(labelSpan);
 
     // Add click handler
     button.addEventListener("click", () => this.handleMainAction());
 
-    // Add hover effects
+    // Hover effects (outline -> filled)
     button.addEventListener("mouseenter", () => {
-      button.style.backgroundColor = BRANDING.hoverColor;
-      button.style.transform = "translateY(-1px)";
+      button.style.backgroundColor = BRANDING.primaryColor;
+      button.style.color = '#ffffff';
+      // Ensure icon fill becomes white on hover
+      const svg = iconSpan.querySelector('svg');
+      if (svg) svg.setAttribute('fill', '#ffffff');
+      button.style.transform = 'translateY(-1px)';
     });
 
     button.addEventListener("mouseleave", () => {
-      button.style.backgroundColor = BRANDING.primaryColor;
-      button.style.transform = "translateY(0)";
+      button.style.backgroundColor = 'transparent';
+      button.style.color = BRANDING.primaryColor;
+      const svg = iconSpan.querySelector('svg');
+      if (svg) svg.setAttribute('fill', BRANDING.primaryColor);
+      button.style.transform = 'translateY(0)';
     });
 
-    container.appendChild(button);
+  // Prepend so task buttons appear to the left side of the toolbar
+  if (container.prepend) container.prepend(button);
+  else container.insertBefore(button, container.firstChild);
     debug("✅ Main action button created");
   }
 
@@ -268,40 +296,51 @@ class ServiceNowToNotionApp {
     const container = this.findButtonContainer();
     if (!container) return;
 
-    const settingsButton = createEl(
-      "button",
-      {
-        id: "W2N-settings-button",
-        title: "ServiceNow-2-Notion Settings",
-        style: `
-        background-color: #6b7280;
-        color: white;
-        border: none;
+    // Compact circular settings button with gear SVG
+    const settingsButton = createEl('button', {
+      id: 'W2N-settings-button',
+      title: 'ServiceNow-2-Notion Settings',
+      style: `
+        background: transparent;
+        color: ${BRANDING.primaryColor};
+        border: 1px solid rgba(0,0,0,0.08);
         border-radius: 6px;
-        padding: 8px 12px;
+        width: 32px;
+        height: 32px;
+        padding: 0;
         font-size: 14px;
         cursor: pointer;
-        margin-left: 5px;
+        margin-right: 5px;
         display: inline-flex;
         align-items: center;
-        transition: all 0.2s ease;
+        justify-content: center;
+        transition: all 0.12s ease;
       `,
-      },
-      "⚙️"
-    );
-
-    // Add click handler
-    settingsButton.addEventListener("click", () => this.showSettingsModal());
-
-    settingsButton.addEventListener("mouseenter", () => {
-      settingsButton.style.backgroundColor = "#4b5563";
     });
 
-    settingsButton.addEventListener("mouseleave", () => {
-      settingsButton.style.backgroundColor = "#6b7280";
+    const gearIcon = document.createElement('span');
+    gearIcon.innerHTML = `
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="${BRANDING.primaryColor}" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 15.5A3.5 3.5 0 1 0 12 8.5a3.5 3.5 0 0 0 0 7z" />
+        <path d="M19.4 13.3c.04-.43.06-.87.06-1.3s-.02-.87-.06-1.3l2.11-1.65a.5.5 0 0 0 .12-.65l-2-3.46a.5.5 0 0 0-.6-.22l-2.49 1a8.12 8.12 0 0 0-2.24-1.3l-.38-2.65A.5.5 0 0 0 12.7 2h-4a.5.5 0 0 0-.5.43l-.38 2.65c-.8.3-1.54.73-2.24 1.3l-2.49-1a.5.5 0 0 0-.6.22l-2 3.46a.5.5 0 0 0 .12.65L4.6 10.7c-.04.43-.06.87-.06 1.3s.02.87.06 1.3L2.49 14.95a.5.5 0 0 0-.12.65l2 3.46c.14.24.44.34.7.22l2.49-1c.7.57 1.44 1 2.24 1.3l.38 2.65c.05.3.32.43.5.43h4c.18 0 .45-.13.5-.43l.38-2.65c.8-.3 1.54-.73 2.24-1.3l2.49 1c.26.12.56.02.7-.22l2-3.46a.5.5 0 0 0-.12-.65L19.4 13.3z" fill-opacity="0.9"/>
+      </svg>
+    `;
+    settingsButton.appendChild(gearIcon);
+
+    // Click handler
+    settingsButton.addEventListener('click', () => this.showSettingsModal());
+    settingsButton.addEventListener('mouseenter', () => {
+      settingsButton.style.backgroundColor = BRANDING.primaryColor;
+      const svg = gearIcon.querySelector('svg'); if (svg) svg.setAttribute('fill', '#ffffff');
+    });
+    settingsButton.addEventListener('mouseleave', () => {
+      settingsButton.style.backgroundColor = 'transparent';
+      const svg = gearIcon.querySelector('svg'); if (svg) svg.setAttribute('fill', BRANDING.primaryColor);
     });
 
-    container.appendChild(settingsButton);
+  // Prepend settings button so it appears to the left of the toolbar items
+  if (container.prepend) container.prepend(settingsButton);
+  else container.insertBefore(settingsButton, container.firstChild);
     debug("✅ Settings button created");
   }
 

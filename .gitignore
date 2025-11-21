@@ -64,3 +64,5 @@ patch/pages/problematic-files/
 patch/logs/
 patch/pages
 patch/pages/page-not-found/
+server/patch/pages/failed-validation/attach-a-document-from-an-external-provider-2025-11-21T01-02-26.html
+server/patch/pages/failed-validation/redact-data-from-documents-2025-11-21T00-59-16.html
