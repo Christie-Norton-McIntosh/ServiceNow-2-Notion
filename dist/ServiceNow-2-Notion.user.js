@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.28
+// @version      11.0.29
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.28";
+    window.BUILD_VERSION = "11.0.29";
 (function () {
 
   // Configuration constants and default settings
@@ -2966,6 +2966,7 @@
       <div style="display:grid; gap:8px; margin-bottom:16px;">
         <button id="w2n-capture-page" style="width:100%; padding:12px; background:#10b981; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">📄 Save Current Page</button>
         <button id="w2n-capture-description" style="width:100%; padding:12px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">📖 Download PDF</button>
+        <button id="w2n-update-existing-page" style="width:100%; padding:12px; background:#8b5cf6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">🔄 Update Existing Page</button>
       </div>
 
       <div style="border-top:1px solid #e5e7eb; padding-top:16px;">
@@ -3077,6 +3078,19 @@
         debug("Failed to open icon cover modal:", e);
       }
     };
+
+    // Update Existing Page button handler
+    const updateExistingBtn = panel.querySelector("#w2n-update-existing-page");
+    if (updateExistingBtn) {
+      updateExistingBtn.onclick = async () => {
+        try {
+          await handleUpdateExistingPage();
+        } catch (e) {
+          debug("Failed to update existing page:", e);
+          alert(`❌ Error updating page: ${e.message}`);
+        }
+      };
+    }
 
     // Database button handlers
     const refreshBtn = panel.querySelector("#w2n-refresh-dbs");
@@ -5967,6 +5981,145 @@
     }
   }
 
+  /**
+   * Extract Notion page ID from a URL
+   * Supports various Notion URL formats:
+   * - https://www.notion.so/workspace/Page-Title-abc123def456...
+   * - https://www.notion.so/Page-Title-abc123def456...
+   * - https://notion.so/abc123def456...
+   * - abc123def456... (just the ID)
+   */
+  function extractPageIdFromUrl(input) {
+    if (!input || typeof input !== 'string') {
+      throw new Error('Invalid input: must provide a Notion page URL or ID');
+    }
+    
+    const trimmed = input.trim();
+    
+    // If it's already a valid 32-character UUID (with or without hyphens)
+    const uuidPattern = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
+    if (uuidPattern.test(trimmed)) {
+      // Remove hyphens and return
+      return trimmed.replace(/-/g, '');
+    }
+    
+    // Extract from Notion URL
+    // Pattern: last segment after last hyphen is the page ID (32 chars, may have hyphens)
+    const urlPattern = /([0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+    const match = trimmed.match(urlPattern);
+    
+    if (match) {
+      // Remove hyphens from matched ID
+      return match[1].replace(/-/g, '');
+    }
+    
+    throw new Error('Could not extract page ID from input. Please provide a valid Notion page URL or 32-character page ID.');
+  }
+
+  /**
+   * Handle the "Update Existing Page" button click
+   * Prompts user for Notion page URL, extracts current ServiceNow content, and PATCHes the page
+   */
+  async function handleUpdateExistingPage() {
+    debug('\n🔄 [UPDATE-EXISTING] Starting manual page update...');
+    
+    // Prompt for Notion page URL or ID
+    const userInput = prompt(
+      '🔄 Update Existing Notion Page\n\n' +
+      'Paste the Notion page URL or ID:\n' +
+      '(e.g., https://notion.so/Page-Title-abc123... or abc123def456...)\n\n' +
+      'This will replace the page content with freshly extracted data from the current ServiceNow page.'
+    );
+    
+    if (!userInput || userInput.trim() === '') {
+      debug('[UPDATE-EXISTING] User cancelled');
+      return;
+    }
+    
+    try {
+      // Extract page ID from input
+      const pageId = extractPageIdFromUrl(userInput);
+      debug(`[UPDATE-EXISTING] Extracted page ID: ${pageId}`);
+      
+      // Show loading overlay
+      overlayModule.show();
+      overlayModule.setMessage('📝 Extracting current ServiceNow page content...');
+      
+      // Get app instance
+      const app = window.ServiceNowToNotion?.app?.();
+      if (!app) {
+        throw new Error('ServiceNow-2-Notion app not initialized');
+      }
+      
+      // Extract current page data
+      debug('[UPDATE-EXISTING] Extracting page data...');
+      const extractedData = await app.extractCurrentPageData();
+      
+      if (!extractedData) {
+        throw new Error('Failed to extract content from current page');
+      }
+      
+      debug(`[UPDATE-EXISTING] Extracted: ${extractedData.title}`);
+      debug(`[UPDATE-EXISTING] Content length: ${(extractedData.contentHtml || extractedData.content || '').length} chars`);
+      
+      // Get current page URL
+      const currentUrl = window.location.href;
+      
+      overlayModule.setMessage(`📤 Updating Notion page: ${extractedData.title}...`);
+      
+      // Import PATCH function
+      const { patchNotionPage } = await Promise.resolve().then(function () { return proxyApi; });
+      
+      // PATCH the page
+      debug(`[UPDATE-EXISTING] Sending PATCH request to update page ${pageId}...`);
+      const patchResult = await patchNotionPage(
+        pageId,
+        extractedData.title,
+        extractedData.contentHtml || extractedData.content,
+        currentUrl
+      );
+      
+      if (patchResult.success) {
+        debug(`✅ [UPDATE-EXISTING] Successfully updated page: ${extractedData.title}`);
+        debug(`   Page URL: ${patchResult.url || 'N/A'}`);
+        
+        overlayModule.done({
+          success: true,
+          pageUrl: patchResult.url || `https://notion.so/${pageId}`,
+          autoCloseMs: 5000,
+        });
+        
+        showToast(
+          `✅ Successfully updated: ${extractedData.title}`,
+          5000
+        );
+        
+        // Show success alert with details
+        alert(
+          '✅ Page Updated Successfully!\n\n' +
+          `Title: ${extractedData.title}\n` +
+          `Page ID: ${pageId}\n\n` +
+          'The Notion page has been updated with fresh content from this ServiceNow page.'
+        );
+        
+      } else {
+        throw new Error(patchResult.error || 'PATCH update failed');
+      }
+      
+    } catch (error) {
+      debug(`❌ [UPDATE-EXISTING] Error: ${error.message}`);
+      
+      overlayModule.done({
+        success: false,
+        pageUrl: null,
+        autoCloseMs: 5000,
+      });
+      
+      // Re-throw to be caught by button handler
+      throw error;
+    }
+  }
+
   // ServiceNow Metadata Extraction Module
 
 
@@ -8010,45 +8163,73 @@
         return;
       }
 
-      const button = createEl(
-        "button",
-        {
-          id: "W2N-save-button",
-          title: `ServiceNow-2-Notion v${PROVIDER_VERSION} - Save current page to Notion`,
-          style: `
-        background-color: ${BRANDING.primaryColor};
-        color: white;
-        border: none;
-        border-radius: 6px;
-        padding: 8px 16px;
-        font-size: 14px;
-        font-weight: bold;
+      // Create a compact, outline-style main button with SVG icon for better integration
+      const button = createEl("button", {
+        id: "W2N-save-button",
+        title: `ServiceNow-2-Notion v${PROVIDER_VERSION} - Save current page to Notion`,
+        style: `
+        background: transparent;
+        color: ${BRANDING.primaryColor};
+        border: 1px solid ${BRANDING.primaryColor};
+        border-radius: 4px;
+        padding: 6px 10px;
+        height: 32px;
+        font-size: 13px;
+        font-weight: 600;
         cursor: pointer;
-        margin-left: 10px;
+        margin-right: 10px;
         display: inline-flex;
         align-items: center;
-        gap: 6px;
-        transition: all 0.2s ease;
+        gap: 8px;
+        transition: all 0.12s ease;
       `,
-        },
-        "💾 Save to Notion"
-      );
+      });
+
+      // Compose icon (floppy disk) + label for better visuals
+      const iconSpan = document.createElement('span');
+      iconSpan.style.display = 'inline-flex';
+      iconSpan.style.width = '16px';
+      iconSpan.style.height = '16px';
+      iconSpan.style.alignItems = 'center';
+      iconSpan.style.justifyContent = 'center';
+      iconSpan.innerHTML = `
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="${BRANDING.primaryColor}" xmlns="http://www.w3.org/2000/svg">
+        <path d="M5 3h11l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
+        <path d="M12 17a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" fill="#fff" />
+      </svg>
+    `;
+
+      const labelSpan = document.createElement('span');
+      labelSpan.textContent = 'Save';
+      labelSpan.style.lineHeight = '16px';
+
+      button.appendChild(iconSpan);
+      button.appendChild(labelSpan);
 
       // Add click handler
       button.addEventListener("click", () => this.handleMainAction());
 
-      // Add hover effects
+      // Hover effects (outline -> filled)
       button.addEventListener("mouseenter", () => {
-        button.style.backgroundColor = BRANDING.hoverColor;
-        button.style.transform = "translateY(-1px)";
+        button.style.backgroundColor = BRANDING.primaryColor;
+        button.style.color = '#ffffff';
+        // Ensure icon fill becomes white on hover
+        const svg = iconSpan.querySelector('svg');
+        if (svg) svg.setAttribute('fill', '#ffffff');
+        button.style.transform = 'translateY(-1px)';
       });
 
       button.addEventListener("mouseleave", () => {
-        button.style.backgroundColor = BRANDING.primaryColor;
-        button.style.transform = "translateY(0)";
+        button.style.backgroundColor = 'transparent';
+        button.style.color = BRANDING.primaryColor;
+        const svg = iconSpan.querySelector('svg');
+        if (svg) svg.setAttribute('fill', BRANDING.primaryColor);
+        button.style.transform = 'translateY(0)';
       });
 
-      container.appendChild(button);
+    // Prepend so task buttons appear to the left side of the toolbar
+    if (container.prepend) container.prepend(button);
+    else container.insertBefore(button, container.firstChild);
       debug("✅ Main action button created");
     }
 
@@ -8066,40 +8247,51 @@
       const container = this.findButtonContainer();
       if (!container) return;
 
-      const settingsButton = createEl(
-        "button",
-        {
-          id: "W2N-settings-button",
-          title: "ServiceNow-2-Notion Settings",
-          style: `
-        background-color: #6b7280;
-        color: white;
-        border: none;
+      // Compact circular settings button with gear SVG
+      const settingsButton = createEl('button', {
+        id: 'W2N-settings-button',
+        title: 'ServiceNow-2-Notion Settings',
+        style: `
+        background: transparent;
+        color: ${BRANDING.primaryColor};
+        border: 1px solid rgba(0,0,0,0.08);
         border-radius: 6px;
-        padding: 8px 12px;
+        width: 32px;
+        height: 32px;
+        padding: 0;
         font-size: 14px;
         cursor: pointer;
-        margin-left: 5px;
+        margin-right: 5px;
         display: inline-flex;
         align-items: center;
-        transition: all 0.2s ease;
+        justify-content: center;
+        transition: all 0.12s ease;
       `,
-        },
-        "⚙️"
-      );
-
-      // Add click handler
-      settingsButton.addEventListener("click", () => this.showSettingsModal());
-
-      settingsButton.addEventListener("mouseenter", () => {
-        settingsButton.style.backgroundColor = "#4b5563";
       });
 
-      settingsButton.addEventListener("mouseleave", () => {
-        settingsButton.style.backgroundColor = "#6b7280";
+      const gearIcon = document.createElement('span');
+      gearIcon.innerHTML = `
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="${BRANDING.primaryColor}" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 15.5A3.5 3.5 0 1 0 12 8.5a3.5 3.5 0 0 0 0 7z" />
+        <path d="M19.4 13.3c.04-.43.06-.87.06-1.3s-.02-.87-.06-1.3l2.11-1.65a.5.5 0 0 0 .12-.65l-2-3.46a.5.5 0 0 0-.6-.22l-2.49 1a8.12 8.12 0 0 0-2.24-1.3l-.38-2.65A.5.5 0 0 0 12.7 2h-4a.5.5 0 0 0-.5.43l-.38 2.65c-.8.3-1.54.73-2.24 1.3l-2.49-1a.5.5 0 0 0-.6.22l-2 3.46a.5.5 0 0 0 .12.65L4.6 10.7c-.04.43-.06.87-.06 1.3s.02.87.06 1.3L2.49 14.95a.5.5 0 0 0-.12.65l2 3.46c.14.24.44.34.7.22l2.49-1c.7.57 1.44 1 2.24 1.3l.38 2.65c.05.3.32.43.5.43h4c.18 0 .45-.13.5-.43l.38-2.65c.8-.3 1.54-.73 2.24-1.3l2.49 1c.26.12.56.02.7-.22l2-3.46a.5.5 0 0 0-.12-.65L19.4 13.3z" fill-opacity="0.9"/>
+      </svg>
+    `;
+      settingsButton.appendChild(gearIcon);
+
+      // Click handler
+      settingsButton.addEventListener('click', () => this.showSettingsModal());
+      settingsButton.addEventListener('mouseenter', () => {
+        settingsButton.style.backgroundColor = BRANDING.primaryColor;
+        const svg = gearIcon.querySelector('svg'); if (svg) svg.setAttribute('fill', '#ffffff');
+      });
+      settingsButton.addEventListener('mouseleave', () => {
+        settingsButton.style.backgroundColor = 'transparent';
+        const svg = gearIcon.querySelector('svg'); if (svg) svg.setAttribute('fill', BRANDING.primaryColor);
       });
 
-      container.appendChild(settingsButton);
+    // Prepend settings button so it appears to the left of the toolbar items
+    if (container.prepend) container.prepend(settingsButton);
+    else container.insertBefore(settingsButton, container.firstChild);
       debug("✅ Settings button created");
     }
 
