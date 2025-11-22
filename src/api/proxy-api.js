@@ -642,7 +642,6 @@ export async function createPlaceholderPage(failedPageInfo) {
       contentHtml: placeholderHtml,
       url: failedPageInfo.url,
       properties: {
-        "Error": { checkbox: true },
         "Validation": {
           rich_text: [{
             type: "text",

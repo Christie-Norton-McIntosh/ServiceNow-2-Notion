@@ -1871,18 +1871,119 @@ async function extractContentFromHtml(html) {
         processedBlocks.push(...headingImages);
       }
       
-      // Split if exceeds 100 elements (Notion limit)
-      const richTextChunks = splitRichTextArray(headingRichText);
-      console.log(`🔍 Heading ${level} split into ${richTextChunks.length} chunks`);
-      for (const chunk of richTextChunks) {
-        console.log(`🔍 Creating heading_${level} block with ${chunk.length} rich_text elements`);
-        processedBlocks.push({
-          object: "block",
-          type: `heading_${level}`,
-          [`heading_${level}`]: {
-            rich_text: chunk,
-          },
+      // Check if this is a "Related Content" heading - make it a toggle
+      const headingText = $elem.text().trim();
+      const isRelatedContent = /related\s+content/i.test(headingText);
+      
+      if (isRelatedContent) {
+        console.log(`🔍 [RELATED-CONTENT] Detected "Related Content" heading, converting to H3 toggle`);
+        
+        // Force to heading_3 for consistency
+        level = 3;
+        
+        // Collect following sibling elements until next heading or end
+        const toggleChildren = [];
+        let nextSibling = $elem.next();
+        
+        while (nextSibling && nextSibling.length > 0) {
+          const siblingTag = nextSibling.get(0)?.tagName?.toLowerCase();
+          
+          // Stop at next heading
+          if (/^h[1-6]$/.test(siblingTag)) {
+            console.log(`🔍 [RELATED-CONTENT] Stopped at next heading: ${siblingTag}`);
+            break;
+          }
+          
+          // Process sibling recursively
+          console.log(`🔍 [RELATED-CONTENT] Processing toggle child: ${siblingTag}`);
+          const childBlocks = await processElement(nextSibling);
+          toggleChildren.push(...childBlocks);
+          
+          // Move to next sibling
+          const currentSibling = nextSibling;
+          nextSibling = nextSibling.next();
+          currentSibling.remove(); // Mark as processed
+        }
+        
+        console.log(`🔍 [RELATED-CONTENT] Collected ${toggleChildren.length} children for toggle`);
+        
+        // Convert all numbered_list_item blocks to bulleted_list_item
+        // Related Content sections should use bullets, not numbers
+        toggleChildren.forEach(child => {
+          if (child && child.type === 'numbered_list_item') {
+            console.log(`🔍 [RELATED-CONTENT] Converting numbered_list_item to bulleted_list_item`);
+            child.type = 'bulleted_list_item';
+            child.bulleted_list_item = child.numbered_list_item;
+            delete child.numbered_list_item;
+          }
         });
+        
+        // Create H3 toggle with marker-based deep nesting
+        // Notion API doesn't allow children in heading blocks during initial creation
+        // Use marker system to append children in a follow-up PATCH request
+        if (toggleChildren.length > 0) {
+          const marker = createMarker('related-content');
+          
+          // Tag children with marker for orchestration
+          toggleChildren.forEach(child => {
+            child._sn2n_marker = marker;
+          });
+          
+          // Add marker token to heading rich_text (format matches callout pattern)
+          const markerToken = `(sn2n:${marker})`;
+          headingRichText.push({
+            type: "text",
+            text: { content: ` ${markerToken}` },
+            annotations: {
+              bold: false,
+              italic: false,
+              strikethrough: false,
+              underline: false,
+              code: false,
+              color: "default"
+            }
+          });
+          
+          console.log(`🔍 [RELATED-CONTENT] Created toggle with marker ${markerToken}, will append ${toggleChildren.length} children via orchestration`);
+          
+          // Add children to heading_3.children temporarily so collectAndStripMarkers can find them
+          // The collectAndStripMarkers function will move them to markerMap and remove them before Notion API call
+          processedBlocks.push({
+            object: "block",
+            type: `heading_3`,
+            heading_3: {
+              rich_text: headingRichText,
+              is_toggleable: true,
+              children: toggleChildren,
+            },
+          });
+        } else {
+          // Empty toggle (no children found)
+          console.log(`🔍 [RELATED-CONTENT] Created empty toggle (no children)`);
+          processedBlocks.push({
+            object: "block",
+            type: `heading_3`,
+            heading_3: {
+              rich_text: headingRichText,
+              is_toggleable: true,
+            },
+          });
+        }
+      } else {
+        // Regular heading (not a toggle)
+        // Split if exceeds 100 elements (Notion limit)
+        const richTextChunks = splitRichTextArray(headingRichText);
+        console.log(`🔍 Heading ${level} split into ${richTextChunks.length} chunks`);
+        for (const chunk of richTextChunks) {
+          console.log(`🔍 Creating heading_${level} block with ${chunk.length} rich_text elements`);
+          processedBlocks.push({
+            object: "block",
+            type: `heading_${level}`,
+            [`heading_${level}`]: {
+              rich_text: chunk,
+            },
+          });
+        }
       }
       $elem.remove(); // Mark as processed
       
@@ -2652,6 +2753,33 @@ async function extractContentFromHtml(html) {
       const listItems = $elem.find('> li').toArray();
       console.log(`🔍 Processing <ol> with ${listItems.length} list items`);
       
+      // FIX v11.0.34: Extract callouts from itemgroup divs BEFORE unwrapping
+      // Callouts inside itemgroups should be separate top-level blocks, not nested in list items
+      const extractedCallouts = [];
+      for (const li of listItems) {
+        const $li = $(li);
+        // Find callouts that are direct children of itemgroup divs (but NOT inside tables)
+        // IMPORTANT: Match any div with note/warning/etc class, including multi-class like "note note note_note"
+        const itemgroupCallouts = $li.find('div.itemgroup > div[class*="note"], div.itemgroup > div[class*="warning"], div.itemgroup > div[class*="important"], div.itemgroup > div[class*="tip"], div.itemgroup > div[class*="caution"]').toArray();
+        
+        if (itemgroupCallouts.length > 0) {
+          console.log(`🔍 [FIX-v11.0.34] Found ${itemgroupCallouts.length} callout(s) inside itemgroup div(s) in list item`);
+          
+          for (const callout of itemgroupCallouts) {
+            const $callout = $(callout);
+            // Exclude callouts that are inside tables (Notion table cells can't contain callouts)
+            if ($callout.closest('table').length === 0) {
+              console.log(`🔍 [FIX-v11.0.34] Extracting callout from itemgroup: "${$callout.text().trim().substring(0, 60)}..."`);
+              extractedCallouts.push(callout);
+              // Remove from DOM so it won't be processed as part of the list item
+              $callout.remove();
+            } else {
+              console.log(`🔍 [FIX-v11.0.34] Skipping callout inside table: "${$callout.text().trim().substring(0, 60)}..."`);
+            }
+          }
+        }
+      }
+      
       // FIX v11.0.19: Callouts now use marker-based orchestration (markedBlocks)
       // This preserves correct section ordering instead of batching callouts together
       
@@ -3239,6 +3367,19 @@ async function extractContentFromHtml(html) {
               console.log(`🔍 Creating numbered_list_item with ${chunk.length} rich_text elements`);
               processedBlocks.push(listItemBlock);
             }
+          }
+        }
+      }
+      
+      // FIX v11.0.34: Process extracted callouts AFTER the list
+      // These callouts were removed from itemgroup divs and should be added as separate top-level blocks
+      if (extractedCallouts.length > 0) {
+        console.log(`🔍 [FIX-v11.0.34] Processing ${extractedCallouts.length} extracted callout(s) from itemgroups`);
+        for (const callout of extractedCallouts) {
+          const calloutBlocks = await processElement(callout);
+          if (calloutBlocks && Array.isArray(calloutBlocks)) {
+            console.log(`🔍 [FIX-v11.0.34] Extracted callout produced ${calloutBlocks.length} block(s)`);
+            processedBlocks.push(...calloutBlocks);
           }
         }
       }
@@ -4541,6 +4682,9 @@ async function extractContentFromHtml(html) {
             
             // Track the heading node so we don't process it again in the children loop
             processedHeadingNode = $heading.get(0);
+            
+            // FIX v11.0.35: Process section children naturally (don't skip them)
+            console.log(`Article.nested1#${elemId}: Will process all children (sections, divs) to keep content with heading`);
           }
         }
         
@@ -4641,6 +4785,14 @@ async function extractContentFromHtml(html) {
               console.log(`🔍   ⏭️  Skipping child (already processed as article heading): <${child.name}>`);
               continue;
             }
+            
+            // FIX v11.0.35: REMOVED section skipping in article.nested1
+            // Previous FIX v11.0.33 caused heading bunching where all h2 headings appeared together
+            // before their content. Now article.nested1 processes sections as children naturally.
+            // This ensures each heading appears with its content section.
+            const childTag = child.name || '';
+            const $child = $(child);
+            const childClass = $child.attr('class') || '';
             
             processedChildCount++;
             console.log(`🔍   Processing child ${processedChildCount}/${children.length}: <${child.name}>${$(child).attr('class') ? ` class="${$(child).attr('class')}"` : ''}`);
@@ -4845,9 +4997,19 @@ async function extractContentFromHtml(html) {
         }
       
       // Use article.nested0 intro content FIRST (top-level content before nested1 articles), 
-      // then article.nested1 containers (for h2 headings), then section parent's children + article navs + contentPlaceholder siblings
-      contentElements = [...nested0IntroContent, ...articlesArray, ...sectionParentChildren, ...articleNavs, ...contentPlaceholders];
-      console.log(`🔍 ✅ Using ${contentElements.length} elements (${nested0IntroContent.length} nested0 intro + ${articlesArray.length} articles + ${sectionParentChildren.length} section content + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
+      // then article.nested1 containers (for h2 headings + sections + shortdesc), then section content + article navs + contentPlaceholder siblings
+      // FIX v11.0.35: article.nested1 now processes section children naturally (removed skipping logic)
+      // CRITICAL: Only skip sectionParentChildren if article.nested1 elements exist AND processed sections as children
+      // For pages WITHOUT article.nested1, we MUST include sectionParentChildren or content will be missing!
+      if (articlesArray.length > 0) {
+        // Pages WITH article.nested1: sections processed as article children, don't duplicate
+        contentElements = [...nested0IntroContent, ...articlesArray, ...articleNavs, ...contentPlaceholders];
+        console.log(`🔍 ✅ Using ${contentElements.length} elements (${nested0IntroContent.length} nested0 intro + ${articlesArray.length} articles + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
+      } else {
+        // Pages WITHOUT article.nested1: must include sectionParentChildren for content
+        contentElements = [...nested0IntroContent, ...sectionParentChildren, ...articleNavs, ...contentPlaceholders];
+        console.log(`🔍 ✅ Using ${contentElements.length} elements (${nested0IntroContent.length} nested0 intro + ${sectionParentChildren.length} section content + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
+      }
     } else {
       // No sections found, use original top-level children
       contentElements = topLevelChildren;

@@ -131,7 +131,8 @@ async function findParentListItemByMarker(rootBlockId, marker) {
           if (
             child.type === "numbered_list_item" ||
             child.type === "bulleted_list_item" ||
-            child.type === "callout"
+            child.type === "callout" ||
+            child.type === "heading_3"
           ) {
             // First, check the block's own rich_text for the token
             try {
@@ -145,6 +146,7 @@ async function findParentListItemByMarker(rootBlockId, marker) {
               log(`🔍 BFS: Checking ${child.type} ${child.id}, text="${ownPlain.substring(0, 100)}"`);
               if (ownPlain.includes(token)) {
                 log(`✅ BFS: FOUND marker ${token} in ${child.type} ${child.id}`);
+                log(`🔍 [RELATED-CONTENT] Found heading_3 toggle parent for marker ${token}`);
                 return { parentId: child.id, paragraphId: null };
               }
             } catch (e) {

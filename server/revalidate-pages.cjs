@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * Revalidate specific Notion pages by fetching current state and checking for issues
- * Pages that fail validation are saved to pages-to-update folder for re-extraction
+ * Revalidate Notion pages from failed-validation folder
+ * Scans HTML files, extracts page IDs, validates current state
+ * Pages that still fail are kept in failed-validation for re-extraction
  */
 
 require('dotenv').config();
@@ -9,26 +10,80 @@ const { Client } = require('@notionhq/client');
 const fs = require('fs');
 const path = require('path');
 
-const pages = [
-  { id: '2b0a89fedba5819585d1efe570e7113c', title: 'Exclude classes from CMDB 360' },
-  { id: '2b0a89fedba581db9adaee70908ffb12', title: 'Create a CMDB 360 Compare Attribute Values query' },
-  { id: '2b0a89fedba58119a619d23708f07d2b', title: 'Components and process of Identification and Reconciliation' },
-  { id: '2b0a89fedba5819abeb0eb84b5e65626', title: 'Schedule a CMDB 360 query for a report' },
-  { id: '2b0a89fedba581138783c5e7c5611856', title: 'Hardware [cmdb_ci_hardware] class' }
-];
+/**
+ * Extract page ID and title from HTML file metadata
+ */
+function extractPageMetadata(filepath) {
+  try {
+    const content = fs.readFileSync(filepath, 'utf-8');
+    
+    // Extract from HTML comment metadata
+    const pageIdMatch = content.match(/Page ID:\s*([a-f0-9-]+)/i);
+    const titleMatch = content.match(/Page Title:\s*(.+?)$/m);
+    
+    if (!pageIdMatch) return null;
+    
+    return {
+      id: pageIdMatch[1].trim(),
+      title: titleMatch ? titleMatch[1].trim() : path.basename(filepath, '.html'),
+      filename: path.basename(filepath)
+    };
+  } catch (error) {
+    console.error(`Error reading ${filepath}: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Scan failed-validation folder for HTML files
+ */
+function scanFailedValidationFolder() {
+  const failedValidationDir = path.join(__dirname, '..', 'patch', 'pages', 'failed-validation');
+  
+  if (!fs.existsSync(failedValidationDir)) {
+    console.log(`\n⚠️  Directory not found: ${failedValidationDir}\n`);
+    return [];
+  }
+  
+  const files = fs.readdirSync(failedValidationDir)
+    .filter(f => f.endsWith('.html'));
+  
+  const pages = [];
+  for (const file of files) {
+    const filepath = path.join(failedValidationDir, file);
+    const metadata = extractPageMetadata(filepath);
+    if (metadata) {
+      pages.push(metadata);
+    }
+  }
+  
+  return pages;
+}
 
 async function revalidatePages() {
   const notion = new Client({ auth: process.env.NOTION_TOKEN });
   
+  // Scan folder for pages
+  const pages = scanFailedValidationFolder();
+  
+  if (pages.length === 0) {
+    console.log('==========================================');
+    console.log('No Pages to Revalidate');
+    console.log('==========================================\n');
+    console.log('✅ The failed-validation folder is empty or contains no valid HTML files.\n');
+    return;
+  }
+  
   console.log('==========================================');
-  console.log('Manual Revalidation of 5 Pages');
+  console.log(`Revalidation of ${pages.length} Pages from failed-validation`);
   console.log('==========================================\n');
   
   const failedPages = [];
   
   for (let i = 0; i < pages.length; i++) {
-    const { id, title } = pages[i];
-    console.log(`[${i+1}/5] ${title}`);
+    const { id, title, filename } = pages[i];
+    console.log(`[${i+1}/${pages.length}] ${title}`);
+    console.log(`    File: ${filename}`);
     console.log(`    Page ID: ${id}`);
     
     try {
@@ -103,7 +158,6 @@ async function revalidatePages() {
       await notion.pages.update({
         page_id: id,
         properties: {
-          'Error': { checkbox: markers.length > 0 },
           'Validation': {
             rich_text: [{
               type: 'text',
@@ -132,50 +186,26 @@ async function revalidatePages() {
   console.log('Revalidation Complete');
   console.log('==========================================\n');
   
-  // Save failed pages to pages-to-update folder
+  // Report on failed pages
   if (failedPages.length > 0) {
-    console.log(`\n⚠️  ${failedPages.length} page(s) failed validation - saving to pages-to-update\n`);
+    console.log(`\n⚠️  ${failedPages.length} page(s) still have validation issues\n`);
     
-    const pagesDir = path.join(__dirname, '..', 'patch', 'pages', 'pages-to-update');
-    if (!fs.existsSync(pagesDir)) {
-      fs.mkdirSync(pagesDir, { recursive: true });
-    }
+    const failedValidationDir = path.join(__dirname, '..', 'patch', 'pages', 'failed-validation');
     
     for (const page of failedPages) {
-      try {
-        // Create a metadata file for re-extraction
-        const sanitizedTitle = page.title.toLowerCase()
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-+|-+$/g, '')
-          .substring(0, 80);
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
-        const filename = `${sanitizedTitle}-revalidation-failed-${timestamp}.json`;
-        const filepath = path.join(pagesDir, filename);
-        
-        const metadata = {
-          pageId: page.id,
-          pageUrl: `https://www.notion.so/${page.id.replace(/-/g, '')}`,
-          title: page.title,
-          failureReason: 'Manual revalidation detected marker leaks',
-          markerCount: page.markers,
-          markers: page.markerList,
-          timestamp: new Date().toISOString(),
-          instructions: 'This page needs to be re-extracted from ServiceNow and PATCHed to Notion'
-        };
-        
-        fs.writeFileSync(filepath, JSON.stringify(metadata, null, 2), 'utf-8');
-        console.log(`   ✅ Saved: ${filename}`);
-      } catch (saveError) {
-        console.error(`   ❌ Failed to save ${page.title}: ${saveError.message}`);
-      }
+      console.log(`   ❌ ${page.title}`);
+      console.log(`      Page ID: ${page.id}`);
+      console.log(`      Issues: ${page.markers} marker leak(s)`);
     }
     
     console.log(`\n📝 Summary:`);
-    console.log(`   - ${failedPages.length} page(s) need re-extraction`);
-    console.log(`   - Metadata files saved to: ${pagesDir}`);
-    console.log(`   - Re-extract these pages from ServiceNow using the userscript\n`);
+    console.log(`   - ${failedPages.length} page(s) still need fixing`);
+    console.log(`   - HTML files remain in: ${failedValidationDir}`);
+    console.log(`   - These pages need to be re-extracted from ServiceNow and PATCHed\n`);
   } else {
-    console.log('\n✅ All pages passed validation - no action needed\n');
+    console.log('\n✅ All pages passed validation!\n');
+    console.log('� You can now move these HTML files from failed-validation to pages-to-update');
+    console.log('   for batch PATCH processing, or delete them if already fixed.\n');
   }
 }
 

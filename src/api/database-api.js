@@ -163,22 +163,100 @@ export async function getAllDatabases(options = {}) {
 /**
  * Get property mappings for a database
  * @param {string} databaseId - Database ID
+ * @param {Object} options - Optional parameters
+ * @param {Object} options.database - Database schema (optional, for creating defaults)
+ * @param {Object} options.extractedData - Extracted page data (optional, for creating defaults)
  * @returns {Promise<Object>} Property mappings
  */
-export async function getPropertyMappings(databaseId) {
+export async function getPropertyMappings(databaseId, options = {}) {
   const mappingKey = `w2n_property_mappings_${databaseId}`;
 
-  return new Promise((resolve) => {
+  return new Promise(async (resolve) => {
     if (typeof GM_getValue === "function") {
       try {
         const saved = GM_getValue(mappingKey, "{}");
         debug(`🔍 Loading mappings with key: ${mappingKey}`);
         debug(`🔍 Raw saved value: ${saved}`);
         const mappings = JSON.parse(saved);
+        const mappingCount = Object.keys(mappings).length;
+        
+        // If no mappings exist and we have database schema, create defaults
+        if (mappingCount === 0 && options.database) {
+          debug("🎯 No mappings found - creating default property mappings");
+          
+          // Use sample extracted data if not provided
+          const sampleData = options.extractedData || {
+            title: "Sample Page Title",
+            url: "https://example.com/page",
+            source: "ServiceNow",
+            category: "Documentation",
+            section: "User Guide",
+            version: "1.0",
+            updated: new Date().toISOString(),
+            author: "System",
+            hasVideos: false,
+            hasImages: false,
+          };
+          
+          const defaultMappings = createDefaultMappings(options.database, sampleData);
+          
+          if (Object.keys(defaultMappings).length > 0) {
+            debug(`✅ Created ${Object.keys(defaultMappings).length} default mappings:`, defaultMappings);
+            
+            // Save the default mappings for future use
+            await savePropertyMappings(databaseId, defaultMappings);
+            resolve(defaultMappings);
+            return;
+          }
+        }
+        
+        // Auto-update: Check if Video/Image mappings are missing and database has these properties
+        if (mappingCount > 0 && options.database) {
+          const dbProps = options.database.properties || {};
+          let needsUpdate = false;
+          
+          // Check if database has Video or Image properties but mappings don't include them
+          const hasVideoProperty = Object.keys(dbProps).some(prop => 
+            prop.toLowerCase() === 'video' || prop.toLowerCase() === 'hasvideo' || prop.toLowerCase() === 'hasvideos'
+          );
+          const hasImageProperty = Object.keys(dbProps).some(prop => 
+            prop.toLowerCase() === 'image' || prop.toLowerCase() === 'hasimage' || prop.toLowerCase() === 'hasimages'
+          );
+          
+          const hasVideoMapping = Object.values(mappings).includes('hasVideos');
+          const hasImageMapping = Object.values(mappings).includes('hasImages');
+          
+          if ((hasVideoProperty && !hasVideoMapping) || (hasImageProperty && !hasImageMapping)) {
+            debug(`🔄 Auto-updating mappings to add missing Video/Image fields...`);
+            
+            // Find the actual property names in the database
+            Object.entries(dbProps).forEach(([propName, propConfig]) => {
+              const propLower = propName.toLowerCase();
+              
+              // Add Video mapping if missing
+              if (!hasVideoMapping && (propLower === 'video' || propLower === 'hasvideo' || propLower === 'hasvideos')) {
+                mappings[propName] = 'hasVideos';
+                debug(`  ✅ Added Video mapping: "${propName}" <- "hasVideos"`);
+                needsUpdate = true;
+              }
+              
+              // Add Image mapping if missing
+              if (!hasImageMapping && (propLower === 'image' || propLower === 'hasimage' || propLower === 'hasimages')) {
+                mappings[propName] = 'hasImages';
+                debug(`  ✅ Added Image mapping: "${propName}" <- "hasImages"`);
+                needsUpdate = true;
+              }
+            });
+            
+            if (needsUpdate) {
+              await savePropertyMappings(databaseId, mappings);
+              debug(`💾 Updated mappings saved`);
+            }
+          }
+        }
+        
         debug(
-          `✅ Retrieved property mappings (${
-            Object.keys(mappings).length
-          } mappings):`,
+          `✅ Retrieved property mappings (${mappingCount} mappings):`,
           mappings
         );
         resolve(mappings);
@@ -233,16 +311,31 @@ export async function savePropertyMappings(databaseId, mappings) {
  */
 export function applyPropertyMappings(extractedData, database, mappings) {
   debug("🔧 Applying property mappings");
+  debug(`📊 extractedData keys: ${Object.keys(extractedData).join(', ')}`);
+  debug(`🖼️ hasImages value in extractedData: ${extractedData.hasImages}`);
+  debug(`📹 hasVideos value in extractedData: ${extractedData.hasVideos}`);
+  debug(`🗺️ Mappings object: ${JSON.stringify(mappings, null, 2)}`);
+  debug(`🗃️ Database properties: ${Object.keys(database.properties || {}).join(', ')}`);
 
   const properties = {};
   const dbProperties = database.properties || {};
 
   // Apply each mapping
   Object.entries(mappings).forEach(([notionProperty, sourceField]) => {
-    if (!sourceField || !dbProperties[notionProperty]) return;
+    debug(`🔄 Processing mapping: "${notionProperty}" <- "${sourceField}"`);
+    if (!sourceField || !dbProperties[notionProperty]) {
+      if (!sourceField) debug(`  ⏭️ Skipped: no source field`);
+      if (!dbProperties[notionProperty]) debug(`  ⏭️ Skipped: property "${notionProperty}" not in database`);
+      return;
+    }
 
     const propConfig = dbProperties[notionProperty];
     const sourceValue = getNestedValue(extractedData, sourceField);
+    
+    // Debug image/video mappings
+    if (sourceField === 'hasImages' || sourceField === 'hasVideos') {
+      debug(`🔍 Mapping ${notionProperty} from ${sourceField}: ${sourceValue} (type: ${typeof sourceValue})`);
+    }
 
     if (
       sourceValue !== undefined &&
@@ -252,6 +345,10 @@ export function applyPropertyMappings(extractedData, database, mappings) {
       const mappedValue = mapValueToNotionProperty(sourceValue, propConfig);
       if (mappedValue !== null) {
         properties[notionProperty] = mappedValue;
+        // Debug successful mappings
+        if (sourceField === 'hasImages' || sourceField === 'hasVideos') {
+          debug(`✅ Successfully mapped ${notionProperty}: ${JSON.stringify(mappedValue)}`);
+        }
       }
     }
   });
@@ -348,6 +445,11 @@ function mapValueToNotionProperty(value, propertyConfig) {
       }
 
     case "checkbox":
+      // Handle actual boolean values directly
+      if (typeof value === "boolean") {
+        return { checkbox: value };
+      }
+      // Handle string representations
       const boolValue = stringValue.toLowerCase();
       return {
         checkbox:
@@ -404,6 +506,7 @@ export function createDefaultMappings(database, extractedData) {
     description: ["description", "summary", "content", "body"],
     // URL mappings
     url: ["url", "link", "pageUrl", "sourceUrl"],
+    pageurl: ["url", "link", "pageUrl", "sourceUrl"],
     // Date mappings
     created: ["created", "createdAt", "dateCreated", "timestamp"],
     updated: ["updated", "updatedAt", "dateUpdated", "lastModified"],
@@ -413,6 +516,13 @@ export function createDefaultMappings(database, extractedData) {
     status: ["status", "state", "condition"],
     // Priority mappings
     priority: ["priority", "importance", "urgency"],
+    // Media/content type mappings
+    video: ["video", "hasVideos", "hasVideo", "videos"],
+    hasvideo: ["video", "hasVideos", "hasVideo", "videos"],
+    hasvideos: ["video", "hasVideos", "hasVideo", "videos"],
+    image: ["image", "hasImages", "hasImage", "images"],
+    hasimage: ["image", "hasImages", "hasImage", "images"],
+    hasimages: ["image", "hasImages", "hasImage", "images"],
   };
 
   // Try to match database properties with extracted data

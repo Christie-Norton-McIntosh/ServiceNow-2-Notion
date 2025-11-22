@@ -502,6 +502,9 @@ function extractPageStructureMetadata(metadata) {
 
     const videoIframes = Array.from(iframes).filter(isVideoIframe);
     metadata.hasVideos = videoTags.length > 0 || videoIframes.length > 0;
+    
+    // Add hasImages for property mapping
+    metadata.hasImages = contentImages.length > 0 || figuresWithImages.length > 0;
 
     // Generate current release URL from page URL pattern
     // Convert: https://www.servicenow.com/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/sgc-cmdb-integration-wiz.html

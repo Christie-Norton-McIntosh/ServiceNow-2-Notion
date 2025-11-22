@@ -167,6 +167,18 @@ export async function extractContentWithIframes(contentElement) {
             // Clone the main element to modify it without affecting the page
             const mainClone = mainElement.cloneNode(true);
 
+            // Remove miniTOC elements first (unconditionally)
+            const miniTocElements = mainClone.querySelectorAll(".miniTOC, [class*='miniTOC']");
+            miniTocElements.forEach((el) => el.remove());
+            
+            // Also remove parent containers that have d-none d-md-block if they contain miniTOC elements
+            const responsiveContainers = mainClone.querySelectorAll(".d-none.d-md-block");
+            responsiveContainers.forEach((el) => {
+              if (el.querySelector(".miniTOC, [class*='miniTOC']") || el.textContent.includes("On this page")) {
+                el.remove();
+              }
+            });
+
             // Remove navigation elements from the clone
             // BUT: Keep nav elements that are inside article/section tags (these are "Related Links" content)
             // Note: Can't use descendant selectors in :not(), so we'll remove manually
@@ -321,6 +333,24 @@ export async function extractContentWithIframes(contentElement) {
     // Clone the content element to avoid modifying the original DOM
     const contentClone = contentElement.cloneNode(true);
 
+    // Remove miniTOC elements first (unconditionally)
+    // Look for miniTOC by class name
+    const miniTocElements = contentClone.querySelectorAll(".miniTOC, [class*='miniTOC']");
+    console.log(`📄 Found ${miniTocElements.length} miniTOC elements to remove`);
+    miniTocElements.forEach((el) => {
+      console.log(`   ❌ Removing miniTOC: ${el.className}`);
+      el.remove();
+    });
+    
+    // Also remove parent containers that have d-none d-md-block if they contain miniTOC elements
+    const responsiveContainers = contentClone.querySelectorAll(".d-none.d-md-block");
+    responsiveContainers.forEach((el) => {
+      if (el.querySelector(".miniTOC, [class*='miniTOC']") || el.textContent.includes("On this page")) {
+        console.log(`   ❌ Removing responsive container with miniTOC content`);
+        el.remove();
+      }
+    });
+    
     // Apply nav filtering - remove navigation elements that are NOT inside article/section
     const navElements = contentClone.querySelectorAll(
       "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer"
