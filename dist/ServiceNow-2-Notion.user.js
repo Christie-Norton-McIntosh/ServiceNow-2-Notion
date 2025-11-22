@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.46
+// @version      11.0.47
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.46";
+    window.BUILD_VERSION = "11.0.47";
 (function () {
 
   // Configuration constants and default settings
@@ -1572,6 +1572,8 @@
               version: "1.0",
               updated: new Date().toISOString(),
               author: "System",
+              hasVideos: false,
+              hasImages: false,
             };
             
             const defaultMappings = createDefaultMappings(options.database, sampleData);
@@ -1813,6 +1815,7 @@
       description: ["description", "summary", "content", "body"],
       // URL mappings
       url: ["url", "link", "pageUrl", "sourceUrl"],
+      pageurl: ["url", "link", "pageUrl", "sourceUrl"],
       // Date mappings
       created: ["created", "createdAt", "dateCreated", "timestamp"],
       updated: ["updated", "updatedAt", "dateUpdated", "lastModified"],
@@ -1822,6 +1825,13 @@
       status: ["status", "state", "condition"],
       // Priority mappings
       priority: ["priority", "importance", "urgency"],
+      // Media/content type mappings
+      video: ["video", "hasVideos", "hasVideo", "videos"],
+      hasvideo: ["video", "hasVideos", "hasVideo", "videos"],
+      hasvideos: ["video", "hasVideos", "hasVideo", "videos"],
+      image: ["image", "hasImages", "hasImage", "images"],
+      hasimage: ["image", "hasImages", "hasImage", "images"],
+      hasimages: ["image", "hasImages", "hasImage", "images"],
     };
 
     // Try to match database properties with extracted data
@@ -6893,6 +6903,9 @@
 
       const videoIframes = Array.from(iframes).filter(isVideoIframe);
       metadata.hasVideos = videoTags.length > 0 || videoIframes.length > 0;
+      
+      // Add hasImages for property mapping
+      metadata.hasImages = contentImages.length > 0 || figuresWithImages.length > 0;
 
       // Generate current release URL from page URL pattern
       // Convert: https://www.servicenow.com/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/sgc-cmdb-integration-wiz.html
