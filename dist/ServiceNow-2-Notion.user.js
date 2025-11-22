@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.57
+// @version      11.0.58
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.57";
+    window.BUILD_VERSION = "11.0.58";
 (function () {
 
   // Configuration constants and default settings
@@ -2367,6 +2367,27 @@
             Enable detailed logging in both client (console) and server (proxy logs)
           </div>
         </div>
+
+        <div style="margin-bottom:16px;">
+          <label style="display: flex; align-items: center; margin-bottom: 12px; font-size: 14px; cursor: pointer;">
+            <input type="checkbox" id="w2n-modal-force-reextract" ${
+              config.forceReextract ? "checked" : ""
+            } style="margin-right: 10px; transform: scale(1.1);">
+            <span style="flex:1;">Force re-extract (ignore dedupe)</span>
+          </label>
+          <div style="font-size: 12px; color: #6b7280; margin-left: 24px; margin-top: -8px;">
+            Bypass persistent URL deduplication and always reprocess pages
+          </div>
+        </div>
+
+        <div style="margin-bottom:16px;">
+          <button id="w2n-clear-persisted-urls" style="width:100%;padding:8px;border-radius:6px;background:#ef4444;color:white;border:none;cursor:pointer;font-size:13px;">
+            🧹 Clear processed URL cache
+          </button>
+          <div style="font-size: 11px; color: #6b7280; margin-top:6px;">
+            Empties stored cross-session dedupe list (use before a full refresh run)
+          </div>
+        </div>
         
   <div style="margin-bottom:20px;">
           <label style="display: flex; align-items: center; margin-bottom: 12px; font-size: 14px; cursor: pointer;">
@@ -2411,6 +2432,7 @@
     const saveBtn = modal.querySelector("#w2n-save-advanced-settings");
     const cancelBtn = modal.querySelector("#w2n-cancel-advanced-settings");
     const configureMappingBtn = modal.querySelector("#w2n-configure-mapping-from-settings");
+    const clearPersistedBtn = modal.querySelector("#w2n-clear-persisted-urls");
 
     function closeModal() {
       if (modal.parentNode) {
@@ -2428,6 +2450,23 @@
           showPropertyMappingModal();
         } catch (e) {
           debug("Failed to open property mapping modal:", e);
+        }
+      };
+    }
+
+    // Clear persisted URLs cache
+    if (clearPersistedBtn) {
+      clearPersistedBtn.onclick = () => {
+        try {
+          if (typeof GM_setValue === 'function') {
+            GM_setValue('w2n_processed_urls', '[]');
+            debug('[DEDUPE-PERSIST] Cleared persisted processed URL cache');
+            if (typeof GM_notification !== 'undefined') {
+              GM_notification({ title: 'ServiceNow', text: 'Processed URL cache cleared', timeout: 2000 });
+            }
+          }
+        } catch (e) {
+          debug('[DEDUPE-PERSIST] Failed clearing processed URL cache:', e);
         }
       };
     }
@@ -2473,6 +2512,9 @@
       const enableDuplicateDetection = modal.querySelector(
         "#w2n-modal-duplicate-detect"
       ).checked;
+      const forceReextract = modal.querySelector(
+        "#w2n-modal-force-reextract"
+      ).checked;
 
       // Combined debugging checkbox
       const enableDebugging = modal.querySelector(
@@ -2485,6 +2527,7 @@
       config.directSDKImages = directSDKImages;
       config.debugMode = enableDebugging;
       config.enableDuplicateDetection = enableDuplicateDetection;
+    config.forceReextract = forceReextract;
 
       // Save to storage
       try {
@@ -3899,7 +3942,21 @@
       failedPages: [], // Track pages that failed due to rate limiting or other errors for manual retry
       rateLimitHits: 0, // Track how many times we've hit rate limits
       navigationFailures: 0, // Track consecutive navigation failures
+      persistentProcessedUrls: new Set(), // Cross-session dedupe list loaded from storage
     };
+
+    // Load persisted processed URLs for cross-session dedupe
+    try {
+      if (typeof GM_getValue === 'function') {
+        const persistedJson = GM_getValue('w2n_processed_urls', '[]');
+        let persistedArr = [];
+        try { persistedArr = JSON.parse(persistedJson) || []; } catch(e) { /* ignore parse error */ }
+        autoExtractState.persistentProcessedUrls = new Set(persistedArr);
+        debug(`[DEDUPE-PERSIST] Loaded ${autoExtractState.persistentProcessedUrls.size} persisted URL(s)`);
+      }
+    } catch (e) {
+      debug('[DEDUPE-PERSIST] Failed loading persisted URLs:', e);
+    }
 
     // Set up beforeunload handler to save state if page is reloaded manually
     const beforeUnloadHandler = (event) => {
@@ -4770,6 +4827,18 @@
         // Get current page identifiers for duplicate detection
         const currentUrl = window.location.href;
         const currentPageId = getCurrentPageId();
+        const globalConfig = typeof GM_getValue === 'function' ? GM_getValue('notionConfig', {}) : {};
+        const forceReextract = !!globalConfig.forceReextract;
+
+        // Cross-session persistent dedupe check (before session duplicate logic)
+        if (!forceReextract && autoExtractState.persistentProcessedUrls && autoExtractState.persistentProcessedUrls.has(currentUrl)) {
+          debug(`[DEDUPE-PERSIST] ✅ Skipping previously processed URL (cross-session): ${currentUrl}`);
+          overlayModule.setMessage(`Skipping already processed page ${currentPageNum}...`);
+          showToast(`⚠️ Already processed earlier session, skipping page ${currentPageNum}`, 3000);
+          // Still increment page counter logically, but do not extract/process
+          // Go directly to navigation section below
+          skipExtraction = true;
+        }
         
         // Check for duplicate URL (same page being processed again)
         // BUT: If we just had a navigation failure, this is expected (we're retrying navigation)
@@ -4824,6 +4893,7 @@
           // Add URL to processed set (we only reach here if not already processed)
           autoExtractState.processedUrls.add(currentUrl);
           autoExtractState.lastPageId = currentPageId;
+    // Persist URL for cross-session dedupe after successful processing later
           
           // Process and save to Notion with rate limit retry
           debug(`[AUTO-EXTRACT] 📤 Saving page ${currentPageNum} to Notion...`);
@@ -4960,6 +5030,16 @@
             autoExtractState.totalProcessed++;
             debug(`[AUTO-EXTRACT] ✅ Page ${currentPageNum} saved to Notion`);
             overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
+              // Persist URL to cross-session store
+              try {
+                autoExtractState.persistentProcessedUrls.add(currentUrl);
+                if (typeof GM_setValue === 'function') {
+                  GM_setValue('w2n_processed_urls', JSON.stringify(Array.from(autoExtractState.persistentProcessedUrls)));
+                }
+                debug(`[DEDUPE-PERSIST] 💾 Persisted URL: ${currentUrl} (total ${autoExtractState.persistentProcessedUrls.size})`);
+              } catch(e) {
+                debug('[DEDUPE-PERSIST] Failed persisting URL:', e);
+              }
           }
         } else {
           debug(`[NAV-RETRY] ⏩ Skipped extraction for expected duplicate, proceeding to navigation...`);
