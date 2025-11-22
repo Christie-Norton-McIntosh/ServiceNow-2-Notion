@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.51
+// @version      11.0.52
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.51";
+    window.BUILD_VERSION = "11.0.52";
 (function () {
 
   // Configuration constants and default settings
@@ -1584,6 +1584,51 @@
               await savePropertyMappings$1(databaseId, defaultMappings);
               resolve(defaultMappings);
               return;
+            }
+          }
+          
+          // Auto-update: Check if Video/Image mappings are missing and database has these properties
+          if (mappingCount > 0 && options.database) {
+            const dbProps = options.database.properties || {};
+            let needsUpdate = false;
+            
+            // Check if database has Video or Image properties but mappings don't include them
+            const hasVideoProperty = Object.keys(dbProps).some(prop => 
+              prop.toLowerCase() === 'video' || prop.toLowerCase() === 'hasvideo' || prop.toLowerCase() === 'hasvideos'
+            );
+            const hasImageProperty = Object.keys(dbProps).some(prop => 
+              prop.toLowerCase() === 'image' || prop.toLowerCase() === 'hasimage' || prop.toLowerCase() === 'hasimages'
+            );
+            
+            const hasVideoMapping = Object.values(mappings).includes('hasVideos');
+            const hasImageMapping = Object.values(mappings).includes('hasImages');
+            
+            if ((hasVideoProperty && !hasVideoMapping) || (hasImageProperty && !hasImageMapping)) {
+              debug(`🔄 Auto-updating mappings to add missing Video/Image fields...`);
+              
+              // Find the actual property names in the database
+              Object.entries(dbProps).forEach(([propName, propConfig]) => {
+                const propLower = propName.toLowerCase();
+                
+                // Add Video mapping if missing
+                if (!hasVideoMapping && (propLower === 'video' || propLower === 'hasvideo' || propLower === 'hasvideos')) {
+                  mappings[propName] = 'hasVideos';
+                  debug(`  ✅ Added Video mapping: "${propName}" <- "hasVideos"`);
+                  needsUpdate = true;
+                }
+                
+                // Add Image mapping if missing
+                if (!hasImageMapping && (propLower === 'image' || propLower === 'hasimage' || propLower === 'hasimages')) {
+                  mappings[propName] = 'hasImages';
+                  debug(`  ✅ Added Image mapping: "${propName}" <- "hasImages"`);
+                  needsUpdate = true;
+                }
+              });
+              
+              if (needsUpdate) {
+                await savePropertyMappings$1(databaseId, mappings);
+                debug(`💾 Updated mappings saved`);
+              }
             }
           }
           
