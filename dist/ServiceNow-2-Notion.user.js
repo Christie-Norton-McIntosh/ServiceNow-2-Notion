@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.37
+// @version      11.0.38
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.37";
+    window.BUILD_VERSION = "11.0.38";
 (function () {
 
   // Configuration constants and default settings
@@ -3331,7 +3331,17 @@
           const dbId = prompt("Enter database ID:");
           if (!dbId || dbId.trim() === "") return;
 
-          const cleanDbId = dbId.trim().replace(/-/g, ""); // Remove hyphens if present
+          // Normalize ID: accept with or without hyphens, format to proper UUID
+          let cleanDbId = dbId.trim().replace(/[^a-f0-9-]/gi, "");
+          
+          // If no hyphens, add them in proper UUID format (8-4-4-4-12)
+          if (!cleanDbId.includes("-")) {
+            const raw = cleanDbId.replace(/-/g, "");
+            if (raw.length === 32) {
+              cleanDbId = raw.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, "$1-$2-$3-$4-$5");
+            }
+          }
+          
           debug(`[DATABASE] 🔍 Searching for database by ID: ${cleanDbId}`);
           showSpinner();
 
