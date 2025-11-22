@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.42
+// @version      11.0.43
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.42";
+    window.BUILD_VERSION = "11.0.43";
 (function () {
 
   // Configuration constants and default settings
@@ -3333,6 +3333,9 @@
           const input = prompt("Enter database ID or URL:");
           if (!input || input.trim() === "") return;
 
+          debug(`[DATABASE] 🔍 Processing input: ${input}`);
+          showSpinner();
+
           let cleanDbId = input.trim();
           
           // Check if input is a URL and extract ID from it
@@ -3366,7 +3369,6 @@
           }
           
           debug(`[DATABASE] 🔍 Searching for database by ID: ${cleanDbId}`);
-          showSpinner();
 
           // Fetch database details to validate and get name
           const dbDetails = await getDatabase(cleanDbId);
@@ -3396,7 +3398,7 @@
         } catch (e) {
           debug("Failed to get database by ID:", e);
           alert(
-            `Error: Could not access database with ID "${dbId}".\nMake sure the database is shared with your Notion integration.`
+            `Error: Could not access database with the provided input.\nMake sure the database is shared with your Notion integration.\n\nDetails: ${e.message || e}`
           );
         } finally {
           hideSpinner();
