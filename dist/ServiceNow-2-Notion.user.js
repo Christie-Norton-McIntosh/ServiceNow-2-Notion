@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.35
+// @version      11.0.36
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.35";
+    window.BUILD_VERSION = "11.0.36";
 (function () {
 
   // Configuration constants and default settings
@@ -2220,22 +2220,53 @@
   /**
    * Get property mappings for a database
    * @param {string} databaseId - Database ID
+   * @param {Object} options - Optional parameters
+   * @param {Object} options.database - Database schema (optional, for creating defaults)
+   * @param {Object} options.extractedData - Extracted page data (optional, for creating defaults)
    * @returns {Promise<Object>} Property mappings
    */
-  async function getPropertyMappings(databaseId) {
+  async function getPropertyMappings(databaseId, options = {}) {
     const mappingKey = `w2n_property_mappings_${databaseId}`;
 
-    return new Promise((resolve) => {
+    return new Promise(async (resolve) => {
       if (typeof GM_getValue === "function") {
         try {
           const saved = GM_getValue(mappingKey, "{}");
           debug(`🔍 Loading mappings with key: ${mappingKey}`);
           debug(`🔍 Raw saved value: ${saved}`);
           const mappings = JSON.parse(saved);
+          const mappingCount = Object.keys(mappings).length;
+          
+          // If no mappings exist and we have database schema, create defaults
+          if (mappingCount === 0 && options.database) {
+            debug("🎯 No mappings found - creating default property mappings");
+            
+            // Use sample extracted data if not provided
+            const sampleData = options.extractedData || {
+              title: "Sample Page Title",
+              url: "https://example.com/page",
+              source: "ServiceNow",
+              category: "Documentation",
+              section: "User Guide",
+              version: "1.0",
+              updated: new Date().toISOString(),
+              author: "System",
+            };
+            
+            const defaultMappings = createDefaultMappings(options.database, sampleData);
+            
+            if (Object.keys(defaultMappings).length > 0) {
+              debug(`✅ Created ${Object.keys(defaultMappings).length} default mappings:`, defaultMappings);
+              
+              // Save the default mappings for future use
+              await savePropertyMappings$1(databaseId, defaultMappings);
+              resolve(defaultMappings);
+              return;
+            }
+          }
+          
           debug(
-            `✅ Retrieved property mappings (${
-            Object.keys(mappings).length
-          } mappings):`,
+            `✅ Retrieved property mappings (${mappingCount} mappings):`,
             mappings
           );
           resolve(mappings);
@@ -2246,6 +2277,37 @@
       } else {
         debug("⚠️ GM_getValue not available");
         resolve({});
+      }
+    });
+  }
+
+  /**
+   * Save property mappings for a database
+   * @param {string} databaseId - Database ID
+   * @param {Object} mappings - Property mappings to save
+   */
+  async function savePropertyMappings$1(databaseId, mappings) {
+    const mappingKey = `w2n_property_mappings_${databaseId}`;
+
+    return new Promise((resolve, reject) => {
+      if (typeof GM_setValue === "function") {
+        try {
+          const jsonStr = JSON.stringify(mappings);
+          debug(`💾 Saving mappings with key: ${mappingKey}`);
+          debug(
+            `💾 Mappings to save (${Object.keys(mappings).length} mappings):`,
+            mappings
+          );
+          GM_setValue(mappingKey, jsonStr);
+          debug("✅ Property mappings saved successfully");
+          resolve();
+        } catch (e) {
+          debug("❌ Failed to save property mappings:", e);
+          reject(e);
+        }
+      } else {
+        debug("⚠️ GM_setValue not available, mappings not saved");
+        resolve();
       }
     });
   }
@@ -2407,6 +2469,72 @@
         debug(`⚠️ Unsupported property type: ${type}`);
         return null;
     }
+  }
+
+  /**
+   * Create default property mappings based on common field names
+   * @param {Object} database - Database schema
+   * @param {Object} extractedData - Extracted data to map from
+   * @returns {Object} Suggested property mappings
+   */
+  function createDefaultMappings(database, extractedData) {
+    debug("🎯 Creating default property mappings");
+
+    const mappings = {};
+    const dbProperties = database.properties || {};
+    const dataFields = Object.keys(extractedData);
+
+    // Common mapping patterns
+    const mappingPatterns = {
+      // Title mappings
+      title: ["title", "name", "subject", "heading", "pageTitle"],
+      // Text content mappings
+      description: ["description", "summary", "content", "body"],
+      // URL mappings
+      url: ["url", "link", "pageUrl", "sourceUrl"],
+      // Date mappings
+      created: ["created", "createdAt", "dateCreated", "timestamp"],
+      updated: ["updated", "updatedAt", "dateUpdated", "lastModified"],
+      // Author mappings
+      author: ["author", "createdBy", "user", "assignee"],
+      // Status mappings
+      status: ["status", "state", "condition"],
+      // Priority mappings
+      priority: ["priority", "importance", "urgency"],
+    };
+
+    // Try to match database properties with extracted data
+    Object.entries(dbProperties).forEach(([propName, propConfig]) => {
+      const propLower = propName.toLowerCase();
+
+      // Check if there's a direct match
+      const directMatch = dataFields.find(
+        (field) => field.toLowerCase() === propLower
+      );
+
+      if (directMatch) {
+        mappings[propName] = directMatch;
+        return;
+      }
+
+      // Check pattern matches
+      for (const [pattern, candidates] of Object.entries(mappingPatterns)) {
+        if (candidates.some((candidate) => propLower.includes(candidate))) {
+          const match = dataFields.find((field) =>
+            candidates.some((candidate) =>
+              field.toLowerCase().includes(candidate)
+            )
+          );
+          if (match) {
+            mappings[propName] = match;
+            break;
+          }
+        }
+      }
+    });
+
+    debug(`✅ Created ${Object.keys(mappings).length} default mappings`);
+    return mappings;
   }
 
   // Property Mapping Modal - Dynamic property mapping system
@@ -8661,7 +8789,10 @@
         const database = await getDatabase(config.databaseId);
         
         overlayModule.setMessage("Loading property mappings...");
-        const mappings = await getPropertyMappings(config.databaseId);
+        const mappings = await getPropertyMappings(config.databaseId, {
+          database: database,
+          extractedData: extractedData
+        });
 
         // Apply mappings to extracted data
         overlayModule.setMessage("Mapping properties to Notion format...");
