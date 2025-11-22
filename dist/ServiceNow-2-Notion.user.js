@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.53
+// @version      11.0.54
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.53";
+    window.BUILD_VERSION = "11.0.54";
 (function () {
 
   // Configuration constants and default settings
@@ -7239,7 +7239,7 @@
               // BUT: Keep nav elements that are inside article/section tags (these are "Related Links" content)
               // Note: Can't use descendant selectors in :not(), so we'll remove manually
               const navElements = mainClone.querySelectorAll(
-                "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer"
+                "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer, .miniTOC, [class*='miniTOC']"
               );
               navElements.forEach((el) => {
                 // Keep nav elements that are inside article or section tags
@@ -7391,7 +7391,7 @@
 
       // Apply nav filtering - remove navigation elements that are NOT inside article/section
       const navElements = contentClone.querySelectorAll(
-        "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer"
+        "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer, .miniTOC, [class*='miniTOC']"
       );
       console.log(`📄 Found ${navElements.length} navigation elements in regular content`);
       console.log(`📄 contentClone tagName: ${contentClone.tagName}, id: ${contentClone.id}, class: ${contentClone.className}`);
