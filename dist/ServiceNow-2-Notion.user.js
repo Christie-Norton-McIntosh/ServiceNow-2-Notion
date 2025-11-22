@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.45
+// @version      11.0.46
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.45";
+    window.BUILD_VERSION = "11.0.46";
 (function () {
 
   // Configuration constants and default settings
@@ -3375,7 +3375,19 @@
             const raw = cleanDbId.replace(/-/g, "");
             if (raw.length === 32) {
               cleanDbId = raw.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, "$1-$2-$3-$4-$5");
+            } else {
+              alert(`Invalid database ID format.\nExpected 32 hexadecimal characters, got ${raw.length}.\n\nExample: abc123def456... (32 chars)\nor: abc123de-f456-7890-1234-567890abcdef`);
+              hideSpinner();
+              return;
             }
+          }
+          
+          // Validate final format
+          const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+          if (!uuidPattern.test(cleanDbId)) {
+            alert(`Invalid database ID format.\nMust be a valid UUID (32 hexadecimal characters).\n\nCurrent: ${cleanDbId}`);
+            hideSpinner();
+            return;
           }
           
           debug(`[DATABASE] 🔍 Searching for database by ID: ${cleanDbId}`);
@@ -3404,12 +3416,43 @@
             `✅ Set target database to: ${databaseName} (${cleanDbId})`
           );
           
-          alert(`Database found: "${databaseName}"`);
+          // Check if already selected
+          const currentConfig = getConfig();
+          if (currentConfig.databaseId === cleanDbId) {
+            alert(`Database "${databaseName}" is already selected.`);
+          } else {
+            alert(`Database found: "${databaseName}"`);
+          }
         } catch (e) {
           debug("Failed to get database by ID:", e);
-          alert(
-            `Error: Could not access database with the provided input.\nMake sure the database is shared with your Notion integration.\n\nDetails: ${e.message || e}`
-          );
+          
+          // Provide specific error messages based on error type
+          let errorMsg = "Error: Could not access database.\n\n";
+          
+          if (e.code === 'object_not_found' || e.status === 404) {
+            errorMsg += "Database not found. Please check:\n";
+            errorMsg += "• The database ID is correct\n";
+            errorMsg += "• The database exists in your Notion workspace\n";
+            errorMsg += "• The database hasn't been deleted";
+          } else if (e.code === 'unauthorized' || e.status === 401) {
+            errorMsg += "Access denied. Please check:\n";
+            errorMsg += "• The database is shared with your Notion integration\n";
+            errorMsg += "• Your Notion API token is valid";
+          } else if (e.code === 'restricted_resource' || e.status === 403) {
+            errorMsg += "The database is not shared with your integration.\n\n";
+            errorMsg += "To fix this:\n";
+            errorMsg += "1. Open the database in Notion\n";
+            errorMsg += "2. Click '...' → 'Add connections'\n";
+            errorMsg += "3. Select your integration";
+          } else {
+            errorMsg += `${e.message || e}\n\n`;
+            errorMsg += "Please check:\n";
+            errorMsg += "• Your internet connection\n";
+            errorMsg += "• The proxy server is running\n";
+            errorMsg += "• The database ID is correct";
+          }
+          
+          alert(errorMsg);
         } finally {
           hideSpinner();
         }
