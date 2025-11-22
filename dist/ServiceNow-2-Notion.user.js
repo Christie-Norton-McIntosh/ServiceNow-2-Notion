@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.56
+// @version      11.0.57
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.56";
+    window.BUILD_VERSION = "11.0.57";
 (function () {
 
   // Configuration constants and default settings
@@ -4809,7 +4809,7 @@
           autoExtractState.duplicateCount = 0;
         }
         
-        // Only extract if this is not a duplicate that we're skipping
+        // Only extract and process if this is not a duplicate that we're skipping
         let extractedData = null;
         if (!skipExtraction) {
           // Extract current page data using the app instance
@@ -4821,17 +4821,13 @@
             throw new Error("No content extracted from page");
           }
 
-          // Skip processing if this is a duplicate URL
-          if (autoExtractState.processedUrls.has(currentUrl)) {
-            debug(`⏭️ Skipping Notion processing for duplicate URL`);
-          } else {
-            // Add URL to processed set
-            autoExtractState.processedUrls.add(currentUrl);
-            autoExtractState.lastPageId = currentPageId;
-            
-            // Process and save to Notion with rate limit retry
-            debug(`[AUTO-EXTRACT] 📤 Saving page ${currentPageNum} to Notion...`);
-            overlayModule.setMessage(`Processing page ${currentPageNum}...`);
+          // Add URL to processed set (we only reach here if not already processed)
+          autoExtractState.processedUrls.add(currentUrl);
+          autoExtractState.lastPageId = currentPageId;
+          
+          // Process and save to Notion with rate limit retry
+          debug(`[AUTO-EXTRACT] 📤 Saving page ${currentPageNum} to Notion...`);
+          overlayModule.setMessage(`Processing page ${currentPageNum}...`);
           
             // Retry logic for rate limits
             const maxRateLimitRetries = 3;
@@ -4955,16 +4951,15 @@
               }
             }
             
-            // If processing failed after all retries, log it but DON'T stop AutoExtract
-            if (!processingSuccess) {
-              debug(`⚠️ [AUTO-EXTRACT] Page ${currentPageNum} failed after retries - continuing with next page`);
-              // Don't throw - just continue to navigation
-            } else {
-              // Only increment totalProcessed on success
-              autoExtractState.totalProcessed++;
-              debug(`[AUTO-EXTRACT] ✅ Page ${currentPageNum} saved to Notion`);
-              overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
-            }
+          // If processing failed after all retries, log it but DON'T stop AutoExtract
+          if (!processingSuccess) {
+            debug(`⚠️ [AUTO-EXTRACT] Page ${currentPageNum} failed after retries - continuing with next page`);
+            // Don't throw - just continue to navigation
+          } else {
+            // Only increment totalProcessed on success
+            autoExtractState.totalProcessed++;
+            debug(`[AUTO-EXTRACT] ✅ Page ${currentPageNum} saved to Notion`);
+            overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
           }
         } else {
           debug(`[NAV-RETRY] ⏩ Skipped extraction for expected duplicate, proceeding to navigation...`);
