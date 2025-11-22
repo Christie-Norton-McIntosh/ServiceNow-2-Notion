@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.50
+// @version      11.0.51
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.50";
+    window.BUILD_VERSION = "11.0.51";
 (function () {
 
   // Configuration constants and default settings
@@ -1646,13 +1646,20 @@
     debug(`📊 extractedData keys: ${Object.keys(extractedData).join(', ')}`);
     debug(`🖼️ hasImages value in extractedData: ${extractedData.hasImages}`);
     debug(`📹 hasVideos value in extractedData: ${extractedData.hasVideos}`);
+    debug(`🗺️ Mappings object: ${JSON.stringify(mappings, null, 2)}`);
+    debug(`🗃️ Database properties: ${Object.keys(database.properties || {}).join(', ')}`);
 
     const properties = {};
     const dbProperties = database.properties || {};
 
     // Apply each mapping
     Object.entries(mappings).forEach(([notionProperty, sourceField]) => {
-      if (!sourceField || !dbProperties[notionProperty]) return;
+      debug(`🔄 Processing mapping: "${notionProperty}" <- "${sourceField}"`);
+      if (!sourceField || !dbProperties[notionProperty]) {
+        if (!sourceField) debug(`  ⏭️ Skipped: no source field`);
+        if (!dbProperties[notionProperty]) debug(`  ⏭️ Skipped: property "${notionProperty}" not in database`);
+        return;
+      }
 
       const propConfig = dbProperties[notionProperty];
       const sourceValue = getNestedValue(extractedData, sourceField);
