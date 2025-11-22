@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.39
+// @version      11.0.40
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.39";
+    window.BUILD_VERSION = "11.0.40";
 (function () {
 
   // Configuration constants and default settings
@@ -714,221 +714,6 @@
     setPropertyMappingModalInjector: setPropertyMappingModalInjector
   });
 
-  // Advanced Settings Modal - Configuration settings UI
-
-
-  /**
-   * Inject the advanced settings modal into the DOM
-   */
-  function injectAdvancedSettingsModal() {
-    if (document.getElementById("w2n-advanced-settings-modal")) return;
-
-    const config = getConfig();
-
-    const modal = document.createElement("div");
-    modal.id = "w2n-advanced-settings-modal";
-    modal.style.cssText = `
-    position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; z-index:11000;
-    background: rgba(0,0,0,0.4);
-  `;
-
-    modal.innerHTML = `
-    <div style="width:480px; max-width:95%; background:white; border-radius:8px; box-shadow:0 10px 30px rgba(0,0,0,0.2); overflow:hidden;">
-      <div style="padding:16px 20px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;">
-        <strong>⚙️ Advanced Settings</strong>
-        <button id="w2n-close-advanced-settings" style="background:none;border:none;font-size:18px;cursor:pointer">×</button>
-      </div>
-      <div style="padding:20px;">
-        <div style="margin-bottom:16px;">
-          <label style="display: flex; align-items: center; margin-bottom: 12px; font-size: 14px; cursor: pointer;">
-            <input type="checkbox" id="w2n-modal-use-martian" ${
-              config.useMartian ? "checked" : ""
-            } style="margin-right: 10px; transform: scale(1.1);">
-            <span style="flex:1;">Use Martian conversion</span>
-          </label>
-          <div style="font-size: 12px; color: #6b7280; margin-left: 24px; margin-top: -8px;">
-            Enhanced content processing for better Notion formatting
-          </div>
-        </div>
-        
-        <div style="margin-bottom:16px;">
-          <label style="display: flex; align-items: center; margin-bottom: 12px; font-size: 14px; cursor: pointer;">
-            <input type="checkbox" id="w2n-modal-direct-images" ${
-              config.directSDKImages ? "checked" : ""
-            } style="margin-right: 10px; transform: scale(1.1);">
-            <span style="flex:1;">Direct SDK image processing</span>
-          </label>
-          <div style="font-size: 12px; color: #6b7280; margin-left: 24px; margin-top: -8px;">
-            Process images directly through Notion API (faster uploads)
-          </div>
-        </div>
-        
-        <div style="margin-bottom:16px;">
-          <label style="display: flex; align-items: center; margin-bottom: 12px; font-size: 14px; cursor: pointer;">
-            <input type="checkbox" id="w2n-modal-enable-debugging" style="margin-right: 10px; transform: scale(1.1);">
-            <span style="flex:1;">Enable debugging (client & server)</span>
-          </label>
-          <div style="font-size: 12px; color: #6b7280; margin-left: 24px; margin-top: -8px;">
-            Enable detailed logging in both client (console) and server (proxy logs)
-          </div>
-        </div>
-        
-  <div style="margin-bottom:20px;">
-          <label style="display: flex; align-items: center; margin-bottom: 12px; font-size: 14px; cursor: pointer;">
-            <input type="checkbox" id="w2n-modal-duplicate-detect" ${
-              config.enableDuplicateDetection ? "checked" : ""
-            } style="margin-right: 10px; transform: scale(1.1);">
-            <span style="flex:1;">Search for duplicates</span>
-          </label>
-          <div style="font-size: 12px; color: #6b7280; margin-left: 24px; margin-top: -8px;">
-            Check for existing pages with same title before creating new ones
-          </div>
-        </div>
-        
-        <div style="display:flex; gap:10px; padding-top:16px; border-top:1px solid #eee;">
-          <button id="w2n-save-advanced-settings" style="flex:1;padding:10px;border-radius:6px;background:#10b981;color:white;border:none;cursor:pointer;font-size:14px;">
-            Save Settings
-          </button>
-          <button id="w2n-cancel-advanced-settings" style="flex:1;padding:10px;border-radius:6px;background:#6b7280;color:white;border:none;cursor:pointer;font-size:14px;">
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
-  `;
-
-    document.body.appendChild(modal);
-    setupAdvancedSettingsModal(modal);
-  }
-
-  /**
-   * Setup the advanced settings modal with event listeners
-   * @param {HTMLElement} modal - The modal element
-   */
-  function setupAdvancedSettingsModal(modal) {
-    const closeBtn = modal.querySelector("#w2n-close-advanced-settings");
-    const saveBtn = modal.querySelector("#w2n-save-advanced-settings");
-    const cancelBtn = modal.querySelector("#w2n-cancel-advanced-settings");
-
-    function closeModal() {
-      if (modal.parentNode) {
-        modal.parentNode.removeChild(modal);
-      }
-    }
-
-    closeBtn.onclick = closeModal;
-    cancelBtn.onclick = closeModal;
-
-    // Click outside to close
-    modal.onclick = (e) => {
-      if (e.target === modal) {
-        closeModal();
-      }
-    };
-
-    // Populate combined debugging checkbox from both client and server settings
-    (async () => {
-      const combinedCheckbox = modal.querySelector("#w2n-modal-enable-debugging");
-      if (!combinedCheckbox) return;
-      const config = getConfig();
-      let serverVerbose = false;
-      try {
-        const resp = await fetch("/api/logging");
-        if (resp.ok) {
-          const body = await resp.json();
-          serverVerbose = !!(body && body.verbose);
-          // Treat extraDebug as the indicator that a deep debug session is active
-          if (body && typeof body.extraDebug !== "undefined") {
-            combinedCheckbox.checked = !!body.extraDebug;
-          }
-        }
-      } catch (e) {
-        debug("Could not fetch /api/logging for combined checkbox:", e);
-      }
-      if (typeof combinedCheckbox.checked === "undefined") {
-        combinedCheckbox.checked = config.debugMode && serverVerbose;
-      }
-      debug("Populated combined debugging checkbox:", combinedCheckbox.checked);
-    })();
-
-    saveBtn.onclick = () => {
-      // Get values from modal checkboxes
-      const useMartian = modal.querySelector("#w2n-modal-use-martian").checked;
-      const directSDKImages = modal.querySelector(
-        "#w2n-modal-direct-images"
-      ).checked;
-      const enableDuplicateDetection = modal.querySelector(
-        "#w2n-modal-duplicate-detect"
-      ).checked;
-
-      // Combined debugging checkbox
-      const enableDebugging = modal.querySelector(
-        "#w2n-modal-enable-debugging"
-      ).checked;
-
-      // Update config
-      const config = getConfig();
-      config.useMartian = useMartian;
-      config.directSDKImages = directSDKImages;
-      config.debugMode = enableDebugging;
-      config.enableDuplicateDetection = enableDuplicateDetection;
-
-      // Save to storage
-      try {
-        if (typeof GM_setValue !== "undefined") {
-          GM_setValue("notionConfig", config);
-        }
-
-        // Show toast notification
-        if (typeof GM_notification !== "undefined") {
-          GM_notification({
-            text: "Settings saved successfully",
-            title: "ServiceNow",
-            timeout: 2000,
-          });
-        }
-
-        debug("⚙️ Settings saved:", config);
-
-        // Update visible UI immediately so user sees the selected database/name
-        try {
-          if (typeof window.updateUIFromConfig === "function") {
-            window.updateUIFromConfig();
-          }
-        } catch (e) {
-          debug("Failed updating UI after settings save:", e);
-        }
-        // Update server runtime logging setting
-        (async () => {
-          try {
-            await fetch("/api/logging", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                verbose: !!enableDebugging,
-                extraDebug: !!enableDebugging,
-              }),
-            });
-            debug("Updated server logging flags:", enableDebugging);
-          } catch (err) {
-            debug("Failed to update server logging setting:", err);
-          }
-        })();
-      } catch (error) {
-        if (typeof GM_notification !== "undefined") {
-          GM_notification({
-            text: "Failed to save settings",
-            title: "ServiceNow",
-            timeout: 2000,
-          });
-        }
-        debug("Failed to save settings:", error);
-      }
-
-      closeModal();
-    };
-  }
-
   // Proxy API Communication - Direct communication with M2N proxy server
 
 
@@ -1592,470 +1377,6 @@
     searchUnsplashImages: searchUnsplashImages,
     sendProcessedContentToProxy: sendProcessedContentToProxy
   });
-
-  // Icon and Cover Selection Modal - Image selection UI
-
-
-  // Shared Unsplash keyword list
-  const UNSPLASH_KEYWORDS = [
-    "abstract",
-    "geometric",
-    "background",
-    "pattern",
-    "gradient",
-    "texture",
-  ];
-
-  /**
-   * Inject the icon and cover selection modal
-   */
-  function injectIconCoverModal() {
-    if (document.getElementById("w2n-icon-cover-modal")) return;
-
-    const modal = document.createElement("div");
-    modal.id = "w2n-icon-cover-modal";
-    modal.style.cssText = `
-    position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; z-index:11000;
-    background: rgba(0,0,0,0.4);
-  `;
-
-    modal.innerHTML = `
-    <div style="width:980px; max-width:95%; background:white; border-radius:8px; box-shadow:0 10px 30px rgba(0,0,0,0.2); overflow:hidden;">
-      <div style="padding:12px 16px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;">
-        <strong>Icon & Cover Selector</strong>
-        <button id="w2n-close-icon-cover" style="background:none;border:none;font-size:18px;cursor:pointer">×</button>
-      </div>
-      <div style="display:flex; gap:12px; padding:12px;">
-        <div style="flex:1 1 60%; min-width:540px;">
-          <div id="w2n-selector-tabs" style="display:flex; gap:8px; margin-bottom:10px;">
-            <button id="w2n-tab-icons" style="padding:8px 10px; border-radius:6px; border:1px solid #e5e7eb; background:#f3f4f6; cursor:pointer;">Icons</button>
-            <button id="w2n-tab-covers" style="padding:8px 10px; border-radius:6px; border:1px solid #e5e7eb; background:white; cursor:pointer;">Covers</button>
-          </div>
-
-          <div id="w2n-selector-content">
-            <div id="w2n-icons-panel">
-                <label style="font-size:12px; color:#444">Search Emoji</label>
-                <div id="w2n-emoji-results" style="display:block; gap:6px; max-height:220px; overflow:auto; padding:8px; margin-top:8px; border:1px solid #f1f1f1; border-radius:6px; background:#fbfbfb;"></div>
-                <div style="margin-top:8px;font-size:12px;color:#666;">Or upload an icon image:</div>
-                <input type="file" id="w2n-icon-upload" accept="image/*" style="margin-top:6px;" />
-              </div>
-
-            <div id="w2n-covers-panel" style="display:none;">
-              <label style="font-size:12px; color:#444">Search Unsplash</label>
-              <div style="display:flex; gap:8px; margin-top:6px;">
-                <input id="w2n-unsplash-input" placeholder="nature, abstract, pattern" style="flex:1;padding:8px;border:1px solid #ddd;border-radius:6px;">
-                <button id="w2n-unsplash-search-btn" style="padding:8px 10px;border-radius:6px;background:#3b82f6;color:white;border:none;">Search</button>
-              </div>
-              <div id="w2n-unsplash-cats" style="margin-top:10px; display:flex; gap:6px; flex-wrap:wrap;"></div>
-              <div id="w2n-unsplash-results" style="margin-top:12px; display:grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap:8px; max-height:420px; overflow:auto; padding:4px;"></div>
-              <div style="margin-top:8px;font-size:12px;color:#666;">Or upload a cover image:</div>
-              <input type="file" id="w2n-cover-upload" accept="image/*" style="margin-top:6px;" />
-            </div>
-          </div>
-        </div>
-        <div style="width:360px; flex-shrink:0;">
-          <label style="font-size:12px; color:#444">Preview</label>
-          <div id="w2n-icon-preview" style="height:120px; margin-top:8px; border:1px solid #eee; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:40px;"></div>
-          <label style="font-size:12px; color:#444; margin-top:8px; display:block;">Selected cover</label>
-          <div id="w2n-cover-preview" style="height:140px; margin-top:8px; border:1px solid #eee; border-radius:6px; background-size:cover; background-position:center;"></div>
-          <div style="margin-top:10px; display:flex; gap:8px;">
-            <button id="w2n-save-icon-cover" style="flex:1;padding:8px;border-radius:6px;background:#10b981;color:white;border:none;">Save</button>
-            <button id="w2n-reset-icon-cover" style="flex:1;padding:8px;border-radius:6px;background:#f59e0b;color:white;border:none;">Reset to Defaults</button>
-            <button id="w2n-cancel-icon-cover" style="flex:1;padding:8px;border-radius:6px;background:#6b7280;color:white;border:none;">Cancel</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
-
-    document.body.appendChild(modal);
-    setupIconCoverModal(modal);
-  }
-
-  /**
-   * Setup the icon and cover modal with all functionality
-   * @param {HTMLElement} modal - The modal element
-   */
-  function setupIconCoverModal(modal) {
-    const close = modal.querySelector("#w2n-close-icon-cover");
-    const cancel = modal.querySelector("#w2n-cancel-icon-cover");
-    const saveBtn = modal.querySelector("#w2n-save-icon-cover");
-    const resetBtn = modal.querySelector("#w2n-reset-icon-cover");
-    const results = modal.querySelector("#w2n-unsplash-results");
-    const input = modal.querySelector("#w2n-unsplash-input");
-    const previewCover = modal.querySelector("#w2n-cover-preview");
-    const previewIcon = modal.querySelector("#w2n-icon-preview");
-
-    let selectedCoverUrl = null;
-    let selectedIconEmoji = null;
-    let selectedIconFileData = null;
-    let selectedCoverFileData = null;
-
-    // Populate compact modal category buttons from shared keywords
-    const catsContainer = modal.querySelector("#w2n-unsplash-cats");
-    if (catsContainer) {
-      UNSPLASH_KEYWORDS.forEach((term) => {
-        const btn = document.createElement("button");
-        btn.className = "w2n-unsplash-cat";
-        btn.dataset.term = term;
-        btn.textContent = term;
-        btn.style.cssText =
-          "padding:6px;border:1px solid #e5e7eb;border-radius:6px;background:#f9fafb;cursor:pointer;";
-        btn.onclick = () => runUnsplashSearch && runUnsplashSearch(term);
-        catsContainer.appendChild(btn);
-      });
-    }
-
-    // Basic emoji list for fallback
-    function renderEmojiPicker() {
-      const container = modal.querySelector("#w2n-emoji-results");
-      container.innerHTML = "";
-      const emojis = [
-        "📝",
-        "📄",
-        "📋",
-        "📊",
-        "🚀",
-        "💡",
-        "🔧",
-        "⚙️",
-        "📁",
-        "🎯",
-        "✅",
-        "❌",
-        "⭐",
-        "🔥",
-        "💎",
-        "🎨",
-        "🔍",
-        "📌",
-      ];
-
-      emojis.forEach((emoji) => {
-        const b = document.createElement("button");
-        b.type = "button";
-        b.textContent = emoji;
-        b.style.cssText =
-          "padding:6px;border-radius:6px;border:1px solid #eee;background:white;cursor:pointer;font-size:18px;";
-        b.onclick = () => {
-          selectedIconEmoji = emoji;
-          previewIcon.textContent = emoji;
-          selectedIconFileData = null; // Clear file selection
-          previewIcon.style.backgroundImage = ""; // Clear background image
-        };
-        container.appendChild(b);
-      });
-    }
-
-    renderEmojiPicker();
-
-    // File upload handling for icon
-    const iconUpload = modal.querySelector("#w2n-icon-upload");
-    if (iconUpload) {
-      iconUpload.onchange = (e) => {
-        const file = e.target.files[0];
-        if (file) {
-          handleIconFileUpload(file);
-        }
-      };
-    }
-
-    // File upload handling for cover
-    const coverUpload = modal.querySelector("#w2n-cover-upload");
-    if (coverUpload) {
-      coverUpload.onchange = (e) => {
-        const file = e.target.files[0];
-        if (file) {
-          handleCoverFileUpload(file);
-        }
-      };
-    }
-
-    function handleIconFileUpload(file) {
-      if (!file.type.startsWith("image/")) {
-        showToast("Please select an image file for icon", 3000);
-        return;
-      }
-
-      // Convert file to data URL for proxy server compatibility
-      const reader = new FileReader();
-      reader.onload = function (e) {
-        const dataUrl = e.target.result;
-
-        // Store file data for later use
-        selectedIconFileData = {
-          type: "file_upload",
-          url: dataUrl, // Use data URL instead of blob URL
-          name: file.name,
-          size: file.size,
-          mimeType: file.type,
-        };
-
-        selectedIconEmoji = null; // Clear emoji selection when file is uploaded
-
-        // Update preview with uploaded image
-        previewIcon.style.backgroundImage = `url("${dataUrl}")`;
-        previewIcon.style.backgroundSize = "cover";
-        previewIcon.style.backgroundPosition = "center";
-        previewIcon.textContent = ""; // Clear emoji text
-
-        debug("📁 Icon file uploaded and converted to data URL:", {
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          dataUrlLength: dataUrl.length,
-        });
-
-        showToast(`Icon file "${file.name}" loaded`, 2000);
-      };
-
-      reader.onerror = function () {
-        showToast("Failed to read icon file", 3000);
-        debug("❌ Error reading icon file:", reader.error);
-      };
-
-      reader.readAsDataURL(file);
-    }
-
-    function handleCoverFileUpload(file) {
-      if (!file.type.startsWith("image/")) {
-        showToast("Please select an image file for cover", 3000);
-        return;
-      }
-
-      // Convert file to data URL for proxy server compatibility
-      const reader = new FileReader();
-      reader.onload = function (e) {
-        const dataUrl = e.target.result;
-
-        // Store file data for later use
-        selectedCoverFileData = {
-          type: "file_upload",
-          url: dataUrl, // Use data URL instead of blob URL
-          name: file.name,
-          size: file.size,
-          mimeType: file.type,
-        };
-
-        selectedCoverUrl = null; // Clear Unsplash selection when file is uploaded
-
-        // Update preview with uploaded image
-        previewCover.style.backgroundImage = `url("${dataUrl}")`;
-        previewCover.style.backgroundSize = "cover";
-        previewCover.style.backgroundPosition = "center";
-
-        debug("🖼️ Cover file uploaded and converted to data URL:", {
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          dataUrlLength: dataUrl.length,
-        });
-
-        showToast(`Cover file "${file.name}" loaded`, 2000);
-      };
-
-      reader.onerror = function () {
-        showToast("Failed to read cover file", 3000);
-        debug("❌ Error reading cover file:", reader.error);
-      };
-
-      reader.readAsDataURL(file);
-    }
-
-    function showToast(message, duration = 3000) {
-      if (typeof GM_notification !== "undefined") {
-        GM_notification({
-          text: message,
-          title: "ServiceNow",
-          timeout: duration,
-        });
-      } else {
-        debug(`[Toast] ${message}`);
-      }
-    }
-
-    close.onclick = () => {
-      modal.remove();
-    };
-
-    cancel.onclick = () => {
-      modal.remove();
-    };
-
-    // Tab switching
-    const tabIcons = modal.querySelector("#w2n-tab-icons");
-    const tabCovers = modal.querySelector("#w2n-tab-covers");
-    const iconsPanel = modal.querySelector("#w2n-icons-panel");
-    const coversPanel = modal.querySelector("#w2n-covers-panel");
-
-    function setActiveTab(tab) {
-      if (tab === "icons") {
-        iconsPanel.style.display = "block";
-        coversPanel.style.display = "none";
-        tabIcons.style.background = "#f3f4f6";
-        tabCovers.style.background = "white";
-      } else {
-        iconsPanel.style.display = "none";
-        coversPanel.style.display = "block";
-        tabIcons.style.background = "white";
-        tabCovers.style.background = "#f3f4f6";
-      }
-    }
-
-    tabIcons.onclick = () => setActiveTab("icons");
-    tabCovers.onclick = () => setActiveTab("covers");
-    setActiveTab("icons");
-
-    // Unsplash functionality
-    modal.querySelectorAll(".w2n-unsplash-cat").forEach((b) => {
-      b.onclick = () => {
-        const term = b.dataset.term;
-        input.value = term;
-        runUnsplashSearch(term);
-      };
-    });
-
-    modal.querySelector("#w2n-unsplash-search-btn").onclick = () => {
-      runUnsplashSearch(input.value);
-    };
-
-    async function runUnsplashSearch(q) {
-      debug(`🔍 Running Unsplash search for: "${q}"`);
-      results.innerHTML =
-        '<div style="grid-column:1/-1;padding:18px;color:#666;text-align:center;">Searching...</div>';
-      try {
-        // Use imported API function
-        const res = await searchUnsplashImages(q);
-        debug(`🔍 Unsplash search response:`, res);
-
-        if (!res || !res.success) {
-          debug(`❌ API response indicates failure:`, res);
-          results.innerHTML =
-            '<div style="grid-column:1/-1;padding:18px;color:#666;text-align:center;">API returned error</div>';
-          return;
-        }
-
-        const photos = res?.photos || res?.images || [];
-        debug(`🔍 Found ${photos.length} photos`);
-
-        if (photos.length === 0) {
-          results.innerHTML =
-            '<div style="grid-column:1/-1;padding:18px;color:#666;text-align:center;">No images found for this search</div>';
-          return;
-        }
-
-        displayUnsplashImages(photos);
-      } catch (e) {
-        debug(`❌ Unsplash search error:`, e);
-        results.innerHTML =
-          '<div style="grid-column:1/-1;padding:18px;color:#666;text-align:center;">Search failed: ' +
-          (e.message || "Unknown error") +
-          "</div>";
-      }
-    }
-
-    function displayUnsplashImages(images) {
-      debug(`🖼️ Displaying ${images?.length || 0} Unsplash images`);
-      results.innerHTML = "";
-      if (!images || images.length === 0) {
-        debug(`❌ No images to display`);
-        results.innerHTML =
-          '<div style="grid-column:1/-1;padding:18px;color:#666;text-align:center;">No images</div>';
-        return;
-      }
-
-      images.forEach((img, index) => {
-        const url =
-          img.url ||
-          img.full ||
-          img.urls?.regular ||
-          img.urls?.full ||
-          img.src ||
-          img.thumb ||
-          "";
-        const thumb =
-          img.thumb ||
-          img.urls?.thumb ||
-          (url ? `${url}&w=300&h=200&fit=crop` : "");
-        debug(
-          `🖼️ Image ${index + 1}: url=${url?.substring(
-          0,
-          50
-        )}..., thumb=${thumb?.substring(0, 50)}...`
-        );
-
-        const el = document.createElement("div");
-        el.style.cssText = `width:100%; aspect-ratio:16/9; border-radius:6px; background-image:url("${thumb}"); background-size:cover; background-position:center; cursor:pointer;`;
-        el.title = img.alt_description || img.alt || "";
-        el.onclick = () => {
-          selectedCoverUrl = url;
-          selectedCoverFileData = null; // Clear file selection
-          previewCover.style.backgroundImage = `url("${url}")`;
-          debug(`🖼️ Selected cover: ${url?.substring(0, 50)}...`);
-        };
-        results.appendChild(el);
-      });
-    }
-
-    // Save functionality
-    saveBtn.onclick = () => {
-      const iconData =
-        selectedIconFileData ||
-        (selectedIconEmoji ? { type: "emoji", emoji: selectedIconEmoji } : null);
-      const coverData =
-        selectedCoverFileData ||
-        (selectedCoverUrl ? { type: "url", url: selectedCoverUrl } : null);
-
-      // Trigger save callback if provided
-      if (modal.onSave && typeof modal.onSave === "function") {
-        modal.onSave({ icon: iconData, cover: coverData });
-      }
-
-      modal.remove();
-    };
-
-    // Reset functionality
-    resetBtn.onclick = () => {
-      selectedCoverUrl = null;
-      selectedIconEmoji = null;
-      selectedIconFileData = null;
-      selectedCoverFileData = null;
-
-      previewIcon.textContent = "";
-      previewIcon.style.backgroundImage = "";
-      previewCover.style.backgroundImage = "";
-
-      showToast("Selection reset", 1500);
-    };
-
-    // Load default images
-    (async () => {
-      debug(`🖼️ Loading default Unsplash images...`);
-      results.innerHTML =
-        '<div style="grid-column:1/-1;padding:18px;color:#666;text-align:center;">Loading defaults...</div>';
-      try {
-        const res = await getDefaultUnsplashImages();
-        debug(`🖼️ Default images response:`, res);
-        const photos = res?.photos || res?.images || [];
-        debug(`🖼️ Found ${photos.length} default photos`);
-        displayUnsplashImages(photos);
-      } catch (e) {
-        debug(`❌ Default images error:`, e);
-        results.innerHTML =
-          '<div style="grid-column:1/-1;padding:18px;color:#666;text-align:center;">No default images available</div>';
-      }
-    })();
-
-    // Expose modal functionality
-    modal.getSelections = () => ({
-      icon:
-        selectedIconFileData ||
-        (selectedIconEmoji ? { type: "emoji", emoji: selectedIconEmoji } : null),
-      cover:
-        selectedCoverFileData ||
-        (selectedCoverUrl ? { type: "url", url: selectedCoverUrl } : null),
-    });
-  }
 
   // Database API - Notion database operations and property mapping
 
@@ -2910,6 +2231,703 @@
     }
   }
 
+  // Advanced Settings Modal - Configuration settings UI
+
+
+  /**
+   * Inject the advanced settings modal into the DOM
+   */
+  function injectAdvancedSettingsModal() {
+    if (document.getElementById("w2n-advanced-settings-modal")) return;
+
+    const config = getConfig();
+
+    const modal = document.createElement("div");
+    modal.id = "w2n-advanced-settings-modal";
+    modal.style.cssText = `
+    position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; z-index:11000;
+    background: rgba(0,0,0,0.4);
+  `;
+
+    modal.innerHTML = `
+    <div style="width:480px; max-width:95%; background:white; border-radius:8px; box-shadow:0 10px 30px rgba(0,0,0,0.2); overflow:hidden;">
+      <div style="padding:16px 20px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;">
+        <strong>⚙️ Advanced Settings</strong>
+        <button id="w2n-close-advanced-settings" style="background:none;border:none;font-size:18px;cursor:pointer">×</button>
+      </div>
+      <div style="padding:20px;">
+        <div style="margin-bottom:16px;">
+          <label style="display: flex; align-items: center; margin-bottom: 12px; font-size: 14px; cursor: pointer;">
+            <input type="checkbox" id="w2n-modal-use-martian" ${
+              config.useMartian ? "checked" : ""
+            } style="margin-right: 10px; transform: scale(1.1);">
+            <span style="flex:1;">Use Martian conversion</span>
+          </label>
+          <div style="font-size: 12px; color: #6b7280; margin-left: 24px; margin-top: -8px;">
+            Enhanced content processing for better Notion formatting
+          </div>
+        </div>
+        
+        <div style="margin-bottom:16px;">
+          <label style="display: flex; align-items: center; margin-bottom: 12px; font-size: 14px; cursor: pointer;">
+            <input type="checkbox" id="w2n-modal-direct-images" ${
+              config.directSDKImages ? "checked" : ""
+            } style="margin-right: 10px; transform: scale(1.1);">
+            <span style="flex:1;">Direct SDK image processing</span>
+          </label>
+          <div style="font-size: 12px; color: #6b7280; margin-left: 24px; margin-top: -8px;">
+            Process images directly through Notion API (faster uploads)
+          </div>
+        </div>
+        
+        <div style="margin-bottom:16px;">
+          <label style="display: flex; align-items: center; margin-bottom: 12px; font-size: 14px; cursor: pointer;">
+            <input type="checkbox" id="w2n-modal-enable-debugging" style="margin-right: 10px; transform: scale(1.1);">
+            <span style="flex:1;">Enable debugging (client & server)</span>
+          </label>
+          <div style="font-size: 12px; color: #6b7280; margin-left: 24px; margin-top: -8px;">
+            Enable detailed logging in both client (console) and server (proxy logs)
+          </div>
+        </div>
+        
+  <div style="margin-bottom:20px;">
+          <label style="display: flex; align-items: center; margin-bottom: 12px; font-size: 14px; cursor: pointer;">
+            <input type="checkbox" id="w2n-modal-duplicate-detect" ${
+              config.enableDuplicateDetection ? "checked" : ""
+            } style="margin-right: 10px; transform: scale(1.1);">
+            <span style="flex:1;">Search for duplicates</span>
+          </label>
+          <div style="font-size: 12px; color: #6b7280; margin-left: 24px; margin-top: -8px;">
+            Check for existing pages with same title before creating new ones
+          </div>
+        </div>
+        
+        <div style="margin-bottom:20px; padding-top:16px; border-top:1px solid #eee;">
+          <button id="w2n-configure-mapping-from-settings" style="width:100%;padding:10px;border-radius:6px;background:#10b981;color:white;border:none;cursor:pointer;font-size:14px;">
+            🔗 Configure Property Mapping
+          </button>
+        </div>
+        
+        <div style="display:flex; gap:10px; padding-top:16px; border-top:1px solid #eee;">
+          <button id="w2n-save-advanced-settings" style="flex:1;padding:10px;border-radius:6px;background:#10b981;color:white;border:none;cursor:pointer;font-size:14px;">
+            Save Settings
+          </button>
+          <button id="w2n-cancel-advanced-settings" style="flex:1;padding:10px;border-radius:6px;background:#6b7280;color:white;border:none;cursor:pointer;font-size:14px;">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+    document.body.appendChild(modal);
+    setupAdvancedSettingsModal(modal);
+  }
+
+  /**
+   * Setup the advanced settings modal with event listeners
+   * @param {HTMLElement} modal - The modal element
+   */
+  function setupAdvancedSettingsModal(modal) {
+    const closeBtn = modal.querySelector("#w2n-close-advanced-settings");
+    const saveBtn = modal.querySelector("#w2n-save-advanced-settings");
+    const cancelBtn = modal.querySelector("#w2n-cancel-advanced-settings");
+    const configureMappingBtn = modal.querySelector("#w2n-configure-mapping-from-settings");
+
+    function closeModal() {
+      if (modal.parentNode) {
+        modal.parentNode.removeChild(modal);
+      }
+    }
+
+    closeBtn.onclick = closeModal;
+    cancelBtn.onclick = closeModal;
+
+    // Configure Property Mapping button
+    if (configureMappingBtn) {
+      configureMappingBtn.onclick = () => {
+        try {
+          showPropertyMappingModal();
+        } catch (e) {
+          debug("Failed to open property mapping modal:", e);
+        }
+      };
+    }
+
+    // Click outside to close
+    modal.onclick = (e) => {
+      if (e.target === modal) {
+        closeModal();
+      }
+    };
+
+    // Populate combined debugging checkbox from both client and server settings
+    (async () => {
+      const combinedCheckbox = modal.querySelector("#w2n-modal-enable-debugging");
+      if (!combinedCheckbox) return;
+      const config = getConfig();
+      let serverVerbose = false;
+      try {
+        const resp = await fetch("/api/logging");
+        if (resp.ok) {
+          const body = await resp.json();
+          serverVerbose = !!(body && body.verbose);
+          // Treat extraDebug as the indicator that a deep debug session is active
+          if (body && typeof body.extraDebug !== "undefined") {
+            combinedCheckbox.checked = !!body.extraDebug;
+          }
+        }
+      } catch (e) {
+        debug("Could not fetch /api/logging for combined checkbox:", e);
+      }
+      if (typeof combinedCheckbox.checked === "undefined") {
+        combinedCheckbox.checked = config.debugMode && serverVerbose;
+      }
+      debug("Populated combined debugging checkbox:", combinedCheckbox.checked);
+    })();
+
+    saveBtn.onclick = () => {
+      // Get values from modal checkboxes
+      const useMartian = modal.querySelector("#w2n-modal-use-martian").checked;
+      const directSDKImages = modal.querySelector(
+        "#w2n-modal-direct-images"
+      ).checked;
+      const enableDuplicateDetection = modal.querySelector(
+        "#w2n-modal-duplicate-detect"
+      ).checked;
+
+      // Combined debugging checkbox
+      const enableDebugging = modal.querySelector(
+        "#w2n-modal-enable-debugging"
+      ).checked;
+
+      // Update config
+      const config = getConfig();
+      config.useMartian = useMartian;
+      config.directSDKImages = directSDKImages;
+      config.debugMode = enableDebugging;
+      config.enableDuplicateDetection = enableDuplicateDetection;
+
+      // Save to storage
+      try {
+        if (typeof GM_setValue !== "undefined") {
+          GM_setValue("notionConfig", config);
+        }
+
+        // Show toast notification
+        if (typeof GM_notification !== "undefined") {
+          GM_notification({
+            text: "Settings saved successfully",
+            title: "ServiceNow",
+            timeout: 2000,
+          });
+        }
+
+        debug("⚙️ Settings saved:", config);
+
+        // Update visible UI immediately so user sees the selected database/name
+        try {
+          if (typeof window.updateUIFromConfig === "function") {
+            window.updateUIFromConfig();
+          }
+        } catch (e) {
+          debug("Failed updating UI after settings save:", e);
+        }
+        // Update server runtime logging setting
+        (async () => {
+          try {
+            await fetch("/api/logging", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                verbose: !!enableDebugging,
+                extraDebug: !!enableDebugging,
+              }),
+            });
+            debug("Updated server logging flags:", enableDebugging);
+          } catch (err) {
+            debug("Failed to update server logging setting:", err);
+          }
+        })();
+      } catch (error) {
+        if (typeof GM_notification !== "undefined") {
+          GM_notification({
+            text: "Failed to save settings",
+            title: "ServiceNow",
+            timeout: 2000,
+          });
+        }
+        debug("Failed to save settings:", error);
+      }
+
+      closeModal();
+    };
+  }
+
+  // Icon and Cover Selection Modal - Image selection UI
+
+
+  // Shared Unsplash keyword list
+  const UNSPLASH_KEYWORDS = [
+    "abstract",
+    "geometric",
+    "background",
+    "pattern",
+    "gradient",
+    "texture",
+  ];
+
+  /**
+   * Inject the icon and cover selection modal
+   */
+  function injectIconCoverModal() {
+    if (document.getElementById("w2n-icon-cover-modal")) return;
+
+    const modal = document.createElement("div");
+    modal.id = "w2n-icon-cover-modal";
+    modal.style.cssText = `
+    position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; z-index:11000;
+    background: rgba(0,0,0,0.4);
+  `;
+
+    modal.innerHTML = `
+    <div style="width:980px; max-width:95%; background:white; border-radius:8px; box-shadow:0 10px 30px rgba(0,0,0,0.2); overflow:hidden;">
+      <div style="padding:12px 16px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;">
+        <strong>Icon & Cover Selector</strong>
+        <button id="w2n-close-icon-cover" style="background:none;border:none;font-size:18px;cursor:pointer">×</button>
+      </div>
+      <div style="display:flex; gap:12px; padding:12px;">
+        <div style="flex:1 1 60%; min-width:540px;">
+          <div id="w2n-selector-tabs" style="display:flex; gap:8px; margin-bottom:10px;">
+            <button id="w2n-tab-icons" style="padding:8px 10px; border-radius:6px; border:1px solid #e5e7eb; background:#f3f4f6; cursor:pointer;">Icons</button>
+            <button id="w2n-tab-covers" style="padding:8px 10px; border-radius:6px; border:1px solid #e5e7eb; background:white; cursor:pointer;">Covers</button>
+          </div>
+
+          <div id="w2n-selector-content">
+            <div id="w2n-icons-panel">
+                <label style="font-size:12px; color:#444">Search Emoji</label>
+                <div id="w2n-emoji-results" style="display:block; gap:6px; max-height:220px; overflow:auto; padding:8px; margin-top:8px; border:1px solid #f1f1f1; border-radius:6px; background:#fbfbfb;"></div>
+                <div style="margin-top:8px;font-size:12px;color:#666;">Or upload an icon image:</div>
+                <input type="file" id="w2n-icon-upload" accept="image/*" style="margin-top:6px;" />
+              </div>
+
+            <div id="w2n-covers-panel" style="display:none;">
+              <label style="font-size:12px; color:#444">Search Unsplash</label>
+              <div style="display:flex; gap:8px; margin-top:6px;">
+                <input id="w2n-unsplash-input" placeholder="nature, abstract, pattern" style="flex:1;padding:8px;border:1px solid #ddd;border-radius:6px;">
+                <button id="w2n-unsplash-search-btn" style="padding:8px 10px;border-radius:6px;background:#3b82f6;color:white;border:none;">Search</button>
+              </div>
+              <div id="w2n-unsplash-cats" style="margin-top:10px; display:flex; gap:6px; flex-wrap:wrap;"></div>
+              <div id="w2n-unsplash-results" style="margin-top:12px; display:grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap:8px; max-height:420px; overflow:auto; padding:4px;"></div>
+              <div style="margin-top:8px;font-size:12px;color:#666;">Or upload a cover image:</div>
+              <input type="file" id="w2n-cover-upload" accept="image/*" style="margin-top:6px;" />
+            </div>
+          </div>
+        </div>
+        <div style="width:360px; flex-shrink:0;">
+          <label style="font-size:12px; color:#444">Preview</label>
+          <div id="w2n-icon-preview" style="height:120px; margin-top:8px; border:1px solid #eee; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:40px;"></div>
+          <label style="font-size:12px; color:#444; margin-top:8px; display:block;">Selected cover</label>
+          <div id="w2n-cover-preview" style="height:140px; margin-top:8px; border:1px solid #eee; border-radius:6px; background-size:cover; background-position:center;"></div>
+          <div style="margin-top:10px; display:flex; gap:8px;">
+            <button id="w2n-save-icon-cover" style="flex:1;padding:8px;border-radius:6px;background:#10b981;color:white;border:none;">Save</button>
+            <button id="w2n-reset-icon-cover" style="flex:1;padding:8px;border-radius:6px;background:#f59e0b;color:white;border:none;">Reset to Defaults</button>
+            <button id="w2n-cancel-icon-cover" style="flex:1;padding:8px;border-radius:6px;background:#6b7280;color:white;border:none;">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+    document.body.appendChild(modal);
+    setupIconCoverModal(modal);
+  }
+
+  /**
+   * Setup the icon and cover modal with all functionality
+   * @param {HTMLElement} modal - The modal element
+   */
+  function setupIconCoverModal(modal) {
+    const close = modal.querySelector("#w2n-close-icon-cover");
+    const cancel = modal.querySelector("#w2n-cancel-icon-cover");
+    const saveBtn = modal.querySelector("#w2n-save-icon-cover");
+    const resetBtn = modal.querySelector("#w2n-reset-icon-cover");
+    const results = modal.querySelector("#w2n-unsplash-results");
+    const input = modal.querySelector("#w2n-unsplash-input");
+    const previewCover = modal.querySelector("#w2n-cover-preview");
+    const previewIcon = modal.querySelector("#w2n-icon-preview");
+
+    let selectedCoverUrl = null;
+    let selectedIconEmoji = null;
+    let selectedIconFileData = null;
+    let selectedCoverFileData = null;
+
+    // Populate compact modal category buttons from shared keywords
+    const catsContainer = modal.querySelector("#w2n-unsplash-cats");
+    if (catsContainer) {
+      UNSPLASH_KEYWORDS.forEach((term) => {
+        const btn = document.createElement("button");
+        btn.className = "w2n-unsplash-cat";
+        btn.dataset.term = term;
+        btn.textContent = term;
+        btn.style.cssText =
+          "padding:6px;border:1px solid #e5e7eb;border-radius:6px;background:#f9fafb;cursor:pointer;";
+        btn.onclick = () => runUnsplashSearch && runUnsplashSearch(term);
+        catsContainer.appendChild(btn);
+      });
+    }
+
+    // Basic emoji list for fallback
+    function renderEmojiPicker() {
+      const container = modal.querySelector("#w2n-emoji-results");
+      container.innerHTML = "";
+      const emojis = [
+        "📝",
+        "📄",
+        "📋",
+        "📊",
+        "🚀",
+        "💡",
+        "🔧",
+        "⚙️",
+        "📁",
+        "🎯",
+        "✅",
+        "❌",
+        "⭐",
+        "🔥",
+        "💎",
+        "🎨",
+        "🔍",
+        "📌",
+      ];
+
+      emojis.forEach((emoji) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = emoji;
+        b.style.cssText =
+          "padding:6px;border-radius:6px;border:1px solid #eee;background:white;cursor:pointer;font-size:18px;";
+        b.onclick = () => {
+          selectedIconEmoji = emoji;
+          previewIcon.textContent = emoji;
+          selectedIconFileData = null; // Clear file selection
+          previewIcon.style.backgroundImage = ""; // Clear background image
+        };
+        container.appendChild(b);
+      });
+    }
+
+    renderEmojiPicker();
+
+    // File upload handling for icon
+    const iconUpload = modal.querySelector("#w2n-icon-upload");
+    if (iconUpload) {
+      iconUpload.onchange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          handleIconFileUpload(file);
+        }
+      };
+    }
+
+    // File upload handling for cover
+    const coverUpload = modal.querySelector("#w2n-cover-upload");
+    if (coverUpload) {
+      coverUpload.onchange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          handleCoverFileUpload(file);
+        }
+      };
+    }
+
+    function handleIconFileUpload(file) {
+      if (!file.type.startsWith("image/")) {
+        showToast("Please select an image file for icon", 3000);
+        return;
+      }
+
+      // Convert file to data URL for proxy server compatibility
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const dataUrl = e.target.result;
+
+        // Store file data for later use
+        selectedIconFileData = {
+          type: "file_upload",
+          url: dataUrl, // Use data URL instead of blob URL
+          name: file.name,
+          size: file.size,
+          mimeType: file.type,
+        };
+
+        selectedIconEmoji = null; // Clear emoji selection when file is uploaded
+
+        // Update preview with uploaded image
+        previewIcon.style.backgroundImage = `url("${dataUrl}")`;
+        previewIcon.style.backgroundSize = "cover";
+        previewIcon.style.backgroundPosition = "center";
+        previewIcon.textContent = ""; // Clear emoji text
+
+        debug("📁 Icon file uploaded and converted to data URL:", {
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          dataUrlLength: dataUrl.length,
+        });
+
+        showToast(`Icon file "${file.name}" loaded`, 2000);
+      };
+
+      reader.onerror = function () {
+        showToast("Failed to read icon file", 3000);
+        debug("❌ Error reading icon file:", reader.error);
+      };
+
+      reader.readAsDataURL(file);
+    }
+
+    function handleCoverFileUpload(file) {
+      if (!file.type.startsWith("image/")) {
+        showToast("Please select an image file for cover", 3000);
+        return;
+      }
+
+      // Convert file to data URL for proxy server compatibility
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const dataUrl = e.target.result;
+
+        // Store file data for later use
+        selectedCoverFileData = {
+          type: "file_upload",
+          url: dataUrl, // Use data URL instead of blob URL
+          name: file.name,
+          size: file.size,
+          mimeType: file.type,
+        };
+
+        selectedCoverUrl = null; // Clear Unsplash selection when file is uploaded
+
+        // Update preview with uploaded image
+        previewCover.style.backgroundImage = `url("${dataUrl}")`;
+        previewCover.style.backgroundSize = "cover";
+        previewCover.style.backgroundPosition = "center";
+
+        debug("🖼️ Cover file uploaded and converted to data URL:", {
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          dataUrlLength: dataUrl.length,
+        });
+
+        showToast(`Cover file "${file.name}" loaded`, 2000);
+      };
+
+      reader.onerror = function () {
+        showToast("Failed to read cover file", 3000);
+        debug("❌ Error reading cover file:", reader.error);
+      };
+
+      reader.readAsDataURL(file);
+    }
+
+    function showToast(message, duration = 3000) {
+      if (typeof GM_notification !== "undefined") {
+        GM_notification({
+          text: message,
+          title: "ServiceNow",
+          timeout: duration,
+        });
+      } else {
+        debug(`[Toast] ${message}`);
+      }
+    }
+
+    close.onclick = () => {
+      modal.remove();
+    };
+
+    cancel.onclick = () => {
+      modal.remove();
+    };
+
+    // Tab switching
+    const tabIcons = modal.querySelector("#w2n-tab-icons");
+    const tabCovers = modal.querySelector("#w2n-tab-covers");
+    const iconsPanel = modal.querySelector("#w2n-icons-panel");
+    const coversPanel = modal.querySelector("#w2n-covers-panel");
+
+    function setActiveTab(tab) {
+      if (tab === "icons") {
+        iconsPanel.style.display = "block";
+        coversPanel.style.display = "none";
+        tabIcons.style.background = "#f3f4f6";
+        tabCovers.style.background = "white";
+      } else {
+        iconsPanel.style.display = "none";
+        coversPanel.style.display = "block";
+        tabIcons.style.background = "white";
+        tabCovers.style.background = "#f3f4f6";
+      }
+    }
+
+    tabIcons.onclick = () => setActiveTab("icons");
+    tabCovers.onclick = () => setActiveTab("covers");
+    setActiveTab("icons");
+
+    // Unsplash functionality
+    modal.querySelectorAll(".w2n-unsplash-cat").forEach((b) => {
+      b.onclick = () => {
+        const term = b.dataset.term;
+        input.value = term;
+        runUnsplashSearch(term);
+      };
+    });
+
+    modal.querySelector("#w2n-unsplash-search-btn").onclick = () => {
+      runUnsplashSearch(input.value);
+    };
+
+    async function runUnsplashSearch(q) {
+      debug(`🔍 Running Unsplash search for: "${q}"`);
+      results.innerHTML =
+        '<div style="grid-column:1/-1;padding:18px;color:#666;text-align:center;">Searching...</div>';
+      try {
+        // Use imported API function
+        const res = await searchUnsplashImages(q);
+        debug(`🔍 Unsplash search response:`, res);
+
+        if (!res || !res.success) {
+          debug(`❌ API response indicates failure:`, res);
+          results.innerHTML =
+            '<div style="grid-column:1/-1;padding:18px;color:#666;text-align:center;">API returned error</div>';
+          return;
+        }
+
+        const photos = res?.photos || res?.images || [];
+        debug(`🔍 Found ${photos.length} photos`);
+
+        if (photos.length === 0) {
+          results.innerHTML =
+            '<div style="grid-column:1/-1;padding:18px;color:#666;text-align:center;">No images found for this search</div>';
+          return;
+        }
+
+        displayUnsplashImages(photos);
+      } catch (e) {
+        debug(`❌ Unsplash search error:`, e);
+        results.innerHTML =
+          '<div style="grid-column:1/-1;padding:18px;color:#666;text-align:center;">Search failed: ' +
+          (e.message || "Unknown error") +
+          "</div>";
+      }
+    }
+
+    function displayUnsplashImages(images) {
+      debug(`🖼️ Displaying ${images?.length || 0} Unsplash images`);
+      results.innerHTML = "";
+      if (!images || images.length === 0) {
+        debug(`❌ No images to display`);
+        results.innerHTML =
+          '<div style="grid-column:1/-1;padding:18px;color:#666;text-align:center;">No images</div>';
+        return;
+      }
+
+      images.forEach((img, index) => {
+        const url =
+          img.url ||
+          img.full ||
+          img.urls?.regular ||
+          img.urls?.full ||
+          img.src ||
+          img.thumb ||
+          "";
+        const thumb =
+          img.thumb ||
+          img.urls?.thumb ||
+          (url ? `${url}&w=300&h=200&fit=crop` : "");
+        debug(
+          `🖼️ Image ${index + 1}: url=${url?.substring(
+          0,
+          50
+        )}..., thumb=${thumb?.substring(0, 50)}...`
+        );
+
+        const el = document.createElement("div");
+        el.style.cssText = `width:100%; aspect-ratio:16/9; border-radius:6px; background-image:url("${thumb}"); background-size:cover; background-position:center; cursor:pointer;`;
+        el.title = img.alt_description || img.alt || "";
+        el.onclick = () => {
+          selectedCoverUrl = url;
+          selectedCoverFileData = null; // Clear file selection
+          previewCover.style.backgroundImage = `url("${url}")`;
+          debug(`🖼️ Selected cover: ${url?.substring(0, 50)}...`);
+        };
+        results.appendChild(el);
+      });
+    }
+
+    // Save functionality
+    saveBtn.onclick = () => {
+      const iconData =
+        selectedIconFileData ||
+        (selectedIconEmoji ? { type: "emoji", emoji: selectedIconEmoji } : null);
+      const coverData =
+        selectedCoverFileData ||
+        (selectedCoverUrl ? { type: "url", url: selectedCoverUrl } : null);
+
+      // Trigger save callback if provided
+      if (modal.onSave && typeof modal.onSave === "function") {
+        modal.onSave({ icon: iconData, cover: coverData });
+      }
+
+      modal.remove();
+    };
+
+    // Reset functionality
+    resetBtn.onclick = () => {
+      selectedCoverUrl = null;
+      selectedIconEmoji = null;
+      selectedIconFileData = null;
+      selectedCoverFileData = null;
+
+      previewIcon.textContent = "";
+      previewIcon.style.backgroundImage = "";
+      previewCover.style.backgroundImage = "";
+
+      showToast("Selection reset", 1500);
+    };
+
+    // Load default images
+    (async () => {
+      debug(`🖼️ Loading default Unsplash images...`);
+      results.innerHTML =
+        '<div style="grid-column:1/-1;padding:18px;color:#666;text-align:center;">Loading defaults...</div>';
+      try {
+        const res = await getDefaultUnsplashImages();
+        debug(`🖼️ Default images response:`, res);
+        const photos = res?.photos || res?.images || [];
+        debug(`🖼️ Found ${photos.length} default photos`);
+        displayUnsplashImages(photos);
+      } catch (e) {
+        debug(`❌ Default images error:`, e);
+        results.innerHTML =
+          '<div style="grid-column:1/-1;padding:18px;color:#666;text-align:center;">No default images available</div>';
+      }
+    })();
+
+    // Expose modal functionality
+    modal.getSelections = () => ({
+      icon:
+        selectedIconFileData ||
+        (selectedIconEmoji ? { type: "emoji", emoji: selectedIconEmoji } : null),
+      cover:
+        selectedCoverFileData ||
+        (selectedCoverUrl ? { type: "url", url: selectedCoverUrl } : null),
+    });
+  }
+
   // UI Utilities and Common Functions
 
 
@@ -3090,7 +3108,6 @@
         <div style="margin-top:8px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
           <button id="w2n-search-dbs" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">Search by Name</button>
           <button id="w2n-get-db" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">Search by ID</button>
-          <button id="w2n-configure-mapping" style="font-size:11px;padding:6px 8px;border:1px solid #10b981;border-radius:4px;background:#10b981;color:white;cursor:pointer;">Configure Property Mapping</button>
         </div>
         <div style="margin-top:6px;font-size:10px;color:#9ca3af;">v${PROVIDER_VERSION}</div>
         <div id="w2n-db-spinner" style="display:none; margin-top:8px; font-size:12px; color:#6b7280; align-items:center;">
@@ -3117,7 +3134,6 @@
           </div>
           <div style="display:flex; gap:8px; margin-top:8px;">
             <button id="w2n-open-icon-cover" style="flex:1; padding:8px; background:#6b7280; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px;">Icon & Cover</button>
-            <button id="w2n-diagnose-autoextract" style="flex:1; padding:8px; background:#0ea5e9; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px;">🔍 Diagnose</button>
           </div>
         </div>
       </div>
@@ -3149,7 +3165,6 @@
     const resetPositionBtn = panel.querySelector("#w2n-reset-position-btn");
     const advancedBtn = panel.querySelector("#w2n-advanced-settings-btn");
     const captureBtn = panel.querySelector("#w2n-capture-page");
-    const configureBtn = panel.querySelector("#w2n-configure-mapping");
     const iconCoverBtn = panel.querySelector("#w2n-open-icon-cover");
 
     closeBtn.onclick = () => panel.remove();
@@ -3195,14 +3210,6 @@
         }
       } catch (e) {
         debug("Failed to execute capture action:", e);
-      }
-    };
-
-    configureBtn.onclick = () => {
-      try {
-        showPropertyMappingModal();
-      } catch (e) {
-        debug("Failed to open property mapping modal:", e);
       }
     };
 
@@ -3438,9 +3445,6 @@
     // AutoExtract button handlers
     const startAutoExtractBtn = panel.querySelector("#w2n-start-autoextract");
     const stopAutoExtractBtn = panel.querySelector("#w2n-stop-autoextract");
-    const diagnoseAutoExtractBtn = panel.querySelector(
-      "#w2n-diagnose-autoextract"
-    );
 
     if (startAutoExtractBtn) {
       startAutoExtractBtn.onclick = async () => {
@@ -3499,17 +3503,6 @@
         // Restore buttons
         startAutoExtractBtn.style.display = "block";
         stopAutoExtractBtn.style.display = "none";
-      };
-    }
-
-    if (diagnoseAutoExtractBtn) {
-      diagnoseAutoExtractBtn.onclick = () => {
-        try {
-          diagnoseAutoExtraction();
-        } catch (e) {
-          debug("Failed to diagnose auto extraction:", e);
-          alert("Error diagnosing auto extraction. Check console for details.");
-        }
       };
     }
 
@@ -5647,41 +5640,6 @@
         }
       }, 60000);
     });
-  }
-
-  function diagnoseAutoExtraction() {
-    const nextPageSelector =
-      typeof GM_getValue === "function"
-        ? GM_getValue("w2n_next_page_selector", "div.zDocsNextTopicButton a")
-        : "div.zDocsNextTopicButton a";
-
-    let diagnosis = "AutoExtract Diagnosis:\n\n";
-    diagnosis += `Next page selector: ${nextPageSelector || "Not set"}\n\n`;
-
-    if (!nextPageSelector) {
-      diagnosis +=
-        "❌ No next page selector configured. Use 'Select Next Page Element' first.\n";
-    } else {
-      diagnosis += "✅ Next page selector configured.\n";
-      // Test if selector exists on current page
-      try {
-        const element = document.querySelector(nextPageSelector);
-        if (element) {
-          diagnosis += `✅ Selector found on current page: ${
-          element.textContent?.trim().substring(0, 50) || element.tagName
-        }\n`;
-        } else {
-          diagnosis += "⚠️ Selector not found on current page.\n";
-        }
-      } catch (e) {
-        diagnosis += `❌ Invalid selector: ${e.message}\n`;
-      }
-    }
-
-    diagnosis +=
-      "\nNote: Full auto-extraction functionality is not yet implemented.";
-
-    alert(diagnosis);
   }
 
   // Advanced element discovery with multiple strategies
