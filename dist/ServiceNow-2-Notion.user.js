@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.44
+// @version      11.0.45
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.44";
+    window.BUILD_VERSION = "11.0.45";
 (function () {
 
   // Configuration constants and default settings
@@ -3268,6 +3268,10 @@
           debug(`[DATABASE] 🔍 Searching for database by name: ${searchTerm}`);
           showSpinner();
 
+          // Get current config to check if already selected
+          const currentConfig = getConfig();
+          const currentDbId = currentConfig.databaseId;
+
           // Query databases (use cache for speed)
           const databases = await getAllDatabases();
 
@@ -3287,11 +3291,14 @@
           if (matchingDatabases.length > 0) {
             debug(`[DATABASE] ✅ Found ${matchingDatabases.length} matching database(s)`);
             
+            // Check if the first match is already selected
+            const firstMatch = matchingDatabases[0];
+            const isAlreadySelected = currentDbId && firstMatch.id === currentDbId;
+            
             // Populate dropdown with all matching databases
             populateDatabaseSelect(databaseSelect, matchingDatabases);
             
             // Select the first match by default
-            const firstMatch = matchingDatabases[0];
             databaseSelect.value = firstMatch.id;
             
             // Update config with first match
@@ -3311,7 +3318,10 @@
               `✅ Set target database to: ${config.databaseName} (${firstMatch.id})`
             );
             
-            if (matchingDatabases.length > 1) {
+            // Show appropriate message
+            if (isAlreadySelected && matchingDatabases.length === 1) {
+              alert(`Database "${config.databaseName}" is already selected.`);
+            } else if (matchingDatabases.length > 1) {
               alert(`Found ${matchingDatabases.length} databases matching "${searchTerm}".\nSelect from the dropdown to choose a different one.`);
             }
           } else {
