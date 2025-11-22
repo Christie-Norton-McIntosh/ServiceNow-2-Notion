@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.36
+// @version      11.0.37
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.36";
+    window.BUILD_VERSION = "11.0.37";
 (function () {
 
   // Configuration constants and default settings
@@ -3088,9 +3088,8 @@
         </select>
         <div id="w2n-selected-database-label" style="margin-top:8px;font-size:12px;color:#6b7280;">ID: ${config.databaseId || "(no database)"}</div>
         <div style="margin-top:8px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-          <button id="w2n-refresh-dbs" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">Refresh</button>
-          <button id="w2n-search-dbs" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">Search</button>
-          <button id="w2n-get-db" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">By ID</button>
+          <button id="w2n-search-dbs" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">Search by Name</button>
+          <button id="w2n-get-db" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">Search by ID</button>
           <button id="w2n-configure-mapping" style="font-size:11px;padding:6px 8px;border:1px solid #10b981;border-radius:4px;background:#10b981;color:white;cursor:pointer;">Configure Property Mapping</button>
         </div>
         <div style="margin-top:6px;font-size:10px;color:#9ca3af;">v${PROVIDER_VERSION}</div>
@@ -3229,24 +3228,31 @@
     }
 
     // Database button handlers
-    const refreshBtn = panel.querySelector("#w2n-refresh-dbs");
     const searchBtn = panel.querySelector("#w2n-search-dbs");
     const getByIdBtn = panel.querySelector("#w2n-get-db");
     const databaseSelect = panel.querySelector("#w2n-database-select");
     const databaseLabel = panel.querySelector("#w2n-selected-database-label");
 
-    if (refreshBtn) {
-      refreshBtn.onclick = async () => {
-        try {
-          debug("🔄 Refreshing database list...");
-          showSpinner();
-          const databases = await getAllDatabases({ forceRefresh: true });
-          populateDatabaseSelect(databaseSelect, databases);
-          debug(`[DATABASE] ✅ Refreshed ${databases.length} databases`);
-        } catch (e) {
-          debug("Failed to refresh databases:", e);
-        } finally {
-          hideSpinner();
+    // Add change handler for database select dropdown
+    if (databaseSelect) {
+      databaseSelect.onchange = () => {
+        const selectedId = databaseSelect.value;
+        const selectedName = databaseSelect.options[databaseSelect.selectedIndex].text;
+        
+        if (selectedId) {
+          // Update config with selected database
+          const config = getConfig();
+          config.databaseId = selectedId;
+          config.databaseName = selectedName;
+          
+          if (typeof GM_setValue === "function") {
+            GM_setValue("notionConfig", config);
+          }
+          
+          // Update ID label
+          databaseLabel.textContent = `ID: ${selectedId}`;
+          
+          debug(`✅ Selected database: ${selectedName} (${selectedId})`);
         }
       };
     }
@@ -3254,10 +3260,10 @@
     if (searchBtn) {
       searchBtn.onclick = async () => {
         try {
-          const searchTerm = prompt("Enter database name or ID to search:");
+          const searchTerm = prompt("Enter database name to search:");
           if (!searchTerm || searchTerm.trim() === "") return;
 
-          debug(`[DATABASE] 🔍 Searching for database: ${searchTerm}`);
+          debug(`[DATABASE] 🔍 Searching for database by name: ${searchTerm}`);
           showSpinner();
 
           // Query all databases fresh (no cache)
@@ -3265,54 +3271,50 @@
 
           debug(
             `📋 Available databases: ${databases
-            .map((db) => `${db.id.slice(-8)}: ${db.title || "Untitled"}`)
+            .map((db) => `${db.id.slice(-8)}: ${extractDatabaseTitle(db)}`)
             .join(", ")}`
           );
 
-          // Find matching database
-          const searchTermTrimmed = searchTerm.trim();
-          let matchingDb = databases.find(
-            (db) =>
-              db.id === searchTermTrimmed ||
-              (db.title &&
-                typeof db.title === "string" &&
-                db.title.toLowerCase().includes(searchTermTrimmed.toLowerCase()))
-          );
+          // Find all matching databases by name
+          const searchTermLower = searchTerm.trim().toLowerCase();
+          const matchingDatabases = databases.filter((db) => {
+            const dbTitle = extractDatabaseTitle(db);
+            return dbTitle.toLowerCase().includes(searchTermLower);
+          });
 
-          // If not found by exact match, try partial ID match (last 8 chars)
-          if (!matchingDb && searchTermTrimmed.length >= 8) {
-            const partialId = searchTermTrimmed.slice(-8);
-            matchingDb = databases.find((db) => db.id.endsWith(partialId));
-            if (matchingDb) {
-              debug(`[DATABASE] ✅ Found database by partial ID match: ${partialId}`);
-            }
-          }
-
-          if (matchingDb) {
-            // Update config with new database
+          if (matchingDatabases.length > 0) {
+            debug(`[DATABASE] ✅ Found ${matchingDatabases.length} matching database(s)`);
+            
+            // Populate dropdown with all matching databases
+            populateDatabaseSelect(databaseSelect, matchingDatabases);
+            
+            // Select the first match by default
+            const firstMatch = matchingDatabases[0];
+            databaseSelect.value = firstMatch.id;
+            
+            // Update config with first match
             const config = getConfig();
-            config.databaseId = matchingDb.id;
-            // Extract database name from Notion API title structure
-            config.databaseName =
-              typeof matchingDb.title === "string"
-                ? matchingDb.title
-                : matchingDb.title?.[0]?.plain_text || "Unknown Database";
+            config.databaseId = firstMatch.id;
+            config.databaseName = extractDatabaseTitle(firstMatch);
 
             // Save to storage
             if (typeof GM_setValue === "function") {
               GM_setValue("notionConfig", config);
             }
 
-            // Update UI
-            databaseSelect.innerHTML = `<option value="${matchingDb.id}">${config.databaseName}</option>`;
-            databaseLabel.textContent = `ID: ${matchingDb.id}`;
+            // Update ID label
+            databaseLabel.textContent = `ID: ${firstMatch.id}`;
 
             debug(
-              `✅ Set target database to: ${config.databaseName} (${matchingDb.id})`
+              `✅ Set target database to: ${config.databaseName} (${firstMatch.id})`
             );
+            
+            if (matchingDatabases.length > 1) {
+              alert(`Found ${matchingDatabases.length} databases matching "${searchTerm}".\nSelect from the dropdown to choose a different one.`);
+            }
           } else {
-            alert(`Database "${searchTerm}" not found.`);
-            debug(`[DATABASE] ❌ Database "${searchTerm}" not found`);
+            alert(`No databases found matching "${searchTerm}".`);
+            debug(`[DATABASE] ❌ No databases found matching "${searchTerm}"`);
           }
         } catch (e) {
           debug("Failed to search database:", e);
@@ -3329,37 +3331,39 @@
           const dbId = prompt("Enter database ID:");
           if (!dbId || dbId.trim() === "") return;
 
-          const cleanDbId = dbId.trim();
-          debug(`[DATABASE] 🔍 Getting database by ID: ${cleanDbId}`);
+          const cleanDbId = dbId.trim().replace(/-/g, ""); // Remove hyphens if present
+          debug(`[DATABASE] 🔍 Searching for database by ID: ${cleanDbId}`);
           showSpinner();
 
           // Fetch database details to validate and get name
           const dbDetails = await getDatabase(cleanDbId);
+          const databaseName = extractDatabaseTitle(dbDetails);
 
           // Update config with validated database
           const config = getConfig();
           config.databaseId = cleanDbId;
-          // Extract database name from Notion API title structure
-          config.databaseName = 
-            typeof dbDetails.title === "string"
-              ? dbDetails.title
-              : dbDetails.title?.[0]?.plain_text || "Database by ID";
+          config.databaseName = databaseName;
 
           if (typeof GM_setValue === "function") {
             GM_setValue("notionConfig", config);
           }
 
-          // Update UI
-          databaseSelect.innerHTML = `<option value="${cleanDbId}">${config.databaseName}</option>`;
+          // Update dropdown with the found database
+          databaseSelect.innerHTML = `<option value="${cleanDbId}">${databaseName}</option>`;
+          databaseSelect.value = cleanDbId;
+          
+          // Update ID label
           databaseLabel.textContent = `ID: ${cleanDbId}`;
 
           debug(
-            `✅ Set target database to: ${config.databaseName} (${cleanDbId})`
+            `✅ Set target database to: ${databaseName} (${cleanDbId})`
           );
+          
+          alert(`Database found: "${databaseName}"`);
         } catch (e) {
           debug("Failed to get database by ID:", e);
           alert(
-            `Error: Could not access database with ID "${dbId}". Make sure the database is shared with your Notion integration.`
+            `Error: Could not access database with ID "${dbId}".\nMake sure the database is shared with your Notion integration.`
           );
         } finally {
           hideSpinner();
@@ -3650,6 +3654,18 @@
   };
 
   /**
+   * Extract database title from Notion API response
+   * @param {Object} db - Database object from Notion API
+   * @returns {string} Database title
+   */
+  function extractDatabaseTitle(db) {
+    if (typeof db.title === "string") {
+      return db.title;
+    }
+    return db.title && db.title[0] ? db.title[0].plain_text : "Untitled Database";
+  }
+
+  /**
    * Populate the database select dropdown
    * @param {HTMLElement} selectEl - The select element
    * @param {Array} databases - Array of database objects
@@ -3662,8 +3678,7 @@
     databases.forEach((db) => {
       const option = document.createElement("option");
       option.value = db.id;
-      option.textContent =
-        db.title && db.title[0] ? db.title[0].plain_text : "Untitled Database";
+      option.textContent = extractDatabaseTitle(db);
       selectEl.appendChild(option);
     });
   }
