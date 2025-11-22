@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.40
+// @version      11.0.41
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.40";
+    window.BUILD_VERSION = "11.0.41";
 (function () {
 
   // Configuration constants and default settings
@@ -3121,12 +3121,7 @@
         <button id="w2n-update-existing-page" style="width:100%; padding:12px; background:#8b5cf6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">🔄 Update Existing Page</button>
       </div>
 
-      <div style="border-top:1px solid #e5e7eb; padding-top:16px;">
-        <div style="display:flex; align-items:center; margin-bottom:12px;">
-          <span style="font-size:16px; margin-right:8px;">🤖</span>
-          <h4 style="margin:0; font-size:14px; font-weight:500;">AutoExtract Multi-Page</h4>
-        </div>
-
+      <div style="padding-top:16px;">
         <div id="w2n-autoextract-controls">
           <div style="display:flex; gap:8px;">
             <button id="w2n-start-autoextract" style="flex:1; padding:10px; background:#f59e0b; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">Start AutoExtract</button>
