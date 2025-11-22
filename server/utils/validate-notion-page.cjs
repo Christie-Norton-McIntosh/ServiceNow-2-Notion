@@ -496,19 +496,24 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
             log(`✅ [VALIDATION] Table count matches exactly: ${notionCounts.tables}/${sourceCounts.tables}`);
           } else {
             // Check for legitimate 100-row splitting
+            // Pattern: "This table had X rows and was split into Y tables above due to Notion's 100-row table limit"
             const hasSplitTableCallout = allBlocks.some(block => 
               block.type === 'callout' && 
-              block.callout?.rich_text?.some(rt => 
-                rt.text?.content?.includes('split into') && 
-                rt.text?.content?.includes('tables') &&
-                rt.text?.content?.includes('100-row')
-              )
+              block.callout?.rich_text?.some(rt => {
+                const content = rt.text?.content || '';
+                return (
+                  (content.includes('split into') && content.includes('100-row')) ||
+                  (content.includes('table') && content.includes('100-row') && content.includes('limit'))
+                );
+              })
             );
             
             if (hasSplitTableCallout && notionCounts.tables > sourceCounts.tables) {
               // Extra tables are due to legitimate 100-row splitting, not an error
+              // This is INFORMATIONAL only - not a warning or error
               log(`ℹ️ [VALIDATION] Table count higher due to 100-row splitting: ${notionCounts.tables}/${sourceCounts.tables}`);
-              result.warnings.push(`Table count higher: ${sourceCounts.tables} source table(s) split into ${notionCounts.tables} Notion tables due to 100-row limit`);
+              result.info = result.info || [];
+              result.info.push(`Table splitting: ${sourceCounts.tables} source table(s) split into ${notionCounts.tables} Notion tables due to 100-row limit (informational only)`);
             } else {
               // Mismatch and not splitting - this is an error
               tablesMismatch = true;
@@ -519,15 +524,27 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
           }
         }
 
-        // Images must match (with small tolerance for upload failures)
+        // Images - STRICT validation (must match exactly)
+        // Duplicates indicate deduplication failure, missing images indicate upload failure
         let imagesMismatch = false;
-        if (sourceCounts.images > 0 && notionCounts.images < sourceCounts.images) {
-          imagesMismatch = true;
-          result.hasErrors = true;
-          result.issues.push(`Image count mismatch: expected ${sourceCounts.images}, got ${notionCounts.images}`);
-          log(`❌ [VALIDATION] Image count mismatch: ${notionCounts.images}/${sourceCounts.images}`);
-        } else if (sourceCounts.images > 0) {
-          log(`✅ [VALIDATION] Image count acceptable: ${notionCounts.images}/${sourceCounts.images}`);
+        if (sourceCounts.images > 0) {
+          if (notionCounts.images < sourceCounts.images) {
+            // Fewer images - upload failure or dropped content (error)
+            imagesMismatch = true;
+            result.hasErrors = true;
+            const missing = sourceCounts.images - notionCounts.images;
+            result.issues.push(`Missing images: expected ${sourceCounts.images}, got ${notionCounts.images} (${missing} missing)`);
+            log(`❌ [VALIDATION] Image count too low: ${notionCounts.images}/${sourceCounts.images} (${missing} missing)`);
+          } else if (notionCounts.images > sourceCounts.images) {
+            // More images - likely duplicates from failed deduplication (error)
+            imagesMismatch = true;
+            result.hasErrors = true;
+            const extra = notionCounts.images - sourceCounts.images;
+            result.issues.push(`Duplicate images: expected ${sourceCounts.images}, got ${notionCounts.images} (${extra} duplicate)`);
+            log(`❌ [VALIDATION] Image count too high: ${notionCounts.images}/${sourceCounts.images} (${extra} duplicate)`);
+          } else {
+            log(`✅ [VALIDATION] Image count matches exactly: ${notionCounts.images}/${sourceCounts.images}`);
+          }
         }
 
         // Callouts - STRICT validation (must match exactly)
@@ -557,24 +574,42 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
         // Headings - use tolerance for splitting behavior
         // Note: Headings can be split into multiple blocks if they exceed 100 rich_text elements
         // Also: h4/h5/h6 get downgraded to h3 (Notion only supports heading_1/2/3)
-        // Allow up to 20% more headings to account for splitting and downgrading
+        // Also: Table splitting creates continuation headings like "(continued - rows 101-200)"
         let headingsFewer = false;
         let headingsMore = false;
         if (sourceCounts.headings > 0) {
+          // Count continuation headings created by table splitting
+          const continuationHeadings = allBlocks.filter(block => 
+            (block.type === 'heading_2' || block.type === 'heading_3') &&
+            block[block.type]?.rich_text?.some(rt => {
+              const content = rt.text?.content || '';
+              return content.match(/^\(continued - rows \d+-\d+\)$/);
+            })
+          ).length;
+          
+          // Exclude continuation headings from comparison (they're synthetic)
+          const actualNotionHeadings = notionCounts.headings - continuationHeadings;
+          
           const minExpected = Math.floor(sourceCounts.headings * 0.8); // Allow 20% fewer (merged/lost)
           const maxExpected = Math.ceil(sourceCounts.headings * 1.2); // Allow 20% more (split/downgraded)
           
-          if (notionCounts.headings < minExpected) {
+          if (continuationHeadings > 0) {
+            log(`ℹ️ [VALIDATION] Found ${continuationHeadings} table continuation heading(s) (excluded from count)`);
+            result.info = result.info || [];
+            result.info.push(`Table continuation headings: ${continuationHeadings} synthetic heading(s) for split tables (excluded from heading count)`);
+          }
+          
+          if (actualNotionHeadings < minExpected) {
             headingsFewer = true;
             result.hasErrors = true;
-            result.issues.push(`Heading count too low: expected ~${sourceCounts.headings} (±20%), got ${notionCounts.headings}`);
-            log(`❌ [VALIDATION] Heading count too low: ${notionCounts.headings} < ${minExpected} (source: ${sourceCounts.headings})`);
-          } else if (notionCounts.headings > maxExpected) {
+            result.issues.push(`Heading count too low: expected ~${sourceCounts.headings} (±20%), got ${actualNotionHeadings}`);
+            log(`❌ [VALIDATION] Heading count too low: ${actualNotionHeadings} < ${minExpected} (source: ${sourceCounts.headings})`);
+          } else if (actualNotionHeadings > maxExpected) {
             headingsMore = true;
-            result.warnings.push(`Extra headings: expected ~${sourceCounts.headings} (±20%), got ${notionCounts.headings} (may be split headings)`);
-            log(`⚠️ [VALIDATION] Heading count higher than expected: ${notionCounts.headings} > ${maxExpected} (source: ${sourceCounts.headings})`);
+            result.warnings.push(`Extra headings: expected ~${sourceCounts.headings} (±20%), got ${actualNotionHeadings} (may be split headings)`);
+            log(`⚠️ [VALIDATION] Heading count higher than expected: ${actualNotionHeadings} > ${maxExpected} (source: ${sourceCounts.headings})`);
           } else {
-            log(`✅ [VALIDATION] Heading count within range: ${notionCounts.headings} (source: ${sourceCounts.headings}, range: ${minExpected}-${maxExpected})`);
+            log(`✅ [VALIDATION] Heading count within range: ${actualNotionHeadings} (source: ${sourceCounts.headings}, range: ${minExpected}-${maxExpected}, ${continuationHeadings} continuation headings excluded)`);
           }
         }
 
@@ -645,9 +680,18 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
       if (result.warnings.length > 0) {
         result.summary += `\n\nℹ️ Informational Warnings:\n${result.warnings.map((w, i) => `${i + 1}. ${w}`).join('\n')}`;
       }
-    } else if (result.warnings.length > 0) {
-      result.success = true; // Warnings don't cause failure
-      result.summary = `✅ Validation passed (critical elements match)\n\nℹ️ ${result.warnings.length} informational note(s):\n${result.warnings.map((w, i) => `${i + 1}. ${w}`).join('\n')}`;
+      if (result.info && result.info.length > 0) {
+        result.summary += `\n\n📝 Notes:\n${result.info.map((note, i) => `${i + 1}. ${note}`).join('\n')}`;
+      }
+    } else if (result.warnings.length > 0 || (result.info && result.info.length > 0)) {
+      result.success = true; // Warnings and info don't cause failure
+      result.summary = `✅ Validation passed (critical elements match)`;
+      if (result.warnings.length > 0) {
+        result.summary += `\n\nℹ️ ${result.warnings.length} informational note(s):\n${result.warnings.map((w, i) => `${i + 1}. ${w}`).join('\n')}`;
+      }
+      if (result.info && result.info.length > 0) {
+        result.summary += `\n\n📝 ${result.info.length} informational note(s):\n${result.info.map((note, i) => `${i + 1}. ${note}`).join('\n')}`;
+      }
     } else {
       result.success = true;
       result.summary = `✅ Validation passed: ${allBlocks.length} blocks, ${headings.length} headings, all critical elements match`;

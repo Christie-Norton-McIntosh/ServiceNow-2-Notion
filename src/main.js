@@ -622,7 +622,10 @@ class ServiceNowToNotionApp {
       const database = await getDatabase(config.databaseId);
       
       overlayModule.setMessage("Loading property mappings...");
-      const mappings = await getPropertyMappings(config.databaseId);
+      const mappings = await getPropertyMappings(config.databaseId, {
+        database: database,
+        extractedData: extractedData
+      });
 
       // Apply mappings to extracted data
       overlayModule.setMessage("Mapping properties to Notion format...");

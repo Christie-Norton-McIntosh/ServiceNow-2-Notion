@@ -1,6 +1,6 @@
 // Main floating panel (ported from original createUI())
 
-import { debug, getConfig } from "../config.js";
+import { debug, getConfig, PROVIDER_VERSION } from "../config.js";
 import { showPropertyMappingModal } from "./property-mapping-modal.js";
 import { injectAdvancedSettingsModal } from "./advanced-settings-modal.js";
 import { injectIconCoverModal } from "./icon-cover-modal.js";
@@ -114,13 +114,12 @@ export function injectMainPanel() {
         <select id="w2n-database-select" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px;">
           <option value="${config.databaseId || ""}">${config.databaseName || "(no database)"}</option>
         </select>
-        <div id="w2n-selected-database-label" style="margin-top:8px;font-size:12px;color:#6b7280;">Database: ${config.databaseName || "(no database)"}</div>
+        <div id="w2n-selected-database-label" style="margin-top:8px;font-size:12px;color:#6b7280;">ID: ${config.databaseId || "(no database)"}</div>
         <div style="margin-top:8px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-          <button id="w2n-refresh-dbs" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">Refresh</button>
-          <button id="w2n-search-dbs" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">Search</button>
-          <button id="w2n-get-db" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">By ID</button>
-          <button id="w2n-configure-mapping" style="font-size:11px;padding:6px 8px;border:1px solid #10b981;border-radius:4px;background:#10b981;color:white;cursor:pointer;">Configure Property Mapping</button>
+          <button id="w2n-search-dbs" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">Search by Name</button>
+          <button id="w2n-get-db" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">Search by ID</button>
         </div>
+        <div style="margin-top:6px;font-size:10px;color:#9ca3af;">v${PROVIDER_VERSION}</div>
         <div id="w2n-db-spinner" style="display:none; margin-top:8px; font-size:12px; color:#6b7280; align-items:center;">
           <span style="display:inline-block; width:12px; height:12px; border:2px solid #d1d5db; border-top:2px solid #10b981; border-radius:50%; animation:spin 1s linear infinite; margin-right:8px;"></span>
           Fetching databases...
@@ -132,20 +131,14 @@ export function injectMainPanel() {
         <button id="w2n-update-existing-page" style="width:100%; padding:12px; background:#8b5cf6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">🔄 Update Existing Page</button>
       </div>
 
-      <div style="border-top:1px solid #e5e7eb; padding-top:16px;">
-        <div style="display:flex; align-items:center; margin-bottom:12px;">
-          <span style="font-size:16px; margin-right:8px;">🤖</span>
-          <h4 style="margin:0; font-size:14px; font-weight:500;">AutoExtract Multi-Page</h4>
-        </div>
-
+      <div style="padding-top:16px;">
         <div id="w2n-autoextract-controls">
           <div style="display:flex; gap:8px;">
-            <button id="w2n-start-autoextract" style="flex:1; padding:10px; background:#f59e0b; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">Start AutoExtract</button>
+            <button id="w2n-start-autoextract" style="flex:1; padding:10px; background:#f59e0b; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">🤖 Start AutoExtract</button>
             <button id="w2n-stop-autoextract" style="flex:1; padding:10px; background:#dc2626; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500; display:none;">⏹ Stop</button>
           </div>
           <div style="display:flex; gap:8px; margin-top:8px;">
-            <button id="w2n-open-icon-cover" style="flex:1; padding:8px; background:#6b7280; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px;">Icon & Cover</button>
-            <button id="w2n-diagnose-autoextract" style="flex:1; padding:8px; background:#0ea5e9; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px;">🔍 Diagnose</button>
+            <button id="w2n-open-icon-cover" style="flex:1; padding:8px; background:#6b7280; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px;">🎨 Icon & Cover</button>
           </div>
         </div>
       </div>
@@ -177,7 +170,6 @@ export function setupMainPanel(panel) {
   const resetPositionBtn = panel.querySelector("#w2n-reset-position-btn");
   const advancedBtn = panel.querySelector("#w2n-advanced-settings-btn");
   const captureBtn = panel.querySelector("#w2n-capture-page");
-  const configureBtn = panel.querySelector("#w2n-configure-mapping");
   const iconCoverBtn = panel.querySelector("#w2n-open-icon-cover");
 
   closeBtn.onclick = () => panel.remove();
@@ -226,14 +218,6 @@ export function setupMainPanel(panel) {
     }
   };
 
-  configureBtn.onclick = () => {
-    try {
-      showPropertyMappingModal();
-    } catch (e) {
-      debug("Failed to open property mapping modal:", e);
-    }
-  };
-
   iconCoverBtn.onclick = () => {
     try {
       injectIconCoverModal();
@@ -256,24 +240,31 @@ export function setupMainPanel(panel) {
   }
 
   // Database button handlers
-  const refreshBtn = panel.querySelector("#w2n-refresh-dbs");
   const searchBtn = panel.querySelector("#w2n-search-dbs");
   const getByIdBtn = panel.querySelector("#w2n-get-db");
   const databaseSelect = panel.querySelector("#w2n-database-select");
   const databaseLabel = panel.querySelector("#w2n-selected-database-label");
 
-  if (refreshBtn) {
-    refreshBtn.onclick = async () => {
-      try {
-        debug("🔄 Refreshing database list...");
-        showSpinner();
-        const databases = await getAllDatabases({ forceRefresh: true });
-        populateDatabaseSelect(databaseSelect, databases);
-        debug(`[DATABASE] ✅ Refreshed ${databases.length} databases`);
-      } catch (e) {
-        debug("Failed to refresh databases:", e);
-      } finally {
-        hideSpinner();
+  // Add change handler for database select dropdown
+  if (databaseSelect) {
+    databaseSelect.onchange = () => {
+      const selectedId = databaseSelect.value;
+      const selectedName = databaseSelect.options[databaseSelect.selectedIndex].text;
+      
+      if (selectedId) {
+        // Update config with selected database
+        const config = getConfig();
+        config.databaseId = selectedId;
+        config.databaseName = selectedName;
+        
+        if (typeof GM_setValue === "function") {
+          GM_setValue("notionConfig", config);
+        }
+        
+        // Update ID label
+        databaseLabel.textContent = `ID: ${selectedId}`;
+        
+        debug(`✅ Selected database: ${selectedName} (${selectedId})`);
       }
     };
   }
@@ -281,64 +272,71 @@ export function setupMainPanel(panel) {
   if (searchBtn) {
     searchBtn.onclick = async () => {
       try {
-        const searchTerm = prompt("Enter database name or ID to search:");
+        const searchTerm = prompt("Enter database name to search:");
         if (!searchTerm || searchTerm.trim() === "") return;
 
-        debug(`[DATABASE] 🔍 Searching for database: ${searchTerm}`);
+        debug(`[DATABASE] 🔍 Searching for database by name: ${searchTerm}`);
         showSpinner();
 
-        // Query all databases fresh (no cache)
-        const databases = await getAllDatabases({ forceRefresh: true });
+        // Get current config to check if already selected
+        const currentConfig = getConfig();
+        const currentDbId = currentConfig.databaseId;
+
+        // Query databases (use cache for speed)
+        const databases = await getAllDatabases();
 
         debug(
           `📋 Available databases: ${databases
-            .map((db) => `${db.id.slice(-8)}: ${db.title || "Untitled"}`)
+            .map((db) => `${db.id.slice(-8)}: ${extractDatabaseTitle(db)}`)
             .join(", ")}`
         );
 
-        // Find matching database
-        const searchTermTrimmed = searchTerm.trim();
-        let matchingDb = databases.find(
-          (db) =>
-            db.id === searchTermTrimmed ||
-            (db.title &&
-              typeof db.title === "string" &&
-              db.title.toLowerCase().includes(searchTermTrimmed.toLowerCase()))
-        );
+        // Find all matching databases by name
+        const searchTermLower = searchTerm.trim().toLowerCase();
+        const matchingDatabases = databases.filter((db) => {
+          const dbTitle = extractDatabaseTitle(db);
+          return dbTitle.toLowerCase().includes(searchTermLower);
+        });
 
-        // If not found by exact match, try partial ID match (last 8 chars)
-        if (!matchingDb && searchTermTrimmed.length >= 8) {
-          const partialId = searchTermTrimmed.slice(-8);
-          matchingDb = databases.find((db) => db.id.endsWith(partialId));
-          if (matchingDb) {
-            debug(`[DATABASE] ✅ Found database by partial ID match: ${partialId}`);
-          }
-        }
-
-        if (matchingDb) {
-          // Update config with new database
+        if (matchingDatabases.length > 0) {
+          debug(`[DATABASE] ✅ Found ${matchingDatabases.length} matching database(s)`);
+          
+          // Check if the first match is already selected
+          const firstMatch = matchingDatabases[0];
+          const isAlreadySelected = currentDbId && firstMatch.id === currentDbId;
+          
+          // Populate dropdown with all matching databases
+          populateDatabaseSelect(databaseSelect, matchingDatabases);
+          
+          // Select the first match by default
+          databaseSelect.value = firstMatch.id;
+          
+          // Update config with first match
           const config = getConfig();
-          config.databaseId = matchingDb.id;
-          config.databaseName =
-            typeof matchingDb.title === "string"
-              ? matchingDb.title
-              : "Unknown Database";
+          config.databaseId = firstMatch.id;
+          config.databaseName = extractDatabaseTitle(firstMatch);
 
           // Save to storage
           if (typeof GM_setValue === "function") {
             GM_setValue("notionConfig", config);
           }
 
-          // Update UI
-          databaseSelect.innerHTML = `<option value="${matchingDb.id}">${config.databaseName}</option>`;
-          databaseLabel.textContent = `Database: ${config.databaseName}`;
+          // Update ID label
+          databaseLabel.textContent = `ID: ${firstMatch.id}`;
 
           debug(
-            `✅ Set target database to: ${config.databaseName} (${matchingDb.id})`
+            `✅ Set target database to: ${config.databaseName} (${firstMatch.id})`
           );
+          
+          // Show appropriate message
+          if (isAlreadySelected && matchingDatabases.length === 1) {
+            alert(`Database "${config.databaseName}" is already selected.`);
+          } else if (matchingDatabases.length > 1) {
+            alert(`Found ${matchingDatabases.length} databases matching "${searchTerm}".\nSelect from the dropdown to choose a different one.`);
+          }
         } else {
-          alert(`Database "${searchTerm}" not found.`);
-          debug(`[DATABASE] ❌ Database "${searchTerm}" not found`);
+          alert(`No databases found matching "${searchTerm}".`);
+          debug(`[DATABASE] ❌ No databases found matching "${searchTerm}"`);
         }
       } catch (e) {
         debug("Failed to search database:", e);
@@ -352,37 +350,119 @@ export function setupMainPanel(panel) {
   if (getByIdBtn) {
     getByIdBtn.onclick = async () => {
       try {
-        const dbId = prompt("Enter database ID:");
-        if (!dbId || dbId.trim() === "") return;
+        const input = prompt("Enter database ID or URL:");
+        if (!input || input.trim() === "") return;
 
-        const cleanDbId = dbId.trim();
-        debug(`[DATABASE] 🔍 Getting database by ID: ${cleanDbId}`);
+        debug(`[DATABASE] 🔍 Processing input: ${input}`);
         showSpinner();
+
+        let cleanDbId = input.trim();
+        
+        // Check if input is a URL and extract ID from it
+        if (cleanDbId.includes("notion.so/") || cleanDbId.includes("notion.site/")) {
+          debug(`[DATABASE] 🔍 Extracting ID from URL: ${cleanDbId}`);
+          
+          // Extract ID from URL patterns:
+          // https://www.notion.so/username/DatabaseName-abc123def456...
+          // https://notion.so/abc123def456...
+          const urlMatch = cleanDbId.match(/([a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+          
+          if (urlMatch) {
+            cleanDbId = urlMatch[1];
+            debug(`[DATABASE] ✅ Extracted ID from URL: ${cleanDbId}`);
+          } else {
+            alert("Could not extract database ID from URL. Please check the URL format.");
+            hideSpinner();
+            return;
+          }
+        }
+        
+        // Normalize ID: accept with or without hyphens, format to proper UUID
+        cleanDbId = cleanDbId.replace(/[^a-f0-9-]/gi, "");
+        
+        // If no hyphens, add them in proper UUID format (8-4-4-4-12)
+        if (!cleanDbId.includes("-")) {
+          const raw = cleanDbId.replace(/-/g, "");
+          if (raw.length === 32) {
+            cleanDbId = raw.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, "$1-$2-$3-$4-$5");
+          } else {
+            alert(`Invalid database ID format.\nExpected 32 hexadecimal characters, got ${raw.length}.\n\nExample: abc123def456... (32 chars)\nor: abc123de-f456-7890-1234-567890abcdef`);
+            hideSpinner();
+            return;
+          }
+        }
+        
+        // Validate final format
+        const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+        if (!uuidPattern.test(cleanDbId)) {
+          alert(`Invalid database ID format.\nMust be a valid UUID (32 hexadecimal characters).\n\nCurrent: ${cleanDbId}`);
+          hideSpinner();
+          return;
+        }
+        
+        debug(`[DATABASE] 🔍 Searching for database by ID: ${cleanDbId}`);
 
         // Fetch database details to validate and get name
         const dbDetails = await getDatabase(cleanDbId);
+        const databaseName = extractDatabaseTitle(dbDetails);
 
         // Update config with validated database
         const config = getConfig();
         config.databaseId = cleanDbId;
-        config.databaseName = dbDetails.title || "Database by ID";
+        config.databaseName = databaseName;
 
         if (typeof GM_setValue === "function") {
           GM_setValue("notionConfig", config);
         }
 
-        // Update UI
-        databaseSelect.innerHTML = `<option value="${cleanDbId}">${config.databaseName}</option>`;
-        databaseLabel.textContent = `Database: ${config.databaseName}`;
+        // Update dropdown with the found database
+        databaseSelect.innerHTML = `<option value="${cleanDbId}">${databaseName}</option>`;
+        databaseSelect.value = cleanDbId;
+        
+        // Update ID label
+        databaseLabel.textContent = `ID: ${cleanDbId}`;
 
         debug(
-          `✅ Set target database to: ${config.databaseName} (${cleanDbId})`
+          `✅ Set target database to: ${databaseName} (${cleanDbId})`
         );
+        
+        // Check if already selected
+        const currentConfig = getConfig();
+        if (currentConfig.databaseId === cleanDbId) {
+          alert(`Database "${databaseName}" is already selected.`);
+        } else {
+          alert(`Database found: "${databaseName}"`);
+        }
       } catch (e) {
         debug("Failed to get database by ID:", e);
-        alert(
-          `Error: Could not access database with ID "${dbId}". Make sure the database is shared with your Notion integration.`
-        );
+        
+        // Provide specific error messages based on error type
+        let errorMsg = "Error: Could not access database.\n\n";
+        
+        if (e.code === 'object_not_found' || e.status === 404) {
+          errorMsg += "Database not found. Please check:\n";
+          errorMsg += "• The database ID is correct\n";
+          errorMsg += "• The database exists in your Notion workspace\n";
+          errorMsg += "• The database hasn't been deleted";
+        } else if (e.code === 'unauthorized' || e.status === 401) {
+          errorMsg += "Access denied. Please check:\n";
+          errorMsg += "• The database is shared with your Notion integration\n";
+          errorMsg += "• Your Notion API token is valid";
+        } else if (e.code === 'restricted_resource' || e.status === 403) {
+          errorMsg += "The database is not shared with your integration.\n\n";
+          errorMsg += "To fix this:\n";
+          errorMsg += "1. Open the database in Notion\n";
+          errorMsg += "2. Click '...' → 'Add connections'\n";
+          errorMsg += "3. Select your integration";
+        } else {
+          errorMsg += `${e.message || e}\n\n`;
+          errorMsg += "Please check:\n";
+          errorMsg += "• Your internet connection\n";
+          errorMsg += "• The proxy server is running\n";
+          errorMsg += "• The database ID is correct";
+        }
+        
+        alert(errorMsg);
       } finally {
         hideSpinner();
       }
@@ -425,9 +505,6 @@ export function setupMainPanel(panel) {
   // AutoExtract button handlers
   const startAutoExtractBtn = panel.querySelector("#w2n-start-autoextract");
   const stopAutoExtractBtn = panel.querySelector("#w2n-stop-autoextract");
-  const diagnoseAutoExtractBtn = panel.querySelector(
-    "#w2n-diagnose-autoextract"
-  );
 
   if (startAutoExtractBtn) {
     startAutoExtractBtn.onclick = async () => {
@@ -466,36 +543,35 @@ export function setupMainPanel(panel) {
         GM_setValue("w2n_autoExtractState", null);
         debug("🗑️ Cleared saved autoExtractState");
         
-        showToast("⏹ Stopping AutoExtract immediately...", 3000);
+        showToast("⏹ Stopping AutoExtract after current page...", 4000);
         
         // Update overlay to show stopping message
         try {
           if (window.W2NSavingProgress && window.W2NSavingProgress.setMessage) {
-            window.W2NSavingProgress.setMessage("⏹ Stopping...");
+            window.W2NSavingProgress.setMessage("⏹ Finishing current page then stopping...");
           }
         } catch (e) {
           debug("Warning: Could not update overlay message:", e);
         }
         
-        // Update button text to show it's stopping
+        // Update button text and appearance to show it's stopping
         if (startAutoExtractBtn) {
-          startAutoExtractBtn.textContent = "⏹ Stopping...";
+          startAutoExtractBtn.textContent = "⏹ Finishing current page...";
           startAutoExtractBtn.style.background = "#dc2626"; // Red color
+          startAutoExtractBtn.disabled = true;
         }
-      }
-      // Restore buttons
-      startAutoExtractBtn.style.display = "block";
-      stopAutoExtractBtn.style.display = "none";
-    };
-  }
-
-  if (diagnoseAutoExtractBtn) {
-    diagnoseAutoExtractBtn.onclick = () => {
-      try {
-        diagnoseAutoExtraction();
-      } catch (e) {
-        debug("Failed to diagnose auto extraction:", e);
-        alert("Error diagnosing auto extraction. Check console for details.");
+        
+        // Hide stop button immediately since stop is initiated
+        stopAutoExtractBtn.style.display = "none";
+        startAutoExtractBtn.style.display = "block";
+        
+        // Call stopAutoExtract to clean up immediately
+        // This will show the overlay as "done" and restore UI
+        setTimeout(() => {
+          if (window.ServiceNowToNotion && window.ServiceNowToNotion.autoExtractState) {
+            stopAutoExtract(window.ServiceNowToNotion.autoExtractState, "User clicked stop button");
+          }
+        }, 100);
       }
     };
   }
@@ -672,6 +748,18 @@ setupMainPanel = function (panel) {
 };
 
 /**
+ * Extract database title from Notion API response
+ * @param {Object} db - Database object from Notion API
+ * @returns {string} Database title
+ */
+function extractDatabaseTitle(db) {
+  if (typeof db.title === "string") {
+    return db.title;
+  }
+  return db.title && db.title[0] ? db.title[0].plain_text : "Untitled Database";
+}
+
+/**
  * Populate the database select dropdown
  * @param {HTMLElement} selectEl - The select element
  * @param {Array} databases - Array of database objects
@@ -684,8 +772,7 @@ function populateDatabaseSelect(selectEl, databases) {
   databases.forEach((db) => {
     const option = document.createElement("option");
     option.value = db.id;
-    option.textContent =
-      db.title && db.title[0] ? db.title[0].plain_text : "Untitled Database";
+    option.textContent = extractDatabaseTitle(db);
     selectEl.appendChild(option);
   });
 }
@@ -744,7 +831,21 @@ async function startAutoExtraction() {
     failedPages: [], // Track pages that failed due to rate limiting or other errors for manual retry
     rateLimitHits: 0, // Track how many times we've hit rate limits
     navigationFailures: 0, // Track consecutive navigation failures
+    persistentProcessedUrls: new Set(), // Cross-session dedupe list loaded from storage
   };
+
+  // Load persisted processed URLs for cross-session dedupe
+  try {
+    if (typeof GM_getValue === 'function') {
+      const persistedJson = GM_getValue('w2n_processed_urls', '[]');
+      let persistedArr = [];
+      try { persistedArr = JSON.parse(persistedJson) || []; } catch(e) { /* ignore parse error */ }
+      autoExtractState.persistentProcessedUrls = new Set(persistedArr);
+      debug(`[DEDUPE-PERSIST] Loaded ${autoExtractState.persistentProcessedUrls.size} persisted URL(s)`);
+    }
+  } catch (e) {
+    debug('[DEDUPE-PERSIST] Failed loading persisted URLs:', e);
+  }
 
   // Set up beforeunload handler to save state if page is reloaded manually
   const beforeUnloadHandler = (event) => {
@@ -1616,6 +1717,18 @@ async function continueAutoExtractionLoop(autoExtractState) {
       // Get current page identifiers for duplicate detection
       const currentUrl = window.location.href;
       const currentPageId = getCurrentPageId();
+      const globalConfig = typeof GM_getValue === 'function' ? GM_getValue('notionConfig', {}) : {};
+      const forceReextract = !!globalConfig.forceReextract;
+
+      // Cross-session persistent dedupe check (before session duplicate logic)
+      if (!forceReextract && autoExtractState.persistentProcessedUrls && autoExtractState.persistentProcessedUrls.has(currentUrl)) {
+        debug(`[DEDUPE-PERSIST] ✅ Skipping previously processed URL (cross-session): ${currentUrl}`);
+        overlayModule.setMessage(`Skipping already processed page ${currentPageNum}...`);
+        showToast(`⚠️ Already processed earlier session, skipping page ${currentPageNum}`, 3000);
+        // Still increment page counter logically, but do not extract/process
+        // Go directly to navigation section below
+        skipExtraction = true;
+      }
       
       // Check for duplicate URL (same page being processed again)
       // BUT: If we just had a navigation failure, this is expected (we're retrying navigation)
@@ -1655,7 +1768,7 @@ async function continueAutoExtractionLoop(autoExtractState) {
         autoExtractState.duplicateCount = 0;
       }
       
-      // Only extract if this is not a duplicate that we're skipping
+      // Only extract and process if this is not a duplicate that we're skipping
       let extractedData = null;
       if (!skipExtraction) {
         // Extract current page data using the app instance
@@ -1667,17 +1780,14 @@ async function continueAutoExtractionLoop(autoExtractState) {
           throw new Error("No content extracted from page");
         }
 
-        // Skip processing if this is a duplicate URL
-        if (autoExtractState.processedUrls.has(currentUrl)) {
-          debug(`⏭️ Skipping Notion processing for duplicate URL`);
-        } else {
-          // Add URL to processed set
-          autoExtractState.processedUrls.add(currentUrl);
-          autoExtractState.lastPageId = currentPageId;
-          
-          // Process and save to Notion with rate limit retry
-          debug(`[AUTO-EXTRACT] 📤 Saving page ${currentPageNum} to Notion...`);
-          overlayModule.setMessage(`Processing page ${currentPageNum}...`);
+        // Add URL to processed set (we only reach here if not already processed)
+        autoExtractState.processedUrls.add(currentUrl);
+        autoExtractState.lastPageId = currentPageId;
+  // Persist URL for cross-session dedupe after successful processing later
+        
+        // Process and save to Notion with rate limit retry
+        debug(`[AUTO-EXTRACT] 📤 Saving page ${currentPageNum} to Notion...`);
+        overlayModule.setMessage(`Processing page ${currentPageNum}...`);
         
           // Retry logic for rate limits
           const maxRateLimitRetries = 3;
@@ -1801,16 +1911,25 @@ async function continueAutoExtractionLoop(autoExtractState) {
             }
           }
           
-          // If processing failed after all retries, log it but DON'T stop AutoExtract
-          if (!processingSuccess) {
-            debug(`⚠️ [AUTO-EXTRACT] Page ${currentPageNum} failed after retries - continuing with next page`);
-            // Don't throw - just continue to navigation
-          } else {
-            // Only increment totalProcessed on success
-            autoExtractState.totalProcessed++;
-            debug(`[AUTO-EXTRACT] ✅ Page ${currentPageNum} saved to Notion`);
-            overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
-          }
+        // If processing failed after all retries, log it but DON'T stop AutoExtract
+        if (!processingSuccess) {
+          debug(`⚠️ [AUTO-EXTRACT] Page ${currentPageNum} failed after retries - continuing with next page`);
+          // Don't throw - just continue to navigation
+        } else {
+          // Only increment totalProcessed on success
+          autoExtractState.totalProcessed++;
+          debug(`[AUTO-EXTRACT] ✅ Page ${currentPageNum} saved to Notion`);
+          overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
+            // Persist URL to cross-session store
+            try {
+              autoExtractState.persistentProcessedUrls.add(currentUrl);
+              if (typeof GM_setValue === 'function') {
+                GM_setValue('w2n_processed_urls', JSON.stringify(Array.from(autoExtractState.persistentProcessedUrls)));
+              }
+              debug(`[DEDUPE-PERSIST] 💾 Persisted URL: ${currentUrl} (total ${autoExtractState.persistentProcessedUrls.size})`);
+            } catch(e) {
+              debug('[DEDUPE-PERSIST] Failed persisting URL:', e);
+            }
         }
       } else {
         debug(`[NAV-RETRY] ⏩ Skipped extraction for expected duplicate, proceeding to navigation...`);

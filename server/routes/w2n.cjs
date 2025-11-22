@@ -468,6 +468,7 @@ router.post('/W2N', async (req, res) => {
           const $ = cheerio.load(payload.contentHtml || '');
           const matched = new Set();
 
+          let calloutIndex = 0;
           $('*').each((i, el) => {
             try {
               const $el = $(el);
@@ -484,9 +485,39 @@ router.post('/W2N', async (req, res) => {
               const hasNoteRole = /note/i.test(role);
 
               if (isDivNote || isPrereq || hasNoteRole) {
-                // Use outer HTML as a dedupe key
-                const outer = $.html(el) || $el.text();
-                matched.add(outer);
+                // CRITICAL: Skip nested callouts to avoid double-counting
+                // A callout is nested if it's INSIDE another callout's content area
+                // Check if this element's outerHTML is contained within a parent callout's HTML
+                let isNested = false;
+                
+                // Get all potential parent callout elements
+                const parents = $el.parents().toArray();
+                for (const parent of parents) {
+                  const $parent = $(parent);
+                  const parentCls = ($parent.attr('class') || '').toString();
+                  const parentTag = parent.tagName ? parent.tagName.toLowerCase() : '';
+                  const parentRole = ($parent.attr('role') || '').toString();
+                  
+                  const parentIsDivNote = (parentTag === 'div' && /note/i.test(parentCls));
+                  const parentIsPrereq = ((parentTag === 'section' || (parentTag === 'div' && /section/i.test(parentCls))) && /prereq/i.test(parentCls));
+                  const parentHasNoteRole = /note/i.test(parentRole);
+                  
+                  if (parentIsDivNote || parentIsPrereq || parentHasNoteRole) {
+                    // Found a parent callout - this element is nested
+                    isNested = true;
+                    break;
+                  }
+                }
+                
+                if (isNested) {
+                  // Skip - this is a nested callout (will be a child block, not a top-level callout)
+                  return;
+                }
+                
+                // Count this as a unique callout (don't use HTML as dedupe key - multiple callouts can have identical content)
+                // Example: Two separate "Before you begin" sections with same role requirements are BOTH valid callouts
+                calloutIndex++;
+                matched.add(`callout-${calloutIndex}`);
               }
             } catch (innerE) {
               // ignore element-level parse errors
@@ -796,6 +827,14 @@ router.post('/W2N', async (req, res) => {
       );
     }
     
+    // Clean invalid blocks and remove empty children arrays
+    const cleanedChildren = cleanInvalidBlocks(children);
+    if (Array.isArray(cleanedChildren)) {
+      children.length = 0;
+      children.push(...cleanedChildren);
+    }
+    log(`🧹 Cleaned invalid blocks, ${children.length} blocks remain`);
+    
     // v11.0.27 FIX: NOW strip private keys after marker collection is complete
     // This ensures _sn2n_marker properties are preserved during collection
     // but removed before sending to Notion API
@@ -897,14 +936,6 @@ router.post('/W2N', async (req, res) => {
         }
       }
     });
-
-    // Check the "Error" checkbox if extraction warnings were detected
-    if (extractionWarnings.length > 0) {
-      log(`⚠️ Setting Error checkbox due to ${extractionWarnings.length} extraction warning(s)`);
-      properties["Error"] = {
-        checkbox: true
-      };
-    }
 
     // FIX v11.0.5: Adaptive pre-creation delay based on content complexity
     // Prevents rate limiting for complex pages with many list items, tables, callouts
@@ -1592,15 +1623,6 @@ router.post('/W2N', async (req, res) => {
           try {
             const propertyUpdates = {};
             
-            // Set Error checkbox based on validation result (always explicit)
-            if (validationResult.hasErrors) {
-              propertyUpdates["Error"] = { checkbox: true };
-              log(`⚠️ Validation failed - setting Error checkbox`);
-            } else {
-              propertyUpdates["Error"] = { checkbox: false };
-              log(`✅ Validation passed - clearing Error checkbox`);
-            }
-            
             // Set Validation property with results summary (without stats)
             // Using rich_text property type (multi-line text)
             propertyUpdates["Validation"] = {
@@ -1789,7 +1811,7 @@ ${payload.contentHtml || ''}
                 const path = require('path');
                 
                 // Create failed-validation directory if it doesn't exist
-                const pagesDir = path.join(__dirname, '..', 'patch', 'pages', 'failed-validation');
+                const pagesDir = path.join(__dirname, '..', '..', 'patch', 'pages', 'failed-validation');
                 if (!fs.existsSync(pagesDir)) {
                   fs.mkdirSync(pagesDir, { recursive: true });
                 }
@@ -1828,7 +1850,7 @@ ${payload.contentHtml || ''}
                 log(`   This page will be added to failed-validation folder for revalidation`);
                 
                 // Also log to persistent failure tracking file
-                const failureLog = path.join(__dirname, '..', 'patch', 'logs', 'validation-property-failures.log');
+                const failureLog = path.join(__dirname, '..', '..', 'patch', 'logs', 'validation-property-failures.log');
                 const logEntry = `${new Date().toISOString()} | ${response.id} | "${payload.title}" | ${response.url} | ${filename}\n`;
                 fs.appendFileSync(failureLog, logEntry, 'utf-8');
                 log(`📝 Logged to validation-property-failures.log`);
@@ -2142,6 +2164,11 @@ router.patch('/W2N/:pageId', async (req, res) => {
     let { blocks: extractedBlocks, hasVideos } = extractionResult;
     log(`✅ Extracted ${extractedBlocks.length} blocks from HTML`);
     
+    // [CALLOUT-TRACE] Track callouts through PATCH pipeline
+    const calloutsAfterExtraction = extractedBlocks.filter(b => b.type === 'callout').length;
+    console.log(`🔍 [CALLOUT-TRACE] Step 1 - After extraction: ${calloutsAfterExtraction} callouts`);
+    log(`🔍 [CALLOUT-TRACE] Step 1 - After extraction: ${calloutsAfterExtraction} callouts`);
+    
     if (hasVideos) {
       log("⚠️ Warning: Videos detected but not supported by Notion API");
     }
@@ -2220,6 +2247,7 @@ router.patch('/W2N/:pageId', async (req, res) => {
           const $ = cheerio.load(html || '');
           const matched = new Set();
 
+          let calloutIndex = 0;
           $('*').each((i, el) => {
             try {
               const $el = $(el);
@@ -2236,8 +2264,30 @@ router.patch('/W2N/:pageId', async (req, res) => {
               const hasNoteRole = /note/i.test(role);
 
               if (isDivNote || isPrereq || hasNoteRole) {
-                const outer = $.html(el) || $el.text();
-                matched.add(outer);
+                // CRITICAL: Skip nested callouts to avoid double-counting
+                // A callout is nested if it has another callout ancestor
+                const hasCalloutAncestor = $el.parents().toArray().some(parent => {
+                  const $parent = $(parent);
+                  const parentCls = ($parent.attr('class') || '').toString();
+                  const parentTag = parent.tagName ? parent.tagName.toLowerCase() : '';
+                  const parentRole = ($parent.attr('role') || '').toString();
+                  
+                  const parentIsDivNote = (parentTag === 'div' && /note/i.test(parentCls));
+                  const parentIsPrereq = ((parentTag === 'section' || (parentTag === 'div' && /section/i.test(parentCls))) && /prereq/i.test(parentCls));
+                  const parentHasNoteRole = /note/i.test(parentRole);
+                  
+                  return parentIsDivNote || parentIsPrereq || parentHasNoteRole;
+                });
+                
+                if (hasCalloutAncestor) {
+                  // Skip - this is a nested callout (will be a child block, not a top-level callout)
+                  return;
+                }
+                
+                // Count this as a unique callout (don't use HTML as dedupe key - multiple callouts can have identical content)
+                // Example: Two separate "Before you begin" sections with same role requirements are BOTH valid callouts
+                calloutIndex++;
+                matched.add(`callout-${calloutIndex}`);
               }
             } catch (innerE) {
               // ignore element-level parse errors
@@ -2258,6 +2308,11 @@ router.patch('/W2N/:pageId', async (req, res) => {
     extractedBlocks = dedupeUtil.dedupeAndFilterBlocks(extractedBlocks, { log, expectedCallouts });
     const afterDedupeCount = extractedBlocks.length;
     
+    // [CALLOUT-TRACE] Track callouts after deduplication
+    const calloutsAfterDedupe = extractedBlocks.filter(b => b.type === 'callout').length;
+    console.log(`🔍 [CALLOUT-TRACE] Step 2 - After deduplication: ${calloutsAfterDedupe} callouts (expected: ${expectedCallouts})`);
+    log(`🔍 [CALLOUT-TRACE] Step 2 - After deduplication: ${calloutsAfterDedupe} callouts (expected: ${expectedCallouts})`);
+    
     if (beforeDedupeCount !== afterDedupeCount) {
       log(`🔄 Deduplication: ${beforeDedupeCount} → ${afterDedupeCount} blocks (removed ${beforeDedupeCount - afterDedupeCount})`);
     }
@@ -2265,6 +2320,15 @@ router.patch('/W2N/:pageId', async (req, res) => {
     // Collect markers for deep nesting (same as POST endpoint pattern)
     const markerMap = collectAndStripMarkers(extractedBlocks, {});
     const removedCount = removeCollectedBlocks(extractedBlocks);
+    
+    // [CALLOUT-TRACE] Track callouts after marker collection
+    const calloutsAfterMarkers = extractedBlocks.filter(b => b.type === 'callout').length;
+    console.log(`🔍 [CALLOUT-TRACE] Step 3 - After marker collection: ${calloutsAfterMarkers} callouts (removed ${removedCount} blocks)`);
+    log(`🔍 [CALLOUT-TRACE] Step 3 - After marker collection: ${calloutsAfterMarkers} callouts (removed ${removedCount} blocks)`);
+    if (calloutsAfterMarkers !== calloutsAfterDedupe) {
+      console.log(`⚠️ [CALLOUT-TRACE] Callout count changed during marker collection! ${calloutsAfterDedupe} → ${calloutsAfterMarkers}`);
+      log(`⚠️ [CALLOUT-TRACE] Callout count changed during marker collection! ${calloutsAfterDedupe} → ${calloutsAfterMarkers}`);
+    }
     
     if (Object.keys(markerMap).length > 0) {
       log(`🔖 Collected ${Object.keys(markerMap).length} markers for deep nesting orchestration`);
@@ -2278,6 +2342,11 @@ router.patch('/W2N/:pageId', async (req, res) => {
     const beforeCleanCount = extractedBlocks.length;
     extractedBlocks = cleanInvalidBlocks(extractedBlocks);
     const afterCleanCount = extractedBlocks.length;
+    
+    // [CALLOUT-TRACE] Track callouts after cleaning
+    const calloutsAfterClean = extractedBlocks.filter(b => b.type === 'callout').length;
+    console.log(`🔍 [CALLOUT-TRACE] Step 4 - After cleaning: ${calloutsAfterClean} callouts`);
+    log(`🔍 [CALLOUT-TRACE] Step 4 - After cleaning: ${calloutsAfterClean} callouts`);
     
     if (beforeCleanCount !== afterCleanCount) {
       log(`🧹 Block cleaning: ${beforeCleanCount} → ${afterCleanCount} blocks (removed ${beforeCleanCount - afterCleanCount} invalid)`);
@@ -2411,6 +2480,12 @@ router.patch('/W2N/:pageId', async (req, res) => {
     log(`[PATCH-PROGRESS] STEP 2: Starting upload of ${extractedBlocks.length} fresh blocks`);
     log(`📤 STEP 2: Uploading ${extractedBlocks.length} fresh blocks`);
     
+    // [CALLOUT-TRACE] Track callouts before upload
+    const calloutsInInitial = initialBlocks.filter(b => b.type === 'callout').length;
+    const calloutsInRemaining = remainingBlocks.filter(b => b.type === 'callout').length;
+    console.log(`🔍 [CALLOUT-TRACE] Step 5 - Before upload: ${calloutsInInitial} callouts in initial batch, ${calloutsInRemaining} in remaining`);
+    log(`🔍 [CALLOUT-TRACE] Step 5 - Before upload: ${calloutsInInitial} callouts in initial batch, ${calloutsInRemaining} in remaining`);
+    
     // Upload initial batch (up to 100 blocks) with retry logic
     const maxRetries = 3;
     const maxConflictRetries = 3;
@@ -2516,6 +2591,15 @@ router.patch('/W2N/:pageId', async (req, res) => {
       operationPhase = `orchestrating deep nesting for ${Object.keys(markerMap).length} markers`;
       log(`[PATCH-PROGRESS] STEP 3: Starting deep-nesting orchestration for ${Object.keys(markerMap).length} markers`);
       log(`🔧 STEP 3: Running deep-nesting orchestration for ${Object.keys(markerMap).length} markers`);
+      
+      // [CALLOUT-TRACE] Check if any markers contain callouts
+      let calloutsInMarkers = 0;
+      Object.values(markerMap).forEach(children => {
+        if (Array.isArray(children)) {
+          calloutsInMarkers += children.filter(b => b && b.type === 'callout').length;
+        }
+      });
+      log(`🔍 [CALLOUT-TRACE] Markers contain ${calloutsInMarkers} callouts that will be appended during orchestration`);
       
       try {
         const orchResult = await orchestrateDeepNesting(pageId, markerMap);
@@ -2649,6 +2733,12 @@ router.patch('/W2N/:pageId', async (req, res) => {
       }
       
       log("✅ Post-orchestration deduplication complete");
+      
+      // [CALLOUT-TRACE] Count callouts after post-orchestration deduplication
+      const pageBlocksAfterDedupe = await notion.blocks.children.list({ block_id: pageId, page_size: 100 });
+      const calloutsAfterPostDedupe = (pageBlocksAfterDedupe.results || []).filter(b => b.type === 'callout').length;
+      log(`🔍 [CALLOUT-TRACE] Step 6 - After post-orchestration deduplication: ${calloutsAfterPostDedupe} callouts at page root`);
+      
     } catch (dedupError) {
       log(`⚠️ Post-orchestration deduplication failed: ${dedupError.message}`);
     }
@@ -2799,6 +2889,15 @@ router.patch('/W2N/:pageId', async (req, res) => {
     
     log(`[PATCH-PROGRESS] All steps complete - PATCH operation successful!`);
     
+    // [CALLOUT-TRACE] Final callout count in Notion
+    try {
+      const finalPageBlocks = await notion.blocks.children.list({ block_id: pageId, page_size: 100 });
+      const finalCalloutCount = (finalPageBlocks.results || []).filter(b => b.type === 'callout').length;
+      log(`🔍 [CALLOUT-TRACE] Step 7 - FINAL: ${finalCalloutCount} callouts in Notion page at completion`);
+    } catch (err) {
+      log(`⚠️ [CALLOUT-TRACE] Could not fetch final callout count: ${err.message}`);
+    }
+    
     // STEP 6: Update Validation property with PATCH indicator
     // FIX v11.0.24: Always update properties (validationResult always exists now)
     // FIX v11.0.29: Ensure validationResult.summary is NEVER empty (prevents empty arrays in Notion)
@@ -2827,11 +2926,54 @@ router.patch('/W2N/:pageId', async (req, res) => {
       
       // Set Error checkbox if validation failed
       if (validationResult.hasErrors) {
-        propertyUpdates["Error"] = { checkbox: true };
-        log(`⚠️ Validation failed - setting Error checkbox`);
-      } else {
-        // Clear Error checkbox on successful validation
-        propertyUpdates["Error"] = { checkbox: false };
+        log(`⚠️ Validation failed`);
+        
+        // FIX: Auto-save failed PATCH pages to pages-to-update for re-extraction
+        try {
+          log(`💾 Validation failed - auto-saving page to pages-to-update...`);
+          const fixturesDir = path.join(__dirname, '../../patch/pages/pages-to-update');
+          if (!fs.existsSync(fixturesDir)) {
+            fs.mkdirSync(fixturesDir, { recursive: true });
+          }
+          
+          const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
+          const sanitizedTitle = (pageTitle || 'untitled')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .substring(0, 60);
+          const filename = `${sanitizedTitle}-patch-validation-failed-${timestamp}.html`;
+          const filepath = path.join(fixturesDir, filename);
+          
+          const htmlContent = `<!--
+Auto-saved: PATCH validation failed
+Page ID: ${pageId}
+Page Title: ${pageTitle}
+PATCH Completed: ${new Date().toISOString()}
+Source URL: ${payload.url || 'N/A'}
+
+Validation Result:
+${JSON.stringify(validationResult, null, 2)}
+
+Validation Issues:
+${validationResult.issues ? validationResult.issues.join('\n') : 'None'}
+
+Validation Warnings:
+${validationResult.warnings ? validationResult.warnings.join('\n') : 'None'}
+
+Action Required: Fix the issues and re-PATCH this page
+-->
+
+${html || ''}
+`;
+          
+          fs.writeFileSync(filepath, htmlContent, 'utf-8');
+          log(`✅ AUTO-SAVED: ${filename}`);
+          log(`   Location: ${filepath}`);
+          log(`   Reason: PATCH validation detected ${validationResult.issues?.length || 0} issue(s)`);
+        } catch (saveError) {
+          log(`❌ Failed to auto-save failed PATCH: ${saveError.message}`);
+        }
       }
       
       // Set Validation property with PATCH indicator and results summary
