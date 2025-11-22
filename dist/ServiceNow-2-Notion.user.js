@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.38
+// @version      11.0.39
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.38";
+    window.BUILD_VERSION = "11.0.39";
 (function () {
 
   // Configuration constants and default settings
@@ -3328,11 +3328,32 @@
     if (getByIdBtn) {
       getByIdBtn.onclick = async () => {
         try {
-          const dbId = prompt("Enter database ID:");
-          if (!dbId || dbId.trim() === "") return;
+          const input = prompt("Enter database ID or URL:");
+          if (!input || input.trim() === "") return;
 
+          let cleanDbId = input.trim();
+          
+          // Check if input is a URL and extract ID from it
+          if (cleanDbId.includes("notion.so/") || cleanDbId.includes("notion.site/")) {
+            debug(`[DATABASE] 🔍 Extracting ID from URL: ${cleanDbId}`);
+            
+            // Extract ID from URL patterns:
+            // https://www.notion.so/username/DatabaseName-abc123def456...
+            // https://notion.so/abc123def456...
+            const urlMatch = cleanDbId.match(/([a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+            
+            if (urlMatch) {
+              cleanDbId = urlMatch[1];
+              debug(`[DATABASE] ✅ Extracted ID from URL: ${cleanDbId}`);
+            } else {
+              alert("Could not extract database ID from URL. Please check the URL format.");
+              hideSpinner();
+              return;
+            }
+          }
+          
           // Normalize ID: accept with or without hyphens, format to proper UUID
-          let cleanDbId = dbId.trim().replace(/[^a-f0-9-]/gi, "");
+          cleanDbId = cleanDbId.replace(/[^a-f0-9-]/gi, "");
           
           // If no hyphens, add them in proper UUID format (8-4-4-4-12)
           if (!cleanDbId.includes("-")) {
