@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.52
+// @version      11.0.53
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.52";
+    window.BUILD_VERSION = "11.0.53";
 (function () {
 
   // Configuration constants and default settings
@@ -3611,26 +3611,36 @@
           GM_setValue("w2n_autoExtractState", null);
           debug("🗑️ Cleared saved autoExtractState");
           
-          showToast("⏹ Stopping AutoExtract immediately...", 3000);
+          showToast("⏹ Stopping AutoExtract after current page...", 4000);
           
           // Update overlay to show stopping message
           try {
             if (window.W2NSavingProgress && window.W2NSavingProgress.setMessage) {
-              window.W2NSavingProgress.setMessage("⏹ Stopping...");
+              window.W2NSavingProgress.setMessage("⏹ Finishing current page then stopping...");
             }
           } catch (e) {
             debug("Warning: Could not update overlay message:", e);
           }
           
-          // Update button text to show it's stopping
+          // Update button text and appearance to show it's stopping
           if (startAutoExtractBtn) {
-            startAutoExtractBtn.textContent = "⏹ Stopping...";
+            startAutoExtractBtn.textContent = "⏹ Finishing current page...";
             startAutoExtractBtn.style.background = "#dc2626"; // Red color
+            startAutoExtractBtn.disabled = true;
           }
+          
+          // Hide stop button immediately since stop is initiated
+          stopAutoExtractBtn.style.display = "none";
+          startAutoExtractBtn.style.display = "block";
+          
+          // Call stopAutoExtract to clean up immediately
+          // This will show the overlay as "done" and restore UI
+          setTimeout(() => {
+            if (window.ServiceNowToNotion && window.ServiceNowToNotion.autoExtractState) {
+              stopAutoExtract(window.ServiceNowToNotion.autoExtractState, "User clicked stop button");
+            }
+          }, 100);
         }
-        // Restore buttons
-        startAutoExtractBtn.style.display = "block";
-        stopAutoExtractBtn.style.display = "none";
       };
     }
 
