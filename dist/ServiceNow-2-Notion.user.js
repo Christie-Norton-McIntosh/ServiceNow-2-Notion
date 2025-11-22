@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.49
+// @version      11.0.50
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.49";
+    window.BUILD_VERSION = "11.0.50";
 (function () {
 
   // Configuration constants and default settings
@@ -1643,6 +1643,9 @@
    */
   function applyPropertyMappings(extractedData, database, mappings) {
     debug("🔧 Applying property mappings");
+    debug(`📊 extractedData keys: ${Object.keys(extractedData).join(', ')}`);
+    debug(`🖼️ hasImages value in extractedData: ${extractedData.hasImages}`);
+    debug(`📹 hasVideos value in extractedData: ${extractedData.hasVideos}`);
 
     const properties = {};
     const dbProperties = database.properties || {};
@@ -1653,6 +1656,11 @@
 
       const propConfig = dbProperties[notionProperty];
       const sourceValue = getNestedValue(extractedData, sourceField);
+      
+      // Debug image/video mappings
+      if (sourceField === 'hasImages' || sourceField === 'hasVideos') {
+        debug(`🔍 Mapping ${notionProperty} from ${sourceField}: ${sourceValue} (type: ${typeof sourceValue})`);
+      }
 
       if (
         sourceValue !== undefined &&
@@ -1662,6 +1670,10 @@
         const mappedValue = mapValueToNotionProperty(sourceValue, propConfig);
         if (mappedValue !== null) {
           properties[notionProperty] = mappedValue;
+          // Debug successful mappings
+          if (sourceField === 'hasImages' || sourceField === 'hasVideos') {
+            debug(`✅ Successfully mapped ${notionProperty}: ${JSON.stringify(mappedValue)}`);
+          }
         }
       }
     });
