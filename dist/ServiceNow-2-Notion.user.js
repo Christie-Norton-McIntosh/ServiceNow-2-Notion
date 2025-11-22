@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.54
+// @version      11.0.55
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.54";
+    window.BUILD_VERSION = "11.0.55";
 (function () {
 
   // Configuration constants and default settings
@@ -7235,11 +7235,15 @@
               // Clone the main element to modify it without affecting the page
               const mainClone = mainElement.cloneNode(true);
 
+              // Remove miniTOC elements first (unconditionally)
+              const miniTocElements = mainClone.querySelectorAll(".miniTOC, [class*='miniTOC']");
+              miniTocElements.forEach((el) => el.remove());
+
               // Remove navigation elements from the clone
               // BUT: Keep nav elements that are inside article/section tags (these are "Related Links" content)
               // Note: Can't use descendant selectors in :not(), so we'll remove manually
               const navElements = mainClone.querySelectorAll(
-                "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer, .miniTOC, [class*='miniTOC']"
+                "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer"
               );
               navElements.forEach((el) => {
                 // Keep nav elements that are inside article or section tags
@@ -7389,9 +7393,17 @@
       // Clone the content element to avoid modifying the original DOM
       const contentClone = contentElement.cloneNode(true);
 
+      // Remove miniTOC elements first (unconditionally)
+      const miniTocElements = contentClone.querySelectorAll(".miniTOC, [class*='miniTOC']");
+      console.log(`📄 Found ${miniTocElements.length} miniTOC elements to remove`);
+      miniTocElements.forEach((el) => {
+        console.log(`   ❌ Removing miniTOC: ${el.className}`);
+        el.remove();
+      });
+      
       // Apply nav filtering - remove navigation elements that are NOT inside article/section
       const navElements = contentClone.querySelectorAll(
-        "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer, .miniTOC, [class*='miniTOC']"
+        "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer"
       );
       console.log(`📄 Found ${navElements.length} navigation elements in regular content`);
       console.log(`📄 contentClone tagName: ${contentClone.tagName}, id: ${contentClone.id}, class: ${contentClone.className}`);
