@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.43
+// @version      11.0.44
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.43";
+    window.BUILD_VERSION = "11.0.44";
 (function () {
 
   // Configuration constants and default settings
@@ -3268,8 +3268,8 @@
           debug(`[DATABASE] 🔍 Searching for database by name: ${searchTerm}`);
           showSpinner();
 
-          // Query all databases fresh (no cache)
-          const databases = await getAllDatabases({ forceRefresh: true });
+          // Query databases (use cache for speed)
+          const databases = await getAllDatabases();
 
           debug(
             `📋 Available databases: ${databases
