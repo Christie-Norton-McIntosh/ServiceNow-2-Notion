@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.47
+// @version      11.0.48
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.47";
+    window.BUILD_VERSION = "11.0.48";
 (function () {
 
   // Configuration constants and default settings
@@ -1759,6 +1759,11 @@
         }
 
       case "checkbox":
+        // Handle actual boolean values directly
+        if (typeof value === "boolean") {
+          return { checkbox: value };
+        }
+        // Handle string representations
         const boolValue = stringValue.toLowerCase();
         return {
           checkbox:
