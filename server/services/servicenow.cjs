@@ -2662,6 +2662,13 @@ async function extractContentFromHtml(html) {
                 markedBlocks.push(...depthResult.deferredBlocks);
               }
               
+              // CRITICAL FIX: Skip if we have no valid children and no marked blocks
+              // This happens when all nestedChildren have existing markers and were skipped
+              if (validChildren.length === 0 && markedBlocks.length === 0) {
+                console.log(`🔍 Skipping empty bulleted_list_item (no text, no valid children, no marked blocks)`);
+                continue; // Skip this empty list item
+              }
+              
               console.log(`🔍 Creating bulleted_list_item with no text but ${validChildren.length} valid children`);
               
               let markerToken = null;
@@ -3321,6 +3328,12 @@ async function extractContentFromHtml(html) {
               }
               
               console.log(`🔍 Creating numbered_list_item with no text but ${validChildren.length} valid children`);
+              
+              // CRITICAL FIX: Skip if we have no valid children and no marked blocks
+              if (validChildren.length === 0 && markedBlocks.length === 0) {
+                console.log(`🔍 Skipping empty numbered_list_item (no text, no valid children, no marked blocks)`);
+                continue;
+              }
               
               let markerToken = null;
               const richText = [{ type: "text", text: { content: "" } }];
