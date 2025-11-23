@@ -985,6 +985,14 @@ function deduplicateTableBlocks(blocks) {
       continue;
     }
     
+    // FIX v11.0.71: Check if table.children exists (may be stripped by enforceNestingDepthLimit at depth 2+)
+    if (!block.table.children || !Array.isArray(block.table.children)) {
+      // Table without children (deferred for orchestration) - can't deduplicate, keep it
+      result.push(block);
+      prevTableKey = null;
+      continue;
+    }
+    
     // Generate key based on table content
     const key = JSON.stringify(block.table.children.map(row => row.table_row.cells));
     

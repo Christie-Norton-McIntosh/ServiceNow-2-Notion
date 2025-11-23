@@ -271,6 +271,10 @@ async function orchestrateDeepNesting(pageId, markerMap) {
         if (imageCount > 0) {
           log(`🖼️ [IMAGE-DEBUG] Parent not found! ${imageCount} image(s) will be appended to page root as fallback`);
         }
+        if (tableCount > 0) {
+          log(`📊 [TABLE-DEBUG] Parent not found! ${tableCount} table(s) will be appended to page root as FALLBACK`);
+          log(`📊 [TABLE-DEBUG] ⚠️ THIS IS THE BUG! Table should be nested, not at root level!`);
+        }
         // Clean orphaned markers (preserve all markers in the map) and ensure no private keys
         blocksToAppend = cleanOrphanedMarkersFromBlocks(blocksToAppend, markerKeys);
         deepStripPrivateKeys(blocksToAppend);
@@ -289,6 +293,7 @@ async function orchestrateDeepNesting(pageId, markerMap) {
       
       if (tableCount > 0) {
         log(`📊 [TABLE-DEBUG] Parent found! Will append ${tableCount} table(s) to parent ${parentId}`);
+        log(`📊 [TABLE-DEBUG] ✅ Appending to correct parent: ${parentId}`);
       }
       
       // Log marker details for debugging
