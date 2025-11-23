@@ -2262,6 +2262,14 @@ async function extractContentFromHtml(html) {
           
           // Extract text content without nested blocks for the list item text
           const $textOnly = $li.clone();
+          
+          // CRITICAL FIX v11.0.65: Log what we're removing for debugging
+          const tableWraps = $textOnly.find('div.table-wrap');
+          const tables = $textOnly.find('table');
+          if (tableWraps.length > 0 || tables.length > 0) {
+            console.log(`🔍 [TABLE-REMOVE-UL] Before removal: ${tableWraps.length} table-wraps, ${tables.length} tables`);
+          }
+          
           // Remove nested blocks (including those inside wrapper divs)
           // First remove immediate block children
           // CRITICAL FIX v11.0.63: Don't remove div.p wrapper - only remove nested blocks INSIDE it
@@ -2271,7 +2279,14 @@ async function extractContentFromHtml(html) {
           // Also remove figure to prevent parseRichText from extracting images that were already processed
           $textOnly.find('div.table-wrap').remove(); // Remove wrapper first (contains table)
           $textOnly.find('table, div.note, pre, ul, ol, figure').remove();
+          
           const textOnlyHtml = $textOnly.html();
+          
+          // CRITICAL FIX v11.0.65: Check if table HTML remains in text
+          if (textOnlyHtml && textOnlyHtml.includes('<table')) {
+            console.log(`❌ [TABLE-REMOVE-UL] Table HTML still present after removal!`);
+            console.log(`   Remaining HTML snippet: ${textOnlyHtml.substring(textOnlyHtml.indexOf('<table'), textOnlyHtml.indexOf('<table') + 100)}`);
+          }
           
           // DEBUG: Check if there are any img tags remaining in textOnlyHtml
           const remainingImgs = (textOnlyHtml.match(/<img/gi) || []).length;
@@ -2946,6 +2961,14 @@ async function extractContentFromHtml(html) {
           
           // Extract text content without nested blocks for the list item text
           const $textOnly = $li.clone();
+          
+          // CRITICAL FIX v11.0.65: Log what we're removing for debugging
+          const tableWraps = $textOnly.find('div.table-wrap');
+          const tables = $textOnly.find('table');
+          if (tableWraps.length > 0 || tables.length > 0) {
+            console.log(`🔍 [TABLE-REMOVE-OL] Before removal: ${tableWraps.length} table-wraps, ${tables.length} tables`);
+          }
+          
           // Remove nested blocks (including those inside wrapper divs)
           // CRITICAL FIX v11.0.63: Don't remove div.p wrapper - only remove nested blocks INSIDE it
           $textOnly.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.itemgroup, > div.stepxmp, > div.info, > div.note').remove();
@@ -2953,7 +2976,14 @@ async function extractContentFromHtml(html) {
           // CRITICAL FIX v11.0.64: Remove in specific order - table-wrap first (contains table)
           $textOnly.find('div.table-wrap').remove(); // Remove wrapper first (contains table)
           $textOnly.find('table, div.note, pre, ul, ol, figure').remove();
+          
           const textOnlyHtml = $textOnly.html();
+          
+          // CRITICAL FIX v11.0.65: Check if table HTML remains in text
+          if (textOnlyHtml && textOnlyHtml.includes('<table')) {
+            console.log(`❌ [TABLE-REMOVE-OL] Table HTML still present after removal!`);
+            console.log(`   Remaining HTML snippet: ${textOnlyHtml.substring(textOnlyHtml.indexOf('<table'), textOnlyHtml.indexOf('<table') + 100)}`);
+          }
           
           // DEBUG: Check if there are any img tags remaining in textOnlyHtml
           const remainingImgs = (textOnlyHtml.match(/<img/gi) || []).length;
