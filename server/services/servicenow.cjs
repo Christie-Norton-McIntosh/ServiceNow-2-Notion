@@ -2938,8 +2938,8 @@ async function extractContentFromHtml(html) {
         // Extract the nested blocks from inside div.p, but preserve the wrapper's text
         $li.find('> div:not(.note):not(.table-wrap):not(.stepxmp), > div.p, > div.itemgroup, > div.info').each((i, wrapper) => {
           // Find blocks inside this wrapper
-          // NOTE: Removed '> figure' and '> div.table-wrap' - these should only be processed when their parent div.p is processed
-          const innerBlocks = $(wrapper).find('> table, > div.note, > pre, > ul, > ol').toArray();
+          // CRITICAL FIX v11.0.66: Include div.table-wrap so tables inside wrappers are detected
+          const innerBlocks = $(wrapper).find('> table, > div.table-wrap, > div.note, > pre, > ul, > ol').toArray();
           if (innerBlocks.length > 0) {
             const wrapperClass = $(wrapper).attr('class') || 'no-class';
             console.log(`🔍 [DIV-P-FIX-OL] Found ${innerBlocks.length} blocks inside <div class="${wrapperClass}"> wrapper`);
