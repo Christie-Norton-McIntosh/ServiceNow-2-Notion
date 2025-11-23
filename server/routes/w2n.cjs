@@ -855,6 +855,44 @@ router.post('/W2N', async (req, res) => {
       });
     }
 
+    // FIX v11.0.71: Deep validation to catch invalid blocks before API call
+    function validateBlocksRecursively(blocks, path = 'root') {
+      if (!Array.isArray(blocks)) return { valid: true, errors: [] };
+      
+      const errors = [];
+      blocks.forEach((block, idx) => {
+        const blockPath = `${path}[${idx}]`;
+        
+        // Check if block has type property
+        if (!block || typeof block !== 'object') {
+          errors.push(`${blockPath}: Block is ${block === null ? 'null' : typeof block}`);
+          return;
+        }
+        
+        if (!block.type) {
+          errors.push(`${blockPath}: Block has no type property (keys: ${Object.keys(block).join(', ')})`);
+          return;
+        }
+        
+        // Check children recursively
+        const blockType = block.type;
+        const blockContent = block[blockType];
+        if (blockContent && Array.isArray(blockContent.children)) {
+          const childErrors = validateBlocksRecursively(blockContent.children, `${blockPath}.${blockType}.children`);
+          errors.push(...childErrors.errors);
+        }
+      });
+      
+      return { valid: errors.length === 0, errors };
+    }
+    
+    const validation = validateBlocksRecursively(children);
+    if (!validation.valid) {
+      log(`❌ [VALIDATION] Found ${validation.errors.length} invalid blocks before API call:`);
+      validation.errors.forEach(err => log(`   ⚠️ ${err}`));
+      throw new Error(`Invalid blocks detected: ${validation.errors.slice(0, 3).join('; ')}`);
+    }
+    
     // Create the page (handling Notion's 100-block limit)
     log(`� Creating Notion page with ${children.length} blocks`);
 
@@ -1004,6 +1042,68 @@ router.post('/W2N', async (req, res) => {
     
     while (retryCount <= maxRetries || rateLimitRetryCount <= maxRateLimitRetries) {
       try {
+        // FIX v11.0.71: Validate initialBlocks right before API call
+        const preApiValidation = validateBlocksRecursively(initialBlocks, 'initialBlocks');
+        if (!preApiValidation.valid) {
+          log(`❌ [PRE-API-VALIDATION] Found ${preApiValidation.errors.length} invalid blocks in initialBlocks:`);
+          preApiValidation.errors.forEach(err => log(`   ⚠️ ${err}`));
+          
+          // Dump the problematic block for debugging
+          const problematicPath = preApiValidation.errors[0];
+          log(`🔬 [DEBUG] Attempting to dump problematic block structure...`);
+          try {
+            // Parse path like "initialBlocks[9].numbered_list_item.children[3].bulleted_list_item.children[2]"
+            const pathParts = problematicPath.match(/\[(\d+)\]/g);
+            if (pathParts && pathParts.length >= 3) {
+              const idx1 = parseInt(pathParts[0].match(/\d+/)[0]);
+              const idx2 = parseInt(pathParts[1].match(/\d+/)[0]);
+              const idx3 = parseInt(pathParts[2].match(/\d+/)[0]);
+              const block = initialBlocks[idx1]?.numbered_list_item?.children?.[idx2]?.bulleted_list_item?.children?.[idx3];
+              log(`🔬 Problematic block: ${JSON.stringify(block, null, 2)}`);
+            }
+          } catch (e) {
+            log(`⚠️ Failed to dump block: ${e.message}`);
+          }
+          
+          throw new Error(`Invalid blocks in initialBlocks: ${preApiValidation.errors.slice(0, 3).join('; ')}`);
+        }
+        
+        // FIX v11.0.71: Dump the exact block that's causing issues
+        try {
+          log(`🔬 [DUMP-START] About to check block structure`);
+          const block9 = initialBlocks[9];
+          log(`🔬 [DUMP-1] block9 type: ${block9 ? block9.type : 'undefined'}`);
+          
+          if (block9 && block9.numbered_list_item && block9.numbered_list_item.children) {
+            log(`🔬 [DUMP-2] block9.numbered_list_item.children length: ${block9.numbered_list_item.children.length}`);
+            const child3 = block9.numbered_list_item.children[3];
+            log(`🔬 [DUMP-3] child3 type: ${child3 ? child3.type : 'undefined'}`);
+            
+            if (child3 && child3.bulleted_list_item && child3.bulleted_list_item.children) {
+              log(`🔬 [DUMP-4] child3.bulleted_list_item.children length: ${child3.bulleted_list_item.children.length}`);
+              const child2 = child3.bulleted_list_item.children[2];
+              log(`🔬 [DUMP-5] child2 value: ${JSON.stringify(child2)}`);
+            }
+          }
+          log(`🔬 [DUMP-END] Finished checking block structure`);
+        } catch (e) {
+          log(`⚠️ [DUMP-ERROR] ${e.message}, stack: ${e.stack}`);
+        }
+        
+        // DEBUG v11.0.70: Log blocks being sent to Notion
+        const addFiltersBlock = initialBlocks.find(b => {
+          if (b.type === 'numbered_list_item') {
+            const text = b.numbered_list_item?.rich_text?.map(rt => rt.text?.content || '').join('') || '';
+            return text.includes('Add filters to a class');
+          }
+          return false;
+        });
+        if (addFiltersBlock) {
+          const blockText = addFiltersBlock.numbered_list_item.rich_text.map(rt => rt.text?.content || '').join('');
+          console.log(`🔍 [TEXT-TRACE-3] Sending to Notion API: "${blockText.substring(0, 300)}"`);
+          console.log(`🔍 [TEXT-TRACE-3] Block has ${addFiltersBlock.numbered_list_item.children?.length || 0} children`);
+        }
+        
         response = await notion.pages.create({
           parent: { database_id: payload.databaseId },
           properties: properties,
@@ -1066,6 +1166,28 @@ router.post('/W2N', async (req, res) => {
     }
 
     log("✅ Page created successfully:", response.id);
+    
+    // DEBUG v11.0.70: Check if text is in created page
+    (async () => {
+      try {
+        const pageBlocks = await notion.blocks.children.list({ block_id: response.id, page_size: 100 });
+        const addFiltersBlock = pageBlocks.results.find(b => {
+          if (b.type === 'numbered_list_item') {
+            const text = b.numbered_list_item?.rich_text?.map(rt => rt.text?.content || '').join('') || '';
+            return text.includes('Add filters to a class');
+          }
+          return false;
+        });
+        if (addFiltersBlock) {
+          const blockText = addFiltersBlock.numbered_list_item.rich_text.map(rt => rt.text?.content || '').join('');
+          console.log(`🔍 [TEXT-TRACE-4] In created page: "${blockText.substring(0, 300)}"`);
+        } else {
+          console.log(`🔍 [TEXT-TRACE-4] "Add filters to a class" block NOT found in created page!`);
+        }
+      } catch (e) {
+        console.log(`🔍 [TEXT-TRACE-4] Error checking created page: ${e.message}`);
+      }
+    })();
     
     // SEND RESPONSE IMMEDIATELY to prevent client timeout
     // The response must be sent before validation and other post-processing
