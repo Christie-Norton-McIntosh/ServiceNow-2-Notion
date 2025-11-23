@@ -731,16 +731,27 @@ async function extractContentFromHtml(html) {
           // Split on newlines to create separate rich text elements for line breaks
           const lines = cleanedText.split('\n');
           for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            // Add the line if it has content or if it's not the last line (preserve empty lines between content)
-            if (line || i < lines.length - 1) {
+            // CRITICAL FIX: Trim leading whitespace to prevent empty list item lines
+            // Notion displays leading whitespace/newlines as vertical space, pushing text below bullet/number
+            const line = lines[i].trimStart();
+            // Only add lines that have actual content after trimming
+            // Skip empty lines entirely - don't create rich_text with empty content
+            if (line) {
               richText.push({
                 type: "text",
                 text: { content: line },
                 annotations: normalizeAnnotations(currentAnnotations),
               });
-              // Add a soft line break after each line except the last
-              if (i < lines.length - 1) {
+              // Add a soft line break only if there are more non-empty lines coming
+              // Find next non-empty line
+              let hasMoreContent = false;
+              for (let j = i + 1; j < lines.length; j++) {
+                if (lines[j].trimStart()) {
+                  hasMoreContent = true;
+                  break;
+                }
+              }
+              if (hasMoreContent) {
                 richText.push({
                   type: "text",
                   text: { content: "\n" },
@@ -1374,12 +1385,20 @@ async function extractContentFromHtml(html) {
         console.log(`🔍 Callout content after removing title: "${calloutContent.substring(0, 100)}${calloutContent.length > 100 ? '...' : ''}"`);
         console.log(`🔍 Has callout content: ${hasCalloutContent}, Is title-only: ${isTitleOnly}, Has ${childBlocks.length} deferred children`);
         
-        // If callout has NO content (not even a title) and has nested blocks, skip creating the callout
-        // Just add the nested blocks directly - they'll be processed as siblings
-        // However, if it has a title (even if title-only), still create the callout to preserve the Note/Warning/etc. label
-        if (!hasCalloutContent && childBlocks.length > 0) {
-          console.log(`🔍 Skipping empty callout (no content, only nested blocks) - adding nested blocks directly`);
-          processedBlocks.push(...childBlocks);
+        // CRITICAL: Skip callouts that are empty OR title-only without nested content
+        // This prevents empty/useless note callouts from appearing in Notion
+        // Cases:
+        // 1. No content OR title-only WITH nested blocks → skip callout, add nested blocks as siblings
+        // 2. No content OR title-only WITHOUT nested blocks → skip callout entirely (nothing to show)
+        // 3. Has real content (not just title) → create callout normally
+        if (!hasCalloutContent || (isTitleOnly && childBlocks.length === 0)) {
+          if (childBlocks.length > 0) {
+            console.log(`🔍 Skipping ${!hasCalloutContent ? 'empty' : 'title-only'} callout - adding nested blocks directly`);
+            processedBlocks.push(...childBlocks);
+          } else {
+            console.log(`🔍 Skipping ${!hasCalloutContent ? 'completely empty' : 'title-only'} callout (no content, no nested blocks)`);
+            // Don't add anything - this callout is truly empty
+          }
         } else {
           // Create callout WITH content (even if it's just the title)
           console.log(`🔍 Creating callout with ${calloutRichText.length} rich_text elements and ${childBlocks.length} deferred children`);
@@ -1452,25 +1471,36 @@ async function extractContentFromHtml(html) {
         const { richText: calloutRichText, imageBlocks: calloutImages } = await parseRichText(cleanedContent);
         console.log(`🔍 Simple callout rich_text has ${calloutRichText.length} elements, content preview: "${calloutRichText.map(rt => rt.text.content).join('').substring(0, 100)}..."`);
         
+        // CRITICAL: Check if callout has any actual content before creating it
+        const simpleCalloutContent = calloutRichText.map(rt => rt.text.content).join('').trim();
+        const hasSimpleContent = simpleCalloutContent.length > 0;
+        
+        console.log(`🔍 Simple callout has content: ${hasSimpleContent}, length: ${simpleCalloutContent.length}`);
+        
         // Add any image blocks found in the callout
         if (calloutImages && calloutImages.length > 0) {
           processedBlocks.push(...calloutImages);
         }
         
-        // Split if exceeds 100 elements (Notion limit)
-        const richTextChunks = splitRichTextArray(calloutRichText);
-        console.log(`🔍 Simple callout split into ${richTextChunks.length} chunks`);
-        for (const chunk of richTextChunks) {
-          console.log(`🔍 Creating simple callout block with ${chunk.length} rich_text elements`);
-          processedBlocks.push({
-            object: "block",
-            type: "callout",
-            callout: {
-              rich_text: chunk,
-              icon: { type: "emoji", emoji: calloutIcon },
-              color: calloutColor
-            }
-          });
+        // Only create the callout if it has actual text content
+        if (hasSimpleContent) {
+          // Split if exceeds 100 elements (Notion limit)
+          const richTextChunks = splitRichTextArray(calloutRichText);
+          console.log(`🔍 Simple callout split into ${richTextChunks.length} chunks`);
+          for (const chunk of richTextChunks) {
+            console.log(`🔍 Creating simple callout block with ${chunk.length} rich_text elements`);
+            processedBlocks.push({
+              object: "block",
+              type: "callout",
+              callout: {
+                rich_text: chunk,
+                icon: { type: "emoji", emoji: calloutIcon },
+                color: calloutColor
+              }
+            });
+          }
+        } else {
+          console.log(`🔍 Skipping empty simple callout (no text content)`);
         }
       }
       $elem.remove(); // Mark as processed
@@ -1485,22 +1515,33 @@ async function extractContentFromHtml(html) {
       const inner = $elem.html() || '';
       const { richText: calloutRichText, imageBlocks: calloutImages } = await parseRichText(inner);
       
+      // CRITICAL: Check if callout has any actual content before creating it
+      const asideCalloutContent = calloutRichText.map(rt => rt.text.content).join('').trim();
+      const hasAsideContent = asideCalloutContent.length > 0;
+      
+      console.log(`🔍 Aside/div callout has content: ${hasAsideContent}, length: ${asideCalloutContent.length}`);
+      
       // Add any image blocks found in the callout
       if (calloutImages && calloutImages.length > 0) {
         processedBlocks.push(...calloutImages);
       }
       
-      const richTextChunks = splitRichTextArray(calloutRichText);
-      for (const chunk of richTextChunks) {
-        processedBlocks.push({
-          object: "block",
-          type: "callout",
-          callout: {
-            rich_text: chunk,
-            icon: { type: "emoji", emoji: calloutIcon },
-            color: calloutColor
-          }
-        });
+      // Only create the callout if it has actual text content
+      if (hasAsideContent) {
+        const richTextChunks = splitRichTextArray(calloutRichText);
+        for (const chunk of richTextChunks) {
+          processedBlocks.push({
+            object: "block",
+            type: "callout",
+            callout: {
+              rich_text: chunk,
+              icon: { type: "emoji", emoji: calloutIcon },
+              color: calloutColor
+            }
+          });
+        }
+      } else {
+        console.log(`🔍 Skipping empty aside/div callout (no text content)`);
       }
       $elem.remove();
       
