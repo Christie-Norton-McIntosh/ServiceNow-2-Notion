@@ -2204,7 +2204,9 @@ async function extractContentFromHtml(html) {
         // that aren't semantic block elements themselves (like div without class, or div.p)
         
         // Step 1: Find immediate block children
-        let nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.stepxmp, > div.note').toArray();
+        // CRITICAL FIX v11.0.63: Don't treat div.p as a block - it's a wrapper for mixed content
+        // Look INSIDE div.p for actual nested blocks instead of treating the div itself as a block
+        let nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.stepxmp, > div.note').toArray();
         
         // Step 2: Also look for blocks nested inside plain wrapper divs (NOT div.p, which is handled in step 1)
         $li.find('> div:not(.note):not(.table-wrap):not(.stepxmp):not(.p)').each((i, wrapper) => {
@@ -2216,15 +2218,16 @@ async function extractContentFromHtml(html) {
           }
         });
         
-        // FIX v11.0.24: Search inside div.p for nested callouts
-        // div.p often contains mixed content (text + lists + callouts)
-        // The callouts inside div.p need to be extracted as nested blocks
+        // FIX v11.0.63: Search inside div.p for ALL nested block types (not just callouts)
+        // div.p is a semantic wrapper that contains mixed content (text + lists + tables + callouts)
+        // We need to extract the nested blocks from inside div.p, but preserve the wrapper's text
         $li.find('> div.p').each((i, divP) => {
-          const innerCallouts = $(divP).find('> div.note').toArray();
-          if (innerCallouts.length > 0) {
-            innerCallouts.forEach(callout => {
-              if (!nestedBlocks.includes(callout)) {
-                nestedBlocks.push(callout);
+          const innerBlocks = $(divP).find('> ol, > ul, > table, > div.table-wrap, > div.note, > figure, > pre').toArray();
+          if (innerBlocks.length > 0) {
+            console.log(`🔍 [DIV-P-FIX] Found ${innerBlocks.length} blocks inside div.p wrapper`);
+            innerBlocks.forEach(block => {
+              if (!nestedBlocks.includes(block)) {
+                nestedBlocks.push(block);
               }
             });
           }
@@ -2256,8 +2259,9 @@ async function extractContentFromHtml(html) {
           const $textOnly = $li.clone();
           // Remove nested blocks (including those inside wrapper divs)
           // First remove immediate block children
-          $textOnly.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.stepxmp, > div.note').remove();
-          // Then remove blocks nested inside wrapper divs
+          // CRITICAL FIX v11.0.63: Don't remove div.p wrapper - only remove nested blocks INSIDE it
+          $textOnly.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.stepxmp, > div.note').remove();
+          // Then remove blocks nested inside wrapper divs (including inside div.p)
           // CRITICAL: Also remove figure to prevent parseRichText from extracting images that were already processed
           $textOnly.find('table, div.table-wrap, div.note, pre, ul, ol, figure').remove();
           const textOnlyHtml = $textOnly.html();
@@ -2867,7 +2871,9 @@ async function extractContentFromHtml(html) {
         // FIX ISSUE #3 & #5: Also look inside wrapper divs for deeply nested blocks
         // CRITICAL: Must query AFTER unwrapping to see the newly exposed elements
         // NOTE: Include '> figure' for direct children after unwrapping; duplicate filter will catch figures inside div.p
-        let nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.stepxmp, > div.note').toArray();
+        // CRITICAL FIX v11.0.63: Don't treat div.p as a block - it's a wrapper for mixed content
+        // Look INSIDE div.p for actual nested blocks instead of treating the div itself as a block
+        let nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.stepxmp, > div.note').toArray();
         
         // DUPLICATE FIX: Filter out nested blocks that are INSIDE other nested blocks
         // Example: <div class="p"><figure>...</figure></div> should only process the div, not both
@@ -2905,13 +2911,16 @@ async function extractContentFromHtml(html) {
           console.log(`🔍 [OL-DEBUG] Found ${nestedBlocks.length} nested blocks: ${blockTypes}`);
         }
         
-        // Also look for blocks nested inside plain wrapper divs or div.p
+        // FIX v11.0.63: Look for blocks nested inside plain wrapper divs AND div.p
+        // div.p is a semantic wrapper that contains mixed content (text + nested blocks)
+        // Extract the nested blocks from inside div.p, but preserve the wrapper's text
         $li.find('> div:not(.note):not(.table-wrap):not(.stepxmp), > div.p, > div.itemgroup, > div.info').each((i, wrapper) => {
           // Find blocks inside this wrapper
           // NOTE: Removed '> figure' and '> div.table-wrap' - these should only be processed when their parent div.p is processed
           const innerBlocks = $(wrapper).find('> table, > div.note, > pre, > ul, > ol').toArray();
           if (innerBlocks.length > 0) {
-            console.log(`🔍 Found ${innerBlocks.length} blocks nested inside ordered list wrapper div`);
+            const wrapperClass = $(wrapper).attr('class') || 'no-class';
+            console.log(`🔍 [DIV-P-FIX-OL] Found ${innerBlocks.length} blocks inside <div class="${wrapperClass}"> wrapper`);
             nestedBlocks.push(...innerBlocks);
           }
         });
@@ -2931,8 +2940,9 @@ async function extractContentFromHtml(html) {
           // Extract text content without nested blocks for the list item text
           const $textOnly = $li.clone();
           // Remove nested blocks (including those inside wrapper divs)
-          $textOnly.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.itemgroup, > div.stepxmp, > div.info, > div.note').remove();
-          // Then remove blocks nested inside wrapper divs
+          // CRITICAL FIX v11.0.63: Don't remove div.p wrapper - only remove nested blocks INSIDE it
+          $textOnly.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.itemgroup, > div.stepxmp, > div.info, > div.note').remove();
+          // Then remove blocks nested inside wrapper divs (including inside div.p)
           $textOnly.find('table, div.table-wrap, div.note, pre, ul, ol, figure').remove();
           const textOnlyHtml = $textOnly.html();
           
