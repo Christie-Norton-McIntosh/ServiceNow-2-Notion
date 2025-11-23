@@ -2729,9 +2729,23 @@ async function extractContentFromHtml(html) {
             console.log(`🔍 [INLINE-IMAGE-CHECK] Found ${liImages.length} image(s) in list item HTML`);
           }
           
+          // CRITICAL FIX: Skip empty list items (no text content and no images)
+          // These occur when the source HTML has empty <li> tags or only whitespace
+          if (liRichText.length === 0 && (!liImages || liImages.length === 0)) {
+            console.log(`🔍 Skipping empty list item (no text, no images)`);
+            continue; // Skip this list item entirely
+          }
+          
           const richTextChunks = splitRichTextArray(liRichText);
           for (let chunkIndex = 0; chunkIndex < richTextChunks.length; chunkIndex++) {
             const chunk = richTextChunks[chunkIndex];
+            
+            // Additional safety check: Skip chunks that are empty
+            if (chunk.length === 0) {
+              console.log(`🔍 Skipping empty chunk ${chunkIndex} of list item`);
+              continue;
+            }
+            
             const listItemBlock = {
               object: "block",
               type: "bulleted_list_item",
@@ -3365,9 +3379,23 @@ async function extractContentFromHtml(html) {
             console.log(`🔍 Ordered list item text content: "${textPreview}"`);
           }
           
+          // CRITICAL FIX: Skip empty list items (no text content and no images)
+          // These occur when the source HTML has empty <li> tags or only whitespace
+          if (liRichText.length === 0 && (!liImages || liImages.length === 0)) {
+            console.log(`🔍 Skipping empty ordered list item (no text, no images)`);
+            continue; // Skip this list item entirely
+          }
+          
           const richTextChunks = splitRichTextArray(liRichText);
           for (let chunkIndex = 0; chunkIndex < richTextChunks.length; chunkIndex++) {
             const chunk = richTextChunks[chunkIndex];
+            
+            // Additional safety check: Skip chunks that are empty
+            if (chunk.length === 0) {
+              console.log(`🔍 Skipping empty chunk ${chunkIndex} of ordered list item`);
+              continue;
+            }
+            
             const listItemBlock = {
               object: "block",
               type: "numbered_list_item",
