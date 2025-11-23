@@ -2224,10 +2224,15 @@ async function extractContentFromHtml(html) {
         $li.find('> div.p').each((i, divP) => {
           const innerBlocks = $(divP).find('> ol, > ul, > table, > div.table-wrap, > div.note, > figure, > pre').toArray();
           if (innerBlocks.length > 0) {
-            console.log(`🔍 [DIV-P-FIX] Found ${innerBlocks.length} blocks inside div.p wrapper`);
-            innerBlocks.forEach(block => {
+            console.log(`🔍 [DIV-P-FIX] div.p[${i}] contains ${innerBlocks.length} blocks:`);
+            innerBlocks.forEach((block, idx) => {
+              const blockName = block.name;
+              const blockClass = $(block).attr('class') || '';
+              const classStr = blockClass ? ` class="${blockClass}"` : '';
+              console.log(`🔍 [DIV-P-FIX]   [${idx}] <${blockName}${classStr}>`);
               if (!nestedBlocks.includes(block)) {
                 nestedBlocks.push(block);
+                console.log(`🔍 [DIV-P-FIX]   → Added to nestedBlocks (now ${nestedBlocks.length} total)`);
               }
             });
           }
@@ -2262,8 +2267,10 @@ async function extractContentFromHtml(html) {
           // CRITICAL FIX v11.0.63: Don't remove div.p wrapper - only remove nested blocks INSIDE it
           $textOnly.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.stepxmp, > div.note').remove();
           // Then remove blocks nested inside wrapper divs (including inside div.p)
-          // CRITICAL: Also remove figure to prevent parseRichText from extracting images that were already processed
-          $textOnly.find('table, div.table-wrap, div.note, pre, ul, ol, figure').remove();
+          // CRITICAL FIX v11.0.64: Remove in specific order - table-wrap first (contains table)
+          // Also remove figure to prevent parseRichText from extracting images that were already processed
+          $textOnly.find('div.table-wrap').remove(); // Remove wrapper first (contains table)
+          $textOnly.find('table, div.note, pre, ul, ol, figure').remove();
           const textOnlyHtml = $textOnly.html();
           
           // DEBUG: Check if there are any img tags remaining in textOnlyHtml
@@ -2943,7 +2950,9 @@ async function extractContentFromHtml(html) {
           // CRITICAL FIX v11.0.63: Don't remove div.p wrapper - only remove nested blocks INSIDE it
           $textOnly.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.itemgroup, > div.stepxmp, > div.info, > div.note').remove();
           // Then remove blocks nested inside wrapper divs (including inside div.p)
-          $textOnly.find('table, div.table-wrap, div.note, pre, ul, ol, figure').remove();
+          // CRITICAL FIX v11.0.64: Remove in specific order - table-wrap first (contains table)
+          $textOnly.find('div.table-wrap').remove(); // Remove wrapper first (contains table)
+          $textOnly.find('table, div.note, pre, ul, ol, figure').remove();
           const textOnlyHtml = $textOnly.html();
           
           // DEBUG: Check if there are any img tags remaining in textOnlyHtml
