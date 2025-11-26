@@ -3,11 +3,11 @@
 
 cd "$(dirname "$0")/../.."
 
-echo "Testing all pages in patch/pages/pages-to-update/"
+echo "Testing all pages in patch/pages-to-update/"
 echo "============================================"
 echo ""
 
-for file in patch/pages/pages-to-update/*.html; do
+for file in patch/pages-to-update/*.html; do
   [[ -e "$file" ]] || continue
   filename=$(basename "$file")
   

@@ -236,8 +236,8 @@ function convertRichTextBlock(input, options = {}) {
 
   // Handle bold/strong tags
   html = html.replace(/<(b|strong)([^>]*)>([\s\S]*?)<\/\1>/gi, (match, tag, attrs, content) => `__BOLD_START__${content}__BOLD_END__`);
-  // Handle italic/em/dfn tags (dfn = definition term, semantically rendered as italic)
-  html = html.replace(/<(i|em|dfn)([^>]*)>([\s\S]*?)<\/\1>/gi, (match, tag, attrs, content) => `__ITALIC_START__${content}__ITALIC_END__`);
+  // Handle italic/em tags
+  html = html.replace(/<(i|em)([^>]*)>([\s\S]*?)<\/\1>/gi, (match, tag, attrs, content) => `__ITALIC_START__${content}__ITALIC_END__`);
   
   // Handle kbd tags - use shared utility for intelligent detection
   html = html.replace(/<kbd([^>]*)>([\s\S]*?)<\/kbd>/gi, (match, attrs, content) => {
@@ -577,7 +577,6 @@ function convertRichTextBlock(input, options = {}) {
       return part;
     } else {
       // Outside code block - strip known HTML tags
-      // NOTE: dfn intentionally excluded - it's converted to italic markers at line 240
   return part.replace(/<\/?(?:div|span|p|a|img|br|hr|b|i|u|strong|em|code|samp|var|pre|ul|ol|li|table|tr|td|th|tbody|thead|tfoot|h[1-6]|font|center|small|big|sub|sup|abbr|cite|del|ins|mark|s|strike|blockquote|q|address|article|aside|footer|header|main|nav|section|details|summary|figure|figcaption|time|video|audio|source|canvas|svg|path|g|rect|circle|line|polyline|polygon)(?:\s+[^>]*)?>/gi, ' ');
     }
   }).join('');

@@ -5,8 +5,8 @@ set -euo pipefail
 # Usage: bash patch/config/analyze-validation-failures.sh
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SRC_DIR="$ROOT_DIR/patch/pages/pages-to-update"
-LOG_DIR="$ROOT_DIR/patch/logs"
+SRC_DIR="$ROOT_DIR/patch/pages-to-update"
+LOG_DIR="$SRC_DIR/log"
 mkdir -p "$LOG_DIR"
 TS="$(date +%Y%m%d-%H%M%S)"
 ANALYSIS_LOG="$LOG_DIR/validation-analysis-$TS.log"

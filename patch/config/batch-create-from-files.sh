@@ -7,10 +7,9 @@ set -euo pipefail
 # Config
 API_URL="http://localhost:3004/api/W2N"
 DB_ID="282a89fedba5815e91f0db972912ef9f"
-PATCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SRC_DIR="$PATCH_DIR/pages/pages-to-update"
-DEST_DIR="$PATCH_DIR/pages/created-pages"
-LOG_DIR="$PATCH_DIR/logs"
+SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/pages-to-update"
+DEST_DIR="$SRC_DIR/updated-pages"
+LOG_DIR="$SRC_DIR/log"
 TS=$(date +%Y%m%d-%H%M%S)
 LOG_FILE="$LOG_DIR/batch-create-$TS.log"
 RESULTS_JSON="$LOG_DIR/created-pages-$TS.json"

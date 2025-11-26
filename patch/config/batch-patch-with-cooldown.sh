@@ -5,15 +5,13 @@ set -euo pipefail
 # Process in chunks with delays between pages
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SRC_DIR="$ROOT_DIR/patch/pages/pages-to-update"
-DST_DIR="$ROOT_DIR/patch/pages/updated-pages"
-PROBLEMATIC_DIR="$ROOT_DIR/patch/pages/problematic-files"
-LOG_DIR="$ROOT_DIR/patch/logs"
-FAILED_VALIDATION_DIR="$ROOT_DIR/patch/pages/failed-validation"
-PAGE_NOT_FOUND_DIR="$ROOT_DIR/patch/pages/page-not-found"
+SRC_DIR="$ROOT_DIR/patch/pages-to-update"
+DST_DIR="$SRC_DIR/updated-pages"
+PROBLEMATIC_DIR="$SRC_DIR/problematic-files"
+LOG_DIR="$SRC_DIR/log"
+FAILED_VALIDATION_DIR="$SRC_DIR/failed-validation"
 mkdir -p "$LOG_DIR" "$DST_DIR" "$PROBLEMATIC_DIR"
 mkdir -p "$FAILED_VALIDATION_DIR"
-mkdir -p "$PAGE_NOT_FOUND_DIR"
 
 TS="$(date +%Y%m%d-%H%M%S)"
 LOG_FILE="$LOG_DIR/batch-patch-cooldown-$TS.log"
@@ -148,16 +146,9 @@ for html_file in "$SRC_DIR"/*.html; do
         fi
       fi
     fi
-    # Treat Notion 'object_not_found' or block-not-found messages as page-not-found too
-    if [[ "$dry_http_code" == "404" ]] || echo "$dry_body" | grep -qiE 'object_not_found|Could not find block with ID'; then
-      echo "  ⚠️  Validation indicates page not found (404/object_not_found) - moving to page-not-found/" | tee -a "$LOG_FILE"
-      mv "$html_file" "$PAGE_NOT_FOUND_DIR/" || true
-      continue
-    fi
-
     if [[ "$dry_http_code" != "200" ]]; then
-      continue
-    fi
+    continue
+  fi
   fi
 
   has_errors=$(echo "$dry_body" | jq -r '.validationResult.hasErrors // false')
@@ -274,22 +265,14 @@ for html_file in "$SRC_DIR"/*.html; do
       patch_http_code=$(tail -n1 "$temp_response")
       patch_body=$(sed '$d' "$temp_response")
       
-  if [[ "$patch_http_code" == "200" ]]; then
-        # Verify validation passed (PATCH response uses .validation, not .validationResult)
-        validation_result=$(echo "$patch_body" | jq -r '.validation // {}')
+      if [[ "$patch_http_code" == "200" ]]; then
+        # Verify validation passed
+        validation_result=$(echo "$patch_body" | jq -r '.validationResult // {}')
         has_errors=$(echo "$validation_result" | jq -r '.hasErrors // false')
         
         if [[ "$has_errors" != "false" ]]; then
-          # If validation body indicates object_not_found or similar Notion message, treat as page-not-found
-          if echo "$patch_body" | grep -qiE 'object_not_found|Could not find block with ID'; then
-            echo "  ⚠️ PATCH completed but Notion indicates page/object not found - moving to page-not-found/" | tee -a "$LOG_FILE"
-            mv "$html_file" "$PAGE_NOT_FOUND_DIR/" || true
-          else
-            echo "  ❌ PATCH completed but post-PATCH validation failed" | tee -a "$LOG_FILE"
-            echo "     Validation errors: $(echo "$validation_result" | jq -r '.errors | length')" | tee -a "$LOG_FILE"
-            failed_patch=$((failed_patch+1))
-            # Keep file in pages-to-update for retry
-          fi
+          echo "  ❌ PATCH completed but validation failed" | tee -a "$LOG_FILE"
+          failed_patch=$((failed_patch+1))
         else
           echo "  ✅ PATCH successful with clean validation" | tee -a "$LOG_FILE"
           mv "$html_file" "$DST_DIR/"
@@ -314,14 +297,8 @@ for html_file in "$SRC_DIR"/*.html; do
           fi
         fi
       else
-        # If Notion returns object_not_found or block-not-found text in the body treat as page-not-found
-        if [[ "$patch_http_code" == "404" ]] || echo "$patch_body" | grep -qiE 'object_not_found|Could not find block with ID'; then
-          echo "  ⚠️  PATCH HTTP 404/object_not_found: Page not found - moving to page-not-found/" | tee -a "$LOG_FILE"
-          mv "$html_file" "$PAGE_NOT_FOUND_DIR/" || true
-        else
-          echo "  ❌ PATCH HTTP error: $patch_http_code" | tee -a "$LOG_FILE"
-          failed_patch=$((failed_patch+1))
-        fi
+        echo "  ❌ PATCH HTTP error: $patch_http_code" | tee -a "$LOG_FILE"
+        failed_patch=$((failed_patch+1))
       fi
       
       rm -f "$temp_response"

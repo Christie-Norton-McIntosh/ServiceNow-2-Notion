@@ -8,9 +8,9 @@ const path = require('path');
 
 const API_BASE = process.env.SN2N_API_BASE || 'http://localhost:3004/api';
 const DB_ID = process.env.SN2N_DB_ID || '282a89fedba5815e91f0db972912ef9f';
-const SRC_DIR = path.join(__dirname, '..', 'pages', 'pages-to-update');
-const DEST_DIR = path.join(__dirname, '..', 'pages', 'created-pages');
-const LOG_DIR = path.join(__dirname, '..', 'logs');
+const SRC_DIR = path.join(__dirname, '..', 'pages-to-update');
+const DEST_DIR = path.join(SRC_DIR, 'updated-pages');
+const LOG_DIR = path.join(SRC_DIR, 'log');
 const TS = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 const RESULTS_JSON = path.join(LOG_DIR, `collected-pages-${TS}.json`);
 

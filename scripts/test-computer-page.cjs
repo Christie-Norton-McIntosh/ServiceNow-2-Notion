@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 
-const htmlPath = path.join(__dirname, '..', 'patch', 'pages', 'pages-to-update', 'computer-cmdb-ci-computer-class-2025-11-15T06-55-14.html');
+const htmlPath = path.join(__dirname, '..', 'patch', 'pages-to-update', 'computer-cmdb-ci-computer-class-2025-11-15T06-55-14.html');
 const html = fs.readFileSync(htmlPath, 'utf-8');
 
 // Extract page info from comment

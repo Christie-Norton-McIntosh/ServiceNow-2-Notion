@@ -28,9 +28,9 @@ These pages need to be **revalidated** (not re-created):
    tail -f ../logs/validation-property-failures.log
    ```
 
-2. **Run manual revalidation** on specific pages:
+2. **Run manual revalidation** on specific pages (script archived in `archived/cleanup-2025-11-23/revalidate-pages.cjs`):
    ```bash
-   node server/revalidate-pages.cjs
+   node archived/cleanup-2025-11-23/revalidate-pages.cjs
    ```
 
 3. **Or use the PATCH endpoint** to update validation properties:

@@ -106,10 +106,6 @@ This project transforms a large monolithic userscript (18,438 lines across 4 fil
   - Callout boxes with proper styling
   - Definition terms and lists
 - **Table Image Extraction** (v9.1.0+): Automatically extracts images from table cells and places them as separate blocks with placeholder text in cells (see [docs/table-image-extraction.md](docs/table-image-extraction.md))
-- **Automatic Validation**: Validates each extraction and flags pages with conversion issues (see [docs/AUTO-VALIDATION.md](docs/AUTO-VALIDATION.md))
-  - Updates Notion properties (Error checkbox, Validation text, Stats)
-  - Auto-saves failed pages to `patch/pages-to-update/` for re-extraction
-  - Uses ±30% tolerance (70%-150% of expected block count) to avoid false positives
 - **Local Proxy Server**: Node.js server handles HTML-to-Notion conversion with full Cheerio DOM manipulation
 - **Modular Architecture**: Clean ES6 modules bundled with Rollup for easy maintenance
 
@@ -173,28 +169,11 @@ The modular architecture is organized into logical layers:
    ```
 
 ### Available Scripts
-
-**Build & Development:**
 - `npm run build` - Build development version
 - `npm run build:prod` - Build production version (minified)
 - `npm run dev` - Watch mode for development
 - `npm run watch` - Alias for dev mode
 - `npm run clean` - Remove dist directory
-
-**Testing & Validation:**
-- `npm run validate <file>` - Validate single HTML→Notion conversion (counts & types)
-- `npm run validate:batch <dir>` - Batch validate all HTML files (counts & types)
-- `npm run validate:deep <file>` - Validate content order and nesting depth
-- `npm run test:all` - Run all client-side tests
-- `npm run test:all:server` - Run all server-side tests
-- `npm run test:list` - List all available tests
-
-**Server:**
-- `npm start` - Start proxy server
-- `npm run start:dev` - Start with auto-restart (nodemon)
-
-See [docs/VALIDATION_SCRIPTS.md](./docs/VALIDATION_SCRIPTS.md) for validation tool documentation.
-See [docs/AUTO-VALIDATION.md](./docs/AUTO-VALIDATION.md) for automatic validation on extraction.
 
 ## 🔁 Auto-update (GitHub Actions)
 

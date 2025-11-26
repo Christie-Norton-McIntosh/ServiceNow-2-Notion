@@ -7,7 +7,9 @@ const fs = require('fs');
 const path = require('path');
 const cheerio = require('cheerio');
 
-const htmlPath = path.join(__dirname, '../patch/pages/pages-to-update/create-a-ci-identification-rule-2025-11-22t05-37-00-patch-va-patch-validation-failed-2025-11-22T07-22-28.html');
+// Load from server directory since that's where cheerio is installed
+const serverPath = path.join(__dirname, 'server', 'node_modules', 'cheerio');
+const htmlPath = path.join(__dirname, 'patch/pages/pages-to-update/create-a-ci-identification-rule-2025-11-22t05-37-00-patch-va-patch-validation-failed-2025-11-22T07-22-28.html');
 const html = fs.readFileSync(htmlPath, 'utf-8');
 const $ = cheerio.load(html);
 

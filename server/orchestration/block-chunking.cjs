@@ -89,13 +89,6 @@ async function appendBlocksToBlockId(blockId, blocks, opts = {}) {
     let attempts = 0;
     const maxAttempts = opts.maxAttempts || 3;
     
-    // FIX v11.0.6: Inter-chunk delay to prevent rate limit exhaustion
-    // Add delay between chunks (not on first chunk, only on first attempt)
-    if (i > 0 && attempts === 0) {
-      const interChunkDelay = chunks.length > 10 ? 1000 : 500; // 1s if many chunks, else 500ms
-      await new Promise((r) => setTimeout(r, interChunkDelay));
-    }
-    
     while (attempts < maxAttempts) {
       attempts++;
       try {
@@ -108,32 +101,14 @@ async function appendBlocksToBlockId(blockId, blocks, opts = {}) {
         appended += chunk.length;
         break;
       } catch (err) {
-        // FIX v11.0.6: Check if rate limited and apply longer backoff
-        const isRateLimited = err.status === 429 || 
-                             err.code === 'rate_limited' || 
-                             err.message?.toLowerCase().includes('rate limit');
-        
-        if (isRateLimited) {
-          log(
-            `⚠️ 🚦 RATE LIMIT during chunk append (chunk ${i + 1}/${
-              chunks.length
-            }, attempt ${attempts})`
-          );
-          // Longer exponential backoff for rate limit errors: 5s, 10s, 20s (cap 30s)
-          const backoffDelay = Math.min(5000 * Math.pow(2, attempts - 1), 30000);
-          log(`   Waiting ${backoffDelay / 1000}s before retry...`);
-          await new Promise((r) => setTimeout(r, backoffDelay));
-          if (attempts >= maxAttempts) throw err;
-        } else {
-          log(
-            `⚠️ appendBlocksToBlockId chunk ${i + 1}/${
-              chunks.length
-            } failed (attempt ${attempts}): ${err.message}`
-          );
-          if (attempts >= maxAttempts) throw err;
-          // Standard backoff for other errors
-          await new Promise((r) => setTimeout(r, 250 * attempts));
-        }
+        log(
+          `⚠️ appendBlocksToBlockId chunk ${i + 1}/${
+            chunks.length
+          } failed (attempt ${attempts}): ${err.message}`
+        );
+        if (attempts >= maxAttempts) throw err;
+        // small backoff
+        await new Promise((r) => setTimeout(r, 250 * attempts));
       }
     }
   }
