@@ -7,8 +7,6 @@ set -euo pipefail
 
 PATCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 UPDATED_DIR="$PATCH_DIR/pages/updated-pages"
-PAGE_NOT_FOUND_DIR="$PATCH_DIR/pages/page-not-found"
-mkdir -p "$PAGE_NOT_FOUND_DIR"
 API="http://localhost:3004/api/W2N"
 VAL="http://localhost:3004/api/validate"
 
@@ -57,13 +55,7 @@ for FP in "$UPDATED_DIR"/*.html; do
       ((VFAIL++))
     fi
   else
-    # If Notion indicates object_not_found or block-not-found in the response body treat as page-not-found
-    if [[ "$CODE" == "404" ]] || echo "$BODY" | grep -qiE 'object_not_found|Could not find block with ID'; then
-      echo "⚠️ PATCH 404/object_not_found (page not found) $FILE -> $PAGEIDCLEAN - moving to page-not-found/"
-      mv "$FP" "$PAGE_NOT_FOUND_DIR/" || true
-    else
-      echo "❌ PATCH FAIL $FILE -> $PAGEIDCLEAN (HTTP $CODE)"
-    fi
+    echo "❌ PATCH FAIL $FILE -> $PAGEIDCLEAN (HTTP $CODE)"
     ((FAIL++))
   fi
 

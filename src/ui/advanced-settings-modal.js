@@ -1,7 +1,6 @@
 // Advanced Settings Modal - Configuration settings UI
 
 import { debug, getConfig } from "../config.js";
-import { showPropertyMappingModal } from "./property-mapping-modal.js";
 
 /**
  * Inject the advanced settings modal into the DOM
@@ -58,27 +57,6 @@ export function injectAdvancedSettingsModal() {
             Enable detailed logging in both client (console) and server (proxy logs)
           </div>
         </div>
-
-        <div style="margin-bottom:16px;">
-          <label style="display: flex; align-items: center; margin-bottom: 12px; font-size: 14px; cursor: pointer;">
-            <input type="checkbox" id="w2n-modal-force-reextract" ${
-              config.forceReextract ? "checked" : ""
-            } style="margin-right: 10px; transform: scale(1.1);">
-            <span style="flex:1;">Force re-extract (ignore dedupe)</span>
-          </label>
-          <div style="font-size: 12px; color: #6b7280; margin-left: 24px; margin-top: -8px;">
-            Bypass persistent URL deduplication and always reprocess pages
-          </div>
-        </div>
-
-        <div style="margin-bottom:16px;">
-          <button id="w2n-clear-persisted-urls" style="width:100%;padding:8px;border-radius:6px;background:#ef4444;color:white;border:none;cursor:pointer;font-size:13px;">
-            🧹 Clear processed URL cache
-          </button>
-          <div style="font-size: 11px; color: #6b7280; margin-top:6px;">
-            Empties stored cross-session dedupe list (use before a full refresh run)
-          </div>
-        </div>
         
   <div style="margin-bottom:20px;">
           <label style="display: flex; align-items: center; margin-bottom: 12px; font-size: 14px; cursor: pointer;">
@@ -90,12 +68,6 @@ export function injectAdvancedSettingsModal() {
           <div style="font-size: 12px; color: #6b7280; margin-left: 24px; margin-top: -8px;">
             Check for existing pages with same title before creating new ones
           </div>
-        </div>
-        
-        <div style="margin-bottom:20px; padding-top:16px; border-top:1px solid #eee;">
-          <button id="w2n-configure-mapping-from-settings" style="width:100%;padding:10px;border-radius:6px;background:#10b981;color:white;border:none;cursor:pointer;font-size:14px;">
-            🔗 Configure Property Mapping
-          </button>
         </div>
         
         <div style="display:flex; gap:10px; padding-top:16px; border-top:1px solid #eee;">
@@ -122,8 +94,6 @@ export function setupAdvancedSettingsModal(modal) {
   const closeBtn = modal.querySelector("#w2n-close-advanced-settings");
   const saveBtn = modal.querySelector("#w2n-save-advanced-settings");
   const cancelBtn = modal.querySelector("#w2n-cancel-advanced-settings");
-  const configureMappingBtn = modal.querySelector("#w2n-configure-mapping-from-settings");
-  const clearPersistedBtn = modal.querySelector("#w2n-clear-persisted-urls");
 
   function closeModal() {
     if (modal.parentNode) {
@@ -133,34 +103,6 @@ export function setupAdvancedSettingsModal(modal) {
 
   closeBtn.onclick = closeModal;
   cancelBtn.onclick = closeModal;
-
-  // Configure Property Mapping button
-  if (configureMappingBtn) {
-    configureMappingBtn.onclick = () => {
-      try {
-        showPropertyMappingModal();
-      } catch (e) {
-        debug("Failed to open property mapping modal:", e);
-      }
-    };
-  }
-
-  // Clear persisted URLs cache
-  if (clearPersistedBtn) {
-    clearPersistedBtn.onclick = () => {
-      try {
-        if (typeof GM_setValue === 'function') {
-          GM_setValue('w2n_processed_urls', '[]');
-          debug('[DEDUPE-PERSIST] Cleared persisted processed URL cache');
-          if (typeof GM_notification !== 'undefined') {
-            GM_notification({ title: 'ServiceNow', text: 'Processed URL cache cleared', timeout: 2000 });
-          }
-        }
-      } catch (e) {
-        debug('[DEDUPE-PERSIST] Failed clearing processed URL cache:', e);
-      }
-    };
-  }
 
   // Click outside to close
   modal.onclick = (e) => {
@@ -203,9 +145,6 @@ export function setupAdvancedSettingsModal(modal) {
     const enableDuplicateDetection = modal.querySelector(
       "#w2n-modal-duplicate-detect"
     ).checked;
-    const forceReextract = modal.querySelector(
-      "#w2n-modal-force-reextract"
-    ).checked;
 
     // Combined debugging checkbox
     const enableDebugging = modal.querySelector(
@@ -218,7 +157,6 @@ export function setupAdvancedSettingsModal(modal) {
     config.directSDKImages = directSDKImages;
     config.debugMode = enableDebugging;
     config.enableDuplicateDetection = enableDuplicateDetection;
-  config.forceReextract = forceReextract;
 
     // Save to storage
     try {

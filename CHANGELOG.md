@@ -197,9 +197,10 @@ Date: 2025-11-09
 ### Documentation
 
 - **RATE_LIMIT_PROTECTION.md**: Comprehensive rate limit guide with troubleshooting
-- **RELEASE_NOTES_11.0.0.md**: Full feature list and migration guide
+- **Release Notes**: v11.0.0 feature list and migration guide (archived to `archived/cleanup-2025-11-23/`)
 - **Backup System**: `backups/v10.0.38-20251109-202651/` with BACKUP_INFO.md
 - **Updated Copilot Instructions**: Latest patterns and project structure
+- **Archived**: Test scripts, analysis tools, and temporary documentation moved to `archived/cleanup-2025-11-23/`
 
 ### Bug Fixes
 

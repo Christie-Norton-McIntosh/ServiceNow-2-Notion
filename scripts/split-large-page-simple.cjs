@@ -171,7 +171,7 @@ function splitBySection(htmlFile, outputDir) {
   log(`Total size:       ${files.reduce((sum, f) => sum + f.sizeKB, 0)}KB`, 'cyan');
   log(`\nNext steps:`, 'yellow');
   log(`1. Review split files in: ${outputDir}`, 'reset');
-  log(`2. Move files to pages/pages-to-update/ for batch PATCH`, 'reset');
+  log(`2. Move files to pages-to-update/ for batch PATCH`, 'reset');
   log(`3. Run: cd patch/config && bash batch-patch-with-cooldown.sh`, 'reset');
   log(`4. Original file remains in problematic-files/`, 'reset');
   
@@ -186,8 +186,8 @@ if (require.main === module) {
     log('❌ Usage: node split-large-page-simple.cjs <input-html-file> <output-dir>', 'red');
     log('\nExample:', 'yellow');
     log('  node scripts/split-large-page-simple.cjs \\', 'reset');
-    log('    patch/pages/pages-to-update/generic-policies.html \\', 'reset');
-    log('    patch/pages/pages-to-update/split-policies/', 'reset');
+    log('    patch/pages-to-update/generic-policies.html \\', 'reset');
+    log('    patch/pages-to-update/split-policies/', 'reset');
     process.exit(1);
   }
   

@@ -10,7 +10,7 @@
  *   node scripts/split-large-page.cjs <input-html-file> <output-dir>
  * 
  * Example:
- *   node scripts/split-large-page.cjs patch/pages/pages-to-update/generic-policies-in-devops-config-2025-11-11T10-02-11.html patch/pages/pages-to-update/split/
+ *   node scripts/split-large-page.cjs patch/pages-to-update/generic-policies-in-devops-config-2025-11-11T10-02-11.html patch/pages-to-update/split/
  */
 
 const fs = require('fs');
@@ -208,7 +208,7 @@ if (require.main === module) {
   if (args.length < 2) {
     log('❌ Usage: node split-large-page.cjs <input-html-file> <output-dir>', 'red');
     log('\nExample:', 'yellow');
-    log('  node scripts/split-large-page.cjs patch/pages/pages-to-update/generic-policies.html patch/pages/pages-to-update/split/', 'reset');
+    log('  node scripts/split-large-page.cjs patch/pages-to-update/generic-policies.html patch/pages-to-update/split/', 'reset');
     process.exit(1);
   }
   

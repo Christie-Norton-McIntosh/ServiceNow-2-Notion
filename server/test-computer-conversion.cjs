@@ -3,24 +3,9 @@ const fs = require('fs');
 const path = require('path');
 const cheerio = require('cheerio');
 
-// Read the HTML file (use the NEWER extraction)
-const htmlPath = path.join(__dirname, '../patch/pages/pages-to-update/computer-cmdb-ci-computer-class-2025-11-17T01-56-47.html');
+// Read the HTML file
+const htmlPath = path.join(__dirname, 'patch/pages/pages-to-update/computer-cmdb-ci-computer-class-2025-11-17T01-45-20.html');
 let html = fs.readFileSync(htmlPath, 'utf8');
-
-// Test the double closing div fix
-console.log('\n=== TESTING DOUBLE CLOSING DIV FIX ===');
-const beforeFix = html.match(/<\/table><\/div><\/div>/g);
-console.log(`Double closing divs BEFORE fix: ${beforeFix ? beforeFix.length : 0}`);
-
-// Apply the fix
-let fixedHtml = html;
-const doublePattern = /<\/table><\/div><\/div>/g;
-fixedHtml = fixedHtml.replace(doublePattern, '</table></div>');
-
-const afterFix = fixedHtml.match(/<\/table><\/div><\/div>/g);
-console.log(`Double closing divs AFTER fix: ${afterFix ? afterFix.length : 0}`);
-
-html = fixedHtml;
 
 console.log('=== BEFORE DATATABLES UNWRAPPING ===');
 let $ = cheerio.load(html);
