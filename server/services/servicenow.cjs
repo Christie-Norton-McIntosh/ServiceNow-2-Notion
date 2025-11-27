@@ -1195,19 +1195,21 @@ async function extractContentFromHtml(html) {
       const cls = String(classes || "");
       let color = "blue_background"; // default to info-ish note
       let icon = "ℹ️";
-      if (/\b(important|critical)\b/.test(cls)) {
+      // FIXED v11.0.6: Removed word boundaries (\b) to handle underscore-separated classes
+      // like "note_note", "warning_type", "important_critical" which are common in ServiceNow HTML
+      if (/(important|critical)/.test(cls)) {
         color = "red_background";
         icon = "⚠️";
-      } else if (/\bwarning\b/.test(cls)) {
+      } else if (/warning/.test(cls)) {
         color = "orange_background";
         icon = "⚠️";
-      } else if (/\bcaution\b/.test(cls)) {
+      } else if (/caution/.test(cls)) {
         color = "yellow_background";
         icon = "⚠️";
-      } else if (/\btip\b/.test(cls)) {
+      } else if (/tip/.test(cls)) {
         color = "green_background";
         icon = "💡";
-      } else if (/\b(info|note)\b/.test(cls)) {
+      } else if (/(info|note)/.test(cls)) {
         color = "blue_background";
         icon = "ℹ️";
       }
@@ -1229,6 +1231,50 @@ async function extractContentFromHtml(html) {
     if (tagName === 'div' && $elem.attr('class') && $elem.attr('class').includes('note')) {
       console.log(`🔍 ✅ MATCHED CALLOUT! class="${$elem.attr('class')}"`);
       console.log(`🔍 Callout HTML preview (first 500 chars): ${($elem.html() || '').substring(0, 500)}`);
+
+      // ----------------------------------------------------------------------------------
+      // CALLOUT DEDUPE (v11.0.x)
+      // Many pages produce duplicate callouts due to nested wrappers or underscore class variants.
+      // We normalize the visible text (strip labels, collapse whitespace) and suppress duplicates.
+      // Implementation notes:
+      //   • Maintain per-request Set in global.__SN2N_CALLOUT_DEDUPE (lifecycle of Node process)
+      //   • Only dedupe bodies >= 15 chars (skip trivial label-only blocks)
+      //   • Exact normalized match with similar length (±15%) ⇒ suppress
+      //   • Replaced with empty paragraph placeholder to preserve ordering offsets
+      if (!global.__SN2N_CALLOUT_DEDUPE) {
+        global.__SN2N_CALLOUT_DEDUPE = new Set();
+      }
+      const rawCalloutHtml = $elem.html() || '';
+      let normalizedBody = rawCalloutHtml
+        .replace(/<span[^>]*class="[^"]*note__title[^"]*"[^>]*>[^<]*<\/span>/gi, '') // strip internal title spans
+        .replace(/<[^>]+>/g, ' ')              // remove remaining tags
+        .toLowerCase()
+        .replace(/\b(note|info|warning|important|tip|caution)\s*:?\s*/gi, '') // strip leading labels
+        .replace(/\s+/g, ' ')                 // collapse whitespace
+        .trim();
+      normalizedBody = normalizedBody.replace(/[.:;,-]+$/,'').trim(); // trim trailing punctuation noise
+
+      let duplicate = false;
+      if (normalizedBody.length >= 15) {
+        for (const seen of global.__SN2N_CALLOUT_DEDUPE) {
+          const lenRatio = normalizedBody.length / (seen.length || 1);
+            if (lenRatio > 0.85 && lenRatio < 1.15 && seen === normalizedBody) {
+              duplicate = true;
+              console.log(`[CALLOUT-DEDUPE] Suppressing duplicate callout: "${normalizedBody.substring(0,80)}"`);
+              break;
+            }
+        }
+      }
+      if (duplicate) {
+        blocks.push({
+          object: 'block',
+          type: 'paragraph',
+          paragraph: { rich_text: [{ type: 'text', text: { content: '' } }] }
+        });
+        return; // Skip generating duplicate callout block
+      } else {
+        global.__SN2N_CALLOUT_DEDUPE.add(normalizedBody);
+      }
 
       // Callout/Note
       const classAttr = $elem.attr('class') || '';
@@ -1717,6 +1763,15 @@ async function extractContentFromHtml(html) {
       const src = $elem.attr('src');
       const alt = $elem.attr('alt') || '';
       console.log(`🖼️ Processing standalone <img>: src="${src ? src.substring(0, 80) : 'none'}", alt="${alt}"`);
+      
+      // FILTER: Skip inline icon images (small decorative icons like edit/menu/delete icons)
+      const imgClass = $elem.attr('class') || '';
+      const isInlineIcon = imgClass.includes('icon') || imgClass.includes('image icon');
+      if (isInlineIcon) {
+        console.log(`🔍 [INLINE-ICON] Skipping inline icon image (class="${imgClass}")`);
+        $elem.remove(); // Remove from DOM but don't create image block
+        return processedBlocks; // Continue without adding to blocks
+      }
       
       if (src && isValidImageUrl(src)) {
         console.log(`✅ Image URL is valid, creating image block...`);
@@ -3398,7 +3453,12 @@ async function extractContentFromHtml(html) {
             for (const note of nestedNotes.toArray()) {
               console.log(`🔍 [PREREQ-NESTED-NOTE] Processing nested div.note as child block`);
               const noteBlocks = await processElement(note);
-              nestedBlocks.push(...noteBlocks);
+              // Defensive: allow single block or array; ignore null/undefined
+              if (Array.isArray(noteBlocks)) {
+                nestedBlocks.push(...noteBlocks);
+              } else if (noteBlocks) {
+                nestedBlocks.push(noteBlocks);
+              }
             }
           } else {
             // No nested notes - process normally

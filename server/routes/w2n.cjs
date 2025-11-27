@@ -21,6 +21,7 @@ const { getAndClearPlaceholderWarnings } = require('../converters/rich-text.cjs'
 const { deduplicateTableBlocks } = require('../converters/table.cjs');
 const { logPlaceholderStripped, logUnprocessedContent, logImageUploadFailed, logCheerioParsingIssue } = require('../utils/verification-log.cjs');
 const { validateNotionPage } = require('../utils/validate-notion-page.cjs');
+const { runValidationAndUpdate } = require('../services/content-validator.cjs');
 
 /**
  * Returns runtime global context for Notion and ServiceNow operations.
@@ -528,6 +529,29 @@ router.post('/W2N', async (req, res) => {
     // Use central dedupe utility so unit tests can target it
     children = dedupeUtil.dedupeAndFilterBlocks(children, { log });
     
+    // SPECIALIZED DEDUPE: Remove duplicate "Before you begin" callouts (Role required: none)
+    // These appear 3 times in the source HTML (one per nested task section) but should only appear once each
+    // The global dedupe may miss them if they're separated by large procedure blocks
+    const beforeYouBeginTexts = new Set();
+    const beforeChildren = children.length;
+    children = children.filter(block => {
+      if (block.type === 'callout' && block.callout?.rich_text) {
+        const text = block.callout.rich_text.map(rt => rt.text?.content || '').join('').trim();
+        // Match "Before you begin" or "Role required:" callouts
+        if (text.startsWith('Before you begin') || text.includes('Role required:')) {
+          if (beforeYouBeginTexts.has(text)) {
+            log(`🔧 [PREREQ-DEDUPE] Removing duplicate "Before you begin" callout: "${text.substring(0, 50)}..."`);
+            return false; // Remove duplicate
+          }
+          beforeYouBeginTexts.add(text);
+        }
+      }
+      return true;
+    });
+    if (children.length < beforeChildren) {
+      log(`🔧 [PREREQ-DEDUPE] Removed ${beforeChildren - children.length} duplicate "Before you begin" callout(s)`);
+    }
+    
     // CRITICAL: Also dedupe children nested inside list items
     // Callouts can appear as children of list items and need deduplication too
     function dedupeNestedChildren(blocks, depth = 0) {
@@ -748,6 +772,39 @@ router.post('/W2N', async (req, res) => {
     }
 
     log("✅ Page created successfully:", response.id);
+    // IMMEDIATE ZERO-BLOCK RECOVERY CHECK (pre-orchestration)
+    try {
+      const initialChildProbe = await notion.blocks.children.list({ block_id: response.id, page_size: 10 });
+      const initialCount = initialChildProbe.results?.length || 0;
+      if (initialCount === 0 && Array.isArray(initialBlocks) && initialBlocks.length > 0) {
+        log(`⚠️ [ZERO-BLOCK-DETECT] Page ${response.id} has 0 children immediately after creation. Attempting recovery append...`);
+        const chunkSize = 100;
+        for (let i = 0; i < initialBlocks.length; i += chunkSize) {
+          const chunk = initialBlocks.slice(i, i + chunkSize);
+          if (typeof deepStripPrivateKeys === 'function') {
+            deepStripPrivateKeys(chunk);
+          }
+          await notion.blocks.children.append({ block_id: response.id, children: chunk });
+          log(`✅ [ZERO-BLOCK-RECOVERY] Appended recovery chunk ${(i / chunkSize) + 1} (${chunk.length} blocks)`);
+        }
+        // Increased delay for Notion eventual consistency (v11.0.6: 1500ms → 2000ms)
+        await new Promise(r => setTimeout(r, 2000));
+        const postRecoveryProbe = await notion.blocks.children.list({ block_id: response.id, page_size: 10 });
+        const postCount = postRecoveryProbe.results?.length || 0;
+        log(`🔎 [ZERO-BLOCK-RECOVERY] Child count after recovery: ${postCount}`);
+        if (postCount === 0) {
+          log(`❌ [ZERO-BLOCK-RECOVERY] Recovery failed (still 0). Will mark page during validation phase.`);
+          // Flag for later property update
+          response._sn2n_zero_block_recovery_failed = true;
+        } else {
+          log(`✅ [ZERO-BLOCK-RECOVERY] Recovery succeeded; proceeding with orchestration.`);
+        }
+      } else {
+        log(`🔍 [ZERO-BLOCK-DETECT] Initial child count: ${initialCount} (no recovery needed)`);
+      }
+    } catch (zbErr) {
+      log(`⚠️ [ZERO-BLOCK-RECOVERY] Error during immediate recovery attempt: ${zbErr.message}`);
+    }
     
     // SEND RESPONSE IMMEDIATELY to prevent client timeout
     // The response must be sent before validation and other post-processing
@@ -1065,6 +1122,26 @@ router.post('/W2N', async (req, res) => {
         // Notion's eventual consistency can take 1-2 seconds for complex pages
         await new Promise(resolve => setTimeout(resolve, 2000));
         
+        // PRE-VALIDATION EMPTY PAGE RETRY: fetch quick child count
+        try {
+          const preVal = await notion.blocks.children.list({ block_id: response.id, page_size: 10 });
+          const preCount = preVal.results?.length || 0;
+          if (preCount === 0 && Array.isArray(initialBlocks) && initialBlocks.length > 0) {
+            log("⚠️ [EMPTY-PAGE-RETRY] Detected 0 blocks before validation; attempting single re-append of initial blocks...");
+            const chunkSize = 100;
+            for (let i = 0; i < initialBlocks.length; i += chunkSize) {
+              const chunk = initialBlocks.slice(i, i + chunkSize);
+              deepStripPrivateKeys && deepStripPrivateKeys(chunk);
+              await notion.blocks.children.append({ block_id: response.id, children: chunk });
+              log(`✅ [EMPTY-PAGE-RETRY] Re-appended chunk ${(i/chunkSize)+1} (${chunk.length} blocks)`);
+            }
+            // Increased delay for Notion eventual consistency (v11.0.6: 1500ms → 2000ms)
+            await new Promise(r => setTimeout(r, 2000));
+          }
+        } catch (e) {
+          log(`⚠️ [EMPTY-PAGE-RETRY] Pre-validation retry logic failed: ${e.message}`);
+        }
+
         log("🔍 Running post-creation validation...");
         
         // Estimate expected block count range (±30% tolerance)
@@ -1098,6 +1175,15 @@ router.post('/W2N', async (req, res) => {
           summary: `❌ Validation encountered an error: ${validationError.message}`
         };
         // Don't fail the entire request if validation fails
+      }
+      
+      // INJECT ZERO-BLOCK RECOVERY FLAG if page was marked during immediate recovery
+      if (response._sn2n_zero_block_recovery_failed && validationResult) {
+        validationResult.zeroBlockRecoveryFailed = true;
+        validationResult.hasErrors = true;
+        if (!validationResult.issues) validationResult.issues = [];
+        validationResult.issues.push('Zero-block recovery failed: page has no blocks after retry');
+        log(`⚠️ [ZERO-BLOCK-FLAG] Injected recovery failure into validation result`);
       }
       
       // Update page properties with validation results (moved outside try/catch)
@@ -1164,7 +1250,9 @@ router.post('/W2N', async (req, res) => {
           const shouldSaveFixtures = process.env.SN2N_SAVE_VALIDATION_FAILURES !== 'false' && process.env.SN2N_SAVE_VALIDATION_FAILURES !== '0';
           if (shouldSaveFixtures && payload.contentHtml) {
             try {
-              const fixturesDir = process.env.SN2N_FIXTURES_DIR || path.join(__dirname, '../../patch/pages-to-update');
+              // Save failed pages to unified hub: patch/pages/pages-to-update/
+              // Fix path (previously missing 'pages/' segment)
+              const fixturesDir = process.env.SN2N_FIXTURES_DIR || path.join(__dirname, '../../patch/pages/pages-to-update');
               
               // Ensure directory exists
               if (!fs.existsSync(fixturesDir)) {
@@ -1215,6 +1303,100 @@ router.post('/W2N', async (req, res) => {
       }
     } else {
       log(`ℹ️ Validation skipped (SN2N_VALIDATE_OUTPUT not enabled)`);
+    }
+    
+    // Run content validation (text order and completeness)
+    // This runs independently from block-count validation
+    const shouldRunContentValidation = process.env.SN2N_CONTENT_VALIDATION === '1' || process.env.SN2N_CONTENT_VALIDATION === 'true';
+    
+    if (shouldRunContentValidation && payload.contentHtml) {
+      try {
+        log("📋 Running content validation (text order and completeness)...");
+        
+        // Delay to allow Notion's API to fully process the page
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Extract block counts from validation result (if available)
+        const blockCounts = (validationResult && validationResult.sourceCounts && validationResult.notionCounts) ? {
+          source: validationResult.sourceCounts,
+          notion: validationResult.notionCounts
+        } : null;
+        
+        // Pass contextFlags to content validator with zero-block recovery status
+        const contextFlags = {
+          zeroBlockRecoveryFailed: validationResult?.zeroBlockRecoveryFailed || false
+        };
+        
+        const contentValidationResult = await runValidationAndUpdate(
+          payload.contentHtml,
+          response.id,
+          notion,
+          blockCounts,
+          contextFlags
+        );
+        
+        if (contentValidationResult.success) {
+          log(`✅ Content validation PASSED (${contentValidationResult.similarity}% similarity)`);
+        } else if (contentValidationResult.error) {
+          log(`❌ Content validation ERROR: ${contentValidationResult.error}`);
+        } else {
+          log(`❌ Content validation FAILED (${contentValidationResult.similarity}% similarity)`);
+          
+          // Identify failure pattern for diagnostics (v11.0.6)
+          const failurePattern = [];
+          if (contentValidationResult.similarity < 50) failurePattern.push('severe-loss');
+          else if (contentValidationResult.similarity < 90) failurePattern.push('content-loss');
+          if (contentValidationResult.orderIssues?.length > 0) failurePattern.push('order-issues');
+          if (contentValidationResult.missing?.length > 5) failurePattern.push('many-missing');
+          if (contentValidationResult.extra?.length > 5) failurePattern.push('many-extra');
+          if (validationResult?.zeroBlockRecoveryFailed) failurePattern.push('zero-block');
+          log(`📊 [FAILURE-PATTERN] ${failurePattern.length > 0 ? failurePattern.join(', ') : 'near-threshold'}`);
+          
+          // Auto-capture HTML for content validation failures (same hub as block failures)
+          const shouldSaveContentFailures = process.env.SN2N_SAVE_VALIDATION_FAILURES !== 'false' && process.env.SN2N_SAVE_VALIDATION_FAILURES !== '0';
+          if (shouldSaveContentFailures && payload.contentHtml) {
+            try {
+              const fixturesDir = process.env.SN2N_FIXTURES_DIR || path.join(__dirname, '../../patch/pages/pages-to-update');
+              if (!fs.existsSync(fixturesDir)) {
+                fs.mkdirSync(fixturesDir, { recursive: true });
+              }
+              const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
+              const sanitizedTitle = (payload.title || 'untitled')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '')
+                .substring(0, 60);
+              const filename = `${sanitizedTitle}-content-validation-failed-${timestamp}.html`;
+              const filepath = path.join(fixturesDir, filename);
+              const metadata = [
+                '<!--',
+                `  Type: Content Validation Failure`,
+                `  Page: ${payload.title || 'Untitled'}`,
+                `  URL: ${payload.url || 'N/A'}`,
+                `  Captured: ${new Date().toISOString()}`,
+                `  Page ID: ${response.id}`,
+                `  Similarity: ${contentValidationResult.similarity}%`,
+                `  HTML chars: ${contentValidationResult.htmlChars}`,
+                `  Notion chars: ${contentValidationResult.notionChars}`,
+                '-->'
+              ].join('\n');
+              const htmlWithMetadata = `${metadata}\n${payload.contentHtml}`;
+              fs.writeFileSync(filepath, htmlWithMetadata, 'utf8');
+              log(`💾 Auto-saved content validation failure HTML to: ${filename}`);
+            } catch (saveErr) {
+              log(`⚠️ Failed to save content validation failure HTML: ${saveErr.message}`);
+            }
+          }
+        }
+        
+      } catch (contentValidationError) {
+        log(`⚠️ Content validation failed with error: ${contentValidationError.message}`);
+        // Don't fail the entire request if content validation fails
+      }
+    } else if (!shouldRunContentValidation) {
+      log(`ℹ️ Content validation skipped (SN2N_CONTENT_VALIDATION not enabled)`);
+    } else {
+      log(`ℹ️ Content validation skipped (no contentHtml provided)`);
     }
 
     log("🔗 Page URL:", response.url);
@@ -1343,6 +1525,13 @@ router.patch('/W2N/:pageId', async (req, res) => {
     }
     
     let { blocks: extractedBlocks, hasVideos } = extractionResult;
+    
+    // Defensive guard: ensure extractedBlocks is always an array
+    if (!Array.isArray(extractedBlocks)) {
+      log(`⚠️ extractedBlocks is not an array (type: ${typeof extractedBlocks}), defaulting to empty array`);
+      extractedBlocks = [];
+    }
+    
     log(`✅ Extracted ${extractedBlocks.length} blocks from HTML`);
     
     if (hasVideos) {
@@ -1630,6 +1819,60 @@ router.patch('/W2N/:pageId', async (req, res) => {
     
     log(`[PATCH-PROGRESS] STEP 2 Complete: Uploaded all ${extractedBlocks.length} blocks successfully`);
     
+    // STEP 2.5: Zero-block recovery check
+    if (extractedBlocks.length > 0) {
+      log(`🔍 STEP 2.5: Checking for zero-block issue after PATCH upload...`);
+      try {
+        const probeResult = await notion.blocks.children.list({
+          block_id: pageId,
+          page_size: 10
+        });
+        const initialCount = probeResult.results?.length || 0;
+        
+        if (initialCount === 0) {
+          log(`⚠️ [ZERO-BLOCK-DETECT] Page ${pageId} has 0 children after PATCH. Attempting recovery append...`);
+          
+          // Re-append blocks in chunks
+          const recoveryChunks = [];
+          for (let i = 0; i < extractedBlocks.length; i += 100) {
+            recoveryChunks.push(extractedBlocks.slice(i, i + 100));
+          }
+          
+          for (let i = 0; i < recoveryChunks.length; i++) {
+            const chunk = recoveryChunks[i];
+            log(`   [ZERO-BLOCK-RECOVERY] Appending recovery chunk ${i + 1}/${recoveryChunks.length} (${chunk.length} blocks)...`);
+            await notion.blocks.children.append({
+              block_id: pageId,
+              children: chunk
+            });
+          }
+          
+          // Increased delay for Notion eventual consistency (v11.0.6: 1500ms → 2000ms)
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          // Recheck
+          const recheckResult = await notion.blocks.children.list({
+            block_id: pageId,
+            page_size: 10
+          });
+          const finalCount = recheckResult.results?.length || 0;
+          
+          if (finalCount === 0) {
+            log(`❌ [ZERO-BLOCK-RECOVERY] FAILED - Page still has 0 children after recovery attempt`);
+            // Flag for validation
+            if (!validationResult) validationResult = {};
+            validationResult.zeroBlockRecoveryFailed = true;
+          } else {
+            log(`✅ [ZERO-BLOCK-RECOVERY] SUCCESS - Page now has ${finalCount} children`);
+          }
+        } else {
+          log(`🔍 [ZERO-BLOCK-DETECT] Initial child count: ${initialCount} (no recovery needed)`);
+        }
+      } catch (zeroBlockError) {
+        log(`⚠️ [ZERO-BLOCK-DETECT] Check failed: ${zeroBlockError.message}`);
+      }
+    }
+    
     // STEP 3: Run orchestration for deep nesting
     if (markerMap && Object.keys(markerMap).length > 0) {
       operationPhase = `orchestrating deep nesting for ${Object.keys(markerMap).length} markers`;
@@ -1720,6 +1963,94 @@ router.patch('/W2N/:pageId', async (req, res) => {
       }
     }
     
+    // STEP 5.5: Content validation (text order and completeness)
+    if (process.env.SN2N_CONTENT_VALIDATION === '1' && html) {
+      try {
+        log("📋 STEP 5.5: Running content validation (text order and completeness)...");
+        
+        // Delay to allow Notion's API to fully process the page
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Extract block counts from validation result (if available)
+        const blockCounts = (validationResult && validationResult.sourceCounts && validationResult.notionCounts) ? {
+          source: validationResult.sourceCounts,
+          notion: validationResult.notionCounts
+        } : null;
+        
+        // Pass contextFlags to content validator with zero-block recovery status
+        const contextFlags = {
+          zeroBlockRecoveryFailed: validationResult?.zeroBlockRecoveryFailed || false
+        };
+        
+        const contentValidationResult = await runValidationAndUpdate(
+          html,
+          pageId,
+          notion,
+          blockCounts,
+          contextFlags
+        );
+        
+        if (contentValidationResult.success) {
+          log(`✅ Content validation PASSED (${contentValidationResult.similarity}% similarity)`);
+        } else if (contentValidationResult.error) {
+          log(`❌ Content validation ERROR: ${contentValidationResult.error}`);
+        } else {
+          log(`❌ Content validation FAILED (${contentValidationResult.similarity}% similarity)`);
+          
+          // Identify failure pattern for diagnostics (v11.0.6)
+          const failurePattern = [];
+          if (contentValidationResult.similarity < 50) failurePattern.push('severe-loss');
+          else if (contentValidationResult.similarity < 90) failurePattern.push('content-loss');
+          if (contentValidationResult.orderIssues?.length > 0) failurePattern.push('order-issues');
+          if (contentValidationResult.missing?.length > 5) failurePattern.push('many-missing');
+          if (contentValidationResult.extra?.length > 5) failurePattern.push('many-extra');
+          if (validationResult?.zeroBlockRecoveryFailed) failurePattern.push('zero-block');
+          log(`📊 [FAILURE-PATTERN] ${failurePattern.length > 0 ? failurePattern.join(', ') : 'near-threshold'}`);
+          
+          // Auto-capture HTML for content validation failures
+          const shouldSaveContentFailures = process.env.SN2N_SAVE_VALIDATION_FAILURES !== 'false' && process.env.SN2N_SAVE_VALIDATION_FAILURES !== '0';
+          if (shouldSaveContentFailures && html) {
+            try {
+              const fs = require('fs');
+              const path = require('path');
+              const fixturesDir = process.env.SN2N_FIXTURES_DIR || path.join(__dirname, '../../patch/pages/pages-to-update');
+              if (!fs.existsSync(fixturesDir)) {
+                fs.mkdirSync(fixturesDir, { recursive: true });
+              }
+              const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
+              const sanitizedTitle = (pageTitle || 'untitled')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '')
+                .substring(0, 50);
+              const filename = `${sanitizedTitle}-${timestamp}.html`;
+              const filepath = path.join(fixturesDir, filename);
+              
+              // Build metadata comment
+              const metadata = [
+                `<!-- PATCH CONTENT VALIDATION FAILURE -->`,
+                `<!-- Page ID: ${pageId} -->`,
+                `<!-- Similarity: ${contentValidationResult.similarity}% -->`,
+                `<!-- Timestamp: ${new Date().toISOString()} -->`,
+                `<!-- Block Counts: ${contentValidationResult.htmlSegments} HTML → ${contentValidationResult.notionSegments} Notion -->`,
+                contentValidationResult.orderIssues?.length > 0 ? `<!-- Order Issues: ${contentValidationResult.orderIssues.length} -->` : null,
+                contentValidationResult.missing?.length > 0 ? `<!-- Missing Segments: ${contentValidationResult.missing.length} -->` : null,
+                contentValidationResult.extra?.length > 0 ? `<!-- Extra Segments: ${contentValidationResult.extra.length} -->` : null,
+                `<!-- PATCH Operation -->`
+              ].filter(Boolean).join('\n');
+              
+              fs.writeFileSync(filepath, `${metadata}\n\n${html}`, 'utf8');
+              log(`📁 Saved PATCH validation failure to: ${filepath}`);
+            } catch (saveError) {
+              log(`⚠️ Failed to save PATCH validation failure: ${saveError.message}`);
+            }
+          }
+        }
+      } catch (contentValError) {
+        log(`⚠️ Content validation failed (non-fatal): ${contentValError.message}`);
+      }
+    }
+    
     log(`[PATCH-PROGRESS] All steps complete - PATCH operation successful!`);
     
     // STEP 6: Update Validation property with PATCH indicator
@@ -1797,7 +2128,9 @@ router.patch('/W2N/:pageId', async (req, res) => {
     
   } catch (error) {
     cleanup(); // Stop heartbeat on error
-    log(`❌ PATCH W2N Error:`, error.message);
+    log(`❌ PATCH W2N Error: ${error.message}`);
+    log(`❌ Error stack:`, error.stack);
+    log(`❌ Operation phase: ${operationPhase}`);
     
     if (error.body) {
       try {
@@ -1810,6 +2143,74 @@ router.patch('/W2N/:pageId', async (req, res) => {
     }
     
     return sendError(res, "PAGE_UPDATE_FAILED", error.message, null, 500);
+  }
+});
+
+/**
+ * POST /api/W2N/:pageId/cleanup-markers
+ * 
+ * Clean up orphaned sn2n:marker tokens from a page's rich_text blocks.
+ * This is useful for pages that were created during AutoExtract but timed out
+ * before the marker sweep could complete, leaving markers in the content.
+ * 
+ * @param {string} pageId - The Notion page ID (with or without hyphens)
+ * @returns {object} { updated: number } - Number of blocks updated
+ * 
+ * Example: POST /api/W2N/1234567890abcdef1234567890abcdef/cleanup-markers
+ */
+router.post('/W2N/:pageId/cleanup-markers', async (req, res) => {
+  const { notion, log, sendSuccess, sendError } = getGlobals();
+  const startTime = Date.now();
+  
+  // Normalize pageId (remove hyphens if present)
+  let pageId = req.params.pageId;
+  if (!pageId) {
+    return sendError(res, 'MISSING_PAGE_ID', 'Page ID is required', null, 400);
+  }
+  
+  pageId = pageId.replace(/-/g, '');
+  if (pageId.length !== 32) {
+    return sendError(res, 'INVALID_PAGE_ID', 'Page ID must be 32 characters (UUID without hyphens)', null, 400);
+  }
+  
+  log(`🧹 [MARKER-CLEANUP] Starting marker cleanup for page ${pageId}`);
+  
+  try {
+    // Import the sweep function
+    const { sweepAndRemoveMarkersFromPage } = require('../orchestration/deep-nesting.cjs');
+    
+    // Run the marker sweep
+    const sweepResult = await sweepAndRemoveMarkersFromPage(pageId);
+    
+    const elapsedMs = Date.now() - startTime;
+    const elapsedSec = (elapsedMs / 1000).toFixed(1);
+    
+    log(`✅ [MARKER-CLEANUP] Completed in ${elapsedSec}s. Blocks updated: ${sweepResult.updated}`);
+    
+    return sendSuccess(res, {
+      pageId,
+      updated: sweepResult.updated,
+      elapsedMs,
+      message: `Cleaned ${sweepResult.updated} block(s) with marker tokens`
+    });
+    
+  } catch (error) {
+    const elapsedMs = Date.now() - startTime;
+    const elapsedSec = (elapsedMs / 1000).toFixed(1);
+    
+    log(`❌ [MARKER-CLEANUP] Failed after ${elapsedSec}s:`, error.message);
+    
+    if (error.body) {
+      try {
+        const parsed = JSON.parse(error.body);
+        log("❌ Notion error body:", JSON.stringify(parsed, null, 2));
+      } catch (parseErr) {
+        log("❌ Failed to parse Notion error body:", parseErr.message);
+        log("❌ Raw error body:", error.body);
+      }
+    }
+    
+    return sendError(res, 'MARKER_CLEANUP_FAILED', error.message, null, 500);
   }
 });
 
