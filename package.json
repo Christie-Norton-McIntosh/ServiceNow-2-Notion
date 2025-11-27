@@ -1,6 +1,6 @@
 {
   "name": "servicenow-2-notion",
-  "version": "11.0.8",
+  "version": "11.0.9",
   "description": "Modular ServiceNow content extractor for Universal Workflow",
   "type": "module",
   "main": "src/main.js",
@@ -36,6 +36,7 @@
     "@notionhq/client": "^2.2.15",
     "@tryfabric/martian": "^1.2.4",
     "axios": "^1.6.2",
+    "cheerio": "^1.1.2",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
