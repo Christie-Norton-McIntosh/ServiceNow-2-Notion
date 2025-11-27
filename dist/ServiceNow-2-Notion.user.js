@@ -381,7 +381,7 @@
   function createOverlay() {
     // Ensure styles are injected
     injectStyles();
-    
+
     const overlay = createEl$1("div", {
       id: ID_ROOT,
       style:
@@ -757,24 +757,24 @@
       }
 
       const stringifiedData = data ? JSON.stringify(data) : undefined;
-      
+
       // DEBUG: Log stringified data size
       if (stringifiedData && data && (data.content || data.contentHtml)) {
         console.log('🔍 apiCall - Stringified data length:', stringifiedData.length);
         // Check if sections are still in stringified data
         const sectionCountAfter = (stringifiedData.match(/predictive-intelligence-for-incident__section_/g) || []).length;
         console.log('🔍 apiCall - Sections in stringified data:', sectionCountAfter);
-        
+
         // Log payload size in MB
         const sizeInMB = (stringifiedData.length / (1024 * 1024)).toFixed(2);
         console.log(`📦 apiCall - Payload size: ${sizeInMB} MB`);
-        
+
         // Warn if payload is very large
         if (stringifiedData.length > 10 * 1024 * 1024) { // 10 MB
           console.warn(`⚠️ Large payload detected (${sizeInMB} MB) - this may cause timeout or memory issues`);
         }
       }
-      
+
       console.log(`🌐 apiCall - Sending ${method} request to ${url} with timeout: 300s`);
 
       GM_xmlhttpRequest({
@@ -802,7 +802,7 @@
           console.error("[NETWORK-ERROR] Error type:", typeof error);
           console.error("[NETWORK-ERROR] Status code:", error.status);
           console.error("[NETWORK-ERROR] URL attempted:", url);
-          
+
           // Extract meaningful error message
           let errorMsg = "Network error";
           if (error) {
@@ -821,7 +821,7 @@
               errorMsg = error.message;
             }
           }
-          
+
           reject(new Error(`API call failed: ${errorMsg}`));
         },
         ontimeout: function () {
@@ -1148,7 +1148,7 @@
    */
   async function sendProcessedContentToProxy(processedData) {
     debug("📤 Sending processed content to proxy for Notion upload");
-    
+
     // DEBUG: Check if all articles are in the HTML being sent
     if (processedData.contentHtml || processedData.content) {
       const html = processedData.contentHtml || processedData.content;
@@ -1160,18 +1160,18 @@
       const nested0Count = (html.match(/class="[^"]*nested0[^"]*"/g) || []).length;
       console.log('📊 PROXY-API.JS - Number of article.nested0 in HTML:', nested0Count);
     }
-    
+
     // Import overlay module for status updates
     const { overlayModule } = await Promise.resolve().then(function () { return overlayProgress; });
-    
+
     try {
       overlayModule.setMessage("Converting HTML to Notion blocks...");
-      
+
       // DEBUG: Log right before API call
       console.log('🚀 PROXY-API.JS - About to call apiCall with processedData');
       console.log('🚀 PROXY-API.JS - processedData.content length:', processedData.content?.length);
       console.log('🚀 PROXY-API.JS - processedData.contentHtml length:', processedData.contentHtml?.length);
-      
+
       const result = await apiCall("POST", "/api/W2N", processedData);
 
       debug("Raw proxy response:", JSON.stringify(result, null, 2));
@@ -1179,7 +1179,7 @@
       if (result && result.success) {
         // Show completion message
         overlayModule.setMessage("✓ Page created and nested content organized!");
-        
+
         let pageUrl = result.data ? result.data.pageUrl : result.pageUrl;
         const page = result.data ? result.data.page : result.page;
         debug("Extracted pageUrl:", pageUrl);
@@ -1209,7 +1209,7 @@
   /**
    * Create a placeholder Notion page for a failed extraction
    * This reserves the spot in the sequence and can be updated later
-   * 
+   *
    * @param {Object} failedPageInfo - Information about the failed page
    * @param {string} failedPageInfo.title - Page title
    * @param {string} failedPageInfo.url - ServiceNow URL
@@ -1220,12 +1220,12 @@
    */
   async function createPlaceholderPage(failedPageInfo) {
     debug(`📝 Creating placeholder page for: ${failedPageInfo.title}`);
-    
+
     const { overlayModule } = await Promise.resolve().then(function () { return overlayProgress; });
-    
+
     try {
       overlayModule.setMessage(`Creating placeholder for failed page...`);
-      
+
       // Create minimal HTML content with error information
       const placeholderHtml = `
       <div class="placeholder-content">
@@ -1248,7 +1248,7 @@
         </div>
       </div>
     `;
-      
+
       // Prepare placeholder page data
       const placeholderData = {
         title: `⚠️ PLACEHOLDER: ${failedPageInfo.title}`,
@@ -1259,28 +1259,28 @@
           "Validation": {
             rich_text: [{
               type: "text",
-              text: { 
+              text: {
                 content: `❌ PLACEHOLDER - Extraction Failed\n\nReason: ${failedPageInfo.reason}\n\nThis page needs to be re-extracted. It failed during AutoExtract at position ${failedPageInfo.pageNumber}.`
               }
             }]
           }
         }
       };
-      
+
       debug(`📤 Sending placeholder page data to proxy...`);
       const result = await apiCall("POST", "/api/W2N", placeholderData);
-      
+
       if (result && result.success) {
         const pageId = result.data?.page?.id || result.page?.id;
         let pageUrl = result.data?.pageUrl || result.pageUrl;
-        
+
         if (!pageUrl && pageId) {
           pageUrl = `https://www.notion.so/${pageId.replace(/-/g, "")}`;
         }
-        
+
         debug(`✅ Placeholder page created: ${pageUrl}`);
         overlayModule.setMessage(`✓ Placeholder created for failed page`);
-        
+
         return {
           success: true,
           pageId: pageId,
@@ -1288,9 +1288,9 @@
           isPlaceholder: true
         };
       }
-      
+
       throw new Error(result?.error || "Failed to create placeholder page");
-      
+
     } catch (error) {
       debug(`⚠️ Failed to create placeholder page (non-fatal):`, error);
       // Don't throw - placeholder creation is optional
@@ -1306,7 +1306,7 @@
   /**
    * PATCH update a Notion page (typically a placeholder) with real content
    * Deletes all existing blocks and replaces with new content
-   * 
+   *
    * @param {string} pageId - Notion page ID (with or without hyphens)
    * @param {string} title - New page title
    * @param {string} contentHtml - HTML content to convert and upload
@@ -1317,42 +1317,42 @@
     debug(`📝 PATCH updating Notion page: ${pageId}`);
     debug(`   Title: ${title}`);
     debug(`   URL: ${url}`);
-    
+
     const { overlayModule } = await Promise.resolve().then(function () { return overlayProgress; });
-    
+
     try {
       overlayModule.setMessage(`Updating page in Notion...`);
-      
+
       // Normalize page ID (remove hyphens if present, backend will handle both formats)
       const normalizedPageId = pageId.replace(/-/g, '');
-      
+
       // Prepare PATCH data
       const patchData = {
         title: title,
         contentHtml: contentHtml,
         url: url
       };
-      
+
       debug(`📤 Sending PATCH request to /api/W2N/${normalizedPageId}...`);
-      
+
       // PATCH operations use the default 5-minute timeout from apiCall
       const result = await apiCall("PATCH", `/api/W2N/${normalizedPageId}`, patchData);
-      
+
       debug(`📥 PATCH response:`, JSON.stringify(result, null, 2));
-      
+
       if (result && result.success) {
         debug(`✅ Page updated successfully`);
         overlayModule.setMessage(`✓ Page updated in Notion!`);
-        
+
         return {
           success: true,
           pageId: normalizedPageId,
           data: result.data
         };
       }
-      
+
       throw new Error(result?.error || result?.message || "PATCH update failed");
-      
+
     } catch (error) {
       debug(`❌ Failed to PATCH update page:`, error);
       overlayModule.error({
@@ -1556,11 +1556,11 @@
           debug(`🔍 Raw saved value: ${saved}`);
           const mappings = JSON.parse(saved);
           const mappingCount = Object.keys(mappings).length;
-          
+
           // If no mappings exist and we have database schema, create defaults
           if (mappingCount === 0 && options.database) {
             debug("🎯 No mappings found - creating default property mappings");
-            
+
             // Use sample extracted data if not provided
             const sampleData = options.extractedData || {
               title: "Sample Page Title",
@@ -1574,49 +1574,49 @@
               hasVideos: false,
               hasImages: false,
             };
-            
+
             const defaultMappings = createDefaultMappings(options.database, sampleData);
-            
+
             if (Object.keys(defaultMappings).length > 0) {
               debug(`✅ Created ${Object.keys(defaultMappings).length} default mappings:`, defaultMappings);
-              
+
               // Save the default mappings for future use
               await savePropertyMappings$1(databaseId, defaultMappings);
               resolve(defaultMappings);
               return;
             }
           }
-          
+
           // Auto-update: Check if Video/Image mappings are missing and database has these properties
           if (mappingCount > 0 && options.database) {
             const dbProps = options.database.properties || {};
             let needsUpdate = false;
-            
+
             // Check if database has Video or Image properties but mappings don't include them
-            const hasVideoProperty = Object.keys(dbProps).some(prop => 
+            const hasVideoProperty = Object.keys(dbProps).some(prop =>
               prop.toLowerCase() === 'video' || prop.toLowerCase() === 'hasvideo' || prop.toLowerCase() === 'hasvideos'
             );
-            const hasImageProperty = Object.keys(dbProps).some(prop => 
+            const hasImageProperty = Object.keys(dbProps).some(prop =>
               prop.toLowerCase() === 'image' || prop.toLowerCase() === 'hasimage' || prop.toLowerCase() === 'hasimages'
             );
-            
+
             const hasVideoMapping = Object.values(mappings).includes('hasVideos');
             const hasImageMapping = Object.values(mappings).includes('hasImages');
-            
+
             if ((hasVideoProperty && !hasVideoMapping) || (hasImageProperty && !hasImageMapping)) {
               debug(`🔄 Auto-updating mappings to add missing Video/Image fields...`);
-              
+
               // Find the actual property names in the database
               Object.entries(dbProps).forEach(([propName, propConfig]) => {
                 const propLower = propName.toLowerCase();
-                
+
                 // Add Video mapping if missing
                 if (!hasVideoMapping && (propLower === 'video' || propLower === 'hasvideo' || propLower === 'hasvideos')) {
                   mappings[propName] = 'hasVideos';
                   debug(`  ✅ Added Video mapping: "${propName}" <- "hasVideos"`);
                   needsUpdate = true;
                 }
-                
+
                 // Add Image mapping if missing
                 if (!hasImageMapping && (propLower === 'image' || propLower === 'hasimage' || propLower === 'hasimages')) {
                   mappings[propName] = 'hasImages';
@@ -1624,14 +1624,14 @@
                   needsUpdate = true;
                 }
               });
-              
+
               if (needsUpdate) {
                 await savePropertyMappings$1(databaseId, mappings);
                 debug(`💾 Updated mappings saved`);
               }
             }
           }
-          
+
           debug(
             `✅ Retrieved property mappings (${mappingCount} mappings):`,
             mappings
@@ -1708,7 +1708,7 @@
 
       const propConfig = dbProperties[notionProperty];
       const sourceValue = getNestedValue(extractedData, sourceField);
-      
+
       // Debug image/video mappings
       if (sourceField === 'hasImages' || sourceField === 'hasVideos') {
         debug(`🔍 Mapping ${notionProperty} from ${sourceField}: ${sourceValue} (type: ${typeof sourceValue})`);
@@ -1967,11 +1967,11 @@
         <div style="margin-bottom:16px; font-size:14px; color:#6b7280;">
           Map content from this page to database properties in: <strong id="w2n-mapping-db-name">Selected Database</strong>
         </div>
-        
+
         <div id="w2n-property-mappings" style="margin-bottom:20px; max-height:300px; overflow-y:auto;">
           <!-- Property mappings will be populated here -->
         </div>
-        
+
         <div style="display:flex; gap:10px; padding-top:16px; border-top:1px solid #eee;">
           <button id="w2n-save-property-mapping" style="flex:1;padding:10px;border-radius:6px;background:#10b981;color:white;border:none;cursor:pointer;font-size:14px;">
             Save Mapping
@@ -2345,7 +2345,7 @@
             Enhanced content processing for better Notion formatting
           </div>
         </div>
-        
+
         <div style="margin-bottom:16px;">
           <label style="display: flex; align-items: center; margin-bottom: 12px; font-size: 14px; cursor: pointer;">
             <input type="checkbox" id="w2n-modal-direct-images" ${
@@ -2357,7 +2357,7 @@
             Process images directly through Notion API (faster uploads)
           </div>
         </div>
-        
+
         <div style="margin-bottom:16px;">
           <label style="display: flex; align-items: center; margin-bottom: 12px; font-size: 14px; cursor: pointer;">
             <input type="checkbox" id="w2n-modal-enable-debugging" style="margin-right: 10px; transform: scale(1.1);">
@@ -2388,7 +2388,7 @@
             Empties stored cross-session dedupe list (use before a full refresh run)
           </div>
         </div>
-        
+
   <div style="margin-bottom:20px;">
           <label style="display: flex; align-items: center; margin-bottom: 12px; font-size: 14px; cursor: pointer;">
             <input type="checkbox" id="w2n-modal-duplicate-detect" ${
@@ -2400,13 +2400,13 @@
             Check for existing pages with same title before creating new ones
           </div>
         </div>
-        
+
         <div style="margin-bottom:20px; padding-top:16px; border-top:1px solid #eee;">
           <button id="w2n-configure-mapping-from-settings" style="width:100%;padding:10px;border-radius:6px;background:#10b981;color:white;border:none;cursor:pointer;font-size:14px;">
             🔗 Configure Property Mapping
           </button>
         </div>
-        
+
         <div style="display:flex; gap:10px; padding-top:16px; border-top:1px solid #eee;">
           <button id="w2n-save-advanced-settings" style="flex:1;padding:10px;border-radius:6px;background:#10b981;color:white;border:none;cursor:pointer;font-size:14px;">
             Save Settings
@@ -3122,7 +3122,7 @@
   // Simple hash function for content comparison
   function simpleHash(str) {
     if (!str || str.length === 0) return 0;
-    
+
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
       const char = str.charCodeAt(i);
@@ -3139,7 +3139,7 @@
 
     const panel = document.createElement("div");
     panel.id = "w2n-notion-panel";
-    
+
     // Set base CSS styles
     panel.style.cssText = `
     position: fixed;
@@ -3157,7 +3157,7 @@
     opacity: 0.95;
     transition: opacity 0.2s ease;
   `;
-    
+
     // Try to restore saved position from localStorage
     let savedPosition = null;
     try {
@@ -3168,24 +3168,24 @@
         const margin = 8;
         const panelWidth = 320;
         const panelHeight = 200; // Estimated minimum height
-        
+
         // Check if position is valid for current viewport
         const isOnScreen = (
-          savedPosition.left >= margin && 
+          savedPosition.left >= margin &&
           savedPosition.top >= margin &&
           savedPosition.left + panelWidth <= window.innerWidth - margin &&
           savedPosition.top + panelHeight <= window.innerHeight - margin
         );
-        
+
         if (!isOnScreen) {
           // Position is off-screen, adjust it to fit
           let adjustedLeft = Math.max(margin, Math.min(savedPosition.left, window.innerWidth - panelWidth - margin));
           let adjustedTop = Math.max(margin, Math.min(savedPosition.top, window.innerHeight - panelHeight - margin));
-          
+
           savedPosition = { left: adjustedLeft, top: adjustedTop };
           localStorage.setItem('w2n-panel-position', JSON.stringify(savedPosition));
         }
-        
+
         // Apply saved or adjusted position
         panel.style.left = `${savedPosition.left}px`;
         panel.style.top = `${savedPosition.top}px`;
@@ -3284,7 +3284,7 @@
     const iconCoverBtn = panel.querySelector("#w2n-open-icon-cover");
 
     closeBtn.onclick = () => panel.remove();
-    
+
     if (resetPositionBtn) {
       resetPositionBtn.onclick = (event) => {
         event.stopPropagation();
@@ -3361,20 +3361,20 @@
       databaseSelect.onchange = () => {
         const selectedId = databaseSelect.value;
         const selectedName = databaseSelect.options[databaseSelect.selectedIndex].text;
-        
+
         if (selectedId) {
           // Update config with selected database
           const config = getConfig();
           config.databaseId = selectedId;
           config.databaseName = selectedName;
-          
+
           if (typeof GM_setValue === "function") {
             GM_setValue("notionConfig", config);
           }
-          
+
           // Update ID label
           databaseLabel.textContent = `ID: ${selectedId}`;
-          
+
           debug(`✅ Selected database: ${selectedName} (${selectedId})`);
         }
       };
@@ -3411,17 +3411,17 @@
 
           if (matchingDatabases.length > 0) {
             debug(`[DATABASE] ✅ Found ${matchingDatabases.length} matching database(s)`);
-            
+
             // Check if the first match is already selected
             const firstMatch = matchingDatabases[0];
             const isAlreadySelected = currentDbId && firstMatch.id === currentDbId;
-            
+
             // Populate dropdown with all matching databases
             populateDatabaseSelect(databaseSelect, matchingDatabases);
-            
+
             // Select the first match by default
             databaseSelect.value = firstMatch.id;
-            
+
             // Update config with first match
             const config = getConfig();
             config.databaseId = firstMatch.id;
@@ -3438,7 +3438,7 @@
             debug(
               `✅ Set target database to: ${config.databaseName} (${firstMatch.id})`
             );
-            
+
             // Show appropriate message
             if (isAlreadySelected && matchingDatabases.length === 1) {
               alert(`Database "${config.databaseName}" is already selected.`);
@@ -3468,16 +3468,16 @@
           showSpinner();
 
           let cleanDbId = input.trim();
-          
+
           // Check if input is a URL and extract ID from it
           if (cleanDbId.includes("notion.so/") || cleanDbId.includes("notion.site/")) {
             debug(`[DATABASE] 🔍 Extracting ID from URL: ${cleanDbId}`);
-            
+
             // Extract ID from URL patterns:
             // https://www.notion.so/username/DatabaseName-abc123def456...
             // https://notion.so/abc123def456...
             const urlMatch = cleanDbId.match(/([a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
-            
+
             if (urlMatch) {
               cleanDbId = urlMatch[1];
               debug(`[DATABASE] ✅ Extracted ID from URL: ${cleanDbId}`);
@@ -3487,10 +3487,10 @@
               return;
             }
           }
-          
+
           // Normalize ID: accept with or without hyphens, format to proper UUID
           cleanDbId = cleanDbId.replace(/[^a-f0-9-]/gi, "");
-          
+
           // If no hyphens, add them in proper UUID format (8-4-4-4-12)
           if (!cleanDbId.includes("-")) {
             const raw = cleanDbId.replace(/-/g, "");
@@ -3502,7 +3502,7 @@
               return;
             }
           }
-          
+
           // Validate final format
           const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
           if (!uuidPattern.test(cleanDbId)) {
@@ -3510,7 +3510,7 @@
             hideSpinner();
             return;
           }
-          
+
           debug(`[DATABASE] 🔍 Searching for database by ID: ${cleanDbId}`);
 
           // Fetch database details to validate and get name
@@ -3529,14 +3529,14 @@
           // Update dropdown with the found database
           databaseSelect.innerHTML = `<option value="${cleanDbId}">${databaseName}</option>`;
           databaseSelect.value = cleanDbId;
-          
+
           // Update ID label
           databaseLabel.textContent = `ID: ${cleanDbId}`;
 
           debug(
             `✅ Set target database to: ${databaseName} (${cleanDbId})`
           );
-          
+
           // Check if already selected
           const currentConfig = getConfig();
           if (currentConfig.databaseId === cleanDbId) {
@@ -3546,10 +3546,10 @@
           }
         } catch (e) {
           debug("Failed to get database by ID:", e);
-          
+
           // Provide specific error messages based on error type
           let errorMsg = "Error: Could not access database.\n\n";
-          
+
           if (e.code === 'object_not_found' || e.status === 404) {
             errorMsg += "Database not found. Please check:\n";
             errorMsg += "• The database ID is correct\n";
@@ -3572,7 +3572,7 @@
             errorMsg += "• The proxy server is running\n";
             errorMsg += "• The database ID is correct";
           }
-          
+
           alert(errorMsg);
         } finally {
           hideSpinner();
@@ -3642,20 +3642,20 @@
     if (stopAutoExtractBtn) {
       stopAutoExtractBtn.onclick = () => {
         debug("🛑 Stop button clicked - initiating immediate stop");
-        
+
         // Stop the extraction by setting running to false
         if (
           window.ServiceNowToNotion &&
           window.ServiceNowToNotion.autoExtractState
         ) {
           window.ServiceNowToNotion.autoExtractState.running = false;
-          
+
           // Clear saved state to prevent resume on page reload
           GM_setValue("w2n_autoExtractState", null);
           debug("🗑️ Cleared saved autoExtractState");
-          
+
           showToast("⏹ Stopping AutoExtract after current page...", 4000);
-          
+
           // Update overlay to show stopping message
           try {
             if (window.W2NSavingProgress && window.W2NSavingProgress.setMessage) {
@@ -3664,18 +3664,18 @@
           } catch (e) {
             debug("Warning: Could not update overlay message:", e);
           }
-          
+
           // Update button text and appearance to show it's stopping
           if (startAutoExtractBtn) {
             startAutoExtractBtn.textContent = "⏹ Finishing current page...";
             startAutoExtractBtn.style.background = "#dc2626"; // Red color
             startAutoExtractBtn.disabled = true;
           }
-          
+
           // Hide stop button immediately since stop is initiated
           stopAutoExtractBtn.style.display = "none";
           startAutoExtractBtn.style.display = "block";
-          
+
           // Call stopAutoExtract to clean up immediately
           // This will show the overlay as "done" and restore UI
           setTimeout(() => {
@@ -3746,7 +3746,7 @@
       const rect = panel.getBoundingClientRect();
       const maxLeft = Math.max(margin, window.innerWidth - rect.width - margin);
       const maxTop = Math.max(margin, window.innerHeight - rect.height - margin);
-      
+
       newLeft = Math.min(Math.max(margin, newLeft), maxLeft);
       newTop = Math.min(Math.max(margin, newTop), maxTop);
 
@@ -3760,7 +3760,7 @@
       header.releasePointerCapture && header.releasePointerCapture(ev.pointerId);
       // restore transition
       panel.style.transition = "";
-      
+
       // Save position to localStorage
       try {
         const rect = panel.getBoundingClientRect();
@@ -3779,28 +3779,28 @@
     window.addEventListener("pointerup", onPointerUp);
     // pointercancel also
     window.addEventListener("pointercancel", onPointerUp);
-    
+
     // Add window resize handler to keep panel on screen
     const onWindowResize = () => {
       // Don't adjust while dragging
       if (dragging) return;
-      
+
       const margin = 8;
       const rect = panel.getBoundingClientRect();
       window.getComputedStyle(panel);
-      
+
       // Calculate current position
       let currentLeft = rect.left;
       let currentTop = rect.top;
-      
+
       // Check if panel is off-screen or too close to edges
       const maxLeft = Math.max(margin, window.innerWidth - rect.width - margin);
       const maxTop = Math.max(margin, window.innerHeight - rect.height - margin);
-      
+
       let needsAdjustment = false;
       let newLeft = currentLeft;
       let newTop = currentTop;
-      
+
       // Clamp to viewport
       if (currentLeft < margin) {
         newLeft = margin;
@@ -3809,7 +3809,7 @@
         newLeft = maxLeft;
         needsAdjustment = true;
       }
-      
+
       if (currentTop < margin) {
         newTop = margin;
         needsAdjustment = true;
@@ -3817,12 +3817,12 @@
         newTop = maxTop;
         needsAdjustment = true;
       }
-      
+
       if (needsAdjustment) {
         panel.style.left = `${Math.round(newLeft)}px`;
         panel.style.top = `${Math.round(newTop)}px`;
         panel.style.right = 'auto';
-        
+
         // Save adjusted position
         try {
           localStorage.setItem('w2n-panel-position', JSON.stringify({
@@ -3834,14 +3834,14 @@
         }
       }
     };
-    
+
     // Debounce resize handler to avoid excessive updates
     let resizeTimeout;
     window.addEventListener("resize", () => {
       clearTimeout(resizeTimeout);
       resizeTimeout = setTimeout(onWindowResize, 100);
     });
-    
+
     // Run once on initialization to ensure panel is on screen
     setTimeout(onWindowResize, 100);
   }
@@ -4075,19 +4075,19 @@
       min-width: 300px;
       text-align: center;
     `;
-      
+
       const messageEl = document.createElement('div');
       messageEl.style.cssText = 'margin-bottom: 15px; font-size: 14px; color: #333;';
       messageEl.textContent = message;
-      
+
       const countdownEl = document.createElement('div');
       countdownEl.style.cssText = 'font-size: 24px; font-weight: bold; color: #0066cc;';
       countdownEl.textContent = `${remaining}s`;
-      
+
       alertDiv.appendChild(messageEl);
       alertDiv.appendChild(countdownEl);
       document.body.appendChild(alertDiv);
-      
+
       const interval = setInterval(() => {
         remaining--;
         if (remaining > 0) {
@@ -4157,7 +4157,7 @@
         if (button) button.textContent = "Start AutoExtract";
         return;
       }
-      
+
       autoExtractState.currentPage++;
       const currentPageNum = autoExtractState.currentPage;
       debug(`[AUTO-EXTRACT] 📄 Processing page number: ${currentPageNum}`);
@@ -4315,7 +4315,7 @@
             debug(`⏳ Stabilizing page ${currentPageNum + 1}...`);
             await new Promise((resolve) => setTimeout(resolve, 1000));
 
-        
+
         debug(
           `[AUTO-EXTRACT] ✅ Page ${currentPageNum + 1} fully loaded and ready for capture!`
         );
@@ -4384,7 +4384,7 @@
                 if (button) button.textContent = "Start AutoExtract";
                 return;
               }
-              
+
               showToast(
                 `Retry ${
                 captureAttempts - 1
@@ -4397,7 +4397,7 @@
               }/2: Extracting page ${currentPageNum}...`;
               }
               await new Promise((resolve) => setTimeout(resolve, 2000));
-              
+
               // Check again after delay
               if (!autoExtractState.running) {
                 debug(`[AUTO-EXTRACT] ⏹ AutoExtract stopped after retry delay for page ${currentPageNum}`);
@@ -4424,7 +4424,7 @@
                 `[CONTENT-HASH] ⚠️ DUPLICATE CONTENT DETECTED (${autoExtractState.duplicateCount} consecutive)!`
               );
               debug(`[CONTENT-HASH] Hash: ${contentHash}, Last Hash: ${autoExtractState.lastContentHash}`);
-              
+
               if (autoExtractState.duplicateCount >= 3) {
                 const errorMessage = `❌ AutoExtract STOPPED: Same page content detected ${autoExtractState.duplicateCount} times in a row.\n\nThis usually means:\n- ServiceNow navigation isn't working\n- You've reached the end of the section\n- There's a navigation loop\n\nTotal pages processed: ${autoExtractState.totalProcessed}\nLast successful page: ${currentPageNum - autoExtractState.duplicateCount}`;
                 alert(errorMessage);
@@ -4432,7 +4432,7 @@
                 if (button) button.textContent = `❌ Stopped: Duplicate content`;
                 return;
               }
-              
+
               // Skip this duplicate and go straight to navigation (don't create page)
               debug(`[CONTENT-HASH] ⊘ Skipping duplicate content, will retry navigation without creating page...`);
               showToast(
@@ -4482,7 +4482,7 @@
               `❌ Capture attempt ${captureAttempts} failed for page ${currentPageNum}:`,
               error
             );
-            
+
             // Check if stop was requested during error handling
             if (!autoExtractState.running) {
               debug(`[AUTO-EXTRACT] ⏹ AutoExtract stopped during error handling for page ${currentPageNum}`);
@@ -4494,17 +4494,17 @@
               if (button) button.textContent = "Start AutoExtract";
               return;
             }
-            
+
             // Check if this is a rate limit error
             const isRateLimited = error.message && (
               error.message.toLowerCase().includes('rate limit') ||
               error.message.includes('429') ||
               error.message.includes('too many requests')
             );
-            
+
             if (isRateLimited) {
               autoExtractState.rateLimitHits++;
-              
+
               // Save the failed page info for manual retry if needed
               const failedPageInfo = {
                 pageNumber: currentPageNum,
@@ -4515,42 +4515,42 @@
                 errorMessage: error.message
               };
               autoExtractState.failedPages.push(failedPageInfo);
-              
+
               const waitSeconds = 60; // Default to 60 seconds if not specified in error
               debug(`🚦 RATE LIMIT HIT during AutoExtract on page ${currentPageNum}`);
               debug(`   Total rate limit hits this session: ${autoExtractState.rateLimitHits}`);
               debug(`   Pausing AutoExtract for ${waitSeconds} seconds...`);
               debug(`   Failed page saved for retry: ${failedPageInfo.title}`);
-              
+
               showToast(
                 `⏸️ Rate limit hit! Pausing for ${waitSeconds}s before retrying...`,
                 5000
               );
-              
+
               if (button) {
                 button.textContent = `⏸️ Paused: Rate limit (${waitSeconds}s)...`;
               }
-              
+
               overlayModule.setMessage(`⏸️ Rate limit - waiting ${waitSeconds}s...`);
-              
+
               // Wait for cooldown
               await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
-              
+
               debug(`✅ Rate limit cooldown complete, retrying page ${currentPageNum}...`);
               showToast(
                 `✅ Cooldown complete, retrying page ${currentPageNum}...`,
                 3000
               );
-              
+
               // Remove from failed pages list since we're going to retry immediately
               autoExtractState.failedPages.pop();
-              
+
               // Retry the same page (don't increment page counter)
               // Set captureAttempts to maxCaptureAttempts - 1 to allow one final retry
               captureAttempts = maxCaptureAttempts - 1;
               continue; // Continue capture loop to retry
             }
-            
+
             // Check if this is a server offline error (connection refused, network error, etc.)
             const isServerOffline = error.message && (
               error.message.includes('Proxy server is not available') ||
@@ -4560,7 +4560,7 @@
               error.message.includes('ECONNREFUSED') ||
               error.message.toLowerCase().includes('connection')
             );
-            
+
             if (isServerOffline) {
               const errorMessage = `❌ AutoExtract STOPPED: Server appears to be offline.\n\nError: ${error.message}\n\nPlease check that the proxy server is running and try again.\n\nTotal pages processed: ${autoExtractState.totalProcessed}`;
               alert(errorMessage);
@@ -4568,7 +4568,7 @@
               if (button) button.textContent = "❌ Stopped: Server offline";
               return;
             }
-            
+
             if (captureAttempts < maxCaptureAttempts) {
               showToast(
                 `⚠️ Page capture failed (attempt ${captureAttempts}/${maxCaptureAttempts}). Retrying...`,
@@ -4599,7 +4599,7 @@
             button.textContent = `❌ Stopped: Page ${currentPageNum} failed`;
           return;
         }
-        
+
         // If this was a duplicate skip, don't increment the page number counter
         // (we'll retry the same page after navigation)
         if (isDuplicate) {
@@ -4839,14 +4839,14 @@
           // Go directly to navigation section below
           skipExtraction = true;
         }
-        
+
         // Check for duplicate URL (same page being processed again)
         // BUT: If we just had a navigation failure, this is expected (we're retrying navigation)
         const isExpectedDuplicate = autoExtractState.navigationFailures > 0;
-        
+
         // Flag to skip extraction and go straight to navigation
         let skipExtraction = false;
-        
+
         if (autoExtractState.processedUrls.has(currentUrl)) {
           if (isExpectedDuplicate) {
             debug(`[NAV-RETRY] ⚠️ DUPLICATE URL DETECTED (Expected due to navigation failure): ${currentUrl}`);
@@ -4857,10 +4857,10 @@
           } else {
             debug(`⚠️ DUPLICATE URL DETECTED (Unexpected): ${currentUrl}`);
             debug(`❌ This URL was already processed in this session!`);
-            
+
             // Increment duplicate counter ONLY for unexpected duplicates
             autoExtractState.duplicateCount = (autoExtractState.duplicateCount || 0) + 1;
-            
+
             if (autoExtractState.duplicateCount >= 3) {
               const errorMsg = `AutoExtract stopped: Same page detected ${autoExtractState.duplicateCount} times in a row.\n\nURL: ${currentUrl}\n\nThis usually means the "Next Page" button is not working correctly or you've reached a loop in the navigation.\n\nTotal pages processed: ${autoExtractState.totalProcessed}`;
               alert(errorMsg);
@@ -4868,7 +4868,7 @@
               if (button) button.textContent = "Start AutoExtract";
               return;
             }
-            
+
             // Skip processing this duplicate and try to navigate
             debug(`⏭️ Skipping duplicate page (count: ${autoExtractState.duplicateCount})...`);
             skipExtraction = true;
@@ -4877,7 +4877,7 @@
           // Reset duplicate counter for new pages
           autoExtractState.duplicateCount = 0;
         }
-        
+
         // Only extract and process if this is not a duplicate that we're skipping
         let extractedData = null;
         if (!skipExtraction) {
@@ -4894,16 +4894,16 @@
           autoExtractState.processedUrls.add(currentUrl);
           autoExtractState.lastPageId = currentPageId;
     // Persist URL for cross-session dedupe after successful processing later
-          
+
           // Process and save to Notion with rate limit retry
           debug(`[AUTO-EXTRACT] 📤 Saving page ${currentPageNum} to Notion...`);
           overlayModule.setMessage(`Processing page ${currentPageNum}...`);
-          
+
             // Retry logic for rate limits
             const maxRateLimitRetries = 3;
             let rateLimitRetryCount = 0;
             let processingSuccess = false;
-            
+
             while (rateLimitRetryCount <= maxRateLimitRetries && !processingSuccess) {
               try {
                 // Process the content using the app's processWithProxy method
@@ -4912,33 +4912,33 @@
                 // - "Converting content to Notion blocks..."
                 // - "Page created successfully!"
                 await app.processWithProxy(extractedData);
-                
+
                 // If we get here without throwing, it succeeded
                 processingSuccess = true;
               } catch (processingError) {
                 // Check if this is a rate limit error
                 const errorMessage = processingError.message || '';
-                const isRateLimit = errorMessage.includes('Rate limit') || 
+                const isRateLimit = errorMessage.includes('Rate limit') ||
                                    errorMessage.includes('rate limited') ||
                                    errorMessage.includes('429');
-                
+
                 if (isRateLimit && rateLimitRetryCount < maxRateLimitRetries) {
                   rateLimitRetryCount++;
                   const waitTime = Math.min(30 * Math.pow(2, rateLimitRetryCount - 1), 120); // 30s, 60s, 120s
-                  
+
                   debug(`⚠️ [RATE-LIMIT] Hit rate limit on page ${currentPageNum}, waiting ${waitTime}s before retry ${rateLimitRetryCount}/${maxRateLimitRetries}...`);
-                  
+
                   if (button) {
                     button.textContent = `⏳ Rate limit - waiting ${waitTime}s...`;
                   }
-                  
+
                   showToast(
                     `⚠️ Rate limit hit. Waiting ${waitTime} seconds before retry ${rateLimitRetryCount}/${maxRateLimitRetries}...`,
                     waitTime * 1000
                   );
-                  
+
                   overlayModule.setMessage(`⏳ Rate limit - waiting ${waitTime}s...`);
-                  
+
                   // Wait with countdown
                   for (let i = waitTime; i > 0; i -= 5) {
                     await new Promise(resolve => setTimeout(resolve, 5000));
@@ -4946,23 +4946,23 @@
                       button.textContent = `⏳ Retry in ${i}s...`;
                     }
                   }
-                  
+
                   debug(`🔄 [RATE-LIMIT] Retrying page ${currentPageNum} after cooldown...`);
                 } else {
                   // Not a rate limit error, or we've exhausted retries
                   // Create placeholder page and save to failed pages queue
                   debug(`⚠️ [RATE-LIMIT] Exhausted retries for page ${currentPageNum}, creating placeholder...`);
-                  
+
                   // Initialize failedPages array if it doesn't exist
                   if (!autoExtractState.failedPages) {
                     autoExtractState.failedPages = [];
                   }
-                  
+
                   // Get database ID from app
-                  const databaseId = typeof GM_getValue === 'function' 
+                  const databaseId = typeof GM_getValue === 'function'
                     ? GM_getValue('w2n_database_id', null)
                     : null;
-                  
+
                   // Create placeholder page info
                   const failedPageInfo = {
                     pageNumber: currentPageNum,
@@ -4973,25 +4973,25 @@
                     errorType: isRateLimit ? 'rate_limit' : 'other',
                     databaseId: databaseId
                   };
-                  
+
                   // Try to create placeholder page
                   debug(`📝 [PLACEHOLDER] Creating placeholder page for failed extraction...`);
                   if (button) {
                     button.textContent = `Creating placeholder for page ${currentPageNum}...`;
                   }
-                  
+
                   try {
                     // Import the placeholder function
                     const { createPlaceholderPage } = await Promise.resolve().then(function () { return proxyApi; });
                     const placeholderResult = await createPlaceholderPage(failedPageInfo);
-                    
+
                     if (placeholderResult.success) {
                       debug(`✅ [PLACEHOLDER] Created placeholder page: ${placeholderResult.pageUrl}`);
-                      
+
                       // Add placeholder page info to failed page record
                       failedPageInfo.placeholderPageId = placeholderResult.pageId;
                       failedPageInfo.placeholderPageUrl = placeholderResult.pageUrl;
-                      
+
                       showToast(
                         `⚠️ Page ${currentPageNum} failed - placeholder created. Continuing...`,
                         4000
@@ -5010,17 +5010,17 @@
                       4000
                     );
                   }
-                  
+
                   // Add to failed pages queue (whether placeholder succeeded or not)
                   autoExtractState.failedPages.push(failedPageInfo);
-                  
+
                   // Mark as NOT successful but DON'T throw - continue with next page
                   processingSuccess = false;
                   break; // Exit retry loop
                 }
               }
             }
-            
+
           // If processing failed after all retries, log it but DON'T stop AutoExtract
           if (!processingSuccess) {
             debug(`⚠️ [AUTO-EXTRACT] Page ${currentPageNum} failed after retries - continuing with next page`);
@@ -5048,7 +5048,7 @@
         // Navigate to next page
         const beforeNavUrl = window.location.href;
         const beforeNavPageId = currentPageId;
-        
+
         const nextButton = await findAndClickNextButton(
           nextPageSelector,
           autoExtractState,
@@ -5085,74 +5085,74 @@
         // Brief stabilization wait
         debug(`[AUTO-EXTRACT] ⏳ Step 5: Stabilizing page ${currentPageNum + 1}...`);
         await new Promise((resolve) => setTimeout(resolve, 1000));
-        
+
         // Verify that navigation actually occurred
         const afterNavUrl = window.location.href;
         const afterNavPageId = getCurrentPageId();
-        
+
         if (afterNavUrl === beforeNavUrl && afterNavPageId === beforeNavPageId) {
           debug(`⚠️ WARNING: URL and Page ID did not change after clicking next button!`);
           debug(`   Before: ${beforeNavUrl} | ${beforeNavPageId}`);
           debug(`   After:  ${afterNavUrl} | ${afterNavPageId}`);
-          
+
           // Increment navigation failure counter
           autoExtractState.navigationFailures = (autoExtractState.navigationFailures || 0) + 1;
           debug(`[NAV-RETRY] 🔢 Navigation failure count: ${autoExtractState.navigationFailures}`);
-          
+
           // Navigation failed - retry a few times before giving up
           const maxNavigationRetries = 2;
           let navigationRetryCount = 0;
           let navigationSucceeded = false;
-          
+
           while (navigationRetryCount < maxNavigationRetries && !navigationSucceeded) {
             navigationRetryCount++;
             debug(`[NAV-RETRY] 🔄 Navigation failed, retrying ${navigationRetryCount}/${maxNavigationRetries}...`);
-            
+
             showToast(
               `⚠️ Navigation failed, retrying (${navigationRetryCount}/${maxNavigationRetries})...`,
               3000
             );
-            
+
             if (button) {
               button.textContent = `⚠️ Nav retry ${navigationRetryCount}/${maxNavigationRetries}...`;
             }
-            
+
             // Wait a bit before retrying
             await new Promise((resolve) => setTimeout(resolve, 2000));
-            
+
             // Find and click next button again
             const retryNextButton = await findAndClickNextButton(
               nextPageSelector,
               autoExtractState,
               button
             );
-            
+
             if (!retryNextButton) {
               debug(`[NAV-RETRY] ❌ Could not find next button on retry ${navigationRetryCount}`);
               break;
             }
-            
+
             // Actually click the button on retry
             debug(`[NAV-RETRY] 🖱️ Clicking next button (retry ${navigationRetryCount})...`);
             await clickNextPageButton(retryNextButton);
-            
+
             // Wait for navigation
             debug(`[NAV-RETRY] ⏳ Waiting for navigation (retry ${navigationRetryCount})...`);
             await new Promise((resolve) => setTimeout(resolve, 3000));
             await new Promise((resolve) => setTimeout(resolve, 1000));
-            
+
             // Check if navigation succeeded this time
             const retryAfterUrl = window.location.href;
             const retryAfterPageId = getCurrentPageId();
-            
+
             if (retryAfterUrl !== beforeNavUrl || retryAfterPageId !== beforeNavPageId) {
               debug(`[NAV-RETRY] ✅ Navigation succeeded on retry ${navigationRetryCount}!`);
               debug(`[NAV-RETRY]    New URL: ${retryAfterUrl}`);
               navigationSucceeded = true;
-              
+
               // Reset navigation failure counter on success
               autoExtractState.navigationFailures = 0;
-              
+
               showToast(
                 `✅ Navigation successful on retry ${navigationRetryCount}`,
                 2000
@@ -5162,29 +5162,29 @@
               debug(`[NAV-RETRY]    URL still: ${retryAfterUrl}`);
             }
           }
-          
+
           // If all retries failed, this might be end of book
           if (!navigationSucceeded) {
             debug(`[NAV-RETRY] ❌ Navigation failed after ${maxNavigationRetries} retries`);
             debug(`[NAV-RETRY] 🤔 This might be the end of the book or a navigation issue`);
-            
+
             // Show end-of-book confirmation dialog
             const continueExtraction = await showEndOfBookConfirmation(autoExtractState);
-            
+
             if (!continueExtraction) {
               debug(`[NAV-RETRY] ⏹ User confirmed end of extraction`);
               stopAutoExtract(autoExtractState);
               if (button) button.textContent = "Start AutoExtract";
               return;
             }
-            
+
             debug(`[NAV-RETRY] ▶️ User wants to continue - will try again next iteration`);
           }
         } else {
           debug(`✅ Navigation verified: Page changed successfully`);
           debug(`   New URL: ${afterNavUrl}`);
           debug(`   New Page ID: ${afterNavPageId}`);
-          
+
           // Reset navigation failure counter on successful navigation
           autoExtractState.navigationFailures = 0;
         }
@@ -5199,11 +5199,11 @@
         debug(`❌ Error in AutoExtract loop:`, error);
         const errorMessage = `❌ AutoExtract ERROR: ${error.message}\n\nTotal pages processed: ${autoExtractState.totalProcessed}`;
         alert(errorMessage);
-        
+
         // Pass error details to stop reason for persistent logging
         const stopReason = `Error: ${error.message.substring(0, 100)}`;
         stopAutoExtract(autoExtractState, stopReason);
-        
+
         if (button)
           button.textContent = `❌ Error: ${error.message.substring(0, 20)}...`;
         overlayModule.error({
@@ -5212,10 +5212,10 @@
         return;
       }
     }
-    
+
     // Loop completed successfully - show completion overlay
     debug(`[AUTO-EXTRACT] 🎉 AutoExtract completed! Total pages processed: ${autoExtractState.totalProcessed}`);
-    
+
     // Show summary of any failed pages
     if (autoExtractState.failedPages && autoExtractState.failedPages.length > 0) {
       debug(`⚠️ ${autoExtractState.failedPages.length} page(s) failed during AutoExtract:`);
@@ -5225,16 +5225,16 @@
         debug(`     Reason: ${failedPage.reason}`);
         debug(`     Time: ${failedPage.timestamp}`);
       });
-      
+
       // Save failed pages list to localStorage for manual retry
       if (typeof GM_setValue === 'function') {
         GM_setValue('w2n_failed_pages', JSON.stringify(autoExtractState.failedPages));
         debug(`💾 Failed pages saved to storage for manual retry`);
       }
-      
+
       // Count how many have placeholders
       const placeholderCount = autoExtractState.failedPages.filter(fp => fp.placeholderPageId).length;
-      
+
       // Show warning to user
       const failedPagesMessage = `⚠️ AutoExtract completed with warnings!\n\n` +
         `✅ Successfully processed: ${autoExtractState.totalProcessed} pages\n` +
@@ -5242,21 +5242,21 @@
         `� Placeholders created: ${placeholderCount} pages\n` +
         `�🚦 Rate limit hits: ${autoExtractState.rateLimitHits || 0}\n\n` +
         `Failed pages list:\n` +
-        autoExtractState.failedPages.map((fp, i) => 
+        autoExtractState.failedPages.map((fp, i) =>
           `${i + 1}. ${fp.title || 'Untitled'} (page ${fp.pageNumber})\n` +
           `   Reason: ${fp.reason}\n` +
           `   ${fp.placeholderPageId ? '✓ Placeholder created' : '✗ No placeholder'}`
         ).join('\n') +
         `\n\n${placeholderCount > 0 ? 'Placeholder pages have been created in Notion to hold the sequence.\n' : ''}` +
         `Failed pages data saved for later retry.`;
-      
+
       alert(failedPagesMessage);
-      
+
       showToast(
         `⚠️ Completed with ${autoExtractState.failedPages.length} failed pages. See console for details.`,
         7000
       );
-      
+
       // Ask user if they want to auto-retry failed pages after cooldown
       const retryablePagesCount = autoExtractState.failedPages.filter(fp => fp.placeholderPageId).length;
       if (retryablePagesCount > 0) {
@@ -5270,15 +5270,15 @@
           `• PATCH update the placeholder pages\n\n` +
           `Would you like to start the auto-retry process?`
         );
-        
+
         if (shouldRetry) {
           debug(`🔄 [AUTO-RETRY] User confirmed auto-retry of failed pages`);
-          
+
           // Start retry process in background
           setTimeout(() => {
             retryFailedPages(autoExtractState.failedPages, button);
           }, 1000); // Small delay to let UI settle
-          
+
           // Don't call stopAutoExtract yet - retry will handle it
           if (button) button.textContent = "⏳ Preparing retry...";
           return; // Exit without stopping
@@ -5290,20 +5290,20 @@
         5000
       );
     }
-    
+
     overlayModule.done({
       success: true,
       pageUrl: null,
       autoCloseMs: 5000,
     });
-    
+
     // Pass completion reason with stats
     const failedCount = autoExtractState.failedPages?.length || 0;
-    const stopReason = failedCount > 0 
+    const stopReason = failedCount > 0
       ? `Completed with ${failedCount} failed page(s)`
       : `Completed successfully`;
     stopAutoExtract(autoExtractState, stopReason);
-    
+
     if (button) button.textContent = "Start AutoExtract";
   }
 
@@ -5337,7 +5337,7 @@
         if (autoExtractState) {
           // Increment reload attempts
           autoExtractState.reloadAttempts = (autoExtractState.reloadAttempts || 0) + 1;
-          
+
           // Check if we've exceeded max reload attempts
           if (autoExtractState.reloadAttempts > 3) {
             debug(`[STATE-MANAGEMENT] ❌ Maximum reload attempts (3) exceeded`);
@@ -5356,7 +5356,7 @@
           };
           const stateJson = JSON.stringify(stateToSave);
           GM_setValue("w2n_autoExtractState", stateJson);
-          
+
           // Verify save succeeded
           const verification = GM_getValue("w2n_autoExtractState");
           debug(`[STATE-MANAGEMENT] ✅ State save verified: ${verification === stateJson ? 'SUCCESS' : 'FAILED'}`);
@@ -5366,7 +5366,7 @@
         debug(
           `[STATE-MANAGEMENT] 🔄 Reloading page to refresh DOM elements (reload attempt ${autoExtractState.reloadAttempts}/3)...`
         );
-        
+
         // Add small delay to ensure GM_setValue completes before reload
         await new Promise(resolve => setTimeout(resolve, 100));
         window.location.reload();
@@ -5440,7 +5440,7 @@
   function stopAutoExtract(autoExtractState, reason = "Unknown") {
     debug("[AUTO-EXTRACT] 🛑 stopAutoExtract called - cleaning up");
     debug(`[AUTO-EXTRACT] Stop reason: ${reason}`);
-    
+
     // FIX v11.0.27: Save stop reason to persistent log for post-mortem analysis
     try {
       const stopLog = {
@@ -5451,7 +5451,7 @@
         duplicateCount: autoExtractState.duplicateCount || 0,
         url: window.location.href
       };
-      
+
       // Get existing logs (keep last 10)
       let logs = [];
       try {
@@ -5460,21 +5460,21 @@
       } catch (e) {
         logs = [];
       }
-      
+
       logs.push(stopLog);
       if (logs.length > 10) {
         logs = logs.slice(-10); // Keep only last 10 entries
       }
-      
+
       GM_setValue("w2n_autoExtractStopLogs", JSON.stringify(logs, null, 2));
       debug("[PERSISTENT-LOG] 💾 Saved stop reason to persistent log");
-      
+
       // Also log to console with special marker for easy searching
       console.log("🔴 [AUTOEXTRACT-STOP-LOG] 🔴", stopLog);
     } catch (logError) {
       debug(`[PERSISTENT-LOG] ❌ Failed to save stop log: ${logError.message}`);
     }
-    
+
     autoExtractState.running = false;
     overlayModule.setProgress(100);
     overlayModule.done({
@@ -5485,7 +5485,7 @@
     // Restore button visibility and appearance
     const startBtn = document.getElementById("w2n-start-autoextract");
     const stopBtn = document.getElementById("w2n-stop-autoextract");
-    
+
     if (startBtn) {
       startBtn.style.display = "block";
       startBtn.textContent = "Start AutoExtract";
@@ -5659,7 +5659,7 @@
       // These will only fire if navigation hasn't occurred
       const currentUrl = window.location.href;
       const currentPageId = getCurrentPageId();
-      
+
       setTimeout(() => {
         const newUrl = window.location.href;
         const newPageId = getCurrentPageId();
@@ -6122,8 +6122,8 @@
 
     const classList = element.classList || [];
     // Handle both string className and SVGAnimatedString (for SVG elements)
-    const className = typeof element.className === 'string' 
-      ? element.className 
+    const className = typeof element.className === 'string'
+      ? element.className
       : (element.className?.baseVal || "");
 
     // Check for common "current page" class patterns
@@ -6166,118 +6166,118 @@
    */
   async function retryFailedPages(failedPages, button) {
     debug(`🔄 [AUTO-RETRY] Starting retry process for ${failedPages.length} failed page(s)`);
-    
+
     const { overlayModule } = await Promise.resolve().then(function () { return overlayProgress; });
     const app = window.ServiceNowToNotion?.app?.();
-    
+
     if (!app) {
       debug(`❌ [AUTO-RETRY] App not available, cannot retry`);
       alert('Error: ServiceNow-2-Notion app not initialized');
       return;
     }
-    
+
     // Filter to only pages with placeholder IDs (can be patched)
     const retryablePages = failedPages.filter(fp => fp.placeholderPageId);
-    
+
     if (retryablePages.length === 0) {
       debug(`⚠️ [AUTO-RETRY] No retryable pages (no placeholder IDs)`);
       if (button) button.textContent = "Start AutoExtract";
       return;
     }
-    
+
     debug(`🔄 [AUTO-RETRY] Found ${retryablePages.length} retryable page(s) with placeholders`);
-    
+
     // Initial 5-minute cooldown to avoid rate limits
     const cooldownMinutes = 5;
     const cooldownMs = cooldownMinutes * 60 * 1000;
-    
+
     debug(`⏳ [AUTO-RETRY] Starting ${cooldownMinutes}-minute cooldown to clear rate limits...`);
-    
+
     if (button) {
       button.textContent = `⏳ Cooldown: ${cooldownMinutes}m remaining...`;
     }
-    
+
     overlayModule.setMessage(`⏳ Waiting ${cooldownMinutes} minutes for rate limit cooldown...`);
-    
+
     // Countdown with updates every 30 seconds
     const updateInterval = 30000; // 30 seconds
     let remainingMs = cooldownMs;
-    
+
     while (remainingMs > 0) {
       await new Promise(resolve => setTimeout(resolve, Math.min(updateInterval, remainingMs)));
       remainingMs -= updateInterval;
-      
+
       const remainingMinutes = Math.ceil(remainingMs / 60000);
       if (remainingMs > 0 && button) {
         button.textContent = `⏳ Cooldown: ${remainingMinutes}m remaining...`;
       }
     }
-    
+
     debug(`✅ [AUTO-RETRY] Cooldown complete, starting retry process`);
-    
+
     if (button) {
       button.textContent = `🔄 Retrying failed pages...`;
     }
-    
+
     overlayModule.setMessage(`🔄 Starting retry of ${retryablePages.length} failed pages...`);
-    
+
     // Track retry results
     const retryResults = {
       successful: [],
       failed: [],
       total: retryablePages.length
     };
-    
+
     // Process each failed page
     for (let i = 0; i < retryablePages.length; i++) {
       const failedPage = retryablePages[i];
       const pageNum = i + 1;
-      
+
       debug(`\n🔄 [AUTO-RETRY] ======================================`);
       debug(`🔄 [AUTO-RETRY] Retrying page ${pageNum}/${retryablePages.length}`);
       debug(`🔄 [AUTO-RETRY] Title: ${failedPage.title}`);
       debug(`🔄 [AUTO-RETRY] URL: ${failedPage.url}`);
       debug(`🔄 [AUTO-RETRY] Placeholder ID: ${failedPage.placeholderPageId}`);
       debug(`🔄 [AUTO-RETRY] ======================================\n`);
-      
+
       if (button) {
         button.textContent = `🔄 Retry ${pageNum}/${retryablePages.length}: ${failedPage.title.substring(0, 20)}...`;
       }
-      
+
       overlayModule.setMessage(`🔄 Retrying ${pageNum}/${retryablePages.length}: ${failedPage.title}...`);
-      
+
       try {
         // Navigate to the failed page URL
         debug(`🔄 [AUTO-RETRY] Step 1: Navigating to ${failedPage.url}...`);
         window.location.href = failedPage.url;
-        
+
         // Wait for page load
         await new Promise(resolve => setTimeout(resolve, 5000));
-        
+
         // Extract page content
         debug(`🔄 [AUTO-RETRY] Step 2: Extracting content...`);
         overlayModule.setMessage(`📝 Extracting content from ${failedPage.title}...`);
-        
+
         const extractedData = await app.extractCurrentPageData();
-        
+
         if (!extractedData) {
           throw new Error('Failed to extract content from page');
         }
-        
+
         // PATCH update the placeholder page
         debug(`🔄 [AUTO-RETRY] Step 3: PATCH updating placeholder page...`);
         overlayModule.setMessage(`📤 Updating placeholder page in Notion...`);
-        
+
         // Import PATCH function
         const { patchNotionPage } = await Promise.resolve().then(function () { return proxyApi; });
-        
+
         const patchResult = await patchNotionPage(
           failedPage.placeholderPageId,
           extractedData.title,
           extractedData.contentHtml || extractedData.content,
           failedPage.url
         );
-        
+
         if (patchResult.success) {
           debug(`✅ [AUTO-RETRY] Successfully updated placeholder for "${failedPage.title}"`);
           retryResults.successful.push({
@@ -6285,7 +6285,7 @@
             url: failedPage.url,
             pageId: failedPage.placeholderPageId
           });
-          
+
           showToast(
             `✅ Retry ${pageNum}/${retryablePages.length} successful: ${failedPage.title}`,
             3000
@@ -6293,7 +6293,7 @@
         } else {
           throw new Error(patchResult.error || 'PATCH update failed');
         }
-        
+
         // Brief delay between retries (30 seconds to be safe)
         if (i < retryablePages.length - 1) {
           debug(`⏳ [AUTO-RETRY] Waiting 30s before next retry...`);
@@ -6302,27 +6302,27 @@
           }
           await new Promise(resolve => setTimeout(resolve, 30000));
         }
-        
+
       } catch (retryError) {
         debug(`❌ [AUTO-RETRY] Failed to retry "${failedPage.title}": ${retryError.message}`);
-        
+
         retryResults.failed.push({
           title: failedPage.title,
           url: failedPage.url,
           pageId: failedPage.placeholderPageId,
           reason: retryError.message
         });
-        
+
         showToast(
           `❌ Retry ${pageNum}/${retryablePages.length} failed: ${failedPage.title}`,
           4000
         );
-        
+
         // Check if it's another rate limit
-        const isRateLimit = retryError.message.includes('Rate limit') || 
+        const isRateLimit = retryError.message.includes('Rate limit') ||
                            retryError.message.includes('rate limited') ||
                            retryError.message.includes('429');
-        
+
         if (isRateLimit) {
           debug(`⚠️ [AUTO-RETRY] Hit rate limit again during retry - stopping retry process`);
           alert(
@@ -6333,12 +6333,12 @@
           );
           break;
         }
-        
+
         // For non-rate-limit errors, continue with next page
         debug(`🔄 [AUTO-RETRY] Continuing with next page despite error...`);
       }
     }
-    
+
     // Show final summary
     debug(`\n🔄 [AUTO-RETRY] ======================================`);
     debug(`🔄 [AUTO-RETRY] RETRY PROCESS COMPLETE`);
@@ -6346,14 +6346,14 @@
     debug(`✅ Successful: ${retryResults.successful.length}`);
     debug(`❌ Failed: ${retryResults.failed.length}`);
     debug(`📊 Total: ${retryResults.total}`);
-    
+
     if (retryResults.successful.length > 0) {
       debug(`\n✅ Successfully retried pages:`);
       retryResults.successful.forEach((page, i) => {
         debug(`  ${i + 1}. ${page.title}`);
       });
     }
-    
+
     if (retryResults.failed.length > 0) {
       debug(`\n❌ Failed retry pages:`);
       retryResults.failed.forEach((page, i) => {
@@ -6361,35 +6361,35 @@
         debug(`     Reason: ${page.reason}`);
       });
     }
-    
+
     // Show completion alert
     const summaryMessage = `🔄 Auto-Retry Complete!\n\n` +
       `✅ Successfully updated: ${retryResults.successful.length} page(s)\n` +
       `❌ Still failed: ${retryResults.failed.length} page(s)\n` +
       `📊 Total attempted: ${retryResults.total} page(s)\n\n` +
-      (retryResults.failed.length > 0 
+      (retryResults.failed.length > 0
         ? `Failed pages still need manual attention. Check console for details.`
         : `All failed pages have been successfully updated!`);
-    
+
     alert(summaryMessage);
-    
+
     overlayModule.done({
       success: retryResults.failed.length === 0,
       pageUrl: null,
       autoCloseMs: 5000,
     });
-    
+
     if (button) {
-      button.textContent = retryResults.failed.length === 0 
+      button.textContent = retryResults.failed.length === 0
         ? "✅ All retries successful"
         : `⚠️ ${retryResults.failed.length} still failed`;
-      
+
       // Reset button after a few seconds
       setTimeout(() => {
         if (button) button.textContent = "Start AutoExtract";
       }, 10000);
     }
-    
+
     // Save any still-failed pages back to localStorage
     if (retryResults.failed.length > 0 && typeof GM_setValue === 'function') {
       GM_setValue('w2n_failed_pages', JSON.stringify(retryResults.failed));
@@ -6413,26 +6413,26 @@
     if (!input || typeof input !== 'string') {
       throw new Error('Invalid input: must provide a Notion page URL or ID');
     }
-    
+
     const trimmed = input.trim();
-    
+
     // If it's already a valid 32-character UUID (with or without hyphens)
     const uuidPattern = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
     if (uuidPattern.test(trimmed)) {
       // Remove hyphens and return
       return trimmed.replace(/-/g, '');
     }
-    
+
     // Extract from Notion URL
     // Pattern: last segment after last hyphen is the page ID (32 chars, may have hyphens)
     const urlPattern = /([0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
     const match = trimmed.match(urlPattern);
-    
+
     if (match) {
       // Remove hyphens from matched ID
       return match[1].replace(/-/g, '');
     }
-    
+
     throw new Error('Could not extract page ID from input. Please provide a valid Notion page URL or 32-character page ID.');
   }
 
@@ -6442,7 +6442,7 @@
    */
   async function handleUpdateExistingPage() {
     debug('\n🔄 [UPDATE-EXISTING] Starting manual page update...');
-    
+
     // Prompt for Notion page URL or ID
     const userInput = prompt(
       '🔄 Update Existing Notion Page\n\n' +
@@ -6450,59 +6450,59 @@
       '(e.g., https://notion.so/Page-Title-abc123... or abc123def456...)\n\n' +
       'This will replace the page content with freshly extracted data from the current ServiceNow page.'
     );
-    
+
     if (!userInput || userInput.trim() === '') {
       debug('[UPDATE-EXISTING] User cancelled');
       return;
     }
-    
+
     try {
       // Extract page ID from input
       const pageId = extractPageIdFromUrl(userInput);
       debug(`[UPDATE-EXISTING] Extracted page ID: ${pageId}`);
-      
+
       // Show loading overlay
       overlayModule.start({
         title: 'Updating Notion Page',
         message: '📝 Extracting current ServiceNow page content...'
       });
-      
+
       // Get app instance
       const app = window.ServiceNowToNotion?.app?.();
       if (!app) {
         throw new Error('ServiceNow-2-Notion app not initialized');
       }
-      
+
       // Extract current page data
       debug('[UPDATE-EXISTING] Extracting page data...');
       const extractedData = await app.extractCurrentPageData();
-      
+
       if (!extractedData) {
         throw new Error('Failed to extract content from current page');
       }
-      
+
       debug(`[UPDATE-EXISTING] Extracted: ${extractedData.title}`);
-      
+
       // Extract HTML content from the nested structure
-      const contentHtml = extractedData.content?.combinedHtml || 
-                          extractedData.content?.html || 
-                          extractedData.contentHtml || 
+      const contentHtml = extractedData.content?.combinedHtml ||
+                          extractedData.content?.html ||
+                          extractedData.contentHtml ||
                           '';
-      
+
       debug(`[UPDATE-EXISTING] Content length: ${contentHtml.length} chars`);
-      
+
       if (!contentHtml || contentHtml.length === 0) {
         throw new Error('No content extracted from page');
       }
-      
+
       // Get current page URL
       const currentUrl = window.location.href;
-      
+
       overlayModule.setMessage(`📤 Updating Notion page: ${extractedData.title}...`);
-      
+
       // Import PATCH function
       const { patchNotionPage } = await Promise.resolve().then(function () { return proxyApi; });
-      
+
       // PATCH the page
       debug(`[UPDATE-EXISTING] Sending PATCH request to update page ${pageId}...`);
       const patchResult = await patchNotionPage(
@@ -6511,22 +6511,22 @@
         contentHtml,
         currentUrl
       );
-      
+
       if (patchResult.success) {
         debug(`✅ [UPDATE-EXISTING] Successfully updated page: ${extractedData.title}`);
         debug(`   Page URL: ${patchResult.url || 'N/A'}`);
-        
+
         overlayModule.done({
           success: true,
           pageUrl: patchResult.url || `https://notion.so/${pageId}`,
           autoCloseMs: 5000,
         });
-        
+
         showToast(
           `✅ Successfully updated: ${extractedData.title}`,
           5000
         );
-        
+
         // Show success alert with details
         alert(
           '✅ Page Updated Successfully!\n\n' +
@@ -6534,20 +6534,20 @@
           `Page ID: ${pageId}\n\n` +
           'The Notion page has been updated with fresh content from this ServiceNow page.'
         );
-        
+
       } else {
         throw new Error(patchResult.error || 'PATCH update failed');
       }
-      
+
     } catch (error) {
       debug(`❌ [UPDATE-EXISTING] Error: ${error.message}`);
-      
+
       overlayModule.done({
         success: false,
         pageUrl: null,
         autoCloseMs: 5000,
       });
-      
+
       // Re-throw to be caught by button handler
       throw error;
     }
@@ -7056,7 +7056,7 @@
 
       const videoIframes = Array.from(iframes).filter(isVideoIframe);
       metadata.hasVideos = videoTags.length > 0 || videoIframes.length > 0;
-      
+
       // Add hasImages for property mapping
       metadata.hasImages = contentImages.length > 0 || figuresWithImages.length > 0;
 
@@ -7156,7 +7156,7 @@
     console.log("   - contentElement tagName:", contentElement?.tagName);
     console.log("   - contentElement id:", contentElement?.id);
     console.log("   - contentElement class:", contentElement?.className);
-    
+
     let combinedHtml = "";
     let combinedImages = [];
 
@@ -7244,7 +7244,7 @@
           console.log("✅✅✅ iframeDoc successfully accessed");
           console.log("   - iframeDoc.body exists:", !!iframeDoc.body);
           console.log("   - iframeDoc.body innerHTML length:", iframeDoc.body?.innerHTML?.length || 0);
-          
+
           // Check if the iframe document itself has a useful URL
           if (
             iframeDoc.location &&
@@ -7282,11 +7282,11 @@
             const container = iframeDoc.querySelector(selector);
             console.log(`      - Element found:`, !!container);
             console.log(`      - innerHTML length:`, container?.innerHTML?.trim().length || 0);
-            
+
             if (container?.innerHTML?.trim().length > 200) {
               console.log(`   ✅ Selector matched! Using: "${selector}"`);
               iframeContent = container.innerHTML;
-              
+
               // 🔍 DIAGNOSTIC: Count articles and nav elements in extracted content
               const articleCount = (iframeContent.match(/<article[^>]*>/g) || []).length;
               const h2Count = (iframeContent.match(/<h2[^>]*>/g) || []).length;
@@ -7297,7 +7297,7 @@
               console.log(`   - H2 headings found: ${h2Count}`);
               console.log(`   - Nav tags found: ${navCount}`);
               console.log(`   - First 500 chars:`, iframeContent.substring(0, 500));
-              
+
               debug(`📄 Strategy 1 (${selector}): ${iframeContent.length} chars, ${articleCount} articles, ${h2Count} h2 headings, ${navCount} nav elements`);
               break;
             }
@@ -7313,7 +7313,7 @@
               // Remove miniTOC elements first (unconditionally)
               const miniTocElements = mainClone.querySelectorAll(".miniTOC, [class*='miniTOC']");
               miniTocElements.forEach((el) => el.remove());
-              
+
               // Also remove parent containers that have d-none d-md-block if they contain miniTOC elements
               const responsiveContainers = mainClone.querySelectorAll(".d-none.d-md-block");
               responsiveContainers.forEach((el) => {
@@ -7484,7 +7484,7 @@
         console.log(`   ❌ Removing miniTOC: ${el.className}`);
         el.remove();
       });
-      
+
       // Also remove parent containers that have d-none d-md-block if they contain miniTOC elements
       const responsiveContainers = contentClone.querySelectorAll(".d-none.d-md-block");
       responsiveContainers.forEach((el) => {
@@ -7493,26 +7493,26 @@
           el.remove();
         }
       });
-      
+
       // Apply nav filtering - remove navigation elements that are NOT inside article/section
       const navElements = contentClone.querySelectorAll(
         "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer"
       );
       console.log(`📄 Found ${navElements.length} navigation elements in regular content`);
       console.log(`📄 contentClone tagName: ${contentClone.tagName}, id: ${contentClone.id}, class: ${contentClone.className}`);
-      
+
       let removedCount = 0;
       navElements.forEach((el, index) => {
         const parentArticle = el.closest('article');
         const parentSection = el.closest('section');
         const isInsideArticleOrSection = el.closest('article, section');
         const elPreview = el.outerHTML?.substring(0, 200) || '';
-        
+
         console.log(`📄 Nav ${index + 1}: tagName=${el.tagName}, role=${el.getAttribute('role')}, class=${el.className}`);
         console.log(`   - parentArticle: ${parentArticle ? parentArticle.tagName + '#' + (parentArticle.id || 'no-id') : 'none'}`);
         console.log(`   - parentSection: ${parentSection ? parentSection.tagName + '#' + (parentSection.id || 'no-id') : 'none'}`);
         console.log(`   - Preview: ${elPreview}`);
-        
+
         if (!isInsideArticleOrSection) {
           console.log(`   ❌ Removing nav: ${el.tagName} (not inside article/section)`);
           el.remove();
@@ -7633,7 +7633,7 @@
       "#zDocsContent > div.zDocsTopicPageBody",  // Direct child selector - most accurate
       ".zDocsTopicPageBody",                      // Fallback class-only selector
       "#zDocsContent .zDocsTopicPageBody",        // Fallback descendant selector
-      
+
       // Generic main content areas
       "main[role='main']",
       "main",
@@ -7672,7 +7672,7 @@
         ) {
           debug(`✅ Found content element using selector: ${selector}`);
           debug(`📏 Content length: ${element.innerHTML.length} characters`);
-          
+
           // If we found a ServiceNow-specific selector, verify we're excluding the header
           if (selector.includes('zDocsTopicPageBody')) {
             // Verify this element doesn't contain the zDocsContent > header
@@ -7686,7 +7686,7 @@
               }
             }
           }
-          
+
           return element;
         }
       } catch (e) {
@@ -7769,25 +7769,25 @@
           // Check if element is inside a nav that's inside article/section
           const insideNav = el.closest('nav, [role="navigation"]');
           const insideArticle = el.closest('article, section');
-          
+
           const elHtmlLength = el.outerHTML?.length || 0;
-          
+
           // Log what we're checking for large elements
           if (elHtmlLength > 200) {
             console.log(`🔍 Large ${el.tagName} (${elHtmlLength} chars): insideNav=${!!insideNav}, insideArticle=${!!insideArticle}`);
           }
-          
+
           // Don't remove if inside content nav
           if (insideNav && insideArticle) {
             console.log(`✅ Preserving ${el.tagName} (${elHtmlLength} chars) inside content nav (selector: ${selector})`);
             return; // Skip removal
           }
-          
+
           // Log removals
           if (elHtmlLength > 200) {
             console.log(`🧹 Removing large ${el.tagName} (${elHtmlLength} chars) matching "${selector}"`);
           }
-          
+
           el.remove();
         });
       });
@@ -7845,7 +7845,7 @@
           console.log('🔍 Skipping image inside figure:', img.outerHTML.substring(0, 150));
           return; // Keep images in figures
         }
-        
+
         // Remove broken image references
         const src = img.getAttribute("src");
         if (
@@ -7866,7 +7866,7 @@
       const cleanedHtml = doc.body.innerHTML;
       const navCountAfter = (cleanedHtml.match(/<nav[^>]*>/g) || []).length;
       console.log(`🧹 cleanHtmlContent END: ${cleanedHtml.length} chars, ${navCountAfter} nav elements`);
-      
+
       debug(`✅ HTML content cleaned successfully`);
       return cleanedHtml;
     } catch (error) {
@@ -8792,7 +8792,7 @@
         // Component navigation wrappers (docs pages)
         ".cmp-nav__wrapper",
         "nav.cmp-nav",
-        
+
         // Generic fallbacks
         "header .actions",
         ".navbar .actions",
@@ -8815,7 +8815,7 @@
       debug("  - Toolbar elements:", document.querySelectorAll('[class*="toolbar"]').length);
       debug("  - Action elements:", document.querySelectorAll('[class*="action"]').length);
       debug("  - Polaris elements:", document.querySelectorAll('[class*="polaris"]').length);
-      
+
       // Log first few class names of major containers to help identify structure
       const mainContainers = document.querySelectorAll("body > *");
       if (mainContainers.length > 0) {
@@ -8886,10 +8886,10 @@
         // Find and extract content
         overlayModule.setMessage("Locating content elements...");
         const contentElement = findContentElement();
-        
+
         overlayModule.setMessage("Extracting content from page...");
         const content = await extractContentWithIframes(contentElement);
-        
+
         // DEBUG: Check content right after extraction
         const navInCombined = (content.combinedHtml?.match(/<nav[^>]*>/g) || []).length;
         const olCount = (content.combinedHtml?.match(/<ol[^>]*>/g) || []).length;
@@ -9037,7 +9037,7 @@
         // Get database and mappings
         overlayModule.setMessage("Fetching database schema...");
         const database = await getDatabase(config.databaseId);
-        
+
         overlayModule.setMessage("Loading property mappings...");
         const mappings = await getPropertyMappings(config.databaseId, {
           database: database,
@@ -9065,7 +9065,7 @@
         console.log('🔍🔍🔍 MAIN.JS - Sections in HTML:', sectionCount);
         console.log('🔍🔍🔍 MAIN.JS - First 500 chars:', htmlContent.substring(0, 500));
         console.log('🔍🔍🔍 MAIN.JS - Last 500 chars:', htmlContent.substring(htmlContent.length - 500));
-        
+
         // DEBUG: Count OL and LI tags in htmlContent being sent to server
         const olCountInHtml = (htmlContent.match(/<ol[^>]*>/g) || []).length;
         const liCountInHtml = (htmlContent.match(/<li[^>]*>/g) || []).length;
@@ -9177,17 +9177,17 @@
         // DEBUG: ALWAYS save HTML and log for diagnostic purposes
         console.log('🔍 [CLIENT-DEBUG] pageData.contentHtml exists?', !!pageData.contentHtml);
         console.log('🔍 [CLIENT-DEBUG] pageData.contentHtml length:', pageData.contentHtml ? pageData.contentHtml.length : 0);
-        
+
         // Check for target OL by ID
         const hasTargetOl = pageData.contentHtml && pageData.contentHtml.includes('devops-software-quality-sub-category__ol_bpk_gfk_xpb');
         console.log('🔍 [CLIENT-DEBUG] Has target OL ID?', hasTargetOl);
-        
+
         // ALWAYS save for inspection (not just when condition matches)
         if (pageData.contentHtml) {
           window.DEBUG_LAST_EXPORT_HTML = pageData.contentHtml;
           console.log('💾 [CLIENT-DEBUG] Saved full export HTML to window.DEBUG_LAST_EXPORT_HTML');
           console.log('💾 [CLIENT-DEBUG] HTML length:', pageData.contentHtml.length);
-          
+
           // Try to extract target OL if it exists
           const olMatch = pageData.contentHtml.match(/<ol[^>]*id="devops-software-quality-sub-category__ol_bpk_gfk_xpb"[^>]*>[\s\S]*?<\/ol>/);
           if (olMatch) {
@@ -9195,11 +9195,11 @@
             console.log('💾 [CLIENT-DEBUG] ✅ Extracted target OL to window.DEBUG_TARGET_OL');
             console.log('💾 [CLIENT-DEBUG] OL length:', window.DEBUG_TARGET_OL.length);
             console.log('💾 [CLIENT-DEBUG] Contains Submit span:', window.DEBUG_TARGET_OL.includes('<span class="ph uicontrol">Submit</span>'));
-            
+
             // Count <li> tags
             const liCount = (window.DEBUG_TARGET_OL.match(/<li/g) || []).length;
             console.log('💾 [CLIENT-DEBUG] Total <li> tags in OL:', liCount);
-            
+
             // Parse and extract the 4th LI to show in logs
             try {
               const tempDiv = document.createElement('div');
@@ -9230,7 +9230,7 @@
         } else {
           console.log('❌ [CLIENT-DEBUG] pageData.contentHtml is empty or undefined!');
         }
-        
+
         // DEBUG: Log payload structure before sending to proxy
         debug("🔍 DEBUG: pageData structure being sent to proxy:", {
           title: pageData.title,
@@ -9255,13 +9255,13 @@
           console.log("   pageData.contentHtml length:", pageData.contentHtml.length);
           console.log("   pageData.content length:", pageData.content ? pageData.content.length : 0);
           console.log("   Are they the same?", pageData.contentHtml === pageData.content);
-          
+
           // DEBUG: Check for missing 4th list item
           console.log("🔍 [CLIENT-DEBUG] Checking for 4th list item in contentHtml:");
           console.log("   Contains 'Click Submit':", pageData.contentHtml.includes('Click Submit'));
           console.log("   Contains 'successfully created':", pageData.contentHtml.includes('successfully created'));
           console.log("   Number of <li tags:", (pageData.contentHtml.match(/<li/g) || []).length);
-          
+
           // Find the specific OL if it exists
           if (pageData.contentHtml.includes('Software Quality Sub Categories')) {
             const olMatch = pageData.contentHtml.match(/<ol[^>]*id="devops-software-quality-sub-category__ol_bpk_gfk_xpb"[^>]*>[\s\S]*?<\/ol>/);
@@ -9290,7 +9290,7 @@
         if (result.success) {
           // Check if we're in autoextract mode (global state exists)
           const isAutoExtracting = window.ServiceNowToNotion?.autoExtractState?.running;
-          
+
           if (!isAutoExtracting) {
             // Single page save: show success state and auto-close the overlay after a short delay
             try {
@@ -9685,22 +9685,22 @@
     app: () => app,
     version: PROVIDER_VERSION,
     debug: debug,
-    
+
     // FIX v11.0.27: Add helper to view AutoExtract stop logs
     viewStopLogs: () => {
       try {
         const logs = GM_getValue("w2n_autoExtractStopLogs", "[]");
         const parsed = JSON.parse(logs);
-        
+
         if (parsed.length === 0) {
           console.log("📋 No AutoExtract stop logs found");
           return [];
         }
-        
+
         console.log(`\n${'='.repeat(80)}`);
         console.log(`📋 AutoExtract Stop Logs (last ${parsed.length} entries)`);
         console.log(`${'='.repeat(80)}\n`);
-        
+
         parsed.forEach((log, idx) => {
           console.log(`[${idx + 1}] ${log.timestamp}`);
           console.log(`    Reason: ${log.reason}`);
@@ -9710,18 +9710,18 @@
           console.log(`    URL: ${log.url}`);
           console.log('');
         });
-        
+
         console.log(`${'='.repeat(80)}`);
         console.log(`Tip: Run window.ServiceNowToNotion.clearStopLogs() to clear history`);
         console.log(`${'='.repeat(80)}\n`);
-        
+
         return parsed;
       } catch (error) {
         console.error("Failed to retrieve stop logs:", error);
         return [];
       }
     },
-    
+
     clearStopLogs: () => {
       GM_setValue("w2n_autoExtractStopLogs", "[]");
       console.log("✅ AutoExtract stop logs cleared");
