@@ -1,5 +1,6 @@
 /**
  * @fileoverview ServiceNow Content Extraction Service
+ * @version 11.0.18-null-check-fix-DIV-P - Fixed childBlocks.push null error at line 1908
  * 
  * This module handles the complex parsing and extraction of content from ServiceNow
  * documentation pages, converting HTML structures to Notion-compatible block format.
@@ -48,6 +49,9 @@ const { generateMarker, removeMarkerFromRichTextArray } = require('../orchestrat
 /** @private Global tracker for video detection (reset per conversion) */
 let hasDetectedVideos = false;
 
+/** @private Global DOM order counter for tracking element processing order (reset per conversion) */
+let globalDomOrderCounter = 0;
+
 /**
  * Retrieves global utility functions from the main server context.
  * 
@@ -90,23 +94,49 @@ function enforceNestingDepthLimit(blocks, currentDepth = 0) {
   
   if (!Array.isArray(blocks)) return { deferredBlocks };
   
+  // DEBUG: Track if this block was already processed
+  const blockIds = new WeakMap();
+  
   for (const block of blocks) {
     if (!block || typeof block !== 'object') continue;
     
     const blockType = block.type;
-    if (!blockType) continue;
+    if (!blockType) {
+      continue;
+    }
     
-    // List items and other blocks that can have children
-    const childrenKey = ['bulleted_list_item', 'numbered_list_item', 'to_do', 'toggle', 'quote', 'callout'].includes(blockType) 
-      ? blockType 
-      : null;
+    // FIX v11.0.71: Special handling for tables at depth >= 3
+    // Tables keep their children (table_rows), but the entire table block is deferred for orchestration at depth 3+
+    // This allows tables to be created with their full structure during orchestration
+    // Depth 3+ means: Page → Block (depth 1) → Block (depth 2) → Table (depth 3)
+    // FIX v11.0.71g: At depth >= 3, defer ALL non-container blocks
+    // Container blocks (list items, callouts, toggles) can have their children stripped,
+    // but leaf blocks (tables, headings, paragraphs, code, images) must be deferred entirely
+    const containerBlockTypes = ['bulleted_list_item', 'numbered_list_item', 'to_do', 'toggle', 'quote', 'callout'];
+    const isContainerBlock = containerBlockTypes.includes(blockType);
+    
+    if (!isContainerBlock && currentDepth >= 3) {
+      // Defer non-container blocks at depth 3+ (tables, headings, paragraphs, code, images, etc.)
+      log(`🔧 Enforcing nesting limit: Deferring ${blockType} at depth ${currentDepth}`);
+      // DEBUG: Mark this block as deferred
+      if (blockType === 'table') {
+        console.log(`🔧 [DEFER-TABLE-DEBUG] Pushing table block to deferredBlocks array (depth=${currentDepth})`);
+        block._sn2n_debug_deferred_at_depth = currentDepth;
+      }
+      deferredBlocks.push(block);
+      continue;
+    }
+    
+    // Container blocks: check if they have children that need processing
+    const childrenKey = isContainerBlock ? blockType : null;
     
     if (childrenKey && block[childrenKey] && Array.isArray(block[childrenKey].children)) {
       const children = block[childrenKey].children;
       
-      // At depth >= 2, we cannot have children in the initial page creation
-      // All children must be deferred for orchestration
-      if (currentDepth >= 2 && children.length > 0) {
+      // At depth >= 3, we cannot have children in the initial page creation (Notion's 2-level limit)
+      // Page → Block (depth 1) → Block (depth 2) → Block (depth 3) NOT ALLOWED
+      // All children at depth 3+ must be deferred for orchestration
+      if (currentDepth >= 3 && children.length > 0) {
         log(`🔧 Enforcing nesting limit: Stripping ${children.length} children from ${blockType} at depth ${currentDepth}`);
         
         // Store children for later marker-based orchestration
@@ -122,6 +152,12 @@ function enforceNestingDepthLimit(blocks, currentDepth = 0) {
         const result = enforceNestingDepthLimit(children, currentDepth + 1);
         if (result.deferredBlocks.length > 0) {
           deferredBlocks.push(...result.deferredBlocks);
+          
+          // FIX v11.0.71f: CRITICAL - Remove deferred blocks from this block's children array
+          // When recursive calls defer blocks at depth 3+, we must remove them from the parent's children
+          const deferredSet = new Set(result.deferredBlocks);
+          block[childrenKey].children = block[childrenKey].children.filter(child => !deferredSet.has(child));
+          log(`🔧 Removed ${result.deferredBlocks.length} deferred blocks from ${blockType} at depth ${currentDepth}`);
         }
       }
     }
@@ -214,13 +250,19 @@ async function extractContentFromHtml(html) {
   
   console.log('🚨🚨🚨 SERVICENOW.CJS FUNCTION START - MODULE LOADED 🚨🚨🚨');
   
+  // Initialize htmlForValidation at top of function so it's always available
+  let htmlForValidation = html;
+  
   // cleanHtmlText already imported at top of file
   if (!html || typeof html !== "string") {
-    return { blocks: [], hasVideos: false };
+    return { blocks: [], hasVideos: false, fixedHtml: htmlForValidation };
   }
 
   // Reset video detection flag for this conversion
   hasDetectedVideos = false;
+  
+  // Reset DOM order counter for this conversion
+  globalDomOrderCounter = 0;
 
   log(`🔄 Converting HTML to Notion blocks (${html.length} chars)`);
 
@@ -237,6 +279,12 @@ async function extractContentFromHtml(html) {
   html = html.replace(/<button[^>]*class="[^\"]*zDocsAiActionsButton[^\"]*"[^>]*>[\s\S]*?<\/button>/gi, "");
   html = html.replace(/<div[^>]*class="(?![^\"]*code-toolbar)[^\"]*\btoolbar\b[^\"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
   html = html.replace(/<button[^>]*class="[^\"]*copy-to-clipboard-button[^\"]*"[^>]*>[\s\S]*?<\/button>/gi, "");
+  
+  // Remove "On this page" mini table of contents (navigation UI chrome)
+  html = html.replace(/<div[^>]*class="[^\"]*miniTOC[^\"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
+  // SELECTIVE REMOVAL: Remove zDocsSideBoxes ONLY if it contains "On this page" text
+  // Keep "Applications and features" and "Related Content" sections (user wants these!)
+  html = html.replace(/<div[^>]*class="[^\"]*zDocsSideBoxes[^\"]*"[^>]*>(?=[\s\S]*?On this page)[\s\S]*?<\/div>/gi, "");
   
   // Remove DataTables wrapper divs (generated by JavaScript table libraries)
   // NOTE: Now handled properly in Cheerio (see below) - these regex replacements are DISABLED
@@ -260,13 +308,20 @@ async function extractContentFromHtml(html) {
   html = html.replace(/<button[^>]*class="[^\"]*zDocsAiActionsButton[^\"]*"[^>]*>[\s\S]*?<\/button>/gi, "");
   html = html.replace(/<div[^>]*class="(?![^\"]*code-toolbar)[^\"]*\btoolbar\b[^\"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
   html = html.replace(/<button[^>]*class="[^\"]*copy-to-clipboard-button[^\"]*"[^>]*>[\s\S]*?<\/button>/gi, "");
+  
+  // Remove "On this page" mini table of contents (navigation UI chrome)
+  html = html.replace(/<div[^>]*class="[^\"]*miniTOC[^\"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
+  // SELECTIVE REMOVAL: Remove zDocsSideBoxes ONLY if it contains "On this page" text
+  // Keep "Applications and features" and "Related Content" sections (user wants these!)
+  html = html.replace(/<div[^>]*class="[^\"]*zDocsSideBoxes[^\"]*"[^>]*>(?=[\s\S]*?On this page)[\s\S]*?<\/div>/gi, "");
 
   // DIAGNOSTIC: Check HTML length AFTER initial cleanup
   const sectionsAfterCleanup = (html.match(/<section[^>]*id="[^"]*"/g) || []).length;
   console.log(`🔥🔥🔥 AFTER INITIAL CLEANUP: HTML length: ${html.length} chars, sections: ${sectionsAfterCleanup}`);
 
   // Block array for collecting converted Notion blocks
-  const blocks = [];
+  // FIX v11.0.71: Changed to 'let' to allow reassignment in final cleanup
+  let blocks = [];
 
   // Advanced rich text parser with full formatting support (migrated from sn2n-proxy.cjs)
   // Returns object with { richText: [], imageBlocks: [] }
@@ -522,8 +577,8 @@ async function extractContentFromHtml(html) {
       return `__BOLD_START__${content}__BOLD_END__`;
     });
 
-    // Handle italic/em tags
-    text = text.replace(/<(i|em)([^>]*)>([\s\S]*?)<\/\1>/gi, (match, tag, attrs, content) => {
+    // Handle italic/em/dfn tags (dfn = definition term, semantically rendered as italic)
+    text = text.replace(/<(i|em|dfn)([^>]*)>([\s\S]*?)<\/\1>/gi, (match, tag, attrs, content) => {
       return `__ITALIC_START__${content}__ITALIC_END__`;
     });
 
@@ -715,16 +770,27 @@ async function extractContentFromHtml(html) {
           // Split on newlines to create separate rich text elements for line breaks
           const lines = cleanedText.split('\n');
           for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            // Add the line if it has content or if it's not the last line (preserve empty lines between content)
-            if (line || i < lines.length - 1) {
+            // CRITICAL FIX: Trim leading whitespace to prevent empty list item lines
+            // Notion displays leading whitespace/newlines as vertical space, pushing text below bullet/number
+            const line = lines[i].trimStart();
+            // Only add lines that have actual content after trimming
+            // Skip empty lines entirely - don't create rich_text with empty content
+            if (line) {
               richText.push({
                 type: "text",
                 text: { content: line },
                 annotations: normalizeAnnotations(currentAnnotations),
               });
-              // Add a soft line break after each line except the last
-              if (i < lines.length - 1) {
+              // Add a soft line break only if there are more non-empty lines coming
+              // Find next non-empty line
+              let hasMoreContent = false;
+              for (let j = i + 1; j < lines.length; j++) {
+                if (lines[j].trimStart()) {
+                  hasMoreContent = true;
+                  break;
+                }
+              }
+              if (hasMoreContent) {
                 richText.push({
                   type: "text",
                   text: { content: "\n" },
@@ -992,29 +1058,45 @@ async function extractContentFromHtml(html) {
   console.log(`🔥🔥🔥 Raw HTML length: ${html.length} characters`);
   
   // FIX: ServiceNow HTML has malformed structure with EXTRA closing </div> tags
-  // Pattern: <div class="p"><div class="table-wrap"></div><div class="zDocs..."></div><table>...</table></div></div></div>
-  // This has 1 opening <div class="p"> but 3 closing </div> tags (2 are for nested divs, 1 extra)
-  // Cheerio treats the extra </div> tags as closing parent elements, making siblings become children
+  // FIX v11.0.7: Multiple tables in same div.p have extra closing tags that break structure
+  // Pattern 1: </table></div></div></div> (3 closing divs - seen in some pages)
+  // Pattern 2: </table></div></div> (2 closing divs - COMPUTER PAGE HAS THIS)
+  // The table-wrap div should self-close, so we only need ONE </div> to match the parent div.p
   console.log('🔍 HTML FIX: Checking for extra closing div tags after tables...');
   
   let fixedHtml = html;
   let totalFixed = 0;
   
-  // Strategy: Find pattern </table></div></div></div> and replace with </table></div>
-  // The table-wrap and zDocsFilterTableDiv are self-closing, so we only need ONE </div> for the parent div.p
-  const extraDivPattern = /<\/table><\/div><\/div><\/div>/g;
-  const matches = fixedHtml.match(extraDivPattern);
+  // First, fix triple closing divs (</table></div></div></div> → </table></div>)
+  const triplePattern = /<\/table><\/div><\/div><\/div>/g;
+  const tripleMatches = fixedHtml.match(triplePattern);
+  if (tripleMatches && tripleMatches.length > 0) {
+    console.log(`🔍 HTML FIX: Found ${tripleMatches.length} instances of TRIPLE closing divs after </table>`);
+    fixedHtml = fixedHtml.replace(triplePattern, '</table></div>');
+    totalFixed += tripleMatches.length;
+  }
   
-  if (matches && matches.length > 0) {
-    console.log(`🔍 HTML FIX: Found ${matches.length} instances of triple closing divs after </table>`);
-    fixedHtml = fixedHtml.replace(extraDivPattern, '</table></div>');
-    totalFixed = matches.length;
-    console.log(`✅ HTML FIX COMPLETE: Removed ${totalFixed * 2} extra </div> tag(s) after tables`);
+  // FIX v11.0.7: Also fix DOUBLE closing divs (</table></div></div> → </table></div>)
+  // This is the actual pattern in Computer page where table 2 gets orphaned
+  const doublePattern = /<\/table><\/div><\/div>/g;
+  const doubleMatches = fixedHtml.match(doublePattern);
+  if (doubleMatches && doubleMatches.length > 0) {
+    console.log(`🔍 HTML FIX: Found ${doubleMatches.length} instances of DOUBLE closing divs after </table>`);
+    fixedHtml = fixedHtml.replace(doublePattern, '</table></div>');
+    totalFixed += doubleMatches.length;
+  }
+  
+  if (totalFixed > 0) {
     html = fixedHtml;
-    console.log(`🔥🔥🔥 AFTER HTML FIX: HTML length is now ${html.length} characters`);
+    console.log(`✅ HTML FIX COMPLETE: Fixed ${totalFixed} table(s) with extra closing </div> tags`);
+    console.log(`   Removed ${totalFixed} extra </div> tag(s), HTML length: ${html.length} chars`);
   } else {
     console.log(`✅ HTML FIX: No extra closing div tags found after tables`);
   }
+  
+  // Update htmlForValidation with fixed HTML (after double-div repair)
+  // This preserves the HTML structure that validation can accurately count tables from
+  htmlForValidation = html;
   
   // DIAGNOSTIC: Check if sections have their h2 elements in raw HTML
   for (const sectionId of rawSectionIds) {
@@ -1062,6 +1144,22 @@ async function extractContentFromHtml(html) {
     } while (unwrappedThisPass > 0 && pass < maxPasses);
     
     console.log(`✅ Unwrapped ${wrapperCount} DataTables wrapper divs using Cheerio (${pass} passes)`);
+    
+    // Remove "On this page" mini TOC sections using Cheerio (more reliable than regex)
+    const miniTOCs = $('.miniTOC');
+    if (miniTOCs.length > 0) {
+      console.log(`🧹 Removing ${miniTOCs.length} miniTOC elements`);
+      miniTOCs.remove();
+    }
+    
+    // Remove zDocsSideBoxes that contain "On this page" text
+    $('.zDocsSideBoxes').each((i, el) => {
+      const text = $(el).text();
+      if (text.includes('On this page')) {
+        console.log(`🧹 Removing zDocsSideBoxes containing "On this page"`);
+        $(el).remove();
+      }
+    });
     
     // DIAGNOSTIC: Count tables after unwrapping
     const tableCount = $('table').length;
@@ -1129,8 +1227,11 @@ async function extractContentFromHtml(html) {
     };
   }
 
+  // Track processed tables to prevent duplicates
+  const processedTableIds = new Set();
+  
   // Process elements in document order by walking the DOM tree
-  async function processElement(element) {
+  async function processElement(element, isNested = false) {
     const $elem = $(element);
     const tagName = element.name;
     const processedBlocks = [];
@@ -1191,12 +1292,11 @@ async function extractContentFromHtml(html) {
     }
 
     // Utility: derive callout icon/color from class list or label
+    // FIXED v11.0.0: Removed word boundaries (\b) to handle classes like "note_note"
     function getCalloutPropsFromClasses(classes = "") {
       const cls = String(classes || "");
       let color = "blue_background"; // default to info-ish note
       let icon = "ℹ️";
-      // FIXED v11.0.6: Removed word boundaries (\b) to handle underscore-separated classes
-      // like "note_note", "warning_type", "important_critical" which are common in ServiceNow HTML
       if (/(important|critical)/.test(cls)) {
         color = "red_background";
         icon = "⚠️";
@@ -1229,52 +1329,15 @@ async function extractContentFromHtml(html) {
     // Handle different element types
     // 1) Explicit ServiceNow note/callout containers
     if (tagName === 'div' && $elem.attr('class') && $elem.attr('class').includes('note')) {
+      // v11.0.19: Skip if inside list UNLESS we're explicitly processing nested content
+      // This prevents top-level iteration from removing the element before list processing can handle it
+      if (!isNested && $elem.closest('ul, ol').length > 0) {
+        if (getExtraDebug && getExtraDebug()) log('🔍 Skipping div.note inside list (will be processed as nested)');
+        return processedBlocks;
+      }
+      
       console.log(`🔍 ✅ MATCHED CALLOUT! class="${$elem.attr('class')}"`);
       console.log(`🔍 Callout HTML preview (first 500 chars): ${($elem.html() || '').substring(0, 500)}`);
-
-      // ----------------------------------------------------------------------------------
-      // CALLOUT DEDUPE (v11.0.x)
-      // Many pages produce duplicate callouts due to nested wrappers or underscore class variants.
-      // We normalize the visible text (strip labels, collapse whitespace) and suppress duplicates.
-      // Implementation notes:
-      //   • Maintain per-request Set in global.__SN2N_CALLOUT_DEDUPE (lifecycle of Node process)
-      //   • Only dedupe bodies >= 15 chars (skip trivial label-only blocks)
-      //   • Exact normalized match with similar length (±15%) ⇒ suppress
-      //   • Replaced with empty paragraph placeholder to preserve ordering offsets
-      if (!global.__SN2N_CALLOUT_DEDUPE) {
-        global.__SN2N_CALLOUT_DEDUPE = new Set();
-      }
-      const rawCalloutHtml = $elem.html() || '';
-      let normalizedBody = rawCalloutHtml
-        .replace(/<span[^>]*class="[^"]*note__title[^"]*"[^>]*>[^<]*<\/span>/gi, '') // strip internal title spans
-        .replace(/<[^>]+>/g, ' ')              // remove remaining tags
-        .toLowerCase()
-        .replace(/\b(note|info|warning|important|tip|caution)\s*:?\s*/gi, '') // strip leading labels
-        .replace(/\s+/g, ' ')                 // collapse whitespace
-        .trim();
-      normalizedBody = normalizedBody.replace(/[.:;,-]+$/,'').trim(); // trim trailing punctuation noise
-
-      let duplicate = false;
-      if (normalizedBody.length >= 15) {
-        for (const seen of global.__SN2N_CALLOUT_DEDUPE) {
-          const lenRatio = normalizedBody.length / (seen.length || 1);
-            if (lenRatio > 0.85 && lenRatio < 1.15 && seen === normalizedBody) {
-              duplicate = true;
-              console.log(`[CALLOUT-DEDUPE] Suppressing duplicate callout: "${normalizedBody.substring(0,80)}"`);
-              break;
-            }
-        }
-      }
-      if (duplicate) {
-        blocks.push({
-          object: 'block',
-          type: 'paragraph',
-          paragraph: { rich_text: [{ type: 'text', text: { content: '' } }] }
-        });
-        return; // Skip generating duplicate callout block
-      } else {
-        global.__SN2N_CALLOUT_DEDUPE.add(normalizedBody);
-      }
 
       // Callout/Note
       const classAttr = $elem.attr('class') || '';
@@ -1361,12 +1424,20 @@ async function extractContentFromHtml(html) {
         console.log(`🔍 Callout content after removing title: "${calloutContent.substring(0, 100)}${calloutContent.length > 100 ? '...' : ''}"`);
         console.log(`🔍 Has callout content: ${hasCalloutContent}, Is title-only: ${isTitleOnly}, Has ${childBlocks.length} deferred children`);
         
-        // If callout has NO content (not even a title) and has nested blocks, skip creating the callout
-        // Just add the nested blocks directly - they'll be processed as siblings
-        // However, if it has a title (even if title-only), still create the callout to preserve the Note/Warning/etc. label
-        if (!hasCalloutContent && childBlocks.length > 0) {
-          console.log(`🔍 Skipping empty callout (no content, only nested blocks) - adding nested blocks directly`);
-          processedBlocks.push(...childBlocks);
+        // CRITICAL: Skip callouts that are empty OR title-only without nested content
+        // This prevents empty/useless note callouts from appearing in Notion
+        // Cases:
+        // 1. No content OR title-only WITH nested blocks → skip callout, add nested blocks as siblings
+        // 2. No content OR title-only WITHOUT nested blocks → skip callout entirely (nothing to show)
+        // 3. Has real content (not just title) → create callout normally
+        if (!hasCalloutContent || (isTitleOnly && childBlocks.length === 0)) {
+          if (childBlocks.length > 0) {
+            console.log(`🔍 Skipping ${!hasCalloutContent ? 'empty' : 'title-only'} callout - adding nested blocks directly`);
+            processedBlocks.push(...childBlocks);
+          } else {
+            console.log(`🔍 Skipping ${!hasCalloutContent ? 'completely empty' : 'title-only'} callout (no content, no nested blocks)`);
+            // Don't add anything - this callout is truly empty
+          }
         } else {
           // Create callout WITH content (even if it's just the title)
           console.log(`🔍 Creating callout with ${calloutRichText.length} rich_text elements and ${childBlocks.length} deferred children`);
@@ -1381,54 +1452,59 @@ async function extractContentFromHtml(html) {
             }
           };
           
-          // Add marker for orchestrator to append children after creation
+          // Add children to callout
           if (childBlocks.length > 0) {
-            const marker = createMarker();
-            
-            // Tag each child block with the marker for orchestration
-            // CRITICAL: Don't overwrite existing markers from nested processing!
-            const blocksNeedingMarker = childBlocks.filter(b => !b._sn2n_marker);
-            const blocksWithExistingMarker = childBlocks.filter(b => b._sn2n_marker);
-            recordMarkers(blocksWithExistingMarker);
-            
-            blocksNeedingMarker.forEach(block => {
-              block._sn2n_marker = marker;
-            });
-            
-            if (blocksNeedingMarker.length > 0) {
-              console.log(`🔍 [MARKER-PRESERVE-CALLOUT] ${blocksNeedingMarker.length} new blocks marked for callout orchestration`);
-            }
-            if (blocksWithExistingMarker.length > 0) {
-              console.log(`🔍 [MARKER-PRESERVE-CALLOUT] ${blocksWithExistingMarker.length} blocks already have markers - preserving`);
-            }
-            
-            // Add marker text to end of callout rich_text (will be found by orchestrator)
-            const markerToken = `(sn2n:${marker})`;
-            calloutBlock.callout.rich_text.push({
-              type: "text",
-              text: { content: ` ${markerToken}` },
-              annotations: {
-                bold: false,
-                italic: false,
-                strikethrough: false,
-                underline: false,
-                code: false,
-                color: "default"
+            if (!isNested) {
+              // Top-level callouts: Use marker-based orchestration
+              const marker = createMarker();
+              
+              // Tag each child block with the marker for orchestration
+              // CRITICAL: Don't overwrite existing markers from nested processing!
+              const blocksNeedingMarker = childBlocks.filter(b => !b._sn2n_marker);
+              const blocksWithExistingMarker = childBlocks.filter(b => b._sn2n_marker);
+              recordMarkers(blocksWithExistingMarker);
+              
+              blocksNeedingMarker.forEach(block => {
+                block._sn2n_marker = marker;
+              });
+              
+              if (blocksNeedingMarker.length > 0) {
+                console.log(`🔍 [MARKER-PRESERVE-CALLOUT] ${blocksNeedingMarker.length} new blocks marked for callout orchestration`);
               }
-            });
+              if (blocksWithExistingMarker.length > 0) {
+                console.log(`🔍 [MARKER-PRESERVE-CALLOUT] ${blocksWithExistingMarker.length} blocks already have markers - preserving`);
+              }
+              
+              // Add marker text to end of callout rich_text (will be found by orchestrator)
+              const markerToken = `(sn2n:${marker})`;
+              calloutBlock.callout.rich_text.push({
+                type: "text",
+                text: { content: ` ${markerToken}` },
+                annotations: {
+                  bold: false,
+                  italic: false,
+                  strikethrough: false,
+                  underline: false,
+                  code: false,
+                  color: "default"
+                }
+              });
+              
+              if (getExtraDebug && getExtraDebug()) log(`🔍 Added marker ${markerToken} for ${childBlocks.length} deferred blocks`);
+            } else {
+              // Nested callouts (inside lists): Add children directly (no orchestration needed)
+              console.log(`🔍 [NESTED-CALLOUT] Adding ${childBlocks.length} children directly to callout (no markers - nested in list)`);
+            }
             
-            if (getExtraDebug && getExtraDebug()) log(`🔍 Added marker ${markerToken} for ${childBlocks.length} deferred blocks`);
-            
-            // Add child blocks to callout so collectAndStripMarkers can find them
+            // Always add child blocks to callout.children (for both nested and top-level)
             calloutBlock.callout.children = childBlocks;
           }
           
           processedBlocks.push(calloutBlock);
           
-          // Also add child blocks to processedBlocks as siblings (they have markers and will be orchestrated)
-          if (childBlocks.length > 0) {
-            processedBlocks.push(...childBlocks);
-          }
+          // FIXED v11.0.0: Don't add child blocks as siblings - they're already in callout.children
+          // The orchestrator will find them via collectAndStripMarkers and handle them
+          // Previously this caused duplication: blocks appeared both nested and as siblings
         }
       } else {
         // No nested blocks - process as simple callout with just rich_text
@@ -1439,16 +1515,65 @@ async function extractContentFromHtml(html) {
         const { richText: calloutRichText, imageBlocks: calloutImages } = await parseRichText(cleanedContent);
         console.log(`🔍 Simple callout rich_text has ${calloutRichText.length} elements, content preview: "${calloutRichText.map(rt => rt.text.content).join('').substring(0, 100)}..."`);
         
+        // CRITICAL: Check if callout has any actual content before creating it
+        const simpleCalloutContent = calloutRichText.map(rt => rt.text.content).join('').trim();
+        const hasSimpleContent = simpleCalloutContent.length > 0;
+        
+        console.log(`🔍 Simple callout has content: ${hasSimpleContent}, length: ${simpleCalloutContent.length}`);
+        
         // Add any image blocks found in the callout
         if (calloutImages && calloutImages.length > 0) {
           processedBlocks.push(...calloutImages);
         }
         
-        // Split if exceeds 100 elements (Notion limit)
+        // Only create the callout if it has actual text content
+        if (hasSimpleContent) {
+          // Split if exceeds 100 elements (Notion limit)
+          const richTextChunks = splitRichTextArray(calloutRichText);
+          console.log(`🔍 Simple callout split into ${richTextChunks.length} chunks`);
+          for (const chunk of richTextChunks) {
+            console.log(`🔍 Creating simple callout block with ${chunk.length} rich_text elements`);
+            processedBlocks.push({
+              object: "block",
+              type: "callout",
+              callout: {
+                rich_text: chunk,
+                icon: { type: "emoji", emoji: calloutIcon },
+                color: calloutColor
+              }
+            });
+          }
+        } else {
+          console.log(`🔍 Skipping empty simple callout (no text content)`);
+        }
+      }
+      $elem.remove(); // Mark as processed
+    // 2) Aside elements commonly used as notes/admonitions
+    // Note: Exclude "itemgroup" divs - those are just ServiceNow content containers, not callouts
+    // FIXED v11.0.0: Changed regex from \b word boundaries to match anywhere in class string
+    // This handles cases like "note note note_note" where underscore breaks word boundary matching
+    } else if (tagName === 'aside' || (tagName === 'div' && !/\bitemgroup\b/.test($elem.attr('class') || '') && /(info|note|warning|important|tip|caution)/.test($elem.attr('class') || ''))) {
+      const classAttr = $elem.attr('class') || '';
+  if (getExtraDebug && getExtraDebug()) log(`🔍 MATCHED CALLOUT CONTAINER (<${tagName}>) class="${classAttr}"`);
+      const { color: calloutColor, icon: calloutIcon } = getCalloutPropsFromClasses(classAttr);
+      const inner = $elem.html() || '';
+      const { richText: calloutRichText, imageBlocks: calloutImages } = await parseRichText(inner);
+      
+      // CRITICAL: Check if callout has any actual content before creating it
+      const asideCalloutContent = calloutRichText.map(rt => rt.text.content).join('').trim();
+      const hasAsideContent = asideCalloutContent.length > 0;
+      
+      console.log(`🔍 Aside/div callout has content: ${hasAsideContent}, length: ${asideCalloutContent.length}`);
+      
+      // Add any image blocks found in the callout
+      if (calloutImages && calloutImages.length > 0) {
+        processedBlocks.push(...calloutImages);
+      }
+      
+      // Only create the callout if it has actual text content
+      if (hasAsideContent) {
         const richTextChunks = splitRichTextArray(calloutRichText);
-        console.log(`🔍 Simple callout split into ${richTextChunks.length} chunks`);
         for (const chunk of richTextChunks) {
-          console.log(`🔍 Creating simple callout block with ${chunk.length} rich_text elements`);
           processedBlocks.push({
             object: "block",
             type: "callout",
@@ -1459,33 +1584,8 @@ async function extractContentFromHtml(html) {
             }
           });
         }
-      }
-      $elem.remove(); // Mark as processed
-    // 2) Aside elements commonly used as notes/admonitions
-    // Note: Exclude "itemgroup" divs - those are just ServiceNow content containers, not callouts
-    } else if (tagName === 'aside' || (tagName === 'div' && !/\bitemgroup\b/.test($elem.attr('class') || '') && /\b(info|note|warning|important|tip|caution)\b/.test($elem.attr('class') || ''))) {
-      const classAttr = $elem.attr('class') || '';
-  if (getExtraDebug && getExtraDebug()) log(`🔍 MATCHED CALLOUT CONTAINER (<${tagName}>) class="${classAttr}"`);
-      const { color: calloutColor, icon: calloutIcon } = getCalloutPropsFromClasses(classAttr);
-      const inner = $elem.html() || '';
-      const { richText: calloutRichText, imageBlocks: calloutImages } = await parseRichText(inner);
-      
-      // Add any image blocks found in the callout
-      if (calloutImages && calloutImages.length > 0) {
-        processedBlocks.push(...calloutImages);
-      }
-      
-      const richTextChunks = splitRichTextArray(calloutRichText);
-      for (const chunk of richTextChunks) {
-        processedBlocks.push({
-          object: "block",
-          type: "callout",
-          callout: {
-            rich_text: chunk,
-            icon: { type: "emoji", emoji: calloutIcon },
-            color: calloutColor
-          }
-        });
+      } else {
+        console.log(`🔍 Skipping empty aside/div callout (no text content)`);
       }
       $elem.remove();
       
@@ -1493,6 +1593,18 @@ async function extractContentFromHtml(html) {
       // Table - extract images from table cells and add as separate blocks
       const tableHtml = $.html($elem);
       const tableId = $elem.attr('id') || 'no-id';
+      
+      // Generate unique fingerprint for table (use ID + first 100 chars of HTML)
+      const tableFingerprint = tableId + '::' + tableHtml.substring(0, 100);
+      
+      // Check if this table was already processed
+      if (processedTableIds.has(tableFingerprint)) {
+        console.log(`⏭️ [TABLE-DUPLICATE] Skipping already-processed table: id="${tableId}"`);
+        $elem.remove();
+        // Return empty to skip processing this duplicate
+      } else {
+      
+      processedTableIds.add(tableFingerprint);
       const tablePreview = tableHtml.substring(0, 100).replace(/\s+/g, ' ');
       console.log(`📊 Processing <table id="${tableId}">: ${tablePreview}...`);
       
@@ -1577,6 +1689,8 @@ async function extractContentFromHtml(html) {
       }
       $elem.remove(); // Mark as processed
       
+      } // End of else block for non-duplicate table processing
+      
     } else if (tagName === 'pre') {
       // Code block - detect language from class attribute
       console.log(`✅ PRE TAG HANDLER ENTERED - Creating code block`);
@@ -1628,15 +1742,61 @@ async function extractContentFromHtml(html) {
       }
       
       console.log(`✅ Creating code block with language: ${language}`);
-      processedBlocks.push({
-        object: "block",
-        type: "code",
-        code: {
-          rich_text: [{ type: "text", text: { content: codeText } }],
-          language: language
+      
+      // Notion API limit: max 2000 characters per text.content
+      // If code block exceeds this, split into multiple code blocks
+      const MAX_CODE_LENGTH = 2000;
+      if (codeText.length > MAX_CODE_LENGTH) {
+        console.log(`⚠️ Code block exceeds ${MAX_CODE_LENGTH} chars (${codeText.length}). Splitting into chunks...`);
+        
+        let remainingText = codeText;
+        let chunkIndex = 0;
+        
+        while (remainingText.length > 0) {
+          // Extract chunk of max length, trying to break at newline if possible
+          let chunkSize = Math.min(MAX_CODE_LENGTH, remainingText.length);
+          let chunk = remainingText.substring(0, chunkSize);
+          
+          // If we're not at the end and didn't break at a newline, try to find one
+          if (remainingText.length > chunkSize) {
+            const lastNewline = chunk.lastIndexOf('\n');
+            if (lastNewline > MAX_CODE_LENGTH * 0.8) { // Only break at newline if it's reasonably close to limit
+              chunkSize = lastNewline + 1;
+              chunk = remainingText.substring(0, chunkSize);
+            }
+          }
+          
+          chunkIndex++;
+          const totalChunks = Math.ceil(codeText.length / MAX_CODE_LENGTH);
+          
+          console.log(`  📦 Chunk ${chunkIndex}/${totalChunks}: ${chunk.length} chars`);
+          
+          processedBlocks.push({
+            object: "block",
+            type: "code",
+            code: {
+              rich_text: [{ type: "text", text: { content: chunk } }],
+              language: language
+            }
+          });
+          
+          remainingText = remainingText.substring(chunkSize);
         }
-      });
-      console.log(`✅ Code block created and added to processedBlocks (count: ${processedBlocks.length})`);
+        
+        console.log(`✅ Split code block into ${chunkIndex} chunks`);
+      } else {
+        // Code block fits within limit
+        processedBlocks.push({
+          object: "block",
+          type: "code",
+          code: {
+            rich_text: [{ type: "text", text: { content: codeText } }],
+            language: language
+          }
+        });
+        console.log(`✅ Code block created and added to processedBlocks (count: ${processedBlocks.length})`);
+      }
+      
       $elem.remove(); // Mark as processed
       
     } else if (tagName === 'iframe') {
@@ -1764,15 +1924,6 @@ async function extractContentFromHtml(html) {
       const alt = $elem.attr('alt') || '';
       console.log(`🖼️ Processing standalone <img>: src="${src ? src.substring(0, 80) : 'none'}", alt="${alt}"`);
       
-      // FILTER: Skip inline icon images (small decorative icons like edit/menu/delete icons)
-      const imgClass = $elem.attr('class') || '';
-      const isInlineIcon = imgClass.includes('icon') || imgClass.includes('image icon');
-      if (isInlineIcon) {
-        console.log(`🔍 [INLINE-ICON] Skipping inline icon image (class="${imgClass}")`);
-        $elem.remove(); // Remove from DOM but don't create image block
-        return processedBlocks; // Continue without adding to blocks
-      }
-      
       if (src && isValidImageUrl(src)) {
         console.log(`✅ Image URL is valid, creating image block...`);
         const imageBlock = await createImageBlock(src, alt);
@@ -1805,18 +1956,119 @@ async function extractContentFromHtml(html) {
         processedBlocks.push(...headingImages);
       }
       
-      // Split if exceeds 100 elements (Notion limit)
-      const richTextChunks = splitRichTextArray(headingRichText);
-      console.log(`🔍 Heading ${level} split into ${richTextChunks.length} chunks`);
-      for (const chunk of richTextChunks) {
-        console.log(`🔍 Creating heading_${level} block with ${chunk.length} rich_text elements`);
-        processedBlocks.push({
-          object: "block",
-          type: `heading_${level}`,
-          [`heading_${level}`]: {
-            rich_text: chunk,
-          },
+      // Check if this is a "Related Content" heading - make it a toggle
+      const headingText = $elem.text().trim();
+      const isRelatedContent = /related\s+content/i.test(headingText);
+      
+      if (isRelatedContent) {
+        console.log(`🔍 [RELATED-CONTENT] Detected "Related Content" heading, converting to H3 toggle`);
+        
+        // Force to heading_3 for consistency
+        level = 3;
+        
+        // Collect following sibling elements until next heading or end
+        const toggleChildren = [];
+        let nextSibling = $elem.next();
+        
+        while (nextSibling && nextSibling.length > 0) {
+          const siblingTag = nextSibling.get(0)?.tagName?.toLowerCase();
+          
+          // Stop at next heading
+          if (/^h[1-6]$/.test(siblingTag)) {
+            console.log(`🔍 [RELATED-CONTENT] Stopped at next heading: ${siblingTag}`);
+            break;
+          }
+          
+          // Process sibling recursively
+          console.log(`🔍 [RELATED-CONTENT] Processing toggle child: ${siblingTag}`);
+          const childBlocks = await processElement(nextSibling);
+          toggleChildren.push(...childBlocks);
+          
+          // Move to next sibling
+          const currentSibling = nextSibling;
+          nextSibling = nextSibling.next();
+          currentSibling.remove(); // Mark as processed
+        }
+        
+        console.log(`🔍 [RELATED-CONTENT] Collected ${toggleChildren.length} children for toggle`);
+        
+        // Convert all numbered_list_item blocks to bulleted_list_item
+        // Related Content sections should use bullets, not numbers
+        toggleChildren.forEach(child => {
+          if (child && child.type === 'numbered_list_item') {
+            console.log(`🔍 [RELATED-CONTENT] Converting numbered_list_item to bulleted_list_item`);
+            child.type = 'bulleted_list_item';
+            child.bulleted_list_item = child.numbered_list_item;
+            delete child.numbered_list_item;
+          }
         });
+        
+        // Create H3 toggle with marker-based deep nesting
+        // Notion API doesn't allow children in heading blocks during initial creation
+        // Use marker system to append children in a follow-up PATCH request
+        if (toggleChildren.length > 0) {
+          const marker = createMarker('related-content');
+          
+          // Tag children with marker for orchestration
+          toggleChildren.forEach(child => {
+            child._sn2n_marker = marker;
+          });
+          
+          // Add marker token to heading rich_text (format matches callout pattern)
+          const markerToken = `(sn2n:${marker})`;
+          headingRichText.push({
+            type: "text",
+            text: { content: ` ${markerToken}` },
+            annotations: {
+              bold: false,
+              italic: false,
+              strikethrough: false,
+              underline: false,
+              code: false,
+              color: "default"
+            }
+          });
+          
+          console.log(`🔍 [RELATED-CONTENT] Created toggle with marker ${markerToken}, will append ${toggleChildren.length} children via orchestration`);
+          
+          // Add children to heading_3.children temporarily so collectAndStripMarkers can find them
+          // The collectAndStripMarkers function will move them to markerMap and remove them before Notion API call
+          processedBlocks.push({
+            object: "block",
+            type: `heading_3`,
+            heading_3: {
+              rich_text: headingRichText,
+              is_toggleable: true,
+              children: toggleChildren,
+            },
+          });
+        } else {
+          // Empty toggle (no children found)
+          console.log(`🔍 [RELATED-CONTENT] Created empty toggle (no children)`);
+          processedBlocks.push({
+            object: "block",
+            type: `heading_3`,
+            heading_3: {
+              rich_text: headingRichText,
+              is_toggleable: true,
+            },
+          });
+        }
+      } else {
+        // Regular heading (not a toggle)
+        // Split if exceeds 100 elements (Notion limit)
+        const richTextChunks = splitRichTextArray(headingRichText);
+        console.log(`🔍 Heading ${level} split into ${richTextChunks.length} chunks`);
+        for (const chunk of richTextChunks) {
+          console.log(`🔍 Creating heading_${level} block with ${chunk.length} rich_text elements`);
+          processedBlocks.push({
+            object: "block",
+            type: `heading_${level}`,
+            [`heading_${level}`]: {
+              rich_text: chunk,
+            },
+          });
+        }
       }
       $elem.remove(); // Mark as processed
       
@@ -1857,8 +2109,9 @@ async function extractContentFromHtml(html) {
       
     } else if (tagName === 'dd') {
       // Definition description - process children (may contain paragraphs, lists, images, etc.)
-      console.log(`🔍 Processing <dd> (definition description)`);
       const children = $elem.find('> *').toArray();
+      const childTypes = children.map(c => c.name + ($(c).attr('class') ? `.${$(c).attr('class').split(' ')[0]}` : '')).join(', ');
+      console.log(`🔍 [DD-DEBUG] Processing <dd> with ${children.length} children: [${childTypes}]`);
       
       if (children.length > 0) {
         // Process all child elements
@@ -1905,15 +2158,75 @@ async function extractContentFromHtml(html) {
       }
       $elem.remove(); // Mark as processed
       
+    } else if (tagName === 'div' && ($elem.hasClass('p') || $elem.hasClass('sectiondiv'))) {
+      // ServiceNow wrapper divs (div.p, div.sectiondiv) - process children recursively
+      // These are semantic wrappers that should be transparent, not converted to paragraphs
+      
+      // FIX: Check for nested tables that might be hidden in div.table-wrap
+      const nestedTables = $elem.find('table').toArray();
+      if (nestedTables.length > 0) {
+        console.log(`🔍 [TABLE-EXTRACT] Found ${nestedTables.length} nested table(s) in <div class="${$elem.attr('class')}">`);
+        
+        // Extract tables directly and process other content
+        for (const table of nestedTables) {
+          const $table = $(table);
+          const tableBlocks = await processElement(table);
+          if (tableBlocks && Array.isArray(tableBlocks)) {
+            processedBlocks.push(...tableBlocks);
+          }
+          // Remove table from elem so it's not processed again as text
+          $table.remove();
+        }
+      }
+      
+      const children = $elem.find('> *').toArray();
+      const childTypes = children.map(c => c.name + ($(c).attr('class') ? `.${$(c).attr('class').split(' ')[0]}` : '')).join(', ');
+      console.log(`🔍 [DIV-P-FIX] Processing <div class="${$elem.attr('class')}"> with ${children.length} children: [${childTypes}]`);
+      
+      if (children.length > 0) {
+        for (const child of children) {
+          const childBlocks = await processElement(child);
+          if (childBlocks && Array.isArray(childBlocks)) {
+            processedBlocks.push(...childBlocks);
+          }
+        }
+      } else {
+        // No child elements - extract text content as paragraph
+        const innerHtml = $elem.html() || '';
+        const cleanedText = cleanHtmlText(innerHtml).trim();
+        
+        if (cleanedText) {
+          const { richText: divRichText, imageBlocks: divImages } = await parseRichText(innerHtml);
+          
+          if (divImages && divImages.length > 0) {
+            processedBlocks.push(...divImages);
+          }
+          
+          if (divRichText.length > 0 && divRichText.some(rt => rt.text.content.trim())) {
+            const richTextChunks = splitRichTextArray(divRichText);
+            for (const chunk of richTextChunks) {
+              processedBlocks.push({
+                object: "block",
+                type: "paragraph",
+                paragraph: {
+                  rich_text: chunk
+                }
+              });
+            }
+          }
+        }
+      }
+      $elem.remove(); // Mark as processed
+      
     } else if (tagName === 'ul') {
       // Unordered list
       const listItems = $elem.find('> li').toArray();
-      console.log(`🔍 Processing <ul> with ${listItems.length} list items`);
+      const ulClass = $elem.attr('class') || 'no-class';
+      const ulId = $elem.attr('id') || 'no-id';
+      console.log(`🔍 [UL-DEBUG] Processing <ul class="${ulClass}" id="${ulId}"> with ${listItems.length} list items`);
       
-      // CALLOUT EXTRACTION FIX: Collect callouts from list items to promote as siblings
-      // Notion does not support callouts as children of list items, so we extract them
-      // and add them as root-level blocks after the list completes
-      const extractedCallouts = [];
+      // FIX v11.0.19: Callouts now use marker-based orchestration (markedBlocks)
+      // This preserves correct section ordering instead of batching callouts together
       
       for (let li of listItems) {
         const $li = $(li);
@@ -1935,7 +2248,9 @@ async function extractContentFromHtml(html) {
         // that aren't semantic block elements themselves (like div without class, or div.p)
         
         // Step 1: Find immediate block children
-        let nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.stepxmp, > div.note').toArray();
+        // CRITICAL FIX v11.0.63: Don't treat div.p as a block - it's a wrapper for mixed content
+        // Look INSIDE div.p for actual nested blocks instead of treating the div itself as a block
+        let nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.stepxmp, > div.note').toArray();
         
         // Step 2: Also look for blocks nested inside plain wrapper divs (NOT div.p, which is handled in step 1)
         $li.find('> div:not(.note):not(.table-wrap):not(.stepxmp):not(.p)').each((i, wrapper) => {
@@ -1946,6 +2261,39 @@ async function extractContentFromHtml(html) {
             nestedBlocks.push(...innerBlocks);
           }
         });
+        
+        // FIX v11.0.63: Search inside div.p for ALL nested block types (not just callouts)
+        // div.p is a semantic wrapper that contains mixed content (text + lists + tables + callouts)
+        // We need to extract the nested blocks from inside div.p, but preserve the wrapper's text
+        $li.find('> div.p').each((i, divP) => {
+          const innerBlocks = $(divP).find('> ol, > ul, > table, > div.table-wrap, > div.note, > figure, > pre').toArray();
+          if (innerBlocks.length > 0) {
+            console.log(`🔍 [DIV-P-FIX] div.p[${i}] contains ${innerBlocks.length} blocks:`);
+            innerBlocks.forEach((block, idx) => {
+              const blockName = block.name;
+              const blockClass = $(block).attr('class') || '';
+              const classStr = blockClass ? ` class="${blockClass}"` : '';
+              console.log(`🔍 [DIV-P-FIX]   [${idx}] <${blockName}${classStr}>`);
+              if (!nestedBlocks.includes(block)) {
+                nestedBlocks.push(block);
+                console.log(`🔍 [DIV-P-FIX]   → Added to nestedBlocks (now ${nestedBlocks.length} total)`);
+              }
+            });
+          }
+        });
+        
+        // FIX v11.0.18: Look for DIRECT div.note children only (not deep-nested)
+        // Deep-nested callouts (inside text) will be extracted as part of the rich text
+        // This works in concert with the .closest() check which prevents duplicate processing
+        const directNotes = $li.find('> div.note').toArray().filter(note => !nestedBlocks.includes(note));
+        if (directNotes.length > 0) {
+          console.log(`🔍 [CALLOUT-FIX] Found ${directNotes.length} direct-child div.note elements in list item`);
+          directNotes.forEach(note => {
+            const noteClass = $(note).attr('class') || '';
+            console.log(`🔍 [CALLOUT-FIX] Direct note class="${noteClass}"`);
+          });
+          nestedBlocks.push(...directNotes);
+        }
         
         // DIAGNOSTIC: Log what we found
         if (nestedBlocks.length > 0) {
@@ -1958,13 +2306,31 @@ async function extractContentFromHtml(html) {
           
           // Extract text content without nested blocks for the list item text
           const $textOnly = $li.clone();
+          
+          // CRITICAL FIX v11.0.65: Log what we're removing for debugging
+          const tableWraps = $textOnly.find('div.table-wrap');
+          const tables = $textOnly.find('table');
+          if (tableWraps.length > 0 || tables.length > 0) {
+            console.log(`🔍 [TABLE-REMOVE-UL] Before removal: ${tableWraps.length} table-wraps, ${tables.length} tables`);
+          }
+          
           // Remove nested blocks (including those inside wrapper divs)
           // First remove immediate block children
-          $textOnly.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.stepxmp, > div.note').remove();
-          // Then remove blocks nested inside wrapper divs
-          // CRITICAL: Also remove figure to prevent parseRichText from extracting images that were already processed
-          $textOnly.find('table, div.table-wrap, div.note, pre, ul, ol, figure').remove();
+          // CRITICAL FIX v11.0.63: Don't remove div.p wrapper - only remove nested blocks INSIDE it
+          $textOnly.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.stepxmp, > div.note').remove();
+          // Then remove blocks nested inside wrapper divs (including inside div.p)
+          // CRITICAL FIX v11.0.64: Remove in specific order - table-wrap first (contains table)
+          // Also remove figure to prevent parseRichText from extracting images that were already processed
+          $textOnly.find('div.table-wrap').remove(); // Remove wrapper first (contains table)
+          $textOnly.find('table, div.note, pre, ul, ol, figure').remove();
+          
           const textOnlyHtml = $textOnly.html();
+          
+          // CRITICAL FIX v11.0.65: Check if table HTML remains in text
+          if (textOnlyHtml && textOnlyHtml.includes('<table')) {
+            console.log(`❌ [TABLE-REMOVE-UL] Table HTML still present after removal!`);
+            console.log(`   Remaining HTML snippet: ${textOnlyHtml.substring(textOnlyHtml.indexOf('<table'), textOnlyHtml.indexOf('<table') + 100)}`);
+          }
           
           // DEBUG: Check if there are any img tags remaining in textOnlyHtml
           const remainingImgs = (textOnlyHtml.match(/<img/gi) || []).length;
@@ -1977,13 +2343,40 @@ async function extractContentFromHtml(html) {
           for (let i = 0; i < nestedBlocks.length; i++) {
             const nestedBlock = nestedBlocks[i];
             console.log(`🔍 Processing nested block in list item: <${nestedBlock.name}>`);
-            const childBlocks = await processElement(nestedBlock);
+            // FIX v11.0.69: Assign DOM order BEFORE processing, based on source element position
+            // This ensures all blocks from the same source element (e.g., table caption → heading_3 + table)
+            // share the same base order and maintain their grouping
+            const sourceElementOrder = globalDomOrderCounter++;
+            const childBlocks = await processElement(nestedBlock, true); // Pass isNested=true
+            // Skip if element was filtered out (e.g., callout inside list)
+            if (!childBlocks || !Array.isArray(childBlocks)) {
+              console.log(`🔍 🎯 NULL-CHECK-FIX-v11.0.18-UL: Nested block returned null/non-array, skipping`);
+              continue;
+            }
+            // FIX v11.0.79: Mark blocks that came from nested OL so they stay grouped as children
+            // When a list item contains a nested OL, that OL's items should be children of this list item
+            // NOT siblings. Mark them so we can keep them together later.
+            if (nestedBlock.name === 'ol') {
+              childBlocks.forEach(blk => {
+                blk._sn2n_from_nested_ol = true;
+                blk._sn2n_nested_ol_parent = i; // Track which OL they came from
+              });
+            }
             // DEBUG: Log images in nestedChildren with FULL details
             childBlocks.forEach((blk, idx) => {
               if (blk.type === 'image') {
                 const imgUrl = blk.image?.file_upload?.id || blk.image?.external?.url || 'unknown';
                 console.log(`🔍 [NESTED-CHILDREN-UL] [${idx}] Image from <${nestedBlock.name}>: ${String(imgUrl).substring(0, 80)}`);
                 console.log(`🔍 [NESTED-CHILDREN-UL] Full image object:`, JSON.stringify(blk.image).substring(0, 300));
+              }
+            });
+            // FIX v11.0.69: Assign the same base order to all blocks from this source element
+            // Add sub-order for relative positioning within the group (heading before table)
+            childBlocks.forEach((blk, subIdx) => {
+              if (!blk._sn2n_dom_order) {
+                // Use decimal notation: sourceOrder.subIndex (e.g., 5.0, 5.1, 5.2)
+                // This keeps blocks from same source grouped together while preserving internal order
+                blk._sn2n_dom_order = sourceElementOrder + (subIdx * 0.001);
               }
             });
             nestedChildren.push(...childBlocks);
@@ -2014,7 +2407,7 @@ async function extractContentFromHtml(html) {
             const markedBlocks = []; // All nested blocks use marker-based orchestration to preserve order
             
             // Separate immediate children (list items, images) from deferred blocks (paragraphs, tables, etc.)
-            const immediateChildren = [];
+            let immediateChildren = []; // FIX v11.0.71f: Changed to 'let' to allow filtering out deferred blocks
             
             // CRITICAL FIX: Add images extracted from text content as immediate children
             // Track image SOURCE URLs to prevent duplicates (before upload generates unique IDs)
@@ -2039,21 +2432,9 @@ async function extractContentFromHtml(html) {
                 console.log(`🔍 [NESTED-BLOCK-STATE-UL] Type: ${blockType}, hasMarker: ${hasMarker}, text: "${richTextPreview}..."`);
               }
               
-              // CALLOUT EXTRACTION FIX: Extract callouts to promote as root-level siblings
-              // Notion does not support callouts as children of list items
-              if (block && block.type === 'callout') {
-                console.log(`🔍 [CALLOUT-EXTRACT] Extracting callout from list item to promote as sibling block`);
-                // Add a subtle prefix to indicate this callout came from a list context
-                if (block.callout && block.callout.rich_text && block.callout.rich_text.length > 0) {
-                  // Prepend "• " to the first text element
-                  const firstText = block.callout.rich_text[0];
-                  if (firstText && firstText.text && firstText.text.content) {
-                    firstText.text.content = `• ${firstText.text.content}`;
-                  }
-                }
-                extractedCallouts.push(block);
-                return; // Don't process further - will be added after list
-              }
+              // v11.0.19: Callouts CAN be children of list items (Notion supports this)
+              // With isNested=true flag, callouts are properly created without markers
+              // No special handling needed - let them be added as children like other blocks
               
               // CRITICAL FIX: Check for marker tokens FIRST (parent blocks with own deferred children)
               // These should be added as immediate children, regardless of whether they also have _sn2n_marker
@@ -2071,10 +2452,15 @@ async function extractContentFromHtml(html) {
                 return; // Don't re-mark - it has its own marker system
               }
               
+              // FIX v11.0.78: Handle tables and callouts with markers BEFORE general marker check
+              // These block types have specific handling below that must execute
+              // DON'T early-return for these - let them reach their type-specific handlers
+              const needsTypeSpecificHandling = block && ['table', 'callout'].includes(block.type);
+              
               // Check if block already has a marker from nested processing
               // IMPORTANT: Callouts/blocks with markers have their own nested content that should be orchestrated to them, not to the list item
               // Only add the callout itself, not its children (which share the same marker)
-              if (block && block._sn2n_marker) {
+              if (block && block._sn2n_marker && !needsTypeSpecificHandling) {
                 // This is a deferred child block (has marker but no marker token)
                 // It belongs to a CHILD element and should NOT be re-marked with parent's marker
                 // Will be added separately via blocksWithExistingMarkers logic
@@ -2112,10 +2498,20 @@ async function extractContentFromHtml(html) {
                 } else {
                   // Simple list item without markers - add as immediate child
                   console.log(`🔍 Nested ${block.type} without markers - adding as immediate child`);
+                  // 🔍 [FLATTEN-DEBUG] Log children of this nested list item
+                  const fs = require('fs');
+                  const children = block[blockType]?.children;
+                  const childrenCount = Array.isArray(children) ? children.length : 0;
+                  const childrenTypes = Array.isArray(children) ? children.map(c => c.type).join(', ') : 'none';
+                  const itemTextPreview = block[blockType]?.rich_text?.map(rt => rt.text?.content || '').join('').substring(0, 80) || 'no-text';
+                  const flattenDebug = `🔍 [FLATTEN-DEBUG-UL] nested_${block.type} being added to immediateChildren:\n   - Text: "${itemTextPreview}..."\n   - Has ${childrenCount} children: [${childrenTypes}]\n   - Children will ${childrenCount > 0 ? 'REMAIN with this block' : 'not exist (none to keep)'}\n`;
+                  fs.appendFileSync('/tmp/table-debug.log', flattenDebug);
+                  console.error(flattenDebug);
                   immediateChildren.push(block);
                 }
               } else if (block && block.type === 'image') {
                 // Images can be immediate children, but check for duplicates by SOURCE URL
+                // FIX v11.0.69: Assign DOM order for proper sorting in orchestration
                 const sourceUrl = block._sn2n_sourceUrl || block.image?.external?.url || null;
                 
                 if (sourceUrl && seenImageSources.has(String(sourceUrl))) {
@@ -2124,48 +2520,136 @@ async function extractContentFromHtml(html) {
                   if (sourceUrl) {
                     seenImageSources.add(String(sourceUrl));
                   }
+                  if (!block._sn2n_dom_order) {
+                    block._sn2n_dom_order = globalDomOrderCounter++;
+                  }
+                  immediateChildren.push(block);
+                }
+              } else if (block && block.type === 'callout') {
+                // v11.0.19: Callouts CAN be immediate children of list items
+                // PATCH v11.0.20: Check for marker to prevent duplicates
+                // FIX v11.0.69: Assign DOM order for proper sorting in orchestration
+                if (block._sn2n_marker) {
+                  // Has marker - will be handled by orchestration, don't add as immediate child
+                  console.log(`🔍 [UL] Callout has marker "${block._sn2n_marker}" - deferring to orchestration (prevents duplicate)`);
+                  if (!block._sn2n_dom_order) {
+                    block._sn2n_dom_order = globalDomOrderCounter++;
+                  }
+                  markedBlocks.push(block);
+                } else {
+                  // No marker - processed with isNested=true, add as immediate child
+                  console.log(`🔍 [UL] Nested callout without markers - adding as immediate child`);
+                  if (!block._sn2n_dom_order) {
+                    block._sn2n_dom_order = globalDomOrderCounter++;
+                  }
+                  immediateChildren.push(block);
+                }
+              } else if (block && block.type === 'table') {
+                // FIX v11.0.67: Tables CAN be immediate children of list items (1 level of nesting)
+                // Only defer to orchestration if already marked (indicating deeper nesting was flattened)
+                // FIX v11.0.69: Assign DOM order for proper sorting in orchestration
+                const fs = require('fs');
+                const tableDebugLog = `🔍 [TABLE-DEBUG-UL] Processing table block:\n   - Has marker: ${!!block._sn2n_marker}\n   - Has DOM order: ${!!block._sn2n_dom_order} (${block._sn2n_dom_order || 'none'})\n   - Table width: ${block.table?.table_width || '?'}\n   - Current parent (UL item): "${textOnlyHtml ? cleanHtmlText(textOnlyHtml).substring(0, 60) : 'no-text'}..."\n`;
+                fs.appendFileSync('/tmp/table-debug.log', tableDebugLog);
+                console.error(tableDebugLog);
+                
+                if (block._sn2n_marker) {
+                  const markerLog = `🔍 [TABLE-DEBUG-UL] → Table has marker "${block._sn2n_marker}" - deferring to orchestration\n`;
+                  fs.appendFileSync('/tmp/table-debug.log', markerLog);
+                  console.error(markerLog);
+                  if (!block._sn2n_dom_order) {
+                    block._sn2n_dom_order = globalDomOrderCounter++;
+                  }
+                  markedBlocks.push(block);
+                } else {
+                  const noMarkerLog = `✅ [TABLE-DEBUG-UL] → Table without marker - adding as immediate child\n`;
+                  fs.appendFileSync('/tmp/table-debug.log', noMarkerLog);
+                  console.error(noMarkerLog);
+                  // Assign DOM order for proper sorting in orchestration
+                  if (!block._sn2n_dom_order) {
+                    block._sn2n_dom_order = globalDomOrderCounter++;
+                  }
                   immediateChildren.push(block);
                 }
               } else if (block && block.type) {
-                // Tables, headings, callouts, etc. need markers
+                // Headings, code blocks, etc. need markers for deferred append
                 console.log(`⚠️ Block type "${block.type}" needs marker for deferred append to list item`);
-                if (block.type === 'table') {
-                  console.log(`🔍 [MARKER-PRESERVE-TABLE] Table block deferred for orchestration to preserve source order`);
-                }
                 markedBlocks.push(block);
               }
             });
             
             // CRITICAL: Enforce Notion's 2-level nesting limit
-            // At this point, we're at depth 1 (inside a list item). 
-            // Any children we add will be at depth 2, and they CANNOT have their own children.
-            // Use enforceNestingDepthLimit to strip any grandchildren and mark them for orchestration.
-            const depthResult = enforceNestingDepthLimit(immediateChildren, 1);
+            // At this point, we're at depth 2 (inside a numbered_list_item which is inside a bulleted_list_item). 
+            // Any children we add will be at depth 3, which EXCEEDS Notion's 2-level limit
+            // Use enforceNestingDepthLimit to defer any children that would violate the limit.
+            // FIX v11.0.71f: Pass depth 3 (where children actually will be, not where parent is)
+            console.log(`🔧 [TABLE-DEPTH-CHECK-UL] Before enforceNestingDepthLimit: ${immediateChildren.length} immediate children (types: ${immediateChildren.map(c => c.type).join(', ')})`);
+            const depthResult = enforceNestingDepthLimit(immediateChildren, 3);
             if (depthResult.deferredBlocks.length > 0) {
-              console.log(`🔧 Enforced nesting depth: ${depthResult.deferredBlocks.length} blocks deferred for orchestration`);
+              console.error(`🔧 [TABLE-POSITION] UL: ${depthResult.deferredBlocks.length} blocks deferred for orchestration`);
+              // Log which blocks were deferred and to which parent they'll be attached
+              depthResult.deferredBlocks.forEach((block, idx) => {
+                const blockType = block.type;
+                let preview = 'no-text';
+                if (blockType === 'heading_3') {
+                  preview = block.heading_3?.rich_text?.map(rt => rt.text?.content || '').join('').substring(0, 50);
+                } else if (blockType === 'table') {
+                  preview = `table (${block.table?.table_width || '?'} cols)`;
+                }
+                const parentText = textOnlyHtml ? cleanHtmlText(textOnlyHtml).substring(0, 60) : 'no-parent-text';
+                console.error(`🔧 [TABLE-POSITION]   [${idx}] ${blockType}: "${preview}" → parent UL item: "${parentText}..."`);
+              });
               // Add deferred blocks to markedBlocks so they get markers
               markedBlocks.push(...depthResult.deferredBlocks);
+              
+              // FIX v11.0.71f: CRITICAL - Remove deferred blocks from immediateChildren
+              // The deferred blocks (e.g., tables at depth 3) must not be included in the list item's children
+              const deferredBlockSet = new Set(depthResult.deferredBlocks);
+              const beforeRemoval = immediateChildren.length;
+              immediateChildren = immediateChildren.filter(child => !deferredBlockSet.has(child));
+              const afterRemoval = immediateChildren.length;
+              console.log(`🔧 [TABLE-POSITION-DEBUG-UL] Removal: ${beforeRemoval} → ${afterRemoval} (removed ${depthResult.deferredBlocks.length})`);
+              console.log(`🔧 [TABLE-POSITION] After removing ${depthResult.deferredBlocks.length} deferred blocks: ${immediateChildren.length} immediate children remain`);
             }
             
-            // ORDERING FIX: If there are container blocks (callouts) in markedBlocks,
-            // also mark the immediateChildren so everything goes through orchestration
-            // and maintains correct source order. Otherwise, immediateChildren get added
-            // to the list item first, then markedBlocks get appended, reversing the order.
-            const hasContainerBlocks = markedBlocks.some(b => 
-              b && (b.type === 'callout' || b.type === 'table' || b.type === 'heading_3')
-            );
+            // FIX v11.0.79: Separate nested OL items from other immediate children
+            // When a list item contains a nested OL, those OL items should be CHILDREN of this list item
+            // NOT pushed to processedBlocks as siblings. Keep them in allChildren.
             
-            let allChildren;
-            if (hasContainerBlocks && immediateChildren.length > 0) {
-              console.log(`🔄 Deferring ${immediateChildren.length} immediate children for orchestration to maintain correct order with container blocks`);
-              // Move immediate children to marked blocks - they'll all be orchestrated together
-              // Use push() to add AFTER container blocks, maintaining source order
-              markedBlocks.push(...immediateChildren);
-              allChildren = [];
-            } else {
-              // Use only immediateChildren - images are now handled separately with markers
-              allChildren = [...immediateChildren];
+            // DEBUG: Log all immediateChildren to see if marker is present
+            console.log(`🔍 [OL-GROUP-DEBUG] Total immediateChildren before filtering: ${immediateChildren.length}`);
+            immediateChildren.forEach((child, idx) => {
+              const hasFlag = !!child._sn2n_from_nested_ol;
+              const preview = child[child.type]?.rich_text?.map(rt => rt.text?.content || '').join('').substring(0, 50) || 'no-text';
+              console.log(`🔍 [OL-GROUP-DEBUG] [${idx}] ${child.type}, _sn2n_from_nested_ol=${hasFlag}, text="${preview}"`);
+            });
+            
+            const nestedOlItems = immediateChildren.filter(child => child._sn2n_from_nested_ol);
+            const otherImmediateChildren = immediateChildren.filter(child => !child._sn2n_from_nested_ol);
+            
+            console.log(`🔍 [OL-GROUP-FIX] Found ${nestedOlItems.length} items from nested OL, ${otherImmediateChildren.length} other immediate children`);
+            
+            // FIX v11.0.70: Keep list items and images as immediate children, even when container blocks present
+            // PROBLEM: Previous logic moved ALL immediateChildren to markedBlocks when ANY container blocks existed
+            // RESULT: Nested list items ended up at page root instead of as children of parent list item
+            // SOLUTION: Only defer container blocks that can't be immediate children (headings, code blocks)
+            //           Keep allowed children (list items, images, callouts, tables)
+            // Notion supports: bulleted/numbered list items, to_do, toggle, image, callout, table as immediate children
+            // FIX v11.0.71: Tables keep their children (table_rows) regardless of depth - no empty table filtering needed
+            const allowedImmediateTypes = ['bulleted_list_item', 'numbered_list_item', 'to_do', 'toggle', 'image', 'callout', 'table'];
+            
+            // FIX v11.0.79: Always include nested OL items in allChildren (they belong to THIS list item)
+            const filteredOtherChildren = otherImmediateChildren.filter(child => allowedImmediateTypes.includes(child.type));
+            const allChildren = [...filteredOtherChildren, ...nestedOlItems];
+            
+            // Any non-allowed types should be in markedBlocks already (like headings, code blocks)
+            const nonAllowedChildren = otherImmediateChildren.filter(child => !allowedImmediateTypes.includes(child.type));
+            if (nonAllowedChildren.length > 0) {
+              console.log(`🔄 Moving ${nonAllowedChildren.length} non-allowed child types to markedBlocks: ${nonAllowedChildren.map(c => c.type).join(', ')}`);
+              markedBlocks.push(...nonAllowedChildren);
             }
+            
+            console.log(`🔍 [UL-CHILDREN] ${allChildren.length} immediate children (${allChildren.map(c => c.type).join(', ')}), ${markedBlocks.length} deferred blocks`);
             
             if (liRichText.length > 0 && liRichText.some(rt => rt.text.content.trim())) {
               const richTextChunks = splitRichTextArray(liRichText);
@@ -2243,11 +2727,36 @@ async function extractContentFromHtml(html) {
                 
                 processedBlocks.push(listItemBlock);
                 
-                // Add marked blocks as TOP-LEVEL blocks (NOT as children) so collectAndStripMarkers can find them
-                // Adding them as children would place them at depth 3, violating Notion's 2-level limit
-                // They will be collected into markerMap and orchestrated after page creation
+                // CRITICAL FIX v11.0.72: DO NOT add marked blocks to root level
+                // PROBLEM: Even though they have _sn2n_marker, they get created at root depth before orchestration can move them
+                // SOLUTION: Keep them ONLY as .children of the list item (at depth 2)
+                // Since Notion's nesting limit is 2, and we're creating the list item first,
+                // the table block structure won't violate the limit because:
+                // - List item itself is depth 1
+                // - Marked blocks are added to list item.children (depth 2)
+                // - Tables don't have children, so they don't go deeper
+                // IMPORTANT: collectAndStripMarkers will find them via recursive traversal into list item.children
+                // and will mark them _sn2n_collected so they can be removed via orchestration
+                
+                // Actually, wait... if we add them as children here, they'll be in the initial payload
+                // and createdon the page at depth 2. But they need to be REMOVED from children
+                // before the initial API call and only appended AFTER the page is created.
+                // 
+                // The solution is: Add them as children temporarily for collection/removal phase,
+                // then remove them from the .children array before Notion API call
                 if (markedBlocks.length > 0) {
-                  console.log(`🔍 Adding ${markedBlocks.length} marked blocks as top-level blocks (NOT children) for collection & orchestration`);
+                  console.log(`🔍 [UL-ROOT-LEVEL] Adding ${markedBlocks.length} marked blocks to root level`);
+                  // DEBUG: Log each marked block to verify they have markers
+                  for (let idx = 0; idx < markedBlocks.length; idx++) {
+                    const blk = markedBlocks[idx];
+                    const hasMarker = !!blk._sn2n_marker;
+                    const markerValue = blk._sn2n_marker || 'NONE';
+                    if (blk.type === 'table') {
+                      console.log(`🔍   [${idx}] TABLE: marker="${markerValue}" hasMarker=${hasMarker} → will be at root index ${processedBlocks.length + idx}`);
+                    } else {
+                      console.log(`🔍   [${idx}] ${blk.type}: marker="${markerValue}" hasMarker=${hasMarker}`);
+                    }
+                  }
                   processedBlocks.push(...markedBlocks);
                 }
               }
@@ -2361,6 +2870,13 @@ async function extractContentFromHtml(html) {
                 markedBlocks.push(...depthResult.deferredBlocks);
               }
               
+              // CRITICAL FIX: Skip if we have no valid children and no marked blocks
+              // This happens when all nestedChildren have existing markers and were skipped
+              if (validChildren.length === 0 && markedBlocks.length === 0) {
+                console.log(`🔍 Skipping empty bulleted_list_item (no text, no valid children, no marked blocks)`);
+                continue; // Skip this empty list item
+              }
+              
               console.log(`🔍 Creating bulleted_list_item with no text but ${validChildren.length} valid children`);
               
               let markerToken = null;
@@ -2428,9 +2944,23 @@ async function extractContentFromHtml(html) {
             console.log(`🔍 [INLINE-IMAGE-CHECK] Found ${liImages.length} image(s) in list item HTML`);
           }
           
+          // CRITICAL FIX: Skip empty list items (no text content and no images)
+          // These occur when the source HTML has empty <li> tags or only whitespace
+          if (liRichText.length === 0 && (!liImages || liImages.length === 0)) {
+            console.log(`🔍 Skipping empty list item (no text, no images)`);
+            continue; // Skip this list item entirely
+          }
+          
           const richTextChunks = splitRichTextArray(liRichText);
           for (let chunkIndex = 0; chunkIndex < richTextChunks.length; chunkIndex++) {
             const chunk = richTextChunks[chunkIndex];
+            
+            // Additional safety check: Skip chunks that are empty
+            if (chunk.length === 0) {
+              console.log(`🔍 Skipping empty chunk ${chunkIndex} of list item`);
+              continue;
+            }
+            
             const listItemBlock = {
               object: "block",
               type: "bulleted_list_item",
@@ -2481,25 +3011,60 @@ async function extractContentFromHtml(html) {
         }
       }
       
-      // CALLOUT EXTRACTION FIX: Add extracted callouts as root-level sibling blocks after the list
-      if (extractedCallouts.length > 0) {
-        console.log(`🔍 [CALLOUT-EXTRACT] Adding ${extractedCallouts.length} extracted callout(s) as siblings after <ul>`);
-        processedBlocks.push(...extractedCallouts);
-      }
+      // FIX v11.0.19: Callouts now use marker-based orchestration (no longer extracted to array)
+      // The extractedCallouts array is no longer populated - callouts go into markedBlocks instead
+      // This preserves correct section ordering
       
       console.log(`✅ Created list blocks from <ul>`);
       $elem.remove(); // Mark as processed
       
     } else if (tagName === 'ol') {
       // Ordered list
+      const fs = require('fs');
+      const parentContext = $elem.parent().length > 0 ? $elem.parent().prop('tagName') : 'root';
+      const nestingMsg = `🔍 [OL-START-NESTING] Starting ordered list processing:\n   - Parent element: <${parentContext}>\n   - isNested flag: ${isNested ? 'TRUE (should be child)' : 'FALSE (should be root)'}\n   - Expected depth: ${isNested ? '2 (child of list item)' : '1 (root level)'}\n`;
+      fs.appendFileSync('/tmp/table-debug.log', nestingMsg);
+      console.error(nestingMsg);
+      
+      console.log(`🔍 [OL-START] Starting ordered list processing for <ol>`);
       const listItems = $elem.find('> li').toArray();
-      console.log(`🔍 Processing <ol> with ${listItems.length} list items`);
+      console.log(`🔍 [OL-START] Processing <ol> with ${listItems.length} list items`);
       
-      // CALLOUT EXTRACTION FIX: Collect callouts from list items to promote as siblings
+      // FIX v11.0.34: Extract callouts from itemgroup divs BEFORE unwrapping
+      // Callouts inside itemgroups should be separate top-level blocks, not nested in list items
       const extractedCallouts = [];
-      
-      for (let li of listItems) {
+      for (const li of listItems) {
         const $li = $(li);
+        // Find callouts that are direct children of itemgroup divs (but NOT inside tables)
+        // IMPORTANT: Match any div with note/warning/etc class, including multi-class like "note note note_note"
+        const itemgroupCallouts = $li.find('div.itemgroup > div[class*="note"], div.itemgroup > div[class*="warning"], div.itemgroup > div[class*="important"], div.itemgroup > div[class*="tip"], div.itemgroup > div[class*="caution"]').toArray();
+        
+        if (itemgroupCallouts.length > 0) {
+          console.log(`🔍 [FIX-v11.0.34] Found ${itemgroupCallouts.length} callout(s) inside itemgroup div(s) in list item`);
+          
+          for (const callout of itemgroupCallouts) {
+            const $callout = $(callout);
+            // Exclude callouts that are inside tables (Notion table cells can't contain callouts)
+            if ($callout.closest('table').length === 0) {
+              console.log(`🔍 [FIX-v11.0.34] Extracting callout from itemgroup: "${$callout.text().trim().substring(0, 60)}..."`);
+              extractedCallouts.push(callout);
+              // Remove from DOM so it won't be processed as part of the list item
+              $callout.remove();
+            } else {
+              console.log(`🔍 [FIX-v11.0.34] Skipping callout inside table: "${$callout.text().trim().substring(0, 60)}..."`);
+            }
+          }
+        }
+      }
+      
+      // FIX v11.0.19: Callouts now use marker-based orchestration (markedBlocks)
+      // This preserves correct section ordering instead of batching callouts together
+      
+      for (let liIndex = 0; liIndex < listItems.length; liIndex++) {
+        const li = listItems[liIndex];
+        const $li = $(li);
+        const liText = $li.text().trim().substring(0, 80);
+        console.log(`🔍 [OL-ITEM-${liIndex}] Processing list item: "${liText}..."`);
         
         // First, unwrap div.itemgroup and div.info so we can find nested blocks properly
         // FIX: Use attribute selectors to match elements with these classes (handles multi-class elements like "itemgroup info")
@@ -2520,7 +3085,9 @@ async function extractContentFromHtml(html) {
         // FIX ISSUE #3 & #5: Also look inside wrapper divs for deeply nested blocks
         // CRITICAL: Must query AFTER unwrapping to see the newly exposed elements
         // NOTE: Include '> figure' for direct children after unwrapping; duplicate filter will catch figures inside div.p
-        let nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.stepxmp, > div.note').toArray();
+        // CRITICAL FIX v11.0.63: Don't treat div.p as a block - it's a wrapper for mixed content
+        // Look INSIDE div.p for actual nested blocks instead of treating the div itself as a block
+        let nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.stepxmp, > div.note').toArray();
         
         // DUPLICATE FIX: Filter out nested blocks that are INSIDE other nested blocks
         // Example: <div class="p"><figure>...</figure></div> should only process the div, not both
@@ -2558,13 +3125,25 @@ async function extractContentFromHtml(html) {
           console.log(`🔍 [OL-DEBUG] Found ${nestedBlocks.length} nested blocks: ${blockTypes}`);
         }
         
-        // Also look for blocks nested inside plain wrapper divs or div.p
-        $li.find('> div:not(.note):not(.table-wrap):not(.stepxmp), > div.p, > div.itemgroup, > div.info').each((i, wrapper) => {
+        // FIX v11.0.63: Look for blocks nested inside plain wrapper divs AND div.p
+        // div.p is a semantic wrapper that contains mixed content (text + nested blocks)
+        // Extract the nested blocks from inside div.p, but preserve the wrapper's text
+        const wrappersFound = $li.find('> div:not(.note):not(.table-wrap):not(.stepxmp), > div.p, > div.itemgroup, > div.info').toArray();
+        console.log(`🔍 [WRAPPER-SCAN-OL] Found ${wrappersFound.length} wrapper divs to scan`);
+        wrappersFound.forEach((wrapper, wIdx) => {
+          const wrapperClass = $(wrapper).attr('class') || 'no-class';
+          console.log(`🔍 [WRAPPER-SCAN-OL] Wrapper ${wIdx}: <div class="${wrapperClass}">`);
           // Find blocks inside this wrapper
-          // NOTE: Removed '> figure' and '> div.table-wrap' - these should only be processed when their parent div.p is processed
-          const innerBlocks = $(wrapper).find('> table, > div.note, > pre, > ul, > ol').toArray();
+          // CRITICAL FIX v11.0.66: Include div.table-wrap so tables inside wrappers are detected
+          const innerBlocks = $(wrapper).find('> table, > div.table-wrap, > div.note, > pre, > ul, > ol').toArray();
+          console.log(`🔍 [WRAPPER-SCAN-OL]   → Found ${innerBlocks.length} blocks inside`);
           if (innerBlocks.length > 0) {
-            console.log(`🔍 Found ${innerBlocks.length} blocks nested inside ordered list wrapper div`);
+            innerBlocks.forEach((block, bIdx) => {
+              const blockName = block.name;
+              const blockClass = $(block).attr('class') || '';
+              console.log(`🔍 [WRAPPER-SCAN-OL]   → [${bIdx}] <${blockName}${blockClass ? ` class="${blockClass}"` : ''}>`);
+            });
+            console.log(`🔍 [DIV-P-FIX-OL] Found ${innerBlocks.length} blocks inside <div class="${wrapperClass}"> wrapper`);
             nestedBlocks.push(...innerBlocks);
           }
         });
@@ -2583,11 +3162,34 @@ async function extractContentFromHtml(html) {
           
           // Extract text content without nested blocks for the list item text
           const $textOnly = $li.clone();
+          
+          // CRITICAL FIX v11.0.65: Log what we're removing for debugging
+          const tableWraps = $textOnly.find('div.table-wrap');
+          const tables = $textOnly.find('table');
+          if (tableWraps.length > 0 || tables.length > 0) {
+            console.log(`🔍 [TABLE-REMOVE-OL] Before removal: ${tableWraps.length} table-wraps, ${tables.length} tables`);
+          }
+          
           // Remove nested blocks (including those inside wrapper divs)
-          $textOnly.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.itemgroup, > div.stepxmp, > div.info, > div.note').remove();
-          // Then remove blocks nested inside wrapper divs
-          $textOnly.find('table, div.table-wrap, div.note, pre, ul, ol, figure').remove();
+          // CRITICAL FIX v11.0.63: Don't remove div.p wrapper - only remove nested blocks INSIDE it
+          $textOnly.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.itemgroup, > div.stepxmp, > div.info, > div.note').remove();
+          // Then remove blocks nested inside wrapper divs (including inside div.p)
+          // CRITICAL FIX v11.0.64: Remove in specific order - table-wrap first (contains table)
+          $textOnly.find('div.table-wrap').remove(); // Remove wrapper first (contains table)
+          $textOnly.find('table, div.note, pre, ul, ol, figure').remove();
+          
           const textOnlyHtml = $textOnly.html();
+          
+          // DEBUG v11.0.70: Log textOnlyHtml to trace missing text issue
+          if (textOnlyHtml && (textOnlyHtml.includes('For example') || textOnlyHtml.includes('Add filters to a class'))) {
+            console.log(`🔍 [TEXT-AFTER-OL] textOnlyHtml contains "Add filters": ${textOnlyHtml.substring(0, 300)}`);
+          }
+          
+          // CRITICAL FIX v11.0.65: Check if table HTML remains in text
+          if (textOnlyHtml && textOnlyHtml.includes('<table')) {
+            console.log(`❌ [TABLE-REMOVE-OL] Table HTML still present after removal!`);
+            console.log(`   Remaining HTML snippet: ${textOnlyHtml.substring(textOnlyHtml.indexOf('<table'), textOnlyHtml.indexOf('<table') + 100)}`);
+          }
           
           // DEBUG: Check if there are any img tags remaining in textOnlyHtml
           const remainingImgs = (textOnlyHtml.match(/<img/gi) || []).length;
@@ -2600,13 +3202,31 @@ async function extractContentFromHtml(html) {
           for (let i = 0; i < nestedBlocks.length; i++) {
             const nestedBlock = nestedBlocks[i];
             console.log(`🔍 Processing nested block in ordered list item: <${nestedBlock.name}>`);
-            const childBlocks = await processElement(nestedBlock);
+            // FIX v11.0.69: Assign DOM order BEFORE processing, based on source element position
+            // This ensures all blocks from the same source element (e.g., table caption → heading_3 + table)
+            // share the same base order and maintain their grouping
+            const sourceElementOrder = globalDomOrderCounter++;
+            const childBlocks = await processElement(nestedBlock, true); // Pass isNested=true
+            // Skip if element was filtered out (e.g., callout inside list)
+            if (!childBlocks || !Array.isArray(childBlocks)) {
+              console.log(`🔍 🎯 NULL-CHECK-FIX-v11.0.18-OL: Nested block returned null/non-array, skipping`);
+              continue;
+            }
             // DEBUG: Log images in nestedChildren with FULL details
             childBlocks.forEach((blk, idx) => {
               if (blk.type === 'image') {
                 const imgUrl = blk.image?.file_upload?.id || blk.image?.external?.url || 'unknown';
                 console.log(`🔍 [NESTED-CHILDREN-OL] [${idx}] Image from <${nestedBlock.name}>: ${String(imgUrl).substring(0, 80)}`);
                 console.log(`🔍 [NESTED-CHILDREN-OL] Full image object:`, JSON.stringify(blk.image).substring(0, 300));
+              }
+            });
+            // FIX v11.0.69: Assign the same base order to all blocks from this source element
+            // Add sub-order for relative positioning within the group (heading before table)
+            childBlocks.forEach((blk, subIdx) => {
+              if (!blk._sn2n_dom_order) {
+                // Use decimal notation: sourceOrder.subIndex (e.g., 5.0, 5.1, 5.2)
+                // This keeps blocks from same source grouped together while preserving internal order
+                blk._sn2n_dom_order = sourceElementOrder + (subIdx * 0.001);
               }
             });
             nestedChildren.push(...childBlocks);
@@ -2616,6 +3236,15 @@ async function extractContentFromHtml(html) {
           // Create the list item with text content AND nested blocks as children
           if (textOnlyHtml && cleanHtmlText(textOnlyHtml).trim()) {
             const { richText: liRichText, imageBlocks: liImages } = await parseRichText(textOnlyHtml);
+            
+            // DEBUG v11.0.70: Log richText to verify "For example" is present
+            if (liRichText && liRichText.length > 0) {
+              const textContent = liRichText.map(rt => rt.text?.content || '').join('');
+              if (textContent.includes('Add filters to a class')) {
+                console.log(`🔍 [TEXT-TRACE-1] liRichText extracted, textContent: ${textContent.substring(0, 300)}`);
+                console.log(`🔍 [TEXT-TRACE-1] liRichText length: ${liRichText.length} objects`);
+              }
+            }
             
             // Filter nested blocks: Notion list items can only have certain block types as children
             // Supported: bulleted_list_item, numbered_list_item, to_do, toggle, image
@@ -2627,7 +3256,7 @@ async function extractContentFromHtml(html) {
             const markedBlocks = []; // All nested blocks use marker-based orchestration to preserve order
             
             // Separate immediate children (list items, images) from deferred blocks (paragraphs, tables, etc.)
-            const immediateChildren = [];
+            let immediateChildren = []; // FIX v11.0.71f: Changed to 'let' to allow filtering out deferred blocks
             
             // CRITICAL FIX: Add images extracted from text content as immediate children
             // Track image SOURCE URLs to prevent duplicates (before upload generates unique IDs)
@@ -2644,21 +3273,9 @@ async function extractContentFromHtml(html) {
             }
             
             nestedChildren.forEach(block => {
-              // CALLOUT EXTRACTION FIX: Extract callouts to promote as root-level siblings
-              // Notion does not support callouts as children of list items
-              if (block && block.type === 'callout') {
-                console.log(`🔍 [CALLOUT-EXTRACT] Extracting callout from ordered list item to promote as sibling block`);
-                // Add a subtle prefix to indicate this callout came from a list context
-                if (block.callout && block.callout.rich_text && block.callout.rich_text.length > 0) {
-                  // Prepend "• " to the first text element
-                  const firstText = block.callout.rich_text[0];
-                  if (firstText && firstText.text && firstText.text.content) {
-                    firstText.text.content = `• ${firstText.text.content}`;
-                  }
-                }
-                extractedCallouts.push(block);
-                return; // Don't process further - will be added after list
-              }
+              // v11.0.19: Callouts CAN be children of list items (Notion supports this)
+              // With isNested=true flag, callouts are properly created without markers
+              // No special handling needed - let them be added as children like other blocks
               
               // CRITICAL FIX: Check for marker tokens FIRST (parent blocks with own deferred children)
               // These should be added as immediate children, regardless of whether they also have _sn2n_marker
@@ -2676,10 +3293,15 @@ async function extractContentFromHtml(html) {
                 return; // Don't re-mark - it has its own marker system
               }
               
+              // FIX v11.0.78: Handle tables and callouts with markers BEFORE general marker check
+              // These block types have specific handling below that must execute
+              // DON'T early-return for these - let them reach their type-specific handlers
+              const needsTypeSpecificHandling = block && ['table', 'callout'].includes(block.type);
+              
               // Check if block already has a marker from nested processing
               // IMPORTANT: Callouts/blocks with markers have their own nested content that should be orchestrated to them, not to the list item
               // Only add the callout itself, not its children (which share the same marker)
-              if (block && block._sn2n_marker) {
+              if (block && block._sn2n_marker && !needsTypeSpecificHandling) {
                 // This is a deferred child block (has marker but no marker token)
                 // It belongs to a CHILD element and should NOT be re-marked with parent's marker
                 // Will be added separately via blocksWithExistingMarkers logic
@@ -2723,6 +3345,7 @@ async function extractContentFromHtml(html) {
                 }
               } else if (block && block.type === 'image') {
                 // Images can be immediate children, but check for duplicates by SOURCE URL
+                // FIX v11.0.69: Assign DOM order for proper sorting in orchestration
                 const sourceUrl = block._sn2n_sourceUrl || block.image?.external?.url || null;
                 
                 if (sourceUrl && seenImageSources.has(String(sourceUrl))) {
@@ -2731,48 +3354,172 @@ async function extractContentFromHtml(html) {
                   if (sourceUrl) {
                     seenImageSources.add(String(sourceUrl));
                   }
+                  if (!block._sn2n_dom_order) {
+                    block._sn2n_dom_order = globalDomOrderCounter++;
+                  }
+                  immediateChildren.push(block);
+                }
+              } else if (block && block.type === 'callout') {
+                // v11.0.19: Callouts CAN be immediate children of list items
+                // PATCH v11.0.20: Check for marker to prevent duplicates
+                // FIX v11.0.69: Assign DOM order for proper sorting in orchestration
+                if (block._sn2n_marker) {
+                  // Has marker - will be handled by orchestration, don't add as immediate child
+                  console.log(`🔍 [OL] Callout has marker "${block._sn2n_marker}" - deferring to orchestration (prevents duplicate)`);
+                  if (!block._sn2n_dom_order) {
+                    block._sn2n_dom_order = globalDomOrderCounter++;
+                  }
+                  markedBlocks.push(block);
+                } else {
+                  // No marker - processed with isNested=true, add as immediate child
+                  console.log(`🔍 [OL] Nested callout without markers - adding as immediate child`);
+                  if (!block._sn2n_dom_order) {
+                    block._sn2n_dom_order = globalDomOrderCounter++;
+                  }
+                  immediateChildren.push(block);
+                }
+              } else if (block && block.type === 'table') {
+                // FIX v11.0.67: Tables CAN be immediate children of list items (1 level of nesting)
+                // Only defer to orchestration if already marked (indicating deeper nesting was flattened)
+                // FIX v11.0.69: Assign DOM order and check for duplicates
+                const fs = require('fs');
+                const tableDebugLog = `🔍 [TABLE-DEBUG-OL] Processing table block:\n   - Has marker: ${!!block._sn2n_marker}\n   - Has DOM order: ${!!block._sn2n_dom_order} (${block._sn2n_dom_order || 'none'})\n   - Table width: ${block.table?.table_width || '?'}\n   - Current parent (OL item): "${textOnlyHtml ? cleanHtmlText(textOnlyHtml).substring(0, 60) : 'no-text'}..."\n`;
+                fs.appendFileSync('/tmp/table-debug.log', tableDebugLog);
+                console.error(tableDebugLog);
+                
+                if (block._sn2n_marker) {
+                  const markerLog = `🔍 [TABLE-DEBUG-OL] → Table has marker "${block._sn2n_marker}" - deferring to orchestration\n`;
+                  fs.appendFileSync('/tmp/table-debug.log', markerLog);
+                  console.error(markerLog);
+                  if (!block._sn2n_dom_order) {
+                    block._sn2n_dom_order = globalDomOrderCounter++;
+                  }
+                  markedBlocks.push(block);
+                } else {
+                  const noMarkerLog = `✅ [TABLE-DEBUG-OL] → Table without marker - adding as immediate child\n`;
+                  fs.appendFileSync('/tmp/table-debug.log', noMarkerLog);
+                  console.error(noMarkerLog);
+                  // Assign DOM order for proper sorting in orchestration
+                  if (!block._sn2n_dom_order) {
+                    block._sn2n_dom_order = globalDomOrderCounter++;
+                  }
                   immediateChildren.push(block);
                 }
               } else if (block && block.type) {
-                // Tables, headings, callouts, etc. need markers
+                // Headings, code blocks, etc. need markers for deferred append
                 console.log(`⚠️ Block type "${block.type}" needs marker for deferred append to list item`);
-                if (block.type === 'table') {
-                  console.log(`🔍 [MARKER-PRESERVE-TABLE] Table block deferred for orchestration to preserve source order`);
-                }
                 markedBlocks.push(block);
               }
             });
             
+            // DEBUG: Log immediate children before depth check
+            const tableCountBefore = immediateChildren.filter(c => c.type === 'table').length;
+            if (tableCountBefore > 0) {
+              console.log(`🔧 [TABLE-POSITION-DEBUG] BEFORE enforceNestingDepthLimit: ${immediateChildren.length} children, ${tableCountBefore} table(s)`);
+              console.log(`🔧 [TABLE-POSITION-DEBUG]   Types: ${immediateChildren.map(c => c.type).join(', ')}`);
+            }
+            
             // CRITICAL: Enforce Notion's 2-level nesting limit
-            // At this point, we're at depth 1 (inside a list item). 
-            // Any children we add will be at depth 2, and they CANNOT have their own children.
-            // Use enforceNestingDepthLimit to strip any grandchildren and mark them for orchestration.
-            const depthResult = enforceNestingDepthLimit(immediateChildren, 1);
+            // At this point, we're at depth 2 (inside a numbered_list_item which is inside a bulleted_list_item). 
+            // Any children we add will be at depth 3, which EXCEEDS Notion's 2-level limit
+            // Use enforceNestingDepthLimit to defer any children that would violate the limit.
+            // FIX v11.0.71f: Pass depth 3 (where children actually will be, not where parent is)
+            const depthResult = enforceNestingDepthLimit(immediateChildren, 3);
+            
+            // DEBUG: Log what happened after depth check
+            const tableCountAfterDefer = immediateChildren.filter(c => c.type === 'table').length;
+            const tableCountDeferred = depthResult.deferredBlocks.filter(c => c.type === 'table').length;
+            if (tableCountBefore > 0) {
+              console.log(`🔧 [TABLE-POSITION-DEBUG] AFTER enforceNestingDepthLimit: ${depthResult.deferredBlocks.length} deferred, ${tableCountDeferred} of them tables`);
+              console.log(`🔧 [TABLE-POSITION-DEBUG]   immediateChildren now has ${immediateChildren.length} children, ${tableCountAfterDefer} table(s)`);
+            }
+            
             if (depthResult.deferredBlocks.length > 0) {
-              console.log(`🔧 Enforced nesting depth: ${depthResult.deferredBlocks.length} blocks deferred for orchestration`);
+              console.log(`🔧 [TABLE-POSITION] OL: ${depthResult.deferredBlocks.length} blocks deferred for orchestration`);
+              // Log which blocks were deferred and to which parent they'll be attached
+              depthResult.deferredBlocks.forEach((block, idx) => {
+                const blockType = block.type;
+                let preview = 'no-text';
+                if (blockType === 'heading_3') {
+                  preview = block.heading_3?.rich_text?.map(rt => rt.text?.content || '').join('').substring(0, 50);
+                } else if (blockType === 'table') {
+                  preview = `table (${block.table?.table_width || '?'} cols)`;
+                }
+                const parentText = textOnlyHtml ? cleanHtmlText(textOnlyHtml).substring(0, 60) : 'no-parent-text';
+                console.log(`🔧 [TABLE-POSITION]   [${idx}] ${blockType}: "${preview}" → parent OL item: "${parentText}..."`);
+              });
               // Add deferred blocks to markedBlocks so they get markers
               markedBlocks.push(...depthResult.deferredBlocks);
+              
+              // FIX v11.0.71f: CRITICAL - Remove deferred blocks from immediateChildren
+              // The deferred blocks (e.g., tables at depth 3) must not be included in the list item's children
+              const deferredBlockSet = new Set(depthResult.deferredBlocks);
+              const beforeFilter = immediateChildren.length;
+              
+              // DEBUG: Check if immediateChildren contains the deferred blocks
+              if (depthResult.deferredBlocks.length > 0) {
+                const tablesDeferred = depthResult.deferredBlocks.filter(b => b.type === 'table').length;
+                const tablesInImmediate = immediateChildren.filter(b => b.type === 'table').length;
+                if (tablesDeferred > 0) {
+                  console.log(`🔧 [FILTER-DEBUG] About to filter: ${depthResult.deferredBlocks.length} deferred (${tablesDeferred} tables), immediateChildren has ${immediateChildren.length} blocks (${tablesInImmediate} tables)`);
+                  // Check if the exact same table object is in both arrays
+                  const deferredTable = depthResult.deferredBlocks.find(b => b.type === 'table');
+                  const immediateTable = immediateChildren.find(b => b.type === 'table');
+                  if (deferredTable && immediateTable) {
+                    console.log(`🔧 [FILTER-DEBUG]   deferredTable === immediateTable? ${deferredTable === immediateTable}`);
+                    console.log(`🔧 [FILTER-DEBUG]   deferredBlockSet.has(immediateTable)? ${deferredBlockSet.has(immediateTable)}`);
+                    if (deferredTable._sn2n_debug_deferred_at_depth) {
+                      console.log(`🔧 [FILTER-DEBUG]   Table was marked as deferred at depth=${deferredTable._sn2n_debug_deferred_at_depth}`);
+                    }
+                  }
+                }
+              }
+              
+              immediateChildren = immediateChildren.filter(child => !deferredBlockSet.has(child));
+              const afterFilter = immediateChildren.length;
+              if (beforeFilter !== afterFilter) {
+                console.log(`🔧 [TABLE-POSITION] Filter removed ${beforeFilter - afterFilter} blocks (${beforeFilter} → ${afterFilter})`);
+              } else if (depthResult.deferredBlocks.length > 0) {
+                console.log(`⚠️ [TABLE-FILTER-BUG] Filter did NOT remove any blocks! Deferred ${depthResult.deferredBlocks.length} but filter didn't remove any.`);
+                console.log(`⚠️ [TABLE-FILTER-BUG]   deferredBlockSet has ${deferredBlockSet.size} items`);
+                console.log(`⚠️ [TABLE-FILTER-BUG]   immediateChildren still has ${immediateChildren.length} items`);
+              }
+              console.log(`🔧 [TABLE-POSITION] After removing ${depthResult.deferredBlocks.length} deferred blocks: ${immediateChildren.length} immediate children remain`);
             }
             
-            // ORDERING FIX: If there are container blocks (callouts) in markedBlocks,
-            // also mark the immediateChildren so everything goes through orchestration
-            // and maintains correct source order. Otherwise, immediateChildren get added
-            // to the list item first, then markedBlocks get appended, reversing the order.
-            const hasContainerBlocks = markedBlocks.some(b => 
-              b && (b.type === 'callout' || b.type === 'table' || b.type === 'heading_3')
-            );
-            
-            let allChildren;
-            if (hasContainerBlocks && immediateChildren.length > 0) {
-              console.log(`🔄 Deferring ${immediateChildren.length} immediate children for orchestration to maintain correct order with container blocks`);
-              // Move immediate children to marked blocks - they'll all be orchestrated together
-              // Use push() to add AFTER container blocks, maintaining source order
-              markedBlocks.push(...immediateChildren);
-              allChildren = [];
-            } else {
-              // Use only immediateChildren - images are now handled separately with markers
-              allChildren = [...immediateChildren];
+            // DEBUG: Check what's in immediateChildren RIGHT before creating allChildren
+            const tablesBeforeAllChildren = immediateChildren.filter(c => c.type === 'table').length;
+            if (tablesBeforeAllChildren > 0) {
+              console.log(`⚠️ [IMMEDIATE-CHILDREN-CHECK] immediateChildren has ${tablesBeforeAllChildren} table(s) RIGHT BEFORE allChildren filter`);
+              console.log(`⚠️ [IMMEDIATE-CHILDREN-CHECK]   immediateChildren: ${immediateChildren.map(c => c.type).join(', ')}`);
             }
+            
+            // FIX v11.0.70: Keep list items and images as immediate children, even when container blocks present
+            // PROBLEM: Previous logic moved ALL immediateChildren to markedBlocks when ANY container blocks existed
+            // RESULT: Nested list items ended up at page root instead of as children of parent list item
+            // SOLUTION: Only defer container blocks that can't be immediate children (headings, code blocks)
+            //           Keep allowed children (list items, images, callouts, tables)
+            // Notion supports: bulleted/numbered list items, to_do, toggle, image, callout, table as immediate children
+            // FIX v11.0.71: Tables keep their children (table_rows) regardless of depth - no empty table filtering needed
+            const allowedImmediateTypes = ['bulleted_list_item', 'numbered_list_item', 'to_do', 'toggle', 'image', 'callout', 'table'];
+            const allChildren = immediateChildren.filter(child => allowedImmediateTypes.includes(child.type));
+            
+            // DEBUG: Warn if a table made it to allChildren
+            const tablesInAllChildren = allChildren.filter(c => c.type === 'table').length;
+            if (tablesInAllChildren > 0) {
+              console.log(`⚠️ [TABLE-BUG-ALERT] Table made it to allChildren! After depth check, table should have been deferred.`);
+              console.log(`⚠️ [TABLE-BUG-ALERT]   immediateChildren: ${immediateChildren.map(c => c.type).join(', ')}`);
+              console.log(`⚠️ [TABLE-BUG-ALERT]   allChildren: ${allChildren.map(c => c.type).join(', ')}`);
+            }
+            
+            // Any non-allowed types should be in markedBlocks already (like headings, code blocks)
+            const nonAllowedChildren = immediateChildren.filter(child => !allowedImmediateTypes.includes(child.type));
+            if (nonAllowedChildren.length > 0) {
+              console.log(`🔄 Moving ${nonAllowedChildren.length} non-allowed child types to markedBlocks: ${nonAllowedChildren.map(c => c.type).join(', ')}`);
+              markedBlocks.push(...nonAllowedChildren);
+            }
+            
+            console.log(`🔍 [OL-CHILDREN] ${allChildren.length} immediate children (${allChildren.map(c => c.type).join(', ')}), ${markedBlocks.length} deferred blocks`);
             
             if (liRichText.length > 0 && liRichText.some(rt => rt.text.content.trim())) {
               const richTextChunks = splitRichTextArray(liRichText);
@@ -2828,6 +3575,14 @@ async function extractContentFromHtml(html) {
                   },
                 };
                 
+                // DEBUG v11.0.70: Verify text in created block
+                const blockText = chunk.map(rt => rt.text?.content || '').join('');
+                if (blockText.includes('Add filters to a class')) {
+                  console.log(`🔍 [TEXT-TRACE-2] Block created with text: ${blockText.substring(0, 300)}`);
+                  console.log(`🔍 [TEXT-TRACE-2] Block has ${allChildren.length} children`);
+                  console.log(`🔍 [TEXT-TRACE-2] Block has ${markedBlocks.length} markedBlocks`);
+                }
+                
                 // Add nested blocks (including images) as children if any
                 if (allChildren.length > 0) {
                   listItemBlock.numbered_list_item.children = allChildren;
@@ -2839,9 +3594,53 @@ async function extractContentFromHtml(html) {
                 // Add marked blocks as TOP-LEVEL blocks (NOT as children) so collectAndStripMarkers can find them
                 // Adding them as children would place them at depth 3, violating Notion's 2-level limit
                 // They will be collected into markerMap and orchestrated after page creation
+                // FIX v11.0.77: Only push to root level if we're NOT in a nested processElement call
+                // Nested OLs should return marked blocks normally so they propagate up through recursion
+                // FIX v11.0.78: When nested, add markedBlocks to processedBlocks so they get returned to parent
                 if (markedBlocks.length > 0) {
-                  console.log(`🔍 Adding ${markedBlocks.length} marked blocks as top-level blocks (NOT children) for collection & orchestration`);
+                  if (!isNested) {
+                    console.log(`🔍 [OL-ROOT-LEVEL] Adding ${markedBlocks.length} marked blocks to root level`);
+                  } else {
+                    console.log(`🔍 [OL-NESTED-RETURN] Adding ${markedBlocks.length} marked blocks to processedBlocks for return to parent`);
+                  }
+                  // DEBUG: Log each marked block to verify they have markers
+                  for (let idx = 0; idx < markedBlocks.length; idx++) {
+                    const blk = markedBlocks[idx];
+                    const hasMarker = !!blk._sn2n_marker;
+                    const markerValue = blk._sn2n_marker || 'NONE';
+                    if (blk.type === 'table') {
+                      console.log(`🔍   [${idx}] TABLE: marker="${markerValue}" hasMarker=${hasMarker} → will be at root index ${processedBlocks.length + idx}`);
+                    } else {
+                      console.log(`🔍   [${idx}] ${blk.type}: marker="${markerValue}" hasMarker=${hasMarker}`);
+                    }
+                  }
+                  
+                  // CRITICAL DEBUG: Check if ANY table is in markedBlocks array
+                  const tableInMarkedBlocks = markedBlocks.find(b => b.type === 'table');
+                  if (tableInMarkedBlocks) {
+                    console.log(`✅ [OL-ROOT-LEVEL-PRE-PUSH] Table with marker ${tableInMarkedBlocks._sn2n_marker} IS in markedBlocks array`);
+                  } else {
+                    console.log(`ℹ️  [OL-ROOT-LEVEL-PRE-PUSH] No table in this batch of markedBlocks`);
+                    console.log(`ℹ️  [OL-ROOT-LEVEL-PRE-PUSH] markedBlocks contains: ${markedBlocks.map(b => `${b.type}:${b._sn2n_marker}`).join(', ')}`);
+                  }
+                  
+                  const lengthBefore = processedBlocks.length;
                   processedBlocks.push(...markedBlocks);
+                  const lengthAfter = processedBlocks.length;
+                  console.log(`🔍 [OL-ROOT-LEVEL-VERIFY] processedBlocks: ${lengthBefore} → ${lengthAfter} (added ${lengthAfter - lengthBefore})`);
+                  
+                  // Verify the table is actually there (use the marker from tableInMarkedBlocks if found)
+                  if (tableInMarkedBlocks) {
+                    const tableMarker = tableInMarkedBlocks._sn2n_marker;
+                    const tableIndex = processedBlocks.findIndex(b => b.type === 'table' && b._sn2n_marker === tableMarker);
+                    if (tableIndex !== -1) {
+                      console.log(`✅ [OL-ROOT-LEVEL-VERIFY] Table with marker ${tableMarker} confirmed at index ${tableIndex}`);
+                    } else {
+                      console.log(`❌ [OL-ROOT-LEVEL-VERIFY] Table with marker ${tableMarker} NOT FOUND after push!`);
+                      // List all blocks in processedBlocks to debug
+                      console.log(`❌ [OL-ROOT-LEVEL-VERIFY] processedBlocks now contains: ${processedBlocks.map(b => `${b.type}:${b._sn2n_marker || 'no-marker'}`).join(', ')}`);
+                    }
+                  }
                 }
               }
               
@@ -2851,20 +3650,29 @@ async function extractContentFromHtml(html) {
               // ALSO skip blocks whose marker matches a parent block's marker (they're children of that parent)
               const blocksWithExistingMarkers = nestedChildren.filter(b => {
                 if (!b || !b._sn2n_marker) return false;
-                // Check if already in immediateChildren or markedBlocks
+                // Check if already in immediateChildren or markedBlocks (use object identity, not marker matching)
                 const alreadyAdded = immediateChildren.includes(b) || markedBlocks.includes(b);
                 if (alreadyAdded) return false;
                 
-                // Check if this block's marker matches any other block's marker in markedBlocks
-                // If so, it's a child of that block and shouldn't be added separately
-                const isChildOfMarkedBlock = markedBlocks.some(parent => 
-                  parent && parent._sn2n_marker === b._sn2n_marker
-                );
-                return !isChildOfMarkedBlock;
+                // FIX v11.0.79: Skip blocks from nested OLs - they belong to their immediate UL parent, not this OL
+                // These blocks are marked for orchestration to their UL parent, not to this OL parent
+                if (b._sn2n_from_nested_ol) {
+                  console.log(`🔍 [OL-SKIP-NESTED] Skipping block from nested OL (belongs to immediate UL parent): ${b.type}`);
+                  return false;
+                }
+                
+                // CRITICAL FIX v11.0.76: Use object identity, not marker matching
+                // A block may have the same marker as its parent (shared orchestration target)
+                // but still be a separate block that needs to be added to processedBlocks
+                // The alreadyAdded check above already handles true duplicates
+                return true; // If not already added, include it
               });
               recordMarkers(blocksWithExistingMarkers);
               if (blocksWithExistingMarkers.length > 0) {
                 console.log(`🔍 Adding ${blocksWithExistingMarkers.length} blocks with existing markers from nested processing (ordered)`);
+                blocksWithExistingMarkers.forEach((b, idx) => {
+                  console.log(`🔍 [EXISTING-MARKERS] [${idx}] ${b.type}: marker="${b._sn2n_marker}"`);
+                });
                 processedBlocks.push(...blocksWithExistingMarkers);
               }
             }
@@ -2937,10 +3745,33 @@ async function extractContentFromHtml(html) {
                 },
               };
               
-              // Add marked blocks as children so collectAndStripMarkers can find them
+              // CRITICAL FIX v11.0.72: Add marked blocks to ROOT-LEVEL processedBlocks for collection/orchestration
+              // Do NOT add as children - they need to be collected by collectAndStripMarkers
+              // Orchestration will append them back to the parent list item after page creation
               if (markedBlocks.length > 0) {
-                listItemBlock.numbered_list_item.children = markedBlocks;
-                console.log(`🔍 [IMAGE-INLINE-FIX-V2] Added ${markedBlocks.length} marked blocks to promoted list item's children`);
+                console.log(`🔍 [MARKED-BLOCKS-ROOT-FIX] Adding ${markedBlocks.length} marked blocks to ROOT for collection`);
+                // Add marker token to rich text so orchestrator can find parent
+                if (!richText.some(rt => rt.text?.content?.includes('(sn2n:'))) {
+                  const marker = createMarker();
+                  markedBlocks.forEach(block => {
+                    block._sn2n_marker = marker;
+                  });
+                  richText.push({
+                    type: "text",
+                    text: { content: ` (sn2n:${marker})` },
+                    annotations: {
+                      bold: false,
+                      italic: false,
+                      strikethrough: false,
+                      underline: false,
+                      code: false,
+                      color: "default"
+                    }
+                  });
+                }
+                console.log(`🔍 [MARKED-BLOCKS-ROOT-FIX] BEFORE push: processedBlocks has ${processedBlocks.length} blocks`);
+                processedBlocks.push(...markedBlocks);
+                console.log(`🔍 [MARKED-BLOCKS-ROOT-FIX] AFTER push: processedBlocks has ${processedBlocks.length} blocks`);
               }
               
               processedBlocks.push(listItemBlock);
@@ -2977,6 +3808,12 @@ async function extractContentFromHtml(html) {
               
               console.log(`🔍 Creating numbered_list_item with no text but ${validChildren.length} valid children`);
               
+              // CRITICAL FIX: Skip if we have no valid children and no marked blocks
+              if (validChildren.length === 0 && markedBlocks.length === 0) {
+                console.log(`🔍 Skipping empty numbered_list_item (no text, no valid children, no marked blocks)`);
+                continue;
+              }
+              
               let markerToken = null;
               const richText = [{ type: "text", text: { content: "" } }];
               if (markedBlocks.length > 0) {
@@ -3009,10 +3846,14 @@ async function extractContentFromHtml(html) {
                   },
                 };
                 
-                // Add marked blocks as children so collectAndStripMarkers can find them
+                // CRITICAL FIX v11.0.72b: Add marked blocks to ROOT-LEVEL processedBlocks for collection/orchestration
+                // Do NOT add as children - they need to be collected by collectAndStripMarkers
+                // Orchestration will append them back to the parent list item after page creation
                 if (markedBlocks.length > 0) {
-                  listItemBlock.numbered_list_item.children.push(...markedBlocks);
-                  console.log(`🔍 Added ${markedBlocks.length} marked blocks to empty numbered list item's children`);
+                  console.log(`🔍 [MARKED-BLOCKS-ROOT-FIX-2] Adding ${markedBlocks.length} marked blocks to ROOT for collection (no-text second case)`);
+                  console.log(`🔍 [MARKED-BLOCKS-ROOT-FIX-2] BEFORE push: processedBlocks has ${processedBlocks.length} blocks`);
+                  processedBlocks.push(...markedBlocks);
+                  console.log(`🔍 [MARKED-BLOCKS-ROOT-FIX-2] AFTER push: processedBlocks has ${processedBlocks.length} blocks`);
                 }
                 
                 processedBlocks.push(listItemBlock);
@@ -3034,9 +3875,23 @@ async function extractContentFromHtml(html) {
             console.log(`🔍 Ordered list item text content: "${textPreview}"`);
           }
           
+          // CRITICAL FIX: Skip empty list items (no text content and no images)
+          // These occur when the source HTML has empty <li> tags or only whitespace
+          if (liRichText.length === 0 && (!liImages || liImages.length === 0)) {
+            console.log(`🔍 Skipping empty ordered list item (no text, no images)`);
+            continue; // Skip this list item entirely
+          }
+          
           const richTextChunks = splitRichTextArray(liRichText);
           for (let chunkIndex = 0; chunkIndex < richTextChunks.length; chunkIndex++) {
             const chunk = richTextChunks[chunkIndex];
+            
+            // Additional safety check: Skip chunks that are empty
+            if (chunk.length === 0) {
+              console.log(`🔍 Skipping empty chunk ${chunkIndex} of ordered list item`);
+              continue;
+            }
+            
             const listItemBlock = {
               object: "block",
               type: "numbered_list_item",
@@ -3081,11 +3936,22 @@ async function extractContentFromHtml(html) {
         }
       }
       
-      // CALLOUT EXTRACTION FIX: Add extracted callouts as root-level sibling blocks after the list
+      // FIX v11.0.34: Process extracted callouts AFTER the list
+      // These callouts were removed from itemgroup divs and should be added as separate top-level blocks
       if (extractedCallouts.length > 0) {
-        console.log(`🔍 [CALLOUT-EXTRACT] Adding ${extractedCallouts.length} extracted callout(s) as siblings after <ol>`);
-        processedBlocks.push(...extractedCallouts);
+        console.log(`🔍 [FIX-v11.0.34] Processing ${extractedCallouts.length} extracted callout(s) from itemgroups`);
+        for (const callout of extractedCallouts) {
+          const calloutBlocks = await processElement(callout);
+          if (calloutBlocks && Array.isArray(calloutBlocks)) {
+            console.log(`🔍 [FIX-v11.0.34] Extracted callout produced ${calloutBlocks.length} block(s)`);
+            processedBlocks.push(...calloutBlocks);
+          }
+        }
       }
+      
+      // FIX v11.0.19: Callouts now use marker-based orchestration (no longer extracted to array)
+      // The extractedCallouts array is no longer populated - callouts go into markedBlocks instead
+      // This preserves correct section ordering
       
       console.log(`✅ Created list blocks from <ol>`);
       $elem.remove(); // Mark as processed
@@ -3362,6 +4228,7 @@ async function extractContentFromHtml(html) {
       
     } else if ((tagName === 'section' || (tagName === 'div' && $elem.hasClass('section'))) && $elem.hasClass('prereq')) {
       // Special handling for "Before you begin" prerequisite sections
+      // REMOVED v11.0.18: .closest() check - same reasoning as div.note callouts
       // Convert entire section to a callout with pushpin emoji
       console.log(`🔍 Processing prereq section as callout`);
       
@@ -3453,12 +4320,7 @@ async function extractContentFromHtml(html) {
             for (const note of nestedNotes.toArray()) {
               console.log(`🔍 [PREREQ-NESTED-NOTE] Processing nested div.note as child block`);
               const noteBlocks = await processElement(note);
-              // Defensive: allow single block or array; ignore null/undefined
-              if (Array.isArray(noteBlocks)) {
-                nestedBlocks.push(...noteBlocks);
-              } else if (noteBlocks) {
-                nestedBlocks.push(noteBlocks);
-              }
+              nestedBlocks.push(...noteBlocks);
             }
           } else {
             // No nested notes - process normally
@@ -3561,19 +4423,33 @@ async function extractContentFromHtml(html) {
       $elem.remove(); // Mark as processed
       
     } else if (tagName === 'div' && $elem.hasClass('contentPlaceholder')) {
-      // contentPlaceholder divs can contain actual content like "Related Content" sections
+      // contentPlaceholder divs can contain actual content like "Related Content" sections or "Applications and features"
       // Check if it has meaningful content before skipping
+      // NOTE: Content may be nested in contentContainer > contentWrapper > div structure
       const children = $elem.find('> *').toArray();
-      const hasContent = children.some(child => {
-        const $child = $(child);
-        const text = cleanHtmlText($child.html() || '').trim();
-        // Also check for nav elements which might be in collapsed containers
-        const hasNavElements = $child.find('nav, [role="navigation"]').length > 0 || $child.is('nav, [role="navigation"]');
-        return text.length > 20 || $child.find('h1, h2, h3, h4, h5, h6, ul, ol, p, a').length > 0 || hasNavElements;
-      });
+      
+      // Check for meaningful content - look deep for headings, lists, links
+      // since content may be wrapped in multiple container divs
+      const hasHeadings = $elem.find('h1, h2, h3, h4, h5, h6').length > 0;
+      const hasLists = $elem.find('ul, ol').length > 0;
+      const hasLinks = $elem.find('a').length > 0;
+      const hasParagraphs = $elem.find('p').length > 0;
+      const hasNavElements = $elem.find('nav, [role="navigation"]').length > 0;
+      const totalText = cleanHtmlText($elem.html() || '').trim();
+      
+      console.log(`🔍 [CONTENT-PLACEHOLDER] Checking contentPlaceholder:`);
+      console.log(`🔍 [CONTENT-PLACEHOLDER]   hasHeadings (h1-h6): ${hasHeadings} (found ${$elem.find('h1, h2, h3, h4, h5, h6').length})`);
+      console.log(`🔍 [CONTENT-PLACEHOLDER]   hasLists (ul/ol): ${hasLists} (found ${$elem.find('ul, ol').length})`);
+      console.log(`🔍 [CONTENT-PLACEHOLDER]   hasLinks (a): ${hasLinks} (found ${$elem.find('a').length})`);
+      console.log(`🔍 [CONTENT-PLACEHOLDER]   hasParagraphs (p): ${hasParagraphs} (found ${$elem.find('p').length})`);
+      console.log(`🔍 [CONTENT-PLACEHOLDER]   hasNavElements: ${hasNavElements}`);
+      console.log(`🔍 [CONTENT-PLACEHOLDER]   totalText length: ${totalText.length}`);
+      console.log(`🔍 [CONTENT-PLACEHOLDER]   Direct children count: ${children.length}`);
+      
+      const hasContent = hasHeadings || hasLists || hasLinks || hasParagraphs || hasNavElements || totalText.length > 50;
       
       if (hasContent) {
-        console.log(`🔍 contentPlaceholder has meaningful content (${children.length} children) - processing`);
+        console.log(`🔍 contentPlaceholder has meaningful content (headings:${hasHeadings}, lists:${hasLists}, links:${hasLinks}, text:${totalText.length} chars) - processing ${children.length} children`);
         for (const child of children) {
           const childBlocks = await processElement(child);
           processedBlocks.push(...childBlocks);
@@ -4049,7 +4925,9 @@ async function extractContentFromHtml(html) {
         }
         
         // Create numbered list item with text and children
-  const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'paragraph', 'to_do', 'toggle', 'image', 'table'];
+        // FIX v11.0.26: Remove 'table' from supportedAsChildren - Notion API doesn't support tables as direct children of list items
+        // Tables break list context and reset numbering. They should use markers for deep nesting orchestration instead.
+  const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'paragraph', 'to_do', 'toggle', 'image'];
         const validChildren = nestedChildren.filter(b => b && b.type && supportedAsChildren.includes(b.type));
         console.log(`🔍 [Orphan LI] validChildren: ${validChildren.length}/${nestedChildren.length} blocks (types: ${validChildren.map(b => b.type).join(', ')})`);
         
@@ -4159,9 +5037,10 @@ async function extractContentFromHtml(html) {
         console.log(`🔍 Direct text preview: "${directText.substring(0, 80)}..."`);
         
         // Check if children are block-level or inline elements
+        // CRITICAL FIX: Include dl, dt, dd in block-level elements to prevent them from being extracted as text
         const blockLevelChildren = children.filter(child => {
           const childTag = child.name;
-          return ['div', 'p', 'section', 'article', 'main', 'ul', 'ol', 'pre', 'figure', 'table', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(childTag);
+          return ['div', 'p', 'section', 'article', 'main', 'ul', 'ol', 'dl', 'dt', 'dd', 'pre', 'figure', 'table', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(childTag);
         });
         
         if (blockLevelChildren.length > 0) {
@@ -4368,6 +5247,9 @@ async function extractContentFromHtml(html) {
             
             // Track the heading node so we don't process it again in the children loop
             processedHeadingNode = $heading.get(0);
+            
+            // FIX v11.0.35: Process section children naturally (don't skip them)
+            console.log(`Article.nested1#${elemId}: Will process all children (sections, divs) to keep content with heading`);
           }
         }
         
@@ -4469,6 +5351,14 @@ async function extractContentFromHtml(html) {
               continue;
             }
             
+            // FIX v11.0.35: REMOVED section skipping in article.nested1
+            // Previous FIX v11.0.33 caused heading bunching where all h2 headings appeared together
+            // before their content. Now article.nested1 processes sections as children naturally.
+            // This ensures each heading appears with its content section.
+            const childTag = child.name || '';
+            const $child = $(child);
+            const childClass = $child.attr('class') || '';
+            
             processedChildCount++;
             console.log(`🔍   Processing child ${processedChildCount}/${children.length}: <${child.name}>${$(child).attr('class') ? ` class="${$(child).attr('class')}"` : ''}`);
             const childBlocks = await processElement(child);
@@ -4486,6 +5376,26 @@ async function extractContentFromHtml(html) {
         // Mark container as processed
         $elem.remove();
       }
+    }
+
+    // 🔍 DEBUG: Log what's being returned from processElement
+    const markedInReturn = processedBlocks.filter(b => b && b._sn2n_marker).length;
+    if (markedInReturn > 0) {
+      console.log(`🔍 [PROCESS-ELEMENT-RETURN] Returning ${processedBlocks.length} blocks, ${markedInReturn} with markers`);
+      processedBlocks.filter(b => b && b._sn2n_marker).forEach((b, idx) => {
+        console.log(`🔍   [${idx}] ${b.type}: marker="${b._sn2n_marker}"`);
+      });
+    }
+    
+    // CRITICAL DEBUG: Check for specific table markers before return
+    const tablesInReturn = processedBlocks.filter(b => b && b.type === 'table');
+    if (tablesInReturn.length > 0) {
+      console.log(`🔍 [FINAL-CHECK-BEFORE-RETURN] Found ${tablesInReturn.length} table(s) in processedBlocks before return`);
+      tablesInReturn.forEach((t, idx) => {
+        const marker = t._sn2n_marker || 'no-marker';
+        const rowCount = t.table?.children?.length || 0;
+        console.log(`🔍   [${idx}] table with marker=${marker}, rows=${rowCount}`);
+      });
     }
 
     return processedBlocks;
@@ -4605,6 +5515,46 @@ async function extractContentFromHtml(html) {
       
       const sectionParentChildren = Array.from(allParentChildren);
       const articlesArray = Array.from(articlesToInclude);
+      
+      // CRITICAL FIX v11.0.22: Also collect content from article.nested0 parent
+      // When article.nested1 elements exist, they may have siblings (like div.body.conbody) that contain intro content
+      // These siblings must be inserted BEFORE the article.nested1 elements in the final contentElements array
+      const nested0IntroContent = [];
+      const allNested1InBody = $('.zDocsTopicPageBody article.nested1').toArray();
+      console.log(`🔍 🎯 NESTED0-FIX: Found ${allNested1InBody.length} article.nested1 elements in .zDocsTopicPageBody`);
+      if (allNested1InBody.length > 0) {
+        console.log(`🔍 ✅ STEP 1: Checking for preceding content before first article.nested1...`);
+        
+        // Check the first article.nested1 to see if it's inside article.nested0
+        const $firstNested1 = $(allNested1InBody[0]);
+        console.log(`🔍 ✅ STEP 2: Got first article.nested1, id="${$firstNested1.attr('id')}"`);
+        
+        const $parent = $firstNested1.parent();
+        console.log(`🔍 ✅ STEP 3: Parent is <${$parent.prop('tagName')}> with class="${$parent.attr('class')}", id="${$parent.attr('id')}"`);
+        console.log(`🔍 ✅ STEP 4: Testing if parent.is('article.nested0'): ${$parent.is('article.nested0')}`);
+        console.log(`🔍 ✅ STEP 5: Testing alternative selectors: is('article[class*="nested0"]'): ${$parent.is('article[class*="nested0"]')}, hasClass('nested0'): ${$parent.hasClass('nested0')}`);
+        
+        if ($parent.is('article.nested0')) {
+          console.log(`🔍 ✅ STEP 6: Parent IS article.nested0, collecting preceding siblings...`);
+          
+          // Get all children of article.nested0 that come BEFORE the first article.nested1
+          const allChildren = $parent.children().toArray();
+          console.log(`🔍 ✅ STEP 7: Parent has ${allChildren.length} children total`);
+          
+          const firstNested1Index = allChildren.findIndex(child => $(child).is('article.nested1'));
+          console.log(`🔍 ✅ STEP 8: First article.nested1 is at index ${firstNested1Index}`);
+          
+          if (firstNested1Index > 0) {
+            const precedingSiblings = allChildren.slice(0, firstNested1Index);
+            console.log(`🔍 ✅ STEP 9: Found ${precedingSiblings.length} elements before first article.nested1: ${precedingSiblings.map(s => `<${s.name} class="${$(s).attr('class') || ''}">`).join(', ')}`);
+            nested0IntroContent.push(...precedingSiblings);
+          } else {
+            console.log(`🔍 ❌ STEP 9: firstNested1Index is ${firstNested1Index}, no preceding siblings to collect`);
+          }
+        } else {
+          console.log(`🔍 ❌ STEP 6: Parent is NOT article.nested0, skipping sibling collection`);
+        }
+      }
       console.log(`🔍 Collected ${sectionParentChildren.length} unique elements from ${seenParents.size} parent container(s)`);
       console.log(`🔍 ✅ Including ${articlesArray.length} article.nested1 container(s) for heading extraction`);
       
@@ -4631,12 +5581,47 @@ async function extractContentFromHtml(html) {
           contentPlaceholders.push(...missingPlaceholders);
         }
       
-      // Use article.nested1 containers FIRST (for h2 headings), then section parent's children + article navs + contentPlaceholder siblings
-      contentElements = [...articlesArray, ...sectionParentChildren, ...articleNavs, ...contentPlaceholders];
-      console.log(`🔍 ✅ Using ${contentElements.length} elements (${articlesArray.length} articles + ${sectionParentChildren.length} section content + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
+      // Use article.nested0 intro content FIRST (top-level content before nested1 articles), 
+      // then article.nested1 containers (for h2 headings + sections + shortdesc), then section content + article navs + contentPlaceholder siblings
+      // FIX v11.0.35: article.nested1 now processes section children naturally (removed skipping logic)
+      // CRITICAL: Only skip sectionParentChildren if article.nested1 elements exist AND processed sections as children
+      // For pages WITHOUT article.nested1, we MUST include sectionParentChildren or content will be missing!
+      if (articlesArray.length > 0) {
+        // Pages WITH article.nested1: sections processed as article children, don't duplicate
+        contentElements = [...nested0IntroContent, ...articlesArray, ...articleNavs, ...contentPlaceholders];
+        console.log(`🔍 ✅ Using ${contentElements.length} elements (${nested0IntroContent.length} nested0 intro + ${articlesArray.length} articles + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
+      } else {
+        // Pages WITHOUT article.nested1: must include sectionParentChildren for content
+        contentElements = [...nested0IntroContent, ...sectionParentChildren, ...articleNavs, ...contentPlaceholders];
+        console.log(`🔍 ✅ Using ${contentElements.length} elements (${nested0IntroContent.length} nested0 intro + ${sectionParentChildren.length} section content + ${articleNavs.length} navs + ${contentPlaceholders.length} placeholders)`);
+      }
     } else {
       // No sections found, use original top-level children
       contentElements = topLevelChildren;
+      
+      // CRITICAL FIX v11.0.22: Collect content from article.nested0 parent BEFORE article.nested1
+      // This handles the case where there are NO sections but article.nested0 contains intro content
+      const nested0IntroContent = [];
+      const allNested1InBody = $('.zDocsTopicPageBody article.nested1').toArray();
+      console.log(`🔍 🎯 NESTED0-FIX (NO-SECTIONS): Found ${allNested1InBody.length} article.nested1 elements in .zDocsTopicPageBody`);
+      if (allNested1InBody.length > 0) {
+        console.log(`🔍 ✅ (NO-SECTIONS) Checking for preceding content before first article.nested1...`);
+        const $firstNested1 = $(allNested1InBody[0]);
+        const $parent = $firstNested1.parent();
+        if ($parent.is('article.nested0')) {
+          console.log(`🔍 ✅ (NO-SECTIONS) article.nested1 is inside article.nested0, collecting preceding siblings...`);
+          const allChildren = $parent.children().toArray();
+          const firstNested1Index = allChildren.findIndex(child => $(child).is('article.nested1'));
+          if (firstNested1Index > 0) {
+            const precedingSiblings = allChildren.slice(0, firstNested1Index);
+            console.log(`🔍 ✅ (NO-SECTIONS) Found ${precedingSiblings.length} elements before first article.nested1: ${precedingSiblings.map(s => `<${s.name} class="${$(s).attr('class') || ''}">`).join(', ')}`);
+            nested0IntroContent.push(...precedingSiblings);
+            // Prepend intro content to contentElements
+            contentElements = [...nested0IntroContent, ...contentElements];
+            console.log(`🔍 ✅ (NO-SECTIONS) Prepended ${nested0IntroContent.length} intro blocks to contentElements (now ${contentElements.length} total)`);
+          }
+        }
+      }
       
         // FALLBACK: Check for contentPlaceholders that exist in DOM but weren't in topLevelChildren
         const allContentPlaceholdersInBody = $('.contentPlaceholder').toArray(); // Use global search since parent might be malformed
@@ -4908,6 +5893,68 @@ async function extractContentFromHtml(html) {
   // No post-processing needed - proper nesting structure handles list numbering restart
   console.log(`✅ Extraction complete: ${blocks.length} blocks`);
   
+  // FIX v11.0.71: Final cleanup - recursively remove ALL empty tables from ALL blocks
+  // Empty tables (those without children) are invalid for Notion's API
+  // They occur when enforceNestingDepthLimit strips children at depth 2+
+  function removeEmptyTablesFromBlocks(blocks) {
+    if (!Array.isArray(blocks)) return blocks;
+    
+    return blocks.map(block => {
+      if (!block || !block.type) return block;
+      
+      const blockType = block.type;
+      const contentKey = ['bulleted_list_item', 'numbered_list_item', 'to_do', 'toggle', 'quote', 'callout', 'column_list', 'column'].includes(blockType) 
+        ? blockType : null;
+      
+      if (contentKey && block[contentKey] && Array.isArray(block[contentKey].children)) {
+        const originalCount = block[contentKey].children.length;
+        
+        // Filter out tables without children
+        block[contentKey].children = block[contentKey].children.filter(
+          child => !(child && child.type === 'table' && (!child.table || !child.table.children || child.table.children.length === 0))
+        );
+        
+        const filteredCount = block[contentKey].children.length;
+        if (filteredCount < originalCount) {
+          log(`🧹 [FINAL-CLEANUP] Removed ${originalCount - filteredCount} empty table(s) from ${blockType}`);
+        }
+        
+        // Recursively clean children
+        if (block[contentKey].children.length > 0) {
+          block[contentKey].children = removeEmptyTablesFromBlocks(block[contentKey].children);
+        }
+        
+        // Remove children array if now empty
+        if (block[contentKey].children.length === 0) {
+          delete block[contentKey].children;
+        }
+      }
+      
+      return block;
+    }).filter(block => block !== null && block !== undefined);
+  }
+  
+  log(`🧹 Running final cleanup to remove empty tables from all blocks...`);
+  log(`🧹 [BEFORE-CLEANUP] blocks array has ${blocks.length} blocks`);
+  const tablesBeforeCleanup = blocks.filter(b => b && b.type === 'table');
+  log(`🧹 [BEFORE-CLEANUP] Found ${tablesBeforeCleanup.length} tables at root level`);
+  tablesBeforeCleanup.forEach((t, idx) => {
+    const rowCount = t.table?.children?.length || 0;
+    const marker = t._sn2n_marker || 'no-marker';
+    log(`🧹   [${idx}] table with marker=${marker}, rows=${rowCount}`);
+  });
+  
+  blocks = removeEmptyTablesFromBlocks(blocks);
+  
+  log(`🧹 [AFTER-CLEANUP] blocks array has ${blocks.length} blocks`);
+  const tablesAfterCleanup = blocks.filter(b => b && b.type === 'table');
+  log(`🧹 [AFTER-CLEANUP] Found ${tablesAfterCleanup.length} tables at root level`);
+  tablesAfterCleanup.forEach((t, idx) => {
+    const rowCount = t.table?.children?.length || 0;
+    const marker = t._sn2n_marker || 'no-marker';
+    log(`🧹   [${idx}] table with marker=${marker}, rows=${rowCount}`);
+  });
+  
   // CRITICAL FIX: DO NOT strip marker tokens here!
   // Marker tokens MUST remain in rich_text for dry-run orchestration to work.
   // The tokens are used by attachToParents() in w2n.cjs to find where to attach collected blocks.
@@ -4934,7 +5981,20 @@ async function extractContentFromHtml(html) {
   }
   restorePlaceholders(blocks);
   
-  return { blocks, hasVideos: hasDetectedVideos };
+  // Debug: Check for marked blocks in the returned array
+  const markedBlockCount = blocks.filter(b => !!b._sn2n_marker).length;
+  if (markedBlockCount > 0) {
+    console.log(`🔍 [RETURN-BLOCKS] Returning ${blocks.length} blocks, ${markedBlockCount} with markers:`);
+    blocks.forEach((b, idx) => {
+      if (b._sn2n_marker) {
+        console.log(`🔍   [${idx}] ${b.type}: marker="${b._sn2n_marker}"`);
+      }
+    });
+  }
+  
+  // Return fixed HTML for validation (saved before Cheerio processing)
+  // This ensures validation counts match conversion (both use fixed HTML structure)
+  return { blocks, hasVideos: hasDetectedVideos, fixedHtml: htmlForValidation };
 }
 
 /**

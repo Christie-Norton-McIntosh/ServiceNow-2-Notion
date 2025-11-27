@@ -36,6 +36,18 @@ function generateMarker(elementId = null) {
 function collectAndStripMarkers(blocks, map = {}, depth = 0, globalCollectionIndex = { counter: 0 }) {
   if (!Array.isArray(blocks)) return map;
   const indent = '  '.repeat(depth);
+  
+  // DEBUG: Log blocks at depth 0 to see what we're collecting from
+  if (depth === 0) {
+    const markedBlocksAtRoot = blocks.filter(b => b && b._sn2n_marker);
+    if (markedBlocksAtRoot.length > 0) {
+      console.log(`🔖 [COLLECT-START-DEPTH-0] About to collect markers from ${blocks.length} root blocks, ${markedBlocksAtRoot.length} have markers`);
+      markedBlocksAtRoot.forEach((b, idx) => {
+        console.log(`🔖   [${idx}] ${b.type}: marker="${b._sn2n_marker}"`);
+      });
+    }
+  }
+  
   for (let i = 0; i < blocks.length; i++) {
     const b = blocks[i];
     if (b && typeof b === "object") {
@@ -63,7 +75,14 @@ function collectAndStripMarkers(blocks, map = {}, depth = 0, globalCollectionInd
         }
         
         console.log(`${indent}🔖 collectAndStripMarkers: Found marker "${m}" at depth ${depth}, index ${i}, type: ${b.type}`);
-        console.log(`${indent}🔖   Content preview: "${contentPreview}${contentPreview.length >= 100 ? '...' : ''}"`);
+        if (contentPreview) {
+          console.log(`${indent}🔖   Content preview: "${contentPreview}"`);
+        }
+        
+        // Special tracking for problematic marker
+        if (m.includes('1wztr9')) {
+          console.log(`${indent}🔖   [TABLE-MARKER-TRACE] FOUND marker 1wztr9 at depth ${depth}, index ${i}! Block type: ${b.type}`);
+        }
         
         // Check if marker contains element ID (format: "elementId__timestamp-random")
         if (m.includes('__')) {
@@ -127,8 +146,17 @@ function collectAndStripMarkers(blocks, map = {}, depth = 0, globalCollectionInd
   
   // CRITICAL: Sort each marker's blocks by DOM order to preserve source sequence
   // This ensures blocks with the same marker are appended in the correct order
+  console.log(`🔖 [MARKER-COLLECTION-SUMMARY] Collected ${Object.keys(map).length} unique markers with total ${Object.values(map).reduce((sum, blocks) => sum + blocks.length, 0)} blocks`);
   for (const marker in map) {
     const blocks = map[marker];
+    const blockTypes = blocks.map(b => b.type).join(', ');
+    const hasTable = blocks.some(b => b.type === 'table');
+    if (hasTable) {
+      console.log(`🔖   [MARKER-SUMMARY] Marker "${marker}": ${blocks.length} block(s) [${blockTypes}] **HAS TABLE**`);
+    } else {
+      console.log(`🔖   [MARKER-SUMMARY] Marker "${marker}": ${blocks.length} block(s) [${blockTypes}]`);
+    }
+    
     if (blocks.length > 1) {
       // Check if blocks have DOM order tracking
       const hasDomOrder = blocks.every(b => typeof b._sn2n_dom_order === 'number');
@@ -160,7 +188,7 @@ function removeCollectedBlocks(blocks, depth = 0) {
     const b = blocks[i];
     if (!b || typeof b !== "object") continue;
     if (b._sn2n_collected) {
-      console.log(`${indent}🗑️   Removing block at index ${i}, type: ${b.type} [COLLECTED]`);
+      console.log(`${indent}🗑️   Removing collected block at index ${i}, type: ${b.type}`);
       blocks.splice(i, 1);
       removed++;
       continue;
