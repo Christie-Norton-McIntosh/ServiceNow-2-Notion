@@ -5,11 +5,18 @@ set -euo pipefail
 # Process in chunks with delays between pages
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SRC_DIR="$ROOT_DIR/patch/pages-to-update"
-DST_DIR="$SRC_DIR/updated-pages"
-PROBLEMATIC_DIR="$SRC_DIR/problematic-files"
-LOG_DIR="$SRC_DIR/log"
-FAILED_VALIDATION_DIR="$SRC_DIR/failed-validation"
+# Unified page state hub (see docs):
+# - INPUT:  $BASE_DIR/pages-to-update/
+# - OUTPUT: $BASE_DIR/updated-pages/
+# - LOGS:   $BASE_DIR/log/
+# - FAILED: $BASE_DIR/failed-validation/
+# - PROB:   $BASE_DIR/problematic-files/
+BASE_DIR="$ROOT_DIR/patch/pages"
+SRC_DIR="$BASE_DIR/pages-to-update"
+DST_DIR="$BASE_DIR/updated-pages"
+PROBLEMATIC_DIR="$BASE_DIR/problematic-files"
+LOG_DIR="$BASE_DIR/log"
+FAILED_VALIDATION_DIR="$BASE_DIR/failed-validation"
 mkdir -p "$LOG_DIR" "$DST_DIR" "$PROBLEMATIC_DIR"
 mkdir -p "$FAILED_VALIDATION_DIR"
 
@@ -19,6 +26,12 @@ LOG_FILE="$LOG_DIR/batch-patch-cooldown-$TS.log"
 API_URL="http://localhost:3004/api/W2N"
 HEALTH_URL_PRIMARY="http://localhost:3004/api/health"
 HEALTH_URL_ALT="http://localhost:3004/health" # legacy fallback when modular routes missing
+
+# Optional: Database used for auto-lookup by title when Page ID is missing
+# Set via environment variable LOOKUP_DATABASE_ID or pass inline before the command.
+# Example:
+#   LOOKUP_DATABASE_ID=2b7a89fe-dba5-806f-b665-fced0638c708 bash batch-patch-with-cooldown.sh
+LOOKUP_DATABASE_ID="${LOOKUP_DATABASE_ID:-}"
 
 # Cooldown settings
 PAGES_PER_CHUNK=3        # Process 3 pages
@@ -39,7 +52,7 @@ if [[ $health_ok -ne 1 ]]; then
   echo "[SERVER] Not responding — starting server..." | tee -a "$LOG_FILE"
   (
     cd "$ROOT_DIR/server" && \
-    SN2N_VERBOSE=1 SN2N_VALIDATE_OUTPUT=1 SN2N_ORPHAN_LIST_REPAIR=1 node sn2n-proxy.cjs
+    SN2N_VERBOSE=1 SN2N_VALIDATE_OUTPUT=1 SN2N_CONTENT_VALIDATION=1 SN2N_ORPHAN_LIST_REPAIR=1 node sn2n-proxy.cjs
   ) &
   SERVER_PID=$!
   echo "[SERVER] Launch PID: $SERVER_PID" | tee -a "$LOG_FILE"
@@ -61,6 +74,33 @@ if [[ $health_ok -ne 1 ]]; then
   fi
 else
   echo "[SERVER] Already healthy — reusing existing instance" | tee -a "$LOG_FILE"
+  # Ensure newest validation modes are enabled; if not, restart with flags
+  status_json=$(curl -s "http://localhost:3004/api/status" || true)
+  validate_output_enabled=$(echo "$status_json" | jq -r '.data.env.SN2N_VALIDATE_OUTPUT // "0"')
+  content_validation_enabled=$(echo "$status_json" | jq -r '.data.env.SN2N_CONTENT_VALIDATION // "0"')
+  if [[ "$validate_output_enabled" != "1" || "$content_validation_enabled" != "1" ]]; then
+    echo "[SERVER] Validation flags not enabled (SN2N_VALIDATE_OUTPUT=$validate_output_enabled, SN2N_CONTENT_VALIDATION=$content_validation_enabled) — restarting with newest validation" | tee -a "$LOG_FILE"
+    pkill -f sn2n-proxy.cjs 2>/dev/null || killall node 2>/dev/null || true
+    sleep 2
+    (
+      cd "$ROOT_DIR/server" && \
+      SN2N_VERBOSE=1 SN2N_VALIDATE_OUTPUT=1 SN2N_CONTENT_VALIDATION=1 SN2N_ORPHAN_LIST_REPAIR=1 node sn2n-proxy.cjs
+    ) &
+    SERVER_PID=$!
+    echo "[SERVER] Relaunch PID: $SERVER_PID" | tee -a "$LOG_FILE"
+    for i in $(seq 1 30); do
+      if curl -sf -m2 "$HEALTH_URL_PRIMARY" >/dev/null 2>&1 || curl -sf -m2 "$HEALTH_URL_ALT" >/dev/null 2>&1; then
+        echo "[SERVER] Healthy after ${i}s (PID $SERVER_PID)" | tee -a "$LOG_FILE"
+        break
+      fi
+      if [[ $((i % 5)) -eq 0 ]]; then
+        echo "[SERVER] Waiting for health... ${i}s elapsed" | tee -a "$LOG_FILE"
+      fi
+      sleep 1
+    done
+  else
+    echo "[SERVER] Validation flags already enabled — proceeding" | tee -a "$LOG_FILE"
+  fi
 fi
 
 echo "[INFO] Batch PATCH with cooldown" | tee -a "$LOG_FILE"
@@ -93,9 +133,54 @@ for html_file in "$SRC_DIR"/*.html; do
   page_id=$(grep -m1 "Page ID:" "$html_file" | sed -E 's/.*Page ID: ([a-f0-9-]+).*/\1/' || echo "")
   
   if [[ -z "$page_id" ]]; then
-    echo "  ⚠️  No Page ID - skipping" | tee -a "$LOG_FILE"
-    skipped=$((skipped+1))
-    continue
+    echo "  ⚠️  No Page ID found in file — attempting auto-lookup by title" | tee -a "$LOG_FILE"
+
+    # Derive title guess from filename: strip timestamp suffix and replace dashes with spaces
+    base_no_ext="${filename%.html}"
+    # Remove trailing timestamp like -2025-11-22T20-58-17
+    base_cleaned=$(echo "$base_no_ext" | sed -E 's/-20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}$//')
+    title_guess=$(echo "$base_cleaned" | tr '-' ' ')
+
+    if [[ -z "$LOOKUP_DATABASE_ID" ]]; then
+      echo "  ℹ️  LOOKUP_DATABASE_ID not set; cannot auto-lookup. Skipping file." | tee -a "$LOG_FILE"
+      skipped=$((skipped+1))
+      continue
+    fi
+
+    # Fetch database schema to find the title property name
+    db_schema=$(curl -s "http://localhost:3004/api/databases/$LOOKUP_DATABASE_ID" || true)
+    title_prop=$(echo "$db_schema" | jq -r '.data.properties | to_entries[] | select(.value.type=="title") | .key' | head -n 1)
+
+    if [[ -z "$title_prop" || "$title_prop" == "null" ]]; then
+      echo "  ⚠️  Could not determine title property for database $LOOKUP_DATABASE_ID — skipping" | tee -a "$LOG_FILE"
+      skipped=$((skipped+1))
+      continue
+    fi
+
+    # Query the database for pages where title contains the guess
+    query_json=$(jq -nc --arg prop "$title_prop" --arg guess "$title_guess" '{page_size:100, filter:{property:$prop, title:{contains:$guess}}}')
+    search_resp=$(curl -s -X POST "http://localhost:3004/api/databases/$LOOKUP_DATABASE_ID/query" -H 'Content-Type: application/json' -d "$query_json" || true)
+
+    # Prefer exact (case-insensitive) match on the joined title text; else take first result
+    match_id=$(echo "$search_resp" | jq -r --arg tp "$title_prop" --arg guess "$title_guess" '
+      (.results // [])
+      | map({id: .id, title: ((.properties[$tp].title // []) | map(.plain_text) | join(""))})
+      | .[]
+      | select((.title | ascii_downcase) == ($guess | ascii_downcase))
+      | .id' | head -n 1)
+
+    if [[ -z "$match_id" || "$match_id" == "null" ]]; then
+      match_id=$(echo "$search_resp" | jq -r '.results[0].id // empty' | head -n 1)
+    fi
+
+    if [[ -n "$match_id" ]]; then
+      page_id="$match_id"
+      echo "  🔎 Auto-lookup resolved Page ID: $page_id (title guess: '$title_guess')" | tee -a "$LOG_FILE"
+    else
+      echo "  ⚠️  Auto-lookup failed for title guess: '$title_guess' — skipping" | tee -a "$LOG_FILE"
+      skipped=$((skipped+1))
+      continue
+    fi
   fi
 
   echo "  Page ID: $page_id" | tee -a "$LOG_FILE"
