@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.81
+// @version      11.0.82
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.81";
+    window.BUILD_VERSION = "11.0.82";
 (function () {
 
   // Configuration constants and default settings
@@ -714,6 +714,221 @@
     setPropertyMappingModalInjector: setPropertyMappingModalInjector
   });
 
+  // Advanced Settings Modal - Configuration settings UI
+
+
+  /**
+   * Inject the advanced settings modal into the DOM
+   */
+  function injectAdvancedSettingsModal() {
+    if (document.getElementById("w2n-advanced-settings-modal")) return;
+
+    const config = getConfig();
+
+    const modal = document.createElement("div");
+    modal.id = "w2n-advanced-settings-modal";
+    modal.style.cssText = `
+    position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; z-index:11000;
+    background: rgba(0,0,0,0.4);
+  `;
+
+    modal.innerHTML = `
+    <div style="width:480px; max-width:95%; background:white; border-radius:8px; box-shadow:0 10px 30px rgba(0,0,0,0.2); overflow:hidden;">
+      <div style="padding:16px 20px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;">
+        <strong>⚙️ Advanced Settings</strong>
+        <button id="w2n-close-advanced-settings" style="background:none;border:none;font-size:18px;cursor:pointer">×</button>
+      </div>
+      <div style="padding:20px;">
+        <div style="margin-bottom:16px;">
+          <label style="display: flex; align-items: center; margin-bottom: 12px; font-size: 14px; cursor: pointer;">
+            <input type="checkbox" id="w2n-modal-use-martian" ${
+              config.useMartian ? "checked" : ""
+            } style="margin-right: 10px; transform: scale(1.1);">
+            <span style="flex:1;">Use Martian conversion</span>
+          </label>
+          <div style="font-size: 12px; color: #6b7280; margin-left: 24px; margin-top: -8px;">
+            Enhanced content processing for better Notion formatting
+          </div>
+        </div>
+        
+        <div style="margin-bottom:16px;">
+          <label style="display: flex; align-items: center; margin-bottom: 12px; font-size: 14px; cursor: pointer;">
+            <input type="checkbox" id="w2n-modal-direct-images" ${
+              config.directSDKImages ? "checked" : ""
+            } style="margin-right: 10px; transform: scale(1.1);">
+            <span style="flex:1;">Direct SDK image processing</span>
+          </label>
+          <div style="font-size: 12px; color: #6b7280; margin-left: 24px; margin-top: -8px;">
+            Process images directly through Notion API (faster uploads)
+          </div>
+        </div>
+        
+        <div style="margin-bottom:16px;">
+          <label style="display: flex; align-items: center; margin-bottom: 12px; font-size: 14px; cursor: pointer;">
+            <input type="checkbox" id="w2n-modal-enable-debugging" style="margin-right: 10px; transform: scale(1.1);">
+            <span style="flex:1;">Enable debugging (client & server)</span>
+          </label>
+          <div style="font-size: 12px; color: #6b7280; margin-left: 24px; margin-top: -8px;">
+            Enable detailed logging in both client (console) and server (proxy logs)
+          </div>
+        </div>
+        
+  <div style="margin-bottom:20px;">
+          <label style="display: flex; align-items: center; margin-bottom: 12px; font-size: 14px; cursor: pointer;">
+            <input type="checkbox" id="w2n-modal-duplicate-detect" ${
+              config.enableDuplicateDetection ? "checked" : ""
+            } style="margin-right: 10px; transform: scale(1.1);">
+            <span style="flex:1;">Search for duplicates</span>
+          </label>
+          <div style="font-size: 12px; color: #6b7280; margin-left: 24px; margin-top: -8px;">
+            Check for existing pages with same title before creating new ones
+          </div>
+        </div>
+        
+        <div style="display:flex; gap:10px; padding-top:16px; border-top:1px solid #eee;">
+          <button id="w2n-save-advanced-settings" style="flex:1;padding:10px;border-radius:6px;background:#10b981;color:white;border:none;cursor:pointer;font-size:14px;">
+            Save Settings
+          </button>
+          <button id="w2n-cancel-advanced-settings" style="flex:1;padding:10px;border-radius:6px;background:#6b7280;color:white;border:none;cursor:pointer;font-size:14px;">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+    document.body.appendChild(modal);
+    setupAdvancedSettingsModal(modal);
+  }
+
+  /**
+   * Setup the advanced settings modal with event listeners
+   * @param {HTMLElement} modal - The modal element
+   */
+  function setupAdvancedSettingsModal(modal) {
+    const closeBtn = modal.querySelector("#w2n-close-advanced-settings");
+    const saveBtn = modal.querySelector("#w2n-save-advanced-settings");
+    const cancelBtn = modal.querySelector("#w2n-cancel-advanced-settings");
+
+    function closeModal() {
+      if (modal.parentNode) {
+        modal.parentNode.removeChild(modal);
+      }
+    }
+
+    closeBtn.onclick = closeModal;
+    cancelBtn.onclick = closeModal;
+
+    // Click outside to close
+    modal.onclick = (e) => {
+      if (e.target === modal) {
+        closeModal();
+      }
+    };
+
+    // Populate combined debugging checkbox from both client and server settings
+    (async () => {
+      const combinedCheckbox = modal.querySelector("#w2n-modal-enable-debugging");
+      if (!combinedCheckbox) return;
+      const config = getConfig();
+      let serverVerbose = false;
+      try {
+        const resp = await fetch("/api/logging");
+        if (resp.ok) {
+          const body = await resp.json();
+          serverVerbose = !!(body && body.verbose);
+          // Treat extraDebug as the indicator that a deep debug session is active
+          if (body && typeof body.extraDebug !== "undefined") {
+            combinedCheckbox.checked = !!body.extraDebug;
+          }
+        }
+      } catch (e) {
+        debug("Could not fetch /api/logging for combined checkbox:", e);
+      }
+      if (typeof combinedCheckbox.checked === "undefined") {
+        combinedCheckbox.checked = config.debugMode && serverVerbose;
+      }
+      debug("Populated combined debugging checkbox:", combinedCheckbox.checked);
+    })();
+
+    saveBtn.onclick = () => {
+      // Get values from modal checkboxes
+      const useMartian = modal.querySelector("#w2n-modal-use-martian").checked;
+      const directSDKImages = modal.querySelector(
+        "#w2n-modal-direct-images"
+      ).checked;
+      const enableDuplicateDetection = modal.querySelector(
+        "#w2n-modal-duplicate-detect"
+      ).checked;
+
+      // Combined debugging checkbox
+      const enableDebugging = modal.querySelector(
+        "#w2n-modal-enable-debugging"
+      ).checked;
+
+      // Update config
+      const config = getConfig();
+      config.useMartian = useMartian;
+      config.directSDKImages = directSDKImages;
+      config.debugMode = enableDebugging;
+      config.enableDuplicateDetection = enableDuplicateDetection;
+
+      // Save to storage
+      try {
+        if (typeof GM_setValue !== "undefined") {
+          GM_setValue("notionConfig", config);
+        }
+
+        // Show toast notification
+        if (typeof GM_notification !== "undefined") {
+          GM_notification({
+            text: "Settings saved successfully",
+            title: "ServiceNow",
+            timeout: 2000,
+          });
+        }
+
+        debug("⚙️ Settings saved:", config);
+
+        // Update visible UI immediately so user sees the selected database/name
+        try {
+          if (typeof window.updateUIFromConfig === "function") {
+            window.updateUIFromConfig();
+          }
+        } catch (e) {
+          debug("Failed updating UI after settings save:", e);
+        }
+        // Update server runtime logging setting
+        (async () => {
+          try {
+            await fetch("/api/logging", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                verbose: !!enableDebugging,
+                extraDebug: !!enableDebugging,
+              }),
+            });
+            debug("Updated server logging flags:", enableDebugging);
+          } catch (err) {
+            debug("Failed to update server logging setting:", err);
+          }
+        })();
+      } catch (error) {
+        if (typeof GM_notification !== "undefined") {
+          GM_notification({
+            text: "Failed to save settings",
+            title: "ServiceNow",
+            timeout: 2000,
+          });
+        }
+        debug("Failed to save settings:", error);
+      }
+
+      closeModal();
+    };
+  }
+
   // Proxy API Communication - Direct communication with M2N proxy server
 
 
@@ -737,10 +952,11 @@
    * @param {Object} data - Request data for POST/PUT requests
    * @returns {Promise<Object>} API response
    */
-  async function apiCall(method, endpoint, data = null) {
+  async function apiCall(method, endpoint, data = null, options = {}) {
     return new Promise((resolve, reject) => {
       const config = getConfig();
       const url = config.proxyUrl + endpoint;
+      const timeoutMs = typeof options.timeoutMs === 'number' && options.timeoutMs > 0 ? options.timeoutMs : 480000; // default 8m
 
       // DEBUG: Log data size before stringification
       if (data && (data.content || data.contentHtml)) {
@@ -752,7 +968,7 @@
 
       if (typeof GM_xmlhttpRequest === "undefined") {
         // Fallback to fetch if GM_xmlhttpRequest is not available
-        fallbackFetchCall(method, url, data).then(resolve).catch(reject);
+        fallbackFetchCall(method, url, data, { timeoutMs }).then(resolve).catch(reject);
         return;
       }
 
@@ -775,7 +991,8 @@
         }
       }
       
-      console.log(`🌐 apiCall - Sending ${method} request to ${url} with timeout: 300s`);
+      const timeoutSec = Math.round(timeoutMs / 1000);
+      console.log(`🌐 apiCall - Sending ${method} request to ${url} with timeout: ${timeoutSec}s`);
 
       GM_xmlhttpRequest({
         method: method,
@@ -784,7 +1001,7 @@
           "Content-Type": "application/json",
         },
         data: stringifiedData,
-        timeout: 300000, // 5 minutes (300 seconds) - matches server-side timeout
+        timeout: timeoutMs, // adaptive timeout (v11.0.6+)
         onload: function (response) {
           try {
             const result = JSON.parse(response.responseText);
@@ -825,8 +1042,9 @@
           reject(new Error(`API call failed: ${errorMsg}`));
         },
         ontimeout: function () {
-          debug("❌ API call timed out after 5 minutes");
-          reject(new Error(`Request timed out after 5 minutes. The page may be too large or processing is taking too long. Try a smaller page or contact support.`));
+          const sec = Math.round(timeoutMs / 1000);
+          debug(`❌ API call timed out after ${sec} seconds`);
+          reject(new Error(`Request timed out after ${sec} seconds. The page may be too large or processing is taking too long. Try a smaller page or contact support.`));
         },
       });
     });
@@ -839,11 +1057,12 @@
    * @param {Object} data - Request data
    * @returns {Promise<Object>} API response
    */
-  async function fallbackFetchCall(method, url, data = null) {
+  async function fallbackFetchCall(method, url, data = null, options = {}) {
     try {
       // Create AbortController for timeout handling
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
+      const timeoutMs = typeof options.timeoutMs === 'number' && options.timeoutMs > 0 ? options.timeoutMs : 480000; // default 8m
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
       const options = {
         method: method,
@@ -868,8 +1087,9 @@
       return result;
     } catch (error) {
       if (error.name === 'AbortError') {
-        debug("❌ Fallback API call timed out after 5 minutes");
-        throw new Error(`Request timed out after 5 minutes. The page may be too large or processing is taking too long. Try a smaller page or contact support.`);
+        const sec = Math.round((options.timeoutMs || 480000) / 1000);
+        debug(`❌ Fallback API call timed out after ${sec} seconds`);
+        throw new Error(`Request timed out after ${sec} seconds. The page may be too large or processing is taking too long. Try a smaller page or contact support.`);
       }
       debug("❌ Fallback API call failed:", error);
       throw error;
@@ -1165,14 +1385,52 @@
     const { overlayModule } = await Promise.resolve().then(function () { return overlayProgress; });
     
     try {
+      // 1) Preflight: dryRun to estimate block count and choose timeout adaptively
+      overlayModule.setMessage("Estimating page size...");
+
+      let adaptiveTimeoutMs = 180000; // default 3m for small pages
+      try {
+        const dryRunPayload = { ...processedData, dryRun: true };
+        const dryRunStart = Date.now();
+        const dryRunResult = await apiCall("POST", "/api/W2N", dryRunPayload, { timeoutMs: 180000 });
+        const dryRunElapsed = ((Date.now() - dryRunStart) / 1000).toFixed(1);
+
+        // Normalize children array from possible shapes
+        const children = dryRunResult?.children || dryRunResult?.data?.children || [];
+        // Count blocks and tables in a shallow pass (children only)
+        const blockCount = Array.isArray(children) ? children.length : 0;
+        let tableCount = 0;
+        if (Array.isArray(children)) {
+          for (const b of children) {
+            if (b && (b.type === 'table' || b.table)) tableCount++;
+          }
+        }
+
+        // Heuristic: if children include nested arrays for initial create, also scan first-level children of list/table blocks
+        // without deep recursion to keep it fast.
+        // Determine timeout tiers based on thresholds (match batch PATCH logic)
+        if (blockCount > 500 || tableCount > 50) {
+          adaptiveTimeoutMs = 480000; // 8m
+        } else if (blockCount > 300 || tableCount > 30) {
+          adaptiveTimeoutMs = 300000; // 5m
+        } else {
+          adaptiveTimeoutMs = 180000; // 3m
+        }
+
+        console.log(`🧮 Dry run estimated blocks=${blockCount}, tables=${tableCount}, elapsed=${dryRunElapsed}s → timeout=${Math.round(adaptiveTimeoutMs/1000)}s`);
+      } catch (preErr) {
+        // If dryRun fails for any reason, fall back to max timeout for safety on heavy pages
+        console.warn("⚠️ Dry run failed; falling back to 480s timeout:", preErr?.message || preErr);
+        adaptiveTimeoutMs = 480000;
+      }
+
+      // 2) Actual upload
       overlayModule.setMessage("Converting HTML to Notion blocks...");
-      
-      // DEBUG: Log right before API call
       console.log('🚀 PROXY-API.JS - About to call apiCall with processedData');
       console.log('🚀 PROXY-API.JS - processedData.content length:', processedData.content?.length);
       console.log('🚀 PROXY-API.JS - processedData.contentHtml length:', processedData.contentHtml?.length);
       
-      const result = await apiCall("POST", "/api/W2N", processedData);
+      const result = await apiCall("POST", "/api/W2N", processedData, { timeoutMs: adaptiveTimeoutMs });
 
       debug("Raw proxy response:", JSON.stringify(result, null, 2));
 
@@ -1204,1385 +1462,6 @@
       debug("❌ Failed to send content to proxy:", error);
       throw error;
     }
-  }
-
-  /**
-   * Create a placeholder Notion page for a failed extraction
-   * This reserves the spot in the sequence and can be updated later
-   * 
-   * @param {Object} failedPageInfo - Information about the failed page
-   * @param {string} failedPageInfo.title - Page title
-   * @param {string} failedPageInfo.url - ServiceNow URL
-   * @param {string} failedPageInfo.reason - Failure reason
-   * @param {number} failedPageInfo.pageNumber - Page number in sequence
-   * @param {string} failedPageInfo.databaseId - Notion database ID
-   * @returns {Promise<Object>} Result with page ID and URL
-   */
-  async function createPlaceholderPage(failedPageInfo) {
-    debug(`📝 Creating placeholder page for: ${failedPageInfo.title}`);
-    
-    const { overlayModule } = await Promise.resolve().then(function () { return overlayProgress; });
-    
-    try {
-      overlayModule.setMessage(`Creating placeholder for failed page...`);
-      
-      // Create minimal HTML content with error information
-      const placeholderHtml = `
-      <div class="placeholder-content">
-        <div class="callout callout-warning">
-          <p><strong>⚠️ PLACEHOLDER - Extraction Failed</strong></p>
-          <p>This page failed to extract during AutoExtract and needs to be re-processed.</p>
-        </div>
-        <div class="info-section">
-          <h3>Failed Page Information</h3>
-          <p><strong>Original Title:</strong> ${failedPageInfo.title}</p>
-          <p><strong>ServiceNow URL:</strong> <a href="${failedPageInfo.url}">${failedPageInfo.url}</a></p>
-          <p><strong>Sequence Number:</strong> ${failedPageInfo.pageNumber}</p>
-          <p><strong>Failure Reason:</strong> ${failedPageInfo.reason}</p>
-          <p><strong>Timestamp:</strong> ${failedPageInfo.timestamp || new Date().toISOString()}</p>
-        </div>
-        <div class="callout callout-info">
-          <p><strong>ℹ️ Next Steps</strong></p>
-          <p>This placeholder will be automatically updated when the page is re-extracted from the failed pages queue.</p>
-          <p>You can also manually extract this page by visiting the ServiceNow URL above and using the ServiceNow-2-Notion extension.</p>
-        </div>
-      </div>
-    `;
-      
-      // Prepare placeholder page data
-      const placeholderData = {
-        title: `⚠️ PLACEHOLDER: ${failedPageInfo.title}`,
-        databaseId: failedPageInfo.databaseId,
-        contentHtml: placeholderHtml,
-        url: failedPageInfo.url,
-        properties: {
-          "Validation": {
-            rich_text: [{
-              type: "text",
-              text: { 
-                content: `❌ PLACEHOLDER - Extraction Failed\n\nReason: ${failedPageInfo.reason}\n\nThis page needs to be re-extracted. It failed during AutoExtract at position ${failedPageInfo.pageNumber}.`
-              }
-            }]
-          }
-        }
-      };
-      
-      debug(`📤 Sending placeholder page data to proxy...`);
-      const result = await apiCall("POST", "/api/W2N", placeholderData);
-      
-      if (result && result.success) {
-        const pageId = result.data?.page?.id || result.page?.id;
-        let pageUrl = result.data?.pageUrl || result.pageUrl;
-        
-        if (!pageUrl && pageId) {
-          pageUrl = `https://www.notion.so/${pageId.replace(/-/g, "")}`;
-        }
-        
-        debug(`✅ Placeholder page created: ${pageUrl}`);
-        overlayModule.setMessage(`✓ Placeholder created for failed page`);
-        
-        return {
-          success: true,
-          pageId: pageId,
-          pageUrl: pageUrl,
-          isPlaceholder: true
-        };
-      }
-      
-      throw new Error(result?.error || "Failed to create placeholder page");
-      
-    } catch (error) {
-      debug(`⚠️ Failed to create placeholder page (non-fatal):`, error);
-      // Don't throw - placeholder creation is optional
-      // Return null so caller knows it failed but can continue
-      return {
-        success: false,
-        error: error.message,
-        isPlaceholder: true
-      };
-    }
-  }
-
-  /**
-   * PATCH update a Notion page (typically a placeholder) with real content
-   * Deletes all existing blocks and replaces with new content
-   * 
-   * @param {string} pageId - Notion page ID (with or without hyphens)
-   * @param {string} title - New page title
-   * @param {string} contentHtml - HTML content to convert and upload
-   * @param {string} url - ServiceNow URL
-   * @returns {Promise<Object>} Result with success status
-   */
-  async function patchNotionPage(pageId, title, contentHtml, url) {
-    debug(`📝 PATCH updating Notion page: ${pageId}`);
-    debug(`   Title: ${title}`);
-    debug(`   URL: ${url}`);
-    
-    const { overlayModule } = await Promise.resolve().then(function () { return overlayProgress; });
-    
-    try {
-      overlayModule.setMessage(`Updating page in Notion...`);
-      
-      // Normalize page ID (remove hyphens if present, backend will handle both formats)
-      const normalizedPageId = pageId.replace(/-/g, '');
-      
-      // Prepare PATCH data
-      const patchData = {
-        title: title,
-        contentHtml: contentHtml,
-        url: url
-      };
-      
-      debug(`📤 Sending PATCH request to /api/W2N/${normalizedPageId}...`);
-      
-      // PATCH operations use the default 5-minute timeout from apiCall
-      const result = await apiCall("PATCH", `/api/W2N/${normalizedPageId}`, patchData);
-      
-      debug(`📥 PATCH response:`, JSON.stringify(result, null, 2));
-      
-      if (result && result.success) {
-        debug(`✅ Page updated successfully`);
-        overlayModule.setMessage(`✓ Page updated in Notion!`);
-        
-        return {
-          success: true,
-          pageId: normalizedPageId,
-          data: result.data
-        };
-      }
-      
-      throw new Error(result?.error || result?.message || "PATCH update failed");
-      
-    } catch (error) {
-      debug(`❌ Failed to PATCH update page:`, error);
-      overlayModule.error({
-        message: `PATCH update failed: ${error.message}`
-      });
-      throw error;
-    }
-  }
-
-  var proxyApi = /*#__PURE__*/Object.freeze({
-    __proto__: null,
-    apiCall: apiCall,
-    checkProxyHealth: checkProxyHealth,
-    createPlaceholderPage: createPlaceholderPage,
-    fetchDatabaseSchema: fetchDatabaseSchema,
-    fetchDatabases: fetchDatabases,
-    getDefaultUnsplashImages: getDefaultUnsplashImages,
-    patchNotionPage: patchNotionPage,
-    pingProxy: pingProxy,
-    queryDatabase: queryDatabase,
-    searchUnsplashImages: searchUnsplashImages,
-    sendProcessedContentToProxy: sendProcessedContentToProxy
-  });
-
-  // Database API - Notion database operations and property mapping
-
-
-  /**
-   * Fetch database from cache or API
-   * @param {string} databaseId - The database ID to fetch
-   * @returns {Promise<Object>} Database object
-   */
-  async function getDatabase(databaseId) {
-    if (!databaseId) {
-      throw new Error("Database ID is required");
-    }
-
-    debug(`🔍 Getting database: ${databaseId}`);
-
-    // Check cache first
-    const cached = await getCachedDatabase(databaseId);
-    if (cached) {
-      debug("✅ Using cached database schema");
-      debug(
-        "📋 Cached properties:",
-        cached.properties ? Object.keys(cached.properties) : "No properties"
-      );
-      return cached;
-    }
-
-    // Fetch from API
-    try {
-      const database = await fetchDatabaseSchema(databaseId);
-
-      // Cache the result
-      await cacheDatabase(databaseId, database);
-
-      return database;
-    } catch (error) {
-      debug("❌ Failed to get database:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get cached database from storage
-   * @param {string} databaseId - Database ID
-   * @returns {Promise<Object|null>} Cached database or null
-   */
-  async function getCachedDatabase(databaseId) {
-    return new Promise((resolve) => {
-      const cacheKey = `database_${databaseId}`;
-
-      if (typeof GM_getValue === "function") {
-        try {
-          const cached = GM_getValue(cacheKey, null);
-          if (cached) {
-            const data = JSON.parse(cached);
-            // Check if cache is not older than 1 hour
-            if (Date.now() - data.timestamp < 3600000) {
-              resolve(data.database);
-              return;
-            }
-          }
-        } catch (e) {
-          debug("❌ Failed to parse cached database:", e);
-        }
-      }
-
-      resolve(null);
-    });
-  }
-
-  /**
-   * Cache database to storage
-   * @param {string} databaseId - Database ID
-   * @param {Object} database - Database object to cache
-   */
-  async function cacheDatabase(databaseId, database) {
-    if (typeof GM_setValue === "function") {
-      try {
-        const cacheKey = `database_${databaseId}`;
-        const cacheData = {
-          database: database,
-          timestamp: Date.now(),
-        };
-        GM_setValue(cacheKey, JSON.stringify(cacheData));
-        debug("✅ Database cached successfully");
-      } catch (e) {
-        debug("❌ Failed to cache database:", e);
-      }
-    }
-  }
-
-  /**
-   * Clear cached database schema
-   * @param {string} databaseId - Database ID
-   */
-  function clearDatabaseCache(databaseId) {
-    if (typeof GM_setValue === "function" && databaseId) {
-      try {
-        const cacheKey = `database_${databaseId}`;
-        GM_setValue(cacheKey, null);
-        debug(`🗑️ Cleared database cache for: ${databaseId}`);
-      } catch (e) {
-        debug("❌ Failed to clear database cache:", e);
-      }
-    }
-  }
-
-  /**
-   * Force refresh database schema (bypass cache)
-   * @param {string} databaseId - Database ID
-   * @returns {Promise<Object>} Fresh database object
-   */
-  async function refreshDatabase(databaseId) {
-    if (!databaseId) {
-      throw new Error("Database ID is required");
-    }
-
-    debug(`🔄 Force refreshing database: ${databaseId}`);
-
-    // Clear cache first
-    clearDatabaseCache(databaseId);
-
-    // Fetch fresh from API
-    try {
-      const database = await fetchDatabaseSchema(databaseId);
-
-      // Cache the fresh result
-      await cacheDatabase(databaseId, database);
-
-      debug("✅ Database schema refreshed successfully");
-      return database;
-    } catch (error) {
-      debug("❌ Failed to refresh database:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get all available databases with caching
-   * @param {Object} options - Query options
-   * @returns {Promise<Array>} Array of databases
-   */
-  async function getAllDatabases(options = {}) {
-    debug("📊 Getting all databases");
-
-    try {
-      const databases = await fetchDatabases(options);
-
-      // Filter out databases without required permissions
-      const accessibleDatabases = databases.filter((db) => {
-        return db && db.id && db.title && db.title.length > 0;
-      });
-
-      debug(`✅ Retrieved ${accessibleDatabases.length} accessible databases`);
-      return accessibleDatabases;
-    } catch (error) {
-      debug("❌ Failed to get databases:", error);
-      return [];
-    }
-  }
-
-  /**
-   * Get property mappings for a database
-   * @param {string} databaseId - Database ID
-   * @param {Object} options - Optional parameters
-   * @param {Object} options.database - Database schema (optional, for creating defaults)
-   * @param {Object} options.extractedData - Extracted page data (optional, for creating defaults)
-   * @returns {Promise<Object>} Property mappings
-   */
-  async function getPropertyMappings(databaseId, options = {}) {
-    const mappingKey = `w2n_property_mappings_${databaseId}`;
-
-    return new Promise(async (resolve) => {
-      if (typeof GM_getValue === "function") {
-        try {
-          const saved = GM_getValue(mappingKey, "{}");
-          debug(`🔍 Loading mappings with key: ${mappingKey}`);
-          debug(`🔍 Raw saved value: ${saved}`);
-          const mappings = JSON.parse(saved);
-          const mappingCount = Object.keys(mappings).length;
-          
-          // If no mappings exist and we have database schema, create defaults
-          if (mappingCount === 0 && options.database) {
-            debug("🎯 No mappings found - creating default property mappings");
-            
-            // Use sample extracted data if not provided
-            const sampleData = options.extractedData || {
-              title: "Sample Page Title",
-              url: "https://example.com/page",
-              source: "ServiceNow",
-              category: "Documentation",
-              section: "User Guide",
-              version: "1.0",
-              updated: new Date().toISOString(),
-              author: "System",
-              hasVideos: false,
-              hasImages: false,
-            };
-            
-            const defaultMappings = createDefaultMappings(options.database, sampleData);
-            
-            if (Object.keys(defaultMappings).length > 0) {
-              debug(`✅ Created ${Object.keys(defaultMappings).length} default mappings:`, defaultMappings);
-              
-              // Save the default mappings for future use
-              await savePropertyMappings$1(databaseId, defaultMappings);
-              resolve(defaultMappings);
-              return;
-            }
-          }
-          
-          // Auto-update: Check if Video/Image mappings are missing and database has these properties
-          if (mappingCount > 0 && options.database) {
-            const dbProps = options.database.properties || {};
-            let needsUpdate = false;
-            
-            // Check if database has Video or Image properties but mappings don't include them
-            const hasVideoProperty = Object.keys(dbProps).some(prop => 
-              prop.toLowerCase() === 'video' || prop.toLowerCase() === 'hasvideo' || prop.toLowerCase() === 'hasvideos'
-            );
-            const hasImageProperty = Object.keys(dbProps).some(prop => 
-              prop.toLowerCase() === 'image' || prop.toLowerCase() === 'hasimage' || prop.toLowerCase() === 'hasimages'
-            );
-            
-            const hasVideoMapping = Object.values(mappings).includes('hasVideos');
-            const hasImageMapping = Object.values(mappings).includes('hasImages');
-            
-            if ((hasVideoProperty && !hasVideoMapping) || (hasImageProperty && !hasImageMapping)) {
-              debug(`🔄 Auto-updating mappings to add missing Video/Image fields...`);
-              
-              // Find the actual property names in the database
-              Object.entries(dbProps).forEach(([propName, propConfig]) => {
-                const propLower = propName.toLowerCase();
-                
-                // Add Video mapping if missing
-                if (!hasVideoMapping && (propLower === 'video' || propLower === 'hasvideo' || propLower === 'hasvideos')) {
-                  mappings[propName] = 'hasVideos';
-                  debug(`  ✅ Added Video mapping: "${propName}" <- "hasVideos"`);
-                  needsUpdate = true;
-                }
-                
-                // Add Image mapping if missing
-                if (!hasImageMapping && (propLower === 'image' || propLower === 'hasimage' || propLower === 'hasimages')) {
-                  mappings[propName] = 'hasImages';
-                  debug(`  ✅ Added Image mapping: "${propName}" <- "hasImages"`);
-                  needsUpdate = true;
-                }
-              });
-              
-              if (needsUpdate) {
-                await savePropertyMappings$1(databaseId, mappings);
-                debug(`💾 Updated mappings saved`);
-              }
-            }
-          }
-          
-          debug(
-            `✅ Retrieved property mappings (${mappingCount} mappings):`,
-            mappings
-          );
-          resolve(mappings);
-        } catch (e) {
-          debug("❌ Failed to parse property mappings:", e);
-          resolve({});
-        }
-      } else {
-        debug("⚠️ GM_getValue not available");
-        resolve({});
-      }
-    });
-  }
-
-  /**
-   * Save property mappings for a database
-   * @param {string} databaseId - Database ID
-   * @param {Object} mappings - Property mappings to save
-   */
-  async function savePropertyMappings$1(databaseId, mappings) {
-    const mappingKey = `w2n_property_mappings_${databaseId}`;
-
-    return new Promise((resolve, reject) => {
-      if (typeof GM_setValue === "function") {
-        try {
-          const jsonStr = JSON.stringify(mappings);
-          debug(`💾 Saving mappings with key: ${mappingKey}`);
-          debug(
-            `💾 Mappings to save (${Object.keys(mappings).length} mappings):`,
-            mappings
-          );
-          GM_setValue(mappingKey, jsonStr);
-          debug("✅ Property mappings saved successfully");
-          resolve();
-        } catch (e) {
-          debug("❌ Failed to save property mappings:", e);
-          reject(e);
-        }
-      } else {
-        debug("⚠️ GM_setValue not available, mappings not saved");
-        resolve();
-      }
-    });
-  }
-
-  /**
-   * Apply property mappings to extracted data
-   * @param {Object} extractedData - Data extracted from the page
-   * @param {Object} database - Database schema
-   * @param {Object} mappings - Property mappings
-   * @returns {Object} Mapped properties for Notion page
-   */
-  function applyPropertyMappings(extractedData, database, mappings) {
-    debug("🔧 Applying property mappings");
-    debug(`📊 extractedData keys: ${Object.keys(extractedData).join(', ')}`);
-    debug(`🖼️ hasImages value in extractedData: ${extractedData.hasImages}`);
-    debug(`📹 hasVideos value in extractedData: ${extractedData.hasVideos}`);
-    debug(`🗺️ Mappings object: ${JSON.stringify(mappings, null, 2)}`);
-    debug(`🗃️ Database properties: ${Object.keys(database.properties || {}).join(', ')}`);
-
-    const properties = {};
-    const dbProperties = database.properties || {};
-
-    // Apply each mapping
-    Object.entries(mappings).forEach(([notionProperty, sourceField]) => {
-      debug(`🔄 Processing mapping: "${notionProperty}" <- "${sourceField}"`);
-      if (!sourceField || !dbProperties[notionProperty]) {
-        if (!sourceField) debug(`  ⏭️ Skipped: no source field`);
-        if (!dbProperties[notionProperty]) debug(`  ⏭️ Skipped: property "${notionProperty}" not in database`);
-        return;
-      }
-
-      const propConfig = dbProperties[notionProperty];
-      const sourceValue = getNestedValue(extractedData, sourceField);
-      
-      // Debug image/video mappings
-      if (sourceField === 'hasImages' || sourceField === 'hasVideos') {
-        debug(`🔍 Mapping ${notionProperty} from ${sourceField}: ${sourceValue} (type: ${typeof sourceValue})`);
-      }
-
-      if (
-        sourceValue !== undefined &&
-        sourceValue !== null &&
-        sourceValue !== ""
-      ) {
-        const mappedValue = mapValueToNotionProperty(sourceValue, propConfig);
-        if (mappedValue !== null) {
-          properties[notionProperty] = mappedValue;
-          // Debug successful mappings
-          if (sourceField === 'hasImages' || sourceField === 'hasVideos') {
-            debug(`✅ Successfully mapped ${notionProperty}: ${JSON.stringify(mappedValue)}`);
-          }
-        }
-      }
-    });
-
-    debug(`✅ Applied ${Object.keys(properties).length} property mappings`);
-    return properties;
-  }
-
-  /**
-   * Get nested value from object using dot notation
-   * @param {Object} obj - Object to search
-   * @param {string} path - Dot-separated path
-   * @returns {*} Value at path or undefined
-   */
-  function getNestedValue(obj, path) {
-    if (!path || !obj) return undefined;
-
-    return path.split(".").reduce((current, key) => {
-      return current && current[key] !== undefined ? current[key] : undefined;
-    }, obj);
-  }
-
-  /**
-   * Map a value to appropriate Notion property format
-   * @param {*} value - Source value
-   * @param {Object} propertyConfig - Notion property configuration
-   * @returns {Object|null} Notion property value or null
-   */
-  function mapValueToNotionProperty(value, propertyConfig) {
-    if (!propertyConfig || value === undefined || value === null) {
-      return null;
-    }
-
-    const type = propertyConfig.type;
-    const stringValue = String(value).trim();
-
-    if (!stringValue) return null;
-
-    switch (type) {
-      case "title":
-        return {
-          title: [
-            {
-              type: "text",
-              text: { content: stringValue.slice(0, 2000) }, // Notion title limit
-            },
-          ],
-        };
-
-      case "rich_text":
-        return {
-          rich_text: [
-            {
-              type: "text",
-              text: { content: stringValue.slice(0, 2000) },
-            },
-          ],
-        };
-
-      case "number":
-        const num = parseFloat(stringValue);
-        return isNaN(num) ? null : { number: num };
-
-      case "select":
-        const options = propertyConfig.select?.options || [];
-        const matchingOption = options.find(
-          (opt) => opt.name.toLowerCase() === stringValue.toLowerCase()
-        );
-        return matchingOption ? { select: { name: matchingOption.name } } : null;
-
-      case "multi_select":
-        const multiOptions = propertyConfig.multi_select?.options || [];
-        const values = stringValue.split(",").map((v) => v.trim());
-        const matchingOptions = values
-          .map((v) =>
-            multiOptions.find((opt) => opt.name.toLowerCase() === v.toLowerCase())
-          )
-          .filter(Boolean);
-        return matchingOptions.length > 0
-          ? {
-              multi_select: matchingOptions.map((opt) => ({ name: opt.name })),
-            }
-          : null;
-
-      case "date":
-        try {
-          const date = new Date(stringValue);
-          if (isNaN(date.getTime())) return null;
-          return {
-            date: { start: date.toISOString().split("T")[0] },
-          };
-        } catch (e) {
-          return null;
-        }
-
-      case "checkbox":
-        // Handle actual boolean values directly
-        if (typeof value === "boolean") {
-          return { checkbox: value };
-        }
-        // Handle string representations
-        const boolValue = stringValue.toLowerCase();
-        return {
-          checkbox:
-            boolValue === "true" || boolValue === "yes" || boolValue === "1",
-        };
-
-      case "url":
-        try {
-          new URL(stringValue);
-          return { url: stringValue };
-        } catch (e) {
-          return null;
-        }
-
-      case "email":
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        return emailRegex.test(stringValue) ? { email: stringValue } : null;
-
-      case "phone_number":
-        return { phone_number: stringValue };
-
-      case "people":
-        // This would need user ID mapping, which is complex
-        return null;
-
-      case "relation":
-        // This would need related page mapping, which is complex
-        return null;
-
-      default:
-        debug(`⚠️ Unsupported property type: ${type}`);
-        return null;
-    }
-  }
-
-  /**
-   * Create default property mappings based on common field names
-   * @param {Object} database - Database schema
-   * @param {Object} extractedData - Extracted data to map from
-   * @returns {Object} Suggested property mappings
-   */
-  function createDefaultMappings(database, extractedData) {
-    debug("🎯 Creating default property mappings");
-
-    const mappings = {};
-    const dbProperties = database.properties || {};
-    const dataFields = Object.keys(extractedData);
-
-    // Common mapping patterns
-    const mappingPatterns = {
-      // Title mappings
-      title: ["title", "name", "subject", "heading", "pageTitle"],
-      // Text content mappings
-      description: ["description", "summary", "content", "body"],
-      // URL mappings
-      url: ["url", "link", "pageUrl", "sourceUrl"],
-      pageurl: ["url", "link", "pageUrl", "sourceUrl"],
-      // Date mappings
-      created: ["created", "createdAt", "dateCreated", "timestamp"],
-      updated: ["updated", "updatedAt", "dateUpdated", "lastModified"],
-      // Author mappings
-      author: ["author", "createdBy", "user", "assignee"],
-      // Status mappings
-      status: ["status", "state", "condition"],
-      // Priority mappings
-      priority: ["priority", "importance", "urgency"],
-      // Media/content type mappings
-      video: ["video", "hasVideos", "hasVideo", "videos"],
-      hasvideo: ["video", "hasVideos", "hasVideo", "videos"],
-      hasvideos: ["video", "hasVideos", "hasVideo", "videos"],
-      image: ["image", "hasImages", "hasImage", "images"],
-      hasimage: ["image", "hasImages", "hasImage", "images"],
-      hasimages: ["image", "hasImages", "hasImage", "images"],
-    };
-
-    // Try to match database properties with extracted data
-    Object.entries(dbProperties).forEach(([propName, propConfig]) => {
-      const propLower = propName.toLowerCase();
-
-      // Check if there's a direct match
-      const directMatch = dataFields.find(
-        (field) => field.toLowerCase() === propLower
-      );
-
-      if (directMatch) {
-        mappings[propName] = directMatch;
-        return;
-      }
-
-      // Check pattern matches
-      for (const [pattern, candidates] of Object.entries(mappingPatterns)) {
-        if (candidates.some((candidate) => propLower.includes(candidate))) {
-          const match = dataFields.find((field) =>
-            candidates.some((candidate) =>
-              field.toLowerCase().includes(candidate)
-            )
-          );
-          if (match) {
-            mappings[propName] = match;
-            break;
-          }
-        }
-      }
-    });
-
-    debug(`✅ Created ${Object.keys(mappings).length} default mappings`);
-    return mappings;
-  }
-
-  // Property Mapping Modal - Dynamic property mapping system
-
-
-  /**
-   * Inject the property mapping modal into the DOM
-   */
-  function injectPropertyMappingModal() {
-    if (document.getElementById("w2n-property-mapping-modal")) return;
-
-    const modal = document.createElement("div");
-    modal.id = "w2n-property-mapping-modal";
-    modal.style.cssText = `
-    position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; z-index:11000;
-    background: rgba(0,0,0,0.4);
-  `;
-
-    modal.innerHTML = `
-    <div style="width:600px; max-width:95%; background:white; border-radius:8px; box-shadow:0 10px 30px rgba(0,0,0,0.2); overflow:hidden;">
-      <div style="padding:16px 20px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;">
-        <strong>🔗 Property Mapping</strong>
-        <div style="display:flex; align-items:center; gap:10px;">
-          <button id="w2n-refresh-property-mapping" title="Refresh database schema" style="background:#3b82f6;color:white;border:none;border-radius:4px;padding:4px 8px;font-size:12px;cursor:pointer;">
-            🔄 Refresh
-          </button>
-          <button id="w2n-close-property-mapping" style="background:none;border:none;font-size:18px;cursor:pointer">×</button>
-        </div>
-      </div>
-      <div style="padding:20px;">
-        <div style="margin-bottom:16px; font-size:14px; color:#6b7280;">
-          Map content from this page to database properties in: <strong id="w2n-mapping-db-name">Selected Database</strong>
-        </div>
-        
-        <div id="w2n-property-mappings" style="margin-bottom:20px; max-height:300px; overflow-y:auto;">
-          <!-- Property mappings will be populated here -->
-        </div>
-        
-        <div style="display:flex; gap:10px; padding-top:16px; border-top:1px solid #eee;">
-          <button id="w2n-save-property-mapping" style="flex:1;padding:10px;border-radius:6px;background:#10b981;color:white;border:none;cursor:pointer;font-size:14px;">
-            Save Mapping
-          </button>
-          <button id="w2n-reset-property-mapping" style="padding:10px 16px;border-radius:6px;background:#ef4444;color:white;border:none;cursor:pointer;font-size:14px;">
-            Reset
-          </button>
-          <button id="w2n-cancel-property-mapping" style="flex:1;padding:10px;border-radius:6px;background:#6b7280;color:white;border:none;cursor:pointer;font-size:14px;">
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
-  `;
-
-    document.body.appendChild(modal);
-    setupPropertyMappingModal(modal);
-  }
-
-  /**
-   * Setup the property mapping modal with event listeners and functionality
-   * @param {HTMLElement} modal - The modal element
-   */
-  function setupPropertyMappingModal(modal) {
-    if (!modal) return;
-    if (modal.dataset && modal.dataset.w2nInit) return; // already initialized
-
-    const closeBtn = modal.querySelector("#w2n-close-property-mapping");
-    const saveBtn = modal.querySelector("#w2n-save-property-mapping");
-    const resetBtn = modal.querySelector("#w2n-reset-property-mapping");
-    const cancelBtn = modal.querySelector("#w2n-cancel-property-mapping");
-    const refreshBtn = modal.querySelector("#w2n-refresh-property-mapping");
-    const mappingsContainer = modal.querySelector("#w2n-property-mappings");
-    const dbNameEl = modal.querySelector("#w2n-mapping-db-name");
-
-    let currentDatabaseSchema = null;
-    let currentMappings = {};
-
-    function closeModal() {
-      if (modal.parentNode) {
-        modal.parentNode.removeChild(modal);
-      }
-    }
-
-    closeBtn.onclick = closeModal;
-    cancelBtn.onclick = closeModal;
-
-    // Click outside to close
-    modal.onclick = (e) => {
-      if (e.target === modal) closeModal();
-    };
-
-    saveBtn.addEventListener("click", async () => {
-      try {
-        const config = getConfig();
-        const databaseId = config.databaseId;
-        if (!databaseId) {
-          alert("No database selected. Please select a database first.");
-          return;
-        }
-
-        // Collect current mappings from the form
-        // Note: We store as notionProperty -> contentKey (reversed from UI)
-        // so applyPropertyMappings can use it as {NotionProp: "content.field"}
-        const mappings = {};
-        const selects = mappingsContainer.querySelectorAll("select");
-        selects.forEach((select) => {
-          const contentKey = select.dataset.contentKey;
-          const selectedNotionProperty = select.value;
-          if (selectedNotionProperty && selectedNotionProperty !== "") {
-            // Store reversed: Notion property name -> content key
-            mappings[selectedNotionProperty] = contentKey;
-          }
-        });
-
-        savePropertyMappings(databaseId, mappings);
-        alert("Property mappings saved successfully!");
-        closeModal();
-      } catch (error) {
-        debug("Error saving property mappings:", error);
-        alert("Error saving property mappings. Check console for details.");
-      }
-    });
-
-    // mark as initialized to avoid duplicate bindings
-    try {
-      modal.dataset = modal.dataset || {};
-      modal.dataset.w2nInit = "1";
-    } catch (e) {}
-
-    resetBtn.addEventListener("click", () => {
-      if (
-        confirm(
-          "Are you sure you want to reset all property mappings to default?"
-        )
-      ) {
-        const config = getConfig();
-        const databaseId = config.databaseId;
-        if (databaseId) {
-          resetPropertyMappings(databaseId);
-          // Reload the properties to reflect the reset
-          showPropertyMappingModal();
-        }
-      }
-    });
-
-    refreshBtn.addEventListener("click", async () => {
-      const config = getConfig();
-      if (config.databaseId) {
-        debug("🔄 Refreshing database schema...");
-        await loadDatabaseMappings(config.databaseId, config.databaseName, true);
-      } else {
-        alert("No database selected. Please select a database first.");
-      }
-    });
-
-    // Load database schema and populate mappings
-    async function loadDatabaseMappings(
-      databaseId,
-      databaseName,
-      forceRefresh = false
-    ) {
-      try {
-        dbNameEl.textContent = databaseName || "Loading...";
-        mappingsContainer.innerHTML =
-          '<div style="text-align:center;padding:20px;color:#6b7280;">Loading database schema...</div>';
-
-        // Fetch database schema from API module (force refresh if requested)
-        if (forceRefresh) {
-          debug("🔄 Force refreshing database schema");
-          currentDatabaseSchema = await refreshDatabase(databaseId);
-        } else {
-          currentDatabaseSchema = await getDatabase(databaseId);
-        }
-
-        // Load existing mappings for this database
-        const existingMappings = loadPropertyMappings(databaseId);
-        currentMappings = { ...existingMappings };
-
-        // Populate UI
-        populatePropertyMappings(
-          currentDatabaseSchema.properties,
-          currentMappings
-        );
-        dbNameEl.textContent =
-          databaseName ||
-          currentDatabaseSchema.title?.[0]?.text?.content ||
-          "Unknown Database";
-
-        if (forceRefresh) {
-          debug("✅ Database schema refreshed");
-        }
-      } catch (error) {
-        debug("❌ Failed to load database schema:", error);
-        mappingsContainer.innerHTML =
-          '<div style="text-align:center;padding:20px;color:#ef4444;">Failed to load database schema. Please try again.</div>';
-      }
-    }
-
-    // Expose loadDatabaseMappings function on modal for external calls
-    modal.loadDatabaseMappings = loadDatabaseMappings;
-
-    // Auto-load current database if available
-    const config = getConfig();
-    if (config.databaseId) {
-      loadDatabaseMappings(
-        config.databaseId,
-        config.databaseName || "Selected Database"
-      );
-    }
-
-    // Make modal accessible via global scope for debugging
-    if (typeof unsafeWindow !== "undefined") {
-      unsafeWindow.propertyMappingModal = modal;
-    }
-  }
-
-  /**
-   * Populate the property mappings UI with available properties
-   * @param {Object} properties - Database properties
-   * @param {Object} mappings - Current mappings
-   */
-  function populatePropertyMappings(properties, mappings) {
-    debug("Populating property mappings with properties:", properties);
-    const contentProperties = [
-      {
-        key: "title",
-        label: "Page Title",
-        description: "The main title of the captured page",
-      },
-      {
-        key: "url",
-        label: "Page URL",
-        description: "The URL of the captured page",
-      },
-      {
-        key: "source",
-        label: "Content Source",
-        description: 'The source platform (e.g., "ServiceNow")',
-      },
-      {
-        key: "category",
-        label: "Category",
-        description: "ServiceNow category or classification",
-      },
-      {
-        key: "section",
-        label: "Section",
-        description: "ServiceNow documentation section from breadcrumb path",
-      },
-      {
-        key: "version",
-        label: "Version",
-        description: "Version information",
-      },
-      {
-        key: "updated",
-        label: "Updated Date",
-        description: "Last updated date",
-      },
-      {
-        key: "CurrentReleaseURL",
-        label: "Current Release URL",
-        description: "The latest version URL or permanent link to the content",
-      },
-      {
-        key: "breadcrumb",
-        label: "Breadcrumb",
-        description: "Navigation breadcrumb or content hierarchy path",
-      },
-      {
-        key: "hasVideos",
-        label: "Has Videos",
-        description:
-          "Automatically detected - indicates if the page contains video content",
-      },
-      {
-        key: "hasFigureImage",
-        label: "Has Images",
-        description:
-          "Automatically detected - indicates if the page contains images or figures",
-      },
-    ];
-
-    const propertyOptions = Object.entries(properties)
-      .map(([key, prop]) => {
-        const type = prop.type || "unknown";
-        const typeLabel = type.charAt(0).toUpperCase() + type.slice(1);
-        return `<option value="${key}">[${typeLabel}] ${
-        prop.name || key
-      }</option>`;
-      })
-      .join("");
-
-    const mappingsHtml = contentProperties
-      .map((content) => {
-        mappings[content.key] || "";
-        return `
-      <div style="margin-bottom:12px; padding:12px; border:1px solid #e5e7eb; border-radius:6px;">
-        <div style="display:flex; align-items:center; gap:12px;">
-          <div style="flex:1; min-width:160px;">
-            <strong style="font-size:13px;">${content.label}</strong>
-            <div style="font-size:11px; color:#6b7280; margin-top:2px;">${content.description}</div>
-          </div>
-          <div style="flex:1; min-width:200px;">
-            <select data-content-key="${content.key}" style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
-              <option value="">-- No mapping --</option>
-              ${propertyOptions}
-            </select>
-          </div>
-        </div>
-      </div>
-    `;
-      })
-      .join("");
-
-    const mappingsContainer = document.querySelector("#w2n-property-mappings");
-    if (mappingsContainer) {
-      mappingsContainer.innerHTML = mappingsHtml;
-
-      // Set current mappings
-      // mappings is stored as {NotionProperty: "contentKey"}, we need to reverse it for display
-      Object.entries(mappings).forEach(([notionProperty, contentKey]) => {
-        const select = mappingsContainer.querySelector(
-          `select[data-content-key="${contentKey}"]`
-        );
-        if (select) {
-          select.value = notionProperty;
-        }
-      });
-    }
-  }
-
-  /**
-   * Property mapping storage functions
-   */
-  function savePropertyMappings(databaseId, mappings) {
-    const key = `w2n_property_mappings_${databaseId}`;
-    if (typeof GM_setValue !== "undefined") {
-      GM_setValue(key, JSON.stringify(mappings));
-    }
-    debug(`Property mappings saved for database ${databaseId}:`, mappings);
-  }
-
-  function loadPropertyMappings(databaseId) {
-    const key = `w2n_property_mappings_${databaseId}`;
-    if (typeof GM_getValue === "undefined") {
-      return {};
-    }
-
-    const stored = GM_getValue(key, "{}");
-    try {
-      return JSON.parse(stored);
-    } catch (error) {
-      debug("Error loading property mappings:", error);
-      return {};
-    }
-  }
-
-  function resetPropertyMappings(databaseId) {
-    const key = `w2n_property_mappings_${databaseId}`;
-    if (typeof GM_setValue !== "undefined") {
-      GM_setValue(key, "{}");
-    }
-    debug(`Property mappings reset for database ${databaseId}`);
-  }
-
-  function showPropertyMappingModal() {
-    debug("🔗 Opening property mapping modal");
-    injectPropertyMappingModal();
-    const modal = document.getElementById("w2n-property-mapping-modal");
-    const config = getConfig();
-    if (modal && modal.loadDatabaseMappings) {
-      modal.loadDatabaseMappings(config.databaseId, config.databaseName);
-    }
-  }
-
-  // Advanced Settings Modal - Configuration settings UI
-
-
-  /**
-   * Inject the advanced settings modal into the DOM
-   */
-  function injectAdvancedSettingsModal() {
-    if (document.getElementById("w2n-advanced-settings-modal")) return;
-
-    const config = getConfig();
-
-    const modal = document.createElement("div");
-    modal.id = "w2n-advanced-settings-modal";
-    modal.style.cssText = `
-    position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; z-index:11000;
-    background: rgba(0,0,0,0.4);
-  `;
-
-    modal.innerHTML = `
-    <div style="width:480px; max-width:95%; background:white; border-radius:8px; box-shadow:0 10px 30px rgba(0,0,0,0.2); overflow:hidden;">
-      <div style="padding:16px 20px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;">
-        <strong>⚙️ Advanced Settings</strong>
-        <button id="w2n-close-advanced-settings" style="background:none;border:none;font-size:18px;cursor:pointer">×</button>
-      </div>
-      <div style="padding:20px;">
-        <div style="margin-bottom:16px;">
-          <label style="display: flex; align-items: center; margin-bottom: 12px; font-size: 14px; cursor: pointer;">
-            <input type="checkbox" id="w2n-modal-use-martian" ${
-              config.useMartian ? "checked" : ""
-            } style="margin-right: 10px; transform: scale(1.1);">
-            <span style="flex:1;">Use Martian conversion</span>
-          </label>
-          <div style="font-size: 12px; color: #6b7280; margin-left: 24px; margin-top: -8px;">
-            Enhanced content processing for better Notion formatting
-          </div>
-        </div>
-        
-        <div style="margin-bottom:16px;">
-          <label style="display: flex; align-items: center; margin-bottom: 12px; font-size: 14px; cursor: pointer;">
-            <input type="checkbox" id="w2n-modal-direct-images" ${
-              config.directSDKImages ? "checked" : ""
-            } style="margin-right: 10px; transform: scale(1.1);">
-            <span style="flex:1;">Direct SDK image processing</span>
-          </label>
-          <div style="font-size: 12px; color: #6b7280; margin-left: 24px; margin-top: -8px;">
-            Process images directly through Notion API (faster uploads)
-          </div>
-        </div>
-        
-        <div style="margin-bottom:16px;">
-          <label style="display: flex; align-items: center; margin-bottom: 12px; font-size: 14px; cursor: pointer;">
-            <input type="checkbox" id="w2n-modal-enable-debugging" style="margin-right: 10px; transform: scale(1.1);">
-            <span style="flex:1;">Enable debugging (client & server)</span>
-          </label>
-          <div style="font-size: 12px; color: #6b7280; margin-left: 24px; margin-top: -8px;">
-            Enable detailed logging in both client (console) and server (proxy logs)
-          </div>
-        </div>
-
-        <div style="margin-bottom:16px;">
-          <label style="display: flex; align-items: center; margin-bottom: 12px; font-size: 14px; cursor: pointer;">
-            <input type="checkbox" id="w2n-modal-force-reextract" ${
-              config.forceReextract ? "checked" : ""
-            } style="margin-right: 10px; transform: scale(1.1);">
-            <span style="flex:1;">Force re-extract (ignore dedupe)</span>
-          </label>
-          <div style="font-size: 12px; color: #6b7280; margin-left: 24px; margin-top: -8px;">
-            Bypass persistent URL deduplication and always reprocess pages
-          </div>
-        </div>
-
-        <div style="margin-bottom:16px;">
-          <button id="w2n-clear-persisted-urls" style="width:100%;padding:8px;border-radius:6px;background:#ef4444;color:white;border:none;cursor:pointer;font-size:13px;">
-            🧹 Clear processed URL cache
-          </button>
-          <div style="font-size: 11px; color: #6b7280; margin-top:6px;">
-            Empties stored cross-session dedupe list (use before a full refresh run)
-          </div>
-        </div>
-        
-  <div style="margin-bottom:20px;">
-          <label style="display: flex; align-items: center; margin-bottom: 12px; font-size: 14px; cursor: pointer;">
-            <input type="checkbox" id="w2n-modal-duplicate-detect" ${
-              config.enableDuplicateDetection ? "checked" : ""
-            } style="margin-right: 10px; transform: scale(1.1);">
-            <span style="flex:1;">Search for duplicates</span>
-          </label>
-          <div style="font-size: 12px; color: #6b7280; margin-left: 24px; margin-top: -8px;">
-            Check for existing pages with same title before creating new ones
-          </div>
-        </div>
-        
-        <div style="margin-bottom:20px; padding-top:16px; border-top:1px solid #eee;">
-          <button id="w2n-configure-mapping-from-settings" style="width:100%;padding:10px;border-radius:6px;background:#10b981;color:white;border:none;cursor:pointer;font-size:14px;">
-            🔗 Configure Property Mapping
-          </button>
-        </div>
-        
-        <div style="display:flex; gap:10px; padding-top:16px; border-top:1px solid #eee;">
-          <button id="w2n-save-advanced-settings" style="flex:1;padding:10px;border-radius:6px;background:#10b981;color:white;border:none;cursor:pointer;font-size:14px;">
-            Save Settings
-          </button>
-          <button id="w2n-cancel-advanced-settings" style="flex:1;padding:10px;border-radius:6px;background:#6b7280;color:white;border:none;cursor:pointer;font-size:14px;">
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
-  `;
-
-    document.body.appendChild(modal);
-    setupAdvancedSettingsModal(modal);
-  }
-
-  /**
-   * Setup the advanced settings modal with event listeners
-   * @param {HTMLElement} modal - The modal element
-   */
-  function setupAdvancedSettingsModal(modal) {
-    const closeBtn = modal.querySelector("#w2n-close-advanced-settings");
-    const saveBtn = modal.querySelector("#w2n-save-advanced-settings");
-    const cancelBtn = modal.querySelector("#w2n-cancel-advanced-settings");
-    const configureMappingBtn = modal.querySelector("#w2n-configure-mapping-from-settings");
-    const clearPersistedBtn = modal.querySelector("#w2n-clear-persisted-urls");
-
-    function closeModal() {
-      if (modal.parentNode) {
-        modal.parentNode.removeChild(modal);
-      }
-    }
-
-    closeBtn.onclick = closeModal;
-    cancelBtn.onclick = closeModal;
-
-    // Configure Property Mapping button
-    if (configureMappingBtn) {
-      configureMappingBtn.onclick = () => {
-        try {
-          showPropertyMappingModal();
-        } catch (e) {
-          debug("Failed to open property mapping modal:", e);
-        }
-      };
-    }
-
-    // Clear persisted URLs cache
-    if (clearPersistedBtn) {
-      clearPersistedBtn.onclick = () => {
-        try {
-          if (typeof GM_setValue === 'function') {
-            GM_setValue('w2n_processed_urls', '[]');
-            debug('[DEDUPE-PERSIST] Cleared persisted processed URL cache');
-            if (typeof GM_notification !== 'undefined') {
-              GM_notification({ title: 'ServiceNow', text: 'Processed URL cache cleared', timeout: 2000 });
-            }
-          }
-        } catch (e) {
-          debug('[DEDUPE-PERSIST] Failed clearing processed URL cache:', e);
-        }
-      };
-    }
-
-    // Click outside to close
-    modal.onclick = (e) => {
-      if (e.target === modal) {
-        closeModal();
-      }
-    };
-
-    // Populate combined debugging checkbox from both client and server settings
-    (async () => {
-      const combinedCheckbox = modal.querySelector("#w2n-modal-enable-debugging");
-      if (!combinedCheckbox) return;
-      const config = getConfig();
-      let serverVerbose = false;
-      try {
-        const resp = await fetch("/api/logging");
-        if (resp.ok) {
-          const body = await resp.json();
-          serverVerbose = !!(body && body.verbose);
-          // Treat extraDebug as the indicator that a deep debug session is active
-          if (body && typeof body.extraDebug !== "undefined") {
-            combinedCheckbox.checked = !!body.extraDebug;
-          }
-        }
-      } catch (e) {
-        debug("Could not fetch /api/logging for combined checkbox:", e);
-      }
-      if (typeof combinedCheckbox.checked === "undefined") {
-        combinedCheckbox.checked = config.debugMode && serverVerbose;
-      }
-      debug("Populated combined debugging checkbox:", combinedCheckbox.checked);
-    })();
-
-    saveBtn.onclick = () => {
-      // Get values from modal checkboxes
-      const useMartian = modal.querySelector("#w2n-modal-use-martian").checked;
-      const directSDKImages = modal.querySelector(
-        "#w2n-modal-direct-images"
-      ).checked;
-      const enableDuplicateDetection = modal.querySelector(
-        "#w2n-modal-duplicate-detect"
-      ).checked;
-      const forceReextract = modal.querySelector(
-        "#w2n-modal-force-reextract"
-      ).checked;
-
-      // Combined debugging checkbox
-      const enableDebugging = modal.querySelector(
-        "#w2n-modal-enable-debugging"
-      ).checked;
-
-      // Update config
-      const config = getConfig();
-      config.useMartian = useMartian;
-      config.directSDKImages = directSDKImages;
-      config.debugMode = enableDebugging;
-      config.enableDuplicateDetection = enableDuplicateDetection;
-    config.forceReextract = forceReextract;
-
-      // Save to storage
-      try {
-        if (typeof GM_setValue !== "undefined") {
-          GM_setValue("notionConfig", config);
-        }
-
-        // Show toast notification
-        if (typeof GM_notification !== "undefined") {
-          GM_notification({
-            text: "Settings saved successfully",
-            title: "ServiceNow",
-            timeout: 2000,
-          });
-        }
-
-        debug("⚙️ Settings saved:", config);
-
-        // Update visible UI immediately so user sees the selected database/name
-        try {
-          if (typeof window.updateUIFromConfig === "function") {
-            window.updateUIFromConfig();
-          }
-        } catch (e) {
-          debug("Failed updating UI after settings save:", e);
-        }
-        // Update server runtime logging setting
-        (async () => {
-          try {
-            await fetch("/api/logging", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                verbose: !!enableDebugging,
-                extraDebug: !!enableDebugging,
-              }),
-            });
-            debug("Updated server logging flags:", enableDebugging);
-          } catch (err) {
-            debug("Failed to update server logging setting:", err);
-          }
-        })();
-      } catch (error) {
-        if (typeof GM_notification !== "undefined") {
-          GM_notification({
-            text: "Failed to save settings",
-            title: "ServiceNow",
-            timeout: 2000,
-          });
-        }
-        debug("Failed to save settings:", error);
-      }
-
-      closeModal();
-    };
   }
 
   // Icon and Cover Selection Modal - Image selection UI
@@ -3049,6 +1928,731 @@
     });
   }
 
+  // Database API - Notion database operations and property mapping
+
+
+  /**
+   * Fetch database from cache or API
+   * @param {string} databaseId - The database ID to fetch
+   * @returns {Promise<Object>} Database object
+   */
+  async function getDatabase(databaseId) {
+    if (!databaseId) {
+      throw new Error("Database ID is required");
+    }
+
+    debug(`🔍 Getting database: ${databaseId}`);
+
+    // Check cache first
+    const cached = await getCachedDatabase(databaseId);
+    if (cached) {
+      debug("✅ Using cached database schema");
+      debug(
+        "📋 Cached properties:",
+        cached.properties ? Object.keys(cached.properties) : "No properties"
+      );
+      return cached;
+    }
+
+    // Fetch from API
+    try {
+      const database = await fetchDatabaseSchema(databaseId);
+
+      // Cache the result
+      await cacheDatabase(databaseId, database);
+
+      return database;
+    } catch (error) {
+      debug("❌ Failed to get database:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get cached database from storage
+   * @param {string} databaseId - Database ID
+   * @returns {Promise<Object|null>} Cached database or null
+   */
+  async function getCachedDatabase(databaseId) {
+    return new Promise((resolve) => {
+      const cacheKey = `database_${databaseId}`;
+
+      if (typeof GM_getValue === "function") {
+        try {
+          const cached = GM_getValue(cacheKey, null);
+          if (cached) {
+            const data = JSON.parse(cached);
+            // Check if cache is not older than 1 hour
+            if (Date.now() - data.timestamp < 3600000) {
+              resolve(data.database);
+              return;
+            }
+          }
+        } catch (e) {
+          debug("❌ Failed to parse cached database:", e);
+        }
+      }
+
+      resolve(null);
+    });
+  }
+
+  /**
+   * Cache database to storage
+   * @param {string} databaseId - Database ID
+   * @param {Object} database - Database object to cache
+   */
+  async function cacheDatabase(databaseId, database) {
+    if (typeof GM_setValue === "function") {
+      try {
+        const cacheKey = `database_${databaseId}`;
+        const cacheData = {
+          database: database,
+          timestamp: Date.now(),
+        };
+        GM_setValue(cacheKey, JSON.stringify(cacheData));
+        debug("✅ Database cached successfully");
+      } catch (e) {
+        debug("❌ Failed to cache database:", e);
+      }
+    }
+  }
+
+  /**
+   * Clear cached database schema
+   * @param {string} databaseId - Database ID
+   */
+  function clearDatabaseCache(databaseId) {
+    if (typeof GM_setValue === "function" && databaseId) {
+      try {
+        const cacheKey = `database_${databaseId}`;
+        GM_setValue(cacheKey, null);
+        debug(`🗑️ Cleared database cache for: ${databaseId}`);
+      } catch (e) {
+        debug("❌ Failed to clear database cache:", e);
+      }
+    }
+  }
+
+  /**
+   * Force refresh database schema (bypass cache)
+   * @param {string} databaseId - Database ID
+   * @returns {Promise<Object>} Fresh database object
+   */
+  async function refreshDatabase(databaseId) {
+    if (!databaseId) {
+      throw new Error("Database ID is required");
+    }
+
+    debug(`🔄 Force refreshing database: ${databaseId}`);
+
+    // Clear cache first
+    clearDatabaseCache(databaseId);
+
+    // Fetch fresh from API
+    try {
+      const database = await fetchDatabaseSchema(databaseId);
+
+      // Cache the fresh result
+      await cacheDatabase(databaseId, database);
+
+      debug("✅ Database schema refreshed successfully");
+      return database;
+    } catch (error) {
+      debug("❌ Failed to refresh database:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all available databases with caching
+   * @param {Object} options - Query options
+   * @returns {Promise<Array>} Array of databases
+   */
+  async function getAllDatabases(options = {}) {
+    debug("📊 Getting all databases");
+
+    try {
+      const databases = await fetchDatabases(options);
+
+      // Filter out databases without required permissions
+      const accessibleDatabases = databases.filter((db) => {
+        return db && db.id && db.title && db.title.length > 0;
+      });
+
+      debug(`✅ Retrieved ${accessibleDatabases.length} accessible databases`);
+      return accessibleDatabases;
+    } catch (error) {
+      debug("❌ Failed to get databases:", error);
+      return [];
+    }
+  }
+
+  /**
+   * Get property mappings for a database
+   * @param {string} databaseId - Database ID
+   * @returns {Promise<Object>} Property mappings
+   */
+  async function getPropertyMappings(databaseId) {
+    const mappingKey = `w2n_property_mappings_${databaseId}`;
+
+    return new Promise((resolve) => {
+      if (typeof GM_getValue === "function") {
+        try {
+          const saved = GM_getValue(mappingKey, "{}");
+          debug(`🔍 Loading mappings with key: ${mappingKey}`);
+          debug(`🔍 Raw saved value: ${saved}`);
+          const mappings = JSON.parse(saved);
+          debug(
+            `✅ Retrieved property mappings (${
+            Object.keys(mappings).length
+          } mappings):`,
+            mappings
+          );
+          resolve(mappings);
+        } catch (e) {
+          debug("❌ Failed to parse property mappings:", e);
+          resolve({});
+        }
+      } else {
+        debug("⚠️ GM_getValue not available");
+        resolve({});
+      }
+    });
+  }
+
+  /**
+   * Apply property mappings to extracted data
+   * @param {Object} extractedData - Data extracted from the page
+   * @param {Object} database - Database schema
+   * @param {Object} mappings - Property mappings
+   * @returns {Object} Mapped properties for Notion page
+   */
+  function applyPropertyMappings(extractedData, database, mappings) {
+    debug("🔧 Applying property mappings");
+
+    const properties = {};
+    const dbProperties = database.properties || {};
+
+    // Apply each mapping
+    Object.entries(mappings).forEach(([notionProperty, sourceField]) => {
+      if (!sourceField || !dbProperties[notionProperty]) return;
+
+      const propConfig = dbProperties[notionProperty];
+      const sourceValue = getNestedValue(extractedData, sourceField);
+
+      if (
+        sourceValue !== undefined &&
+        sourceValue !== null &&
+        sourceValue !== ""
+      ) {
+        const mappedValue = mapValueToNotionProperty(sourceValue, propConfig);
+        if (mappedValue !== null) {
+          properties[notionProperty] = mappedValue;
+        }
+      }
+    });
+
+    debug(`✅ Applied ${Object.keys(properties).length} property mappings`);
+    return properties;
+  }
+
+  /**
+   * Get nested value from object using dot notation
+   * @param {Object} obj - Object to search
+   * @param {string} path - Dot-separated path
+   * @returns {*} Value at path or undefined
+   */
+  function getNestedValue(obj, path) {
+    if (!path || !obj) return undefined;
+
+    return path.split(".").reduce((current, key) => {
+      return current && current[key] !== undefined ? current[key] : undefined;
+    }, obj);
+  }
+
+  /**
+   * Map a value to appropriate Notion property format
+   * @param {*} value - Source value
+   * @param {Object} propertyConfig - Notion property configuration
+   * @returns {Object|null} Notion property value or null
+   */
+  function mapValueToNotionProperty(value, propertyConfig) {
+    if (!propertyConfig || value === undefined || value === null) {
+      return null;
+    }
+
+    const type = propertyConfig.type;
+    const stringValue = String(value).trim();
+
+    if (!stringValue) return null;
+
+    switch (type) {
+      case "title":
+        return {
+          title: [
+            {
+              type: "text",
+              text: { content: stringValue.slice(0, 2000) }, // Notion title limit
+            },
+          ],
+        };
+
+      case "rich_text":
+        return {
+          rich_text: [
+            {
+              type: "text",
+              text: { content: stringValue.slice(0, 2000) },
+            },
+          ],
+        };
+
+      case "number":
+        const num = parseFloat(stringValue);
+        return isNaN(num) ? null : { number: num };
+
+      case "select":
+        const options = propertyConfig.select?.options || [];
+        const matchingOption = options.find(
+          (opt) => opt.name.toLowerCase() === stringValue.toLowerCase()
+        );
+        return matchingOption ? { select: { name: matchingOption.name } } : null;
+
+      case "multi_select":
+        const multiOptions = propertyConfig.multi_select?.options || [];
+        const values = stringValue.split(",").map((v) => v.trim());
+        const matchingOptions = values
+          .map((v) =>
+            multiOptions.find((opt) => opt.name.toLowerCase() === v.toLowerCase())
+          )
+          .filter(Boolean);
+        return matchingOptions.length > 0
+          ? {
+              multi_select: matchingOptions.map((opt) => ({ name: opt.name })),
+            }
+          : null;
+
+      case "date":
+        try {
+          const date = new Date(stringValue);
+          if (isNaN(date.getTime())) return null;
+          return {
+            date: { start: date.toISOString().split("T")[0] },
+          };
+        } catch (e) {
+          return null;
+        }
+
+      case "checkbox":
+        const boolValue = stringValue.toLowerCase();
+        return {
+          checkbox:
+            boolValue === "true" || boolValue === "yes" || boolValue === "1",
+        };
+
+      case "url":
+        try {
+          new URL(stringValue);
+          return { url: stringValue };
+        } catch (e) {
+          return null;
+        }
+
+      case "email":
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailRegex.test(stringValue) ? { email: stringValue } : null;
+
+      case "phone_number":
+        return { phone_number: stringValue };
+
+      case "people":
+        // This would need user ID mapping, which is complex
+        return null;
+
+      case "relation":
+        // This would need related page mapping, which is complex
+        return null;
+
+      default:
+        debug(`⚠️ Unsupported property type: ${type}`);
+        return null;
+    }
+  }
+
+  // Property Mapping Modal - Dynamic property mapping system
+
+
+  /**
+   * Inject the property mapping modal into the DOM
+   */
+  function injectPropertyMappingModal() {
+    if (document.getElementById("w2n-property-mapping-modal")) return;
+
+    const modal = document.createElement("div");
+    modal.id = "w2n-property-mapping-modal";
+    modal.style.cssText = `
+    position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; z-index:11000;
+    background: rgba(0,0,0,0.4);
+  `;
+
+    modal.innerHTML = `
+    <div style="width:600px; max-width:95%; background:white; border-radius:8px; box-shadow:0 10px 30px rgba(0,0,0,0.2); overflow:hidden;">
+      <div style="padding:16px 20px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;">
+        <strong>🔗 Property Mapping</strong>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <button id="w2n-refresh-property-mapping" title="Refresh database schema" style="background:#3b82f6;color:white;border:none;border-radius:4px;padding:4px 8px;font-size:12px;cursor:pointer;">
+            🔄 Refresh
+          </button>
+          <button id="w2n-close-property-mapping" style="background:none;border:none;font-size:18px;cursor:pointer">×</button>
+        </div>
+      </div>
+      <div style="padding:20px;">
+        <div style="margin-bottom:16px; font-size:14px; color:#6b7280;">
+          Map content from this page to database properties in: <strong id="w2n-mapping-db-name">Selected Database</strong>
+        </div>
+        
+        <div id="w2n-property-mappings" style="margin-bottom:20px; max-height:300px; overflow-y:auto;">
+          <!-- Property mappings will be populated here -->
+        </div>
+        
+        <div style="display:flex; gap:10px; padding-top:16px; border-top:1px solid #eee;">
+          <button id="w2n-save-property-mapping" style="flex:1;padding:10px;border-radius:6px;background:#10b981;color:white;border:none;cursor:pointer;font-size:14px;">
+            Save Mapping
+          </button>
+          <button id="w2n-reset-property-mapping" style="padding:10px 16px;border-radius:6px;background:#ef4444;color:white;border:none;cursor:pointer;font-size:14px;">
+            Reset
+          </button>
+          <button id="w2n-cancel-property-mapping" style="flex:1;padding:10px;border-radius:6px;background:#6b7280;color:white;border:none;cursor:pointer;font-size:14px;">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+    document.body.appendChild(modal);
+    setupPropertyMappingModal(modal);
+  }
+
+  /**
+   * Setup the property mapping modal with event listeners and functionality
+   * @param {HTMLElement} modal - The modal element
+   */
+  function setupPropertyMappingModal(modal) {
+    if (!modal) return;
+    if (modal.dataset && modal.dataset.w2nInit) return; // already initialized
+
+    const closeBtn = modal.querySelector("#w2n-close-property-mapping");
+    const saveBtn = modal.querySelector("#w2n-save-property-mapping");
+    const resetBtn = modal.querySelector("#w2n-reset-property-mapping");
+    const cancelBtn = modal.querySelector("#w2n-cancel-property-mapping");
+    const refreshBtn = modal.querySelector("#w2n-refresh-property-mapping");
+    const mappingsContainer = modal.querySelector("#w2n-property-mappings");
+    const dbNameEl = modal.querySelector("#w2n-mapping-db-name");
+
+    let currentDatabaseSchema = null;
+    let currentMappings = {};
+
+    function closeModal() {
+      if (modal.parentNode) {
+        modal.parentNode.removeChild(modal);
+      }
+    }
+
+    closeBtn.onclick = closeModal;
+    cancelBtn.onclick = closeModal;
+
+    // Click outside to close
+    modal.onclick = (e) => {
+      if (e.target === modal) closeModal();
+    };
+
+    saveBtn.addEventListener("click", async () => {
+      try {
+        const config = getConfig();
+        const databaseId = config.databaseId;
+        if (!databaseId) {
+          alert("No database selected. Please select a database first.");
+          return;
+        }
+
+        // Collect current mappings from the form
+        // Note: We store as notionProperty -> contentKey (reversed from UI)
+        // so applyPropertyMappings can use it as {NotionProp: "content.field"}
+        const mappings = {};
+        const selects = mappingsContainer.querySelectorAll("select");
+        selects.forEach((select) => {
+          const contentKey = select.dataset.contentKey;
+          const selectedNotionProperty = select.value;
+          if (selectedNotionProperty && selectedNotionProperty !== "") {
+            // Store reversed: Notion property name -> content key
+            mappings[selectedNotionProperty] = contentKey;
+          }
+        });
+
+        savePropertyMappings(databaseId, mappings);
+        alert("Property mappings saved successfully!");
+        closeModal();
+      } catch (error) {
+        debug("Error saving property mappings:", error);
+        alert("Error saving property mappings. Check console for details.");
+      }
+    });
+
+    // mark as initialized to avoid duplicate bindings
+    try {
+      modal.dataset = modal.dataset || {};
+      modal.dataset.w2nInit = "1";
+    } catch (e) {}
+
+    resetBtn.addEventListener("click", () => {
+      if (
+        confirm(
+          "Are you sure you want to reset all property mappings to default?"
+        )
+      ) {
+        const config = getConfig();
+        const databaseId = config.databaseId;
+        if (databaseId) {
+          resetPropertyMappings(databaseId);
+          // Reload the properties to reflect the reset
+          showPropertyMappingModal();
+        }
+      }
+    });
+
+    refreshBtn.addEventListener("click", async () => {
+      const config = getConfig();
+      if (config.databaseId) {
+        debug("🔄 Refreshing database schema...");
+        await loadDatabaseMappings(config.databaseId, config.databaseName, true);
+      } else {
+        alert("No database selected. Please select a database first.");
+      }
+    });
+
+    // Load database schema and populate mappings
+    async function loadDatabaseMappings(
+      databaseId,
+      databaseName,
+      forceRefresh = false
+    ) {
+      try {
+        dbNameEl.textContent = databaseName || "Loading...";
+        mappingsContainer.innerHTML =
+          '<div style="text-align:center;padding:20px;color:#6b7280;">Loading database schema...</div>';
+
+        // Fetch database schema from API module (force refresh if requested)
+        if (forceRefresh) {
+          debug("🔄 Force refreshing database schema");
+          currentDatabaseSchema = await refreshDatabase(databaseId);
+        } else {
+          currentDatabaseSchema = await getDatabase(databaseId);
+        }
+
+        // Load existing mappings for this database
+        const existingMappings = loadPropertyMappings(databaseId);
+        currentMappings = { ...existingMappings };
+
+        // Populate UI
+        populatePropertyMappings(
+          currentDatabaseSchema.properties,
+          currentMappings
+        );
+        dbNameEl.textContent =
+          databaseName ||
+          currentDatabaseSchema.title?.[0]?.text?.content ||
+          "Unknown Database";
+
+        if (forceRefresh) {
+          debug("✅ Database schema refreshed");
+        }
+      } catch (error) {
+        debug("❌ Failed to load database schema:", error);
+        mappingsContainer.innerHTML =
+          '<div style="text-align:center;padding:20px;color:#ef4444;">Failed to load database schema. Please try again.</div>';
+      }
+    }
+
+    // Expose loadDatabaseMappings function on modal for external calls
+    modal.loadDatabaseMappings = loadDatabaseMappings;
+
+    // Auto-load current database if available
+    const config = getConfig();
+    if (config.databaseId) {
+      loadDatabaseMappings(
+        config.databaseId,
+        config.databaseName || "Selected Database"
+      );
+    }
+
+    // Make modal accessible via global scope for debugging
+    if (typeof unsafeWindow !== "undefined") {
+      unsafeWindow.propertyMappingModal = modal;
+    }
+  }
+
+  /**
+   * Populate the property mappings UI with available properties
+   * @param {Object} properties - Database properties
+   * @param {Object} mappings - Current mappings
+   */
+  function populatePropertyMappings(properties, mappings) {
+    debug("Populating property mappings with properties:", properties);
+    const contentProperties = [
+      {
+        key: "title",
+        label: "Page Title",
+        description: "The main title of the captured page",
+      },
+      {
+        key: "url",
+        label: "Page URL",
+        description: "The URL of the captured page",
+      },
+      {
+        key: "source",
+        label: "Content Source",
+        description: 'The source platform (e.g., "ServiceNow")',
+      },
+      {
+        key: "category",
+        label: "Category",
+        description: "ServiceNow category or classification",
+      },
+      {
+        key: "section",
+        label: "Section",
+        description: "ServiceNow documentation section from breadcrumb path",
+      },
+      {
+        key: "version",
+        label: "Version",
+        description: "Version information",
+      },
+      {
+        key: "updated",
+        label: "Updated Date",
+        description: "Last updated date",
+      },
+      {
+        key: "CurrentReleaseURL",
+        label: "Current Release URL",
+        description: "The latest version URL or permanent link to the content",
+      },
+      {
+        key: "breadcrumb",
+        label: "Breadcrumb",
+        description: "Navigation breadcrumb or content hierarchy path",
+      },
+      {
+        key: "hasVideos",
+        label: "Has Videos",
+        description:
+          "Automatically detected - indicates if the page contains video content",
+      },
+      {
+        key: "hasFigureImage",
+        label: "Has Images",
+        description:
+          "Automatically detected - indicates if the page contains images or figures",
+      },
+    ];
+
+    const propertyOptions = Object.entries(properties)
+      .map(([key, prop]) => {
+        const type = prop.type || "unknown";
+        const typeLabel = type.charAt(0).toUpperCase() + type.slice(1);
+        return `<option value="${key}">[${typeLabel}] ${
+        prop.name || key
+      }</option>`;
+      })
+      .join("");
+
+    const mappingsHtml = contentProperties
+      .map((content) => {
+        mappings[content.key] || "";
+        return `
+      <div style="margin-bottom:12px; padding:12px; border:1px solid #e5e7eb; border-radius:6px;">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <div style="flex:1; min-width:160px;">
+            <strong style="font-size:13px;">${content.label}</strong>
+            <div style="font-size:11px; color:#6b7280; margin-top:2px;">${content.description}</div>
+          </div>
+          <div style="flex:1; min-width:200px;">
+            <select data-content-key="${content.key}" style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
+              <option value="">-- No mapping --</option>
+              ${propertyOptions}
+            </select>
+          </div>
+        </div>
+      </div>
+    `;
+      })
+      .join("");
+
+    const mappingsContainer = document.querySelector("#w2n-property-mappings");
+    if (mappingsContainer) {
+      mappingsContainer.innerHTML = mappingsHtml;
+
+      // Set current mappings
+      // mappings is stored as {NotionProperty: "contentKey"}, we need to reverse it for display
+      Object.entries(mappings).forEach(([notionProperty, contentKey]) => {
+        const select = mappingsContainer.querySelector(
+          `select[data-content-key="${contentKey}"]`
+        );
+        if (select) {
+          select.value = notionProperty;
+        }
+      });
+    }
+  }
+
+  /**
+   * Property mapping storage functions
+   */
+  function savePropertyMappings(databaseId, mappings) {
+    const key = `w2n_property_mappings_${databaseId}`;
+    if (typeof GM_setValue !== "undefined") {
+      GM_setValue(key, JSON.stringify(mappings));
+    }
+    debug(`Property mappings saved for database ${databaseId}:`, mappings);
+  }
+
+  function loadPropertyMappings(databaseId) {
+    const key = `w2n_property_mappings_${databaseId}`;
+    if (typeof GM_getValue === "undefined") {
+      return {};
+    }
+
+    const stored = GM_getValue(key, "{}");
+    try {
+      return JSON.parse(stored);
+    } catch (error) {
+      debug("Error loading property mappings:", error);
+      return {};
+    }
+  }
+
+  function resetPropertyMappings(databaseId) {
+    const key = `w2n_property_mappings_${databaseId}`;
+    if (typeof GM_setValue !== "undefined") {
+      GM_setValue(key, "{}");
+    }
+    debug(`Property mappings reset for database ${databaseId}`);
+  }
+
+  function showPropertyMappingModal() {
+    debug("🔗 Opening property mapping modal");
+    injectPropertyMappingModal();
+    const modal = document.getElementById("w2n-property-mapping-modal");
+    const config = getConfig();
+    if (modal && modal.loadDatabaseMappings) {
+      modal.loadDatabaseMappings(config.databaseId, config.databaseName);
+    }
+  }
+
   // UI Utilities and Common Functions
 
 
@@ -3169,27 +2773,19 @@
         const panelWidth = 320;
         const panelHeight = 200; // Estimated minimum height
         
-        // Check if position is valid for current viewport
-        const isOnScreen = (
-          savedPosition.left >= margin && 
-          savedPosition.top >= margin &&
-          savedPosition.left + panelWidth <= window.innerWidth - margin &&
-          savedPosition.top + panelHeight <= window.innerHeight - margin
-        );
-        
-        if (!isOnScreen) {
-          // Position is off-screen, adjust it to fit
-          let adjustedLeft = Math.max(margin, Math.min(savedPosition.left, window.innerWidth - panelWidth - margin));
-          let adjustedTop = Math.max(margin, Math.min(savedPosition.top, window.innerHeight - panelHeight - margin));
-          
-          savedPosition = { left: adjustedLeft, top: adjustedTop };
-          localStorage.setItem('w2n-panel-position', JSON.stringify(savedPosition));
+        if (savedPosition.left < margin || 
+            savedPosition.top < margin ||
+            savedPosition.left + panelWidth > window.innerWidth - margin ||
+            savedPosition.top + panelHeight > window.innerHeight - margin) {
+          // Saved position is off-screen, reset it
+          savedPosition = null;
+          localStorage.removeItem('w2n-panel-position');
+        } else {
+          // Apply saved position
+          panel.style.left = `${savedPosition.left}px`;
+          panel.style.top = `${savedPosition.top}px`;
+          panel.style.right = 'auto'; // Override default right positioning
         }
-        
-        // Apply saved or adjusted position
-        panel.style.left = `${savedPosition.left}px`;
-        panel.style.top = `${savedPosition.top}px`;
-        panel.style.right = 'auto'; // Override default right positioning
       }
     } catch (e) {
       debug("Failed to restore panel position from localStorage:", e);
@@ -3225,12 +2821,13 @@
         <select id="w2n-database-select" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px;">
           <option value="${config.databaseId || ""}">${config.databaseName || "(no database)"}</option>
         </select>
-        <div id="w2n-selected-database-label" style="margin-top:8px;font-size:12px;color:#6b7280;">ID: ${config.databaseId || "(no database)"}</div>
+        <div id="w2n-selected-database-label" style="margin-top:8px;font-size:12px;color:#6b7280;">Database: ${config.databaseName || "(no database)"}</div>
         <div style="margin-top:8px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-          <button id="w2n-search-dbs" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">Search by Name</button>
-          <button id="w2n-get-db" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">Search by ID</button>
+          <button id="w2n-refresh-dbs" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">Refresh</button>
+          <button id="w2n-search-dbs" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">Search</button>
+          <button id="w2n-get-db" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">By ID</button>
+          <button id="w2n-configure-mapping" style="font-size:11px;padding:6px 8px;border:1px solid #10b981;border-radius:4px;background:#10b981;color:white;cursor:pointer;">Configure Property Mapping</button>
         </div>
-        <div style="margin-top:6px;font-size:10px;color:#9ca3af;">v${PROVIDER_VERSION}</div>
         <div id="w2n-db-spinner" style="display:none; margin-top:8px; font-size:12px; color:#6b7280; align-items:center;">
           <span style="display:inline-block; width:12px; height:12px; border:2px solid #d1d5db; border-top:2px solid #10b981; border-radius:50%; animation:spin 1s linear infinite; margin-right:8px;"></span>
           Fetching databases...
@@ -3239,17 +2836,23 @@
 
       <div style="display:grid; gap:8px; margin-bottom:16px;">
         <button id="w2n-capture-page" style="width:100%; padding:12px; background:#10b981; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">📄 Save Current Page</button>
-        <button id="w2n-update-existing-page" style="width:100%; padding:12px; background:#8b5cf6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">🔄 Update Existing Page</button>
+        <button id="w2n-capture-description" style="width:100%; padding:12px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">📖 Download PDF</button>
       </div>
 
-      <div style="padding-top:16px;">
+      <div style="border-top:1px solid #e5e7eb; padding-top:16px;">
+        <div style="display:flex; align-items:center; margin-bottom:12px;">
+          <span style="font-size:16px; margin-right:8px;">🤖</span>
+          <h4 style="margin:0; font-size:14px; font-weight:500;">AutoExtract Multi-Page</h4>
+        </div>
+
         <div id="w2n-autoextract-controls">
           <div style="display:flex; gap:8px;">
-            <button id="w2n-start-autoextract" style="flex:1; padding:10px; background:#f59e0b; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">🤖 Start AutoExtract</button>
+            <button id="w2n-start-autoextract" style="flex:1; padding:10px; background:#f59e0b; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">Start AutoExtract</button>
             <button id="w2n-stop-autoextract" style="flex:1; padding:10px; background:#dc2626; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500; display:none;">⏹ Stop</button>
           </div>
           <div style="display:flex; gap:8px; margin-top:8px;">
-            <button id="w2n-open-icon-cover" style="flex:1; padding:8px; background:#6b7280; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px;">🎨 Icon & Cover</button>
+            <button id="w2n-open-icon-cover" style="flex:1; padding:8px; background:#6b7280; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px;">Icon & Cover</button>
+            <button id="w2n-diagnose-autoextract" style="flex:1; padding:8px; background:#0ea5e9; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px;">🔍 Diagnose</button>
           </div>
         </div>
       </div>
@@ -3281,6 +2884,7 @@
     const resetPositionBtn = panel.querySelector("#w2n-reset-position-btn");
     const advancedBtn = panel.querySelector("#w2n-advanced-settings-btn");
     const captureBtn = panel.querySelector("#w2n-capture-page");
+    const configureBtn = panel.querySelector("#w2n-configure-mapping");
     const iconCoverBtn = panel.querySelector("#w2n-open-icon-cover");
 
     closeBtn.onclick = () => panel.remove();
@@ -3329,6 +2933,14 @@
       }
     };
 
+    configureBtn.onclick = () => {
+      try {
+        showPropertyMappingModal();
+      } catch (e) {
+        debug("Failed to open property mapping modal:", e);
+      }
+    };
+
     iconCoverBtn.onclick = () => {
       try {
         injectIconCoverModal();
@@ -3337,45 +2949,25 @@
       }
     };
 
-    // Update Existing Page button handler
-    const updateExistingBtn = panel.querySelector("#w2n-update-existing-page");
-    if (updateExistingBtn) {
-      updateExistingBtn.onclick = async () => {
-        try {
-          await handleUpdateExistingPage();
-        } catch (e) {
-          debug("Failed to update existing page:", e);
-          alert(`❌ Error updating page: ${e.message}`);
-        }
-      };
-    }
-
     // Database button handlers
+    const refreshBtn = panel.querySelector("#w2n-refresh-dbs");
     const searchBtn = panel.querySelector("#w2n-search-dbs");
     const getByIdBtn = panel.querySelector("#w2n-get-db");
     const databaseSelect = panel.querySelector("#w2n-database-select");
     const databaseLabel = panel.querySelector("#w2n-selected-database-label");
 
-    // Add change handler for database select dropdown
-    if (databaseSelect) {
-      databaseSelect.onchange = () => {
-        const selectedId = databaseSelect.value;
-        const selectedName = databaseSelect.options[databaseSelect.selectedIndex].text;
-        
-        if (selectedId) {
-          // Update config with selected database
-          const config = getConfig();
-          config.databaseId = selectedId;
-          config.databaseName = selectedName;
-          
-          if (typeof GM_setValue === "function") {
-            GM_setValue("notionConfig", config);
-          }
-          
-          // Update ID label
-          databaseLabel.textContent = `ID: ${selectedId}`;
-          
-          debug(`✅ Selected database: ${selectedName} (${selectedId})`);
+    if (refreshBtn) {
+      refreshBtn.onclick = async () => {
+        try {
+          debug("🔄 Refreshing database list...");
+          showSpinner();
+          const databases = await getAllDatabases({ forceRefresh: true });
+          populateDatabaseSelect(databaseSelect, databases);
+          debug(`[DATABASE] ✅ Refreshed ${databases.length} databases`);
+        } catch (e) {
+          debug("Failed to refresh databases:", e);
+        } finally {
+          hideSpinner();
         }
       };
     }
@@ -3383,71 +2975,64 @@
     if (searchBtn) {
       searchBtn.onclick = async () => {
         try {
-          const searchTerm = prompt("Enter database name to search:");
+          const searchTerm = prompt("Enter database name or ID to search:");
           if (!searchTerm || searchTerm.trim() === "") return;
 
-          debug(`[DATABASE] 🔍 Searching for database by name: ${searchTerm}`);
+          debug(`[DATABASE] 🔍 Searching for database: ${searchTerm}`);
           showSpinner();
 
-          // Get current config to check if already selected
-          const currentConfig = getConfig();
-          const currentDbId = currentConfig.databaseId;
-
-          // Query databases (use cache for speed)
-          const databases = await getAllDatabases();
+          // Query all databases fresh (no cache)
+          const databases = await getAllDatabases({ forceRefresh: true });
 
           debug(
             `📋 Available databases: ${databases
-            .map((db) => `${db.id.slice(-8)}: ${extractDatabaseTitle(db)}`)
+            .map((db) => `${db.id.slice(-8)}: ${db.title || "Untitled"}`)
             .join(", ")}`
           );
 
-          // Find all matching databases by name
-          const searchTermLower = searchTerm.trim().toLowerCase();
-          const matchingDatabases = databases.filter((db) => {
-            const dbTitle = extractDatabaseTitle(db);
-            return dbTitle.toLowerCase().includes(searchTermLower);
-          });
+          // Find matching database
+          const searchTermTrimmed = searchTerm.trim();
+          let matchingDb = databases.find(
+            (db) =>
+              db.id === searchTermTrimmed ||
+              (db.title &&
+                typeof db.title === "string" &&
+                db.title.toLowerCase().includes(searchTermTrimmed.toLowerCase()))
+          );
 
-          if (matchingDatabases.length > 0) {
-            debug(`[DATABASE] ✅ Found ${matchingDatabases.length} matching database(s)`);
-            
-            // Check if the first match is already selected
-            const firstMatch = matchingDatabases[0];
-            const isAlreadySelected = currentDbId && firstMatch.id === currentDbId;
-            
-            // Populate dropdown with all matching databases
-            populateDatabaseSelect(databaseSelect, matchingDatabases);
-            
-            // Select the first match by default
-            databaseSelect.value = firstMatch.id;
-            
-            // Update config with first match
+          // If not found by exact match, try partial ID match (last 8 chars)
+          if (!matchingDb && searchTermTrimmed.length >= 8) {
+            const partialId = searchTermTrimmed.slice(-8);
+            matchingDb = databases.find((db) => db.id.endsWith(partialId));
+            if (matchingDb) {
+              debug(`[DATABASE] ✅ Found database by partial ID match: ${partialId}`);
+            }
+          }
+
+          if (matchingDb) {
+            // Update config with new database
             const config = getConfig();
-            config.databaseId = firstMatch.id;
-            config.databaseName = extractDatabaseTitle(firstMatch);
+            config.databaseId = matchingDb.id;
+            config.databaseName =
+              typeof matchingDb.title === "string"
+                ? matchingDb.title
+                : "Unknown Database";
 
             // Save to storage
             if (typeof GM_setValue === "function") {
               GM_setValue("notionConfig", config);
             }
 
-            // Update ID label
-            databaseLabel.textContent = `ID: ${firstMatch.id}`;
+            // Update UI
+            databaseSelect.innerHTML = `<option value="${matchingDb.id}">${config.databaseName}</option>`;
+            databaseLabel.textContent = `Database: ${config.databaseName}`;
 
             debug(
-              `✅ Set target database to: ${config.databaseName} (${firstMatch.id})`
+              `✅ Set target database to: ${config.databaseName} (${matchingDb.id})`
             );
-            
-            // Show appropriate message
-            if (isAlreadySelected && matchingDatabases.length === 1) {
-              alert(`Database "${config.databaseName}" is already selected.`);
-            } else if (matchingDatabases.length > 1) {
-              alert(`Found ${matchingDatabases.length} databases matching "${searchTerm}".\nSelect from the dropdown to choose a different one.`);
-            }
           } else {
-            alert(`No databases found matching "${searchTerm}".`);
-            debug(`[DATABASE] ❌ No databases found matching "${searchTerm}"`);
+            alert(`Database "${searchTerm}" not found.`);
+            debug(`[DATABASE] ❌ Database "${searchTerm}" not found`);
           }
         } catch (e) {
           debug("Failed to search database:", e);
@@ -3461,119 +3046,37 @@
     if (getByIdBtn) {
       getByIdBtn.onclick = async () => {
         try {
-          const input = prompt("Enter database ID or URL:");
-          if (!input || input.trim() === "") return;
+          const dbId = prompt("Enter database ID:");
+          if (!dbId || dbId.trim() === "") return;
 
-          debug(`[DATABASE] 🔍 Processing input: ${input}`);
+          const cleanDbId = dbId.trim();
+          debug(`[DATABASE] 🔍 Getting database by ID: ${cleanDbId}`);
           showSpinner();
-
-          let cleanDbId = input.trim();
-          
-          // Check if input is a URL and extract ID from it
-          if (cleanDbId.includes("notion.so/") || cleanDbId.includes("notion.site/")) {
-            debug(`[DATABASE] 🔍 Extracting ID from URL: ${cleanDbId}`);
-            
-            // Extract ID from URL patterns:
-            // https://www.notion.so/username/DatabaseName-abc123def456...
-            // https://notion.so/abc123def456...
-            const urlMatch = cleanDbId.match(/([a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
-            
-            if (urlMatch) {
-              cleanDbId = urlMatch[1];
-              debug(`[DATABASE] ✅ Extracted ID from URL: ${cleanDbId}`);
-            } else {
-              alert("Could not extract database ID from URL. Please check the URL format.");
-              hideSpinner();
-              return;
-            }
-          }
-          
-          // Normalize ID: accept with or without hyphens, format to proper UUID
-          cleanDbId = cleanDbId.replace(/[^a-f0-9-]/gi, "");
-          
-          // If no hyphens, add them in proper UUID format (8-4-4-4-12)
-          if (!cleanDbId.includes("-")) {
-            const raw = cleanDbId.replace(/-/g, "");
-            if (raw.length === 32) {
-              cleanDbId = raw.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, "$1-$2-$3-$4-$5");
-            } else {
-              alert(`Invalid database ID format.\nExpected 32 hexadecimal characters, got ${raw.length}.\n\nExample: abc123def456... (32 chars)\nor: abc123de-f456-7890-1234-567890abcdef`);
-              hideSpinner();
-              return;
-            }
-          }
-          
-          // Validate final format
-          const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
-          if (!uuidPattern.test(cleanDbId)) {
-            alert(`Invalid database ID format.\nMust be a valid UUID (32 hexadecimal characters).\n\nCurrent: ${cleanDbId}`);
-            hideSpinner();
-            return;
-          }
-          
-          debug(`[DATABASE] 🔍 Searching for database by ID: ${cleanDbId}`);
 
           // Fetch database details to validate and get name
           const dbDetails = await getDatabase(cleanDbId);
-          const databaseName = extractDatabaseTitle(dbDetails);
 
           // Update config with validated database
           const config = getConfig();
           config.databaseId = cleanDbId;
-          config.databaseName = databaseName;
+          config.databaseName = dbDetails.title || "Database by ID";
 
           if (typeof GM_setValue === "function") {
             GM_setValue("notionConfig", config);
           }
 
-          // Update dropdown with the found database
-          databaseSelect.innerHTML = `<option value="${cleanDbId}">${databaseName}</option>`;
-          databaseSelect.value = cleanDbId;
-          
-          // Update ID label
-          databaseLabel.textContent = `ID: ${cleanDbId}`;
+          // Update UI
+          databaseSelect.innerHTML = `<option value="${cleanDbId}">${config.databaseName}</option>`;
+          databaseLabel.textContent = `Database: ${config.databaseName}`;
 
           debug(
-            `✅ Set target database to: ${databaseName} (${cleanDbId})`
+            `✅ Set target database to: ${config.databaseName} (${cleanDbId})`
           );
-          
-          // Check if already selected
-          const currentConfig = getConfig();
-          if (currentConfig.databaseId === cleanDbId) {
-            alert(`Database "${databaseName}" is already selected.`);
-          } else {
-            alert(`Database found: "${databaseName}"`);
-          }
         } catch (e) {
           debug("Failed to get database by ID:", e);
-          
-          // Provide specific error messages based on error type
-          let errorMsg = "Error: Could not access database.\n\n";
-          
-          if (e.code === 'object_not_found' || e.status === 404) {
-            errorMsg += "Database not found. Please check:\n";
-            errorMsg += "• The database ID is correct\n";
-            errorMsg += "• The database exists in your Notion workspace\n";
-            errorMsg += "• The database hasn't been deleted";
-          } else if (e.code === 'unauthorized' || e.status === 401) {
-            errorMsg += "Access denied. Please check:\n";
-            errorMsg += "• The database is shared with your Notion integration\n";
-            errorMsg += "• Your Notion API token is valid";
-          } else if (e.code === 'restricted_resource' || e.status === 403) {
-            errorMsg += "The database is not shared with your integration.\n\n";
-            errorMsg += "To fix this:\n";
-            errorMsg += "1. Open the database in Notion\n";
-            errorMsg += "2. Click '...' → 'Add connections'\n";
-            errorMsg += "3. Select your integration";
-          } else {
-            errorMsg += `${e.message || e}\n\n`;
-            errorMsg += "Please check:\n";
-            errorMsg += "• Your internet connection\n";
-            errorMsg += "• The proxy server is running\n";
-            errorMsg += "• The database ID is correct";
-          }
-          
-          alert(errorMsg);
+          alert(
+            `Error: Could not access database with ID "${dbId}". Make sure the database is shared with your Notion integration.`
+          );
         } finally {
           hideSpinner();
         }
@@ -3616,6 +3119,9 @@
     // AutoExtract button handlers
     const startAutoExtractBtn = panel.querySelector("#w2n-start-autoextract");
     const stopAutoExtractBtn = panel.querySelector("#w2n-stop-autoextract");
+    const diagnoseAutoExtractBtn = panel.querySelector(
+      "#w2n-diagnose-autoextract"
+    );
 
     if (startAutoExtractBtn) {
       startAutoExtractBtn.onclick = async () => {
@@ -3654,35 +3160,36 @@
           GM_setValue("w2n_autoExtractState", null);
           debug("🗑️ Cleared saved autoExtractState");
           
-          showToast("⏹ Stopping AutoExtract after current page...", 4000);
+          showToast("⏹ Stopping AutoExtract immediately...", 3000);
           
           // Update overlay to show stopping message
           try {
             if (window.W2NSavingProgress && window.W2NSavingProgress.setMessage) {
-              window.W2NSavingProgress.setMessage("⏹ Finishing current page then stopping...");
+              window.W2NSavingProgress.setMessage("⏹ Stopping...");
             }
           } catch (e) {
             debug("Warning: Could not update overlay message:", e);
           }
           
-          // Update button text and appearance to show it's stopping
+          // Update button text to show it's stopping
           if (startAutoExtractBtn) {
-            startAutoExtractBtn.textContent = "⏹ Finishing current page...";
+            startAutoExtractBtn.textContent = "⏹ Stopping...";
             startAutoExtractBtn.style.background = "#dc2626"; // Red color
-            startAutoExtractBtn.disabled = true;
           }
-          
-          // Hide stop button immediately since stop is initiated
-          stopAutoExtractBtn.style.display = "none";
-          startAutoExtractBtn.style.display = "block";
-          
-          // Call stopAutoExtract to clean up immediately
-          // This will show the overlay as "done" and restore UI
-          setTimeout(() => {
-            if (window.ServiceNowToNotion && window.ServiceNowToNotion.autoExtractState) {
-              stopAutoExtract(window.ServiceNowToNotion.autoExtractState, "User clicked stop button");
-            }
-          }, 100);
+        }
+        // Restore buttons
+        startAutoExtractBtn.style.display = "block";
+        stopAutoExtractBtn.style.display = "none";
+      };
+    }
+
+    if (diagnoseAutoExtractBtn) {
+      diagnoseAutoExtractBtn.onclick = () => {
+        try {
+          diagnoseAutoExtraction();
+        } catch (e) {
+          debug("Failed to diagnose auto extraction:", e);
+          alert("Error diagnosing auto extraction. Check console for details.");
         }
       };
     }
@@ -3741,14 +3248,17 @@
       let newLeft = startLeft + dx;
       let newTop = startTop + dy;
 
-      // clamp to viewport with 8px margin - ensure panel stays fully visible
+      // clamp to viewport with 8px margin
       const margin = 8;
       const rect = panel.getBoundingClientRect();
-      const maxLeft = Math.max(margin, window.innerWidth - rect.width - margin);
-      const maxTop = Math.max(margin, window.innerHeight - rect.height - margin);
-      
-      newLeft = Math.min(Math.max(margin, newLeft), maxLeft);
-      newTop = Math.min(Math.max(margin, newTop), maxTop);
+      newLeft = Math.min(
+        Math.max(margin, newLeft),
+        window.innerWidth - rect.width - margin
+      );
+      newTop = Math.min(
+        Math.max(margin, newTop),
+        window.innerHeight - rect.height - margin + window.scrollY
+      );
 
       panel.style.left = `${Math.round(newLeft)}px`;
       panel.style.top = `${Math.round(newTop)}px`;
@@ -3779,71 +3289,6 @@
     window.addEventListener("pointerup", onPointerUp);
     // pointercancel also
     window.addEventListener("pointercancel", onPointerUp);
-    
-    // Add window resize handler to keep panel on screen
-    const onWindowResize = () => {
-      // Don't adjust while dragging
-      if (dragging) return;
-      
-      const margin = 8;
-      const rect = panel.getBoundingClientRect();
-      window.getComputedStyle(panel);
-      
-      // Calculate current position
-      let currentLeft = rect.left;
-      let currentTop = rect.top;
-      
-      // Check if panel is off-screen or too close to edges
-      const maxLeft = Math.max(margin, window.innerWidth - rect.width - margin);
-      const maxTop = Math.max(margin, window.innerHeight - rect.height - margin);
-      
-      let needsAdjustment = false;
-      let newLeft = currentLeft;
-      let newTop = currentTop;
-      
-      // Clamp to viewport
-      if (currentLeft < margin) {
-        newLeft = margin;
-        needsAdjustment = true;
-      } else if (currentLeft > maxLeft) {
-        newLeft = maxLeft;
-        needsAdjustment = true;
-      }
-      
-      if (currentTop < margin) {
-        newTop = margin;
-        needsAdjustment = true;
-      } else if (currentTop > maxTop) {
-        newTop = maxTop;
-        needsAdjustment = true;
-      }
-      
-      if (needsAdjustment) {
-        panel.style.left = `${Math.round(newLeft)}px`;
-        panel.style.top = `${Math.round(newTop)}px`;
-        panel.style.right = 'auto';
-        
-        // Save adjusted position
-        try {
-          localStorage.setItem('w2n-panel-position', JSON.stringify({
-            left: newLeft,
-            top: newTop
-          }));
-        } catch (e) {
-          console.warn('[W2N] Failed to save adjusted panel position:', e);
-        }
-      }
-    };
-    
-    // Debounce resize handler to avoid excessive updates
-    let resizeTimeout;
-    window.addEventListener("resize", () => {
-      clearTimeout(resizeTimeout);
-      resizeTimeout = setTimeout(onWindowResize, 100);
-    });
-    
-    // Run once on initialization to ensure panel is on screen
-    setTimeout(onWindowResize, 100);
   }
 
   // Attach drag enable when panel is initialized
@@ -3859,18 +3304,6 @@
   };
 
   /**
-   * Extract database title from Notion API response
-   * @param {Object} db - Database object from Notion API
-   * @returns {string} Database title
-   */
-  function extractDatabaseTitle(db) {
-    if (typeof db.title === "string") {
-      return db.title;
-    }
-    return db.title && db.title[0] ? db.title[0].plain_text : "Untitled Database";
-  }
-
-  /**
    * Populate the database select dropdown
    * @param {HTMLElement} selectEl - The select element
    * @param {Array} databases - Array of database objects
@@ -3883,12 +3316,69 @@
     databases.forEach((db) => {
       const option = document.createElement("option");
       option.value = db.id;
-      option.textContent = extractDatabaseTitle(db);
+      option.textContent =
+        db.title && db.title[0] ? db.title[0].plain_text : "Untitled Database";
       selectEl.appendChild(option);
     });
   }
 
   // AutoExtract functionality
+
+  /**
+   * Poll validation status endpoint until validation completes
+   * @param {string} pageId - Notion page ID (with or without hyphens)
+   * @param {number} maxWaitMs - Maximum wait time in milliseconds (default 30s)
+   * @returns {Promise<object>} Validation status result
+   */
+  async function waitForValidation(pageId, maxWaitMs = 30000) {
+    const config = getConfig();
+    const proxyUrl = config.proxyUrl || 'http://localhost:3004';
+    const pollInterval = 2000; // Poll every 2 seconds
+    const startTime = Date.now();
+    
+    debug(`[VALIDATION-POLL] Waiting for validation to complete for page ${pageId}`);
+    
+    while (Date.now() - startTime < maxWaitMs) {
+      try {
+        // Poll validation status endpoint
+        const response = await fetch(`${proxyUrl}/api/W2N/${pageId}/validation`);
+        const statusData = await response.json();
+        
+        debug(`[VALIDATION-POLL] Status: ${statusData.status}`);
+        
+        // Check if validation is complete
+        if (statusData.status === 'complete') {
+          const duration = statusData.duration || (Date.now() - startTime);
+          debug(`[VALIDATION-POLL] ✅ Validation complete after ${duration}ms`);
+          return statusData;
+        }
+        
+        // Check if validation errored
+        if (statusData.status === 'error') {
+          debug(`[VALIDATION-POLL] ❌ Validation failed: ${statusData.error || 'Unknown error'}`);
+          return statusData;
+        }
+        
+        // Check if status not found (validation may not be enabled)
+        if (statusData.status === 'not_found') {
+          debug(`[VALIDATION-POLL] ℹ️ No validation status found - validation may not be enabled`);
+          return statusData;
+        }
+        
+        // Still pending or running - wait and poll again
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+        
+      } catch (error) {
+        debug(`[VALIDATION-POLL] ⚠️ Error checking validation status: ${error.message}`);
+        // If fetch fails, assume validation not enabled and continue
+        return { status: 'not_found', error: error.message };
+      }
+    }
+    
+    // Timeout reached
+    debug(`[VALIDATION-POLL] ⏱️ Timeout after ${maxWaitMs}ms - continuing anyway`);
+    return { status: 'timeout', message: 'Validation check timed out' };
+  }
 
   async function startAutoExtraction() {
     const config = getConfig();
@@ -3942,21 +3432,7 @@
       failedPages: [], // Track pages that failed due to rate limiting or other errors for manual retry
       rateLimitHits: 0, // Track how many times we've hit rate limits
       navigationFailures: 0, // Track consecutive navigation failures
-      persistentProcessedUrls: new Set(), // Cross-session dedupe list loaded from storage
     };
-
-    // Load persisted processed URLs for cross-session dedupe
-    try {
-      if (typeof GM_getValue === 'function') {
-        const persistedJson = GM_getValue('w2n_processed_urls', '[]');
-        let persistedArr = [];
-        try { persistedArr = JSON.parse(persistedJson) || []; } catch(e) { /* ignore parse error */ }
-        autoExtractState.persistentProcessedUrls = new Set(persistedArr);
-        debug(`[DEDUPE-PERSIST] Loaded ${autoExtractState.persistentProcessedUrls.size} persisted URL(s)`);
-      }
-    } catch (e) {
-      debug('[DEDUPE-PERSIST] Failed loading persisted URLs:', e);
-    }
 
     // Set up beforeunload handler to save state if page is reloaded manually
     const beforeUnloadHandler = (event) => {
@@ -4827,18 +4303,6 @@
         // Get current page identifiers for duplicate detection
         const currentUrl = window.location.href;
         const currentPageId = getCurrentPageId();
-        const globalConfig = typeof GM_getValue === 'function' ? GM_getValue('notionConfig', {}) : {};
-        const forceReextract = !!globalConfig.forceReextract;
-
-        // Cross-session persistent dedupe check (before session duplicate logic)
-        if (!forceReextract && autoExtractState.persistentProcessedUrls && autoExtractState.persistentProcessedUrls.has(currentUrl)) {
-          debug(`[DEDUPE-PERSIST] ✅ Skipping previously processed URL (cross-session): ${currentUrl}`);
-          overlayModule.setMessage(`Skipping already processed page ${currentPageNum}...`);
-          showToast(`⚠️ Already processed earlier session, skipping page ${currentPageNum}`, 3000);
-          // Still increment page counter logically, but do not extract/process
-          // Go directly to navigation section below
-          skipExtraction = true;
-        }
         
         // Check for duplicate URL (same page being processed again)
         // BUT: If we just had a navigation failure, this is expected (we're retrying navigation)
@@ -4878,7 +4342,7 @@
           autoExtractState.duplicateCount = 0;
         }
         
-        // Only extract and process if this is not a duplicate that we're skipping
+        // Only extract if this is not a duplicate that we're skipping
         let extractedData = null;
         if (!skipExtraction) {
           // Extract current page data using the app instance
@@ -4890,14 +4354,17 @@
             throw new Error("No content extracted from page");
           }
 
-          // Add URL to processed set (we only reach here if not already processed)
-          autoExtractState.processedUrls.add(currentUrl);
-          autoExtractState.lastPageId = currentPageId;
-    // Persist URL for cross-session dedupe after successful processing later
-          
-          // Process and save to Notion with rate limit retry
-          debug(`[AUTO-EXTRACT] 📤 Saving page ${currentPageNum} to Notion...`);
-          overlayModule.setMessage(`Processing page ${currentPageNum}...`);
+          // Skip processing if this is a duplicate URL
+          if (autoExtractState.processedUrls.has(currentUrl)) {
+            debug(`⏭️ Skipping Notion processing for duplicate URL`);
+          } else {
+            // Add URL to processed set
+            autoExtractState.processedUrls.add(currentUrl);
+            autoExtractState.lastPageId = currentPageId;
+            
+            // Process and save to Notion with rate limit retry
+            debug(`[AUTO-EXTRACT] 📤 Saving page ${currentPageNum} to Notion...`);
+            overlayModule.setMessage(`Processing page ${currentPageNum}...`);
           
             // Retry logic for rate limits
             const maxRateLimitRetries = 3;
@@ -4911,10 +4378,44 @@
                 // - "Checking proxy connection..."
                 // - "Converting content to Notion blocks..."
                 // - "Page created successfully!"
-                await app.processWithProxy(extractedData);
+                const result = await app.processWithProxy(extractedData);
                 
                 // If we get here without throwing, it succeeded
                 processingSuccess = true;
+                
+                autoExtractState.totalProcessed++;
+                debug(`[AUTO-EXTRACT] ✅ Page ${currentPageNum} saved to Notion`);
+                
+                // Wait for validation to complete if page ID is available
+                if (result && result.data && result.data.page && result.data.page.id) {
+                  const pageId = result.data.page.id;
+                  debug(`[AUTO-EXTRACT] ⏳ Waiting for validation to complete for page ${pageId}...`);
+                  overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Waiting for validation...`);
+                  
+                  try {
+                    const validationStatus = await waitForValidation(pageId, 30000); // 30 second timeout
+                    
+                    if (validationStatus.status === 'complete') {
+                      const duration = validationStatus.duration ? `${(validationStatus.duration / 1000).toFixed(1)}s` : 'unknown time';
+                      debug(`[AUTO-EXTRACT] ✅ Validation complete after ${duration}`);
+                      overlayModule.setMessage(`✓ Page ${currentPageNum} validated! Continuing...`);
+                    } else if (validationStatus.status === 'error') {
+                      debug(`[AUTO-EXTRACT] ⚠️ Validation failed but continuing anyway`);
+                      overlayModule.setMessage(`✓ Page ${currentPageNum} saved (validation failed). Continuing...`);
+                    } else if (validationStatus.status === 'not_found' || validationStatus.status === 'timeout') {
+                      debug(`[AUTO-EXTRACT] ℹ️ Validation status: ${validationStatus.status} - continuing`);
+                      overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
+                    }
+                  } catch (validationError) {
+                    debug(`[AUTO-EXTRACT] ⚠️ Error waiting for validation: ${validationError.message}`);
+                    // Non-fatal - continue with AutoExtract
+                    overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
+                  }
+                } else {
+                  // No page ID available - skip validation check
+                  debug(`[AUTO-EXTRACT] ℹ️ No page ID available - skipping validation check`);
+                  overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
+                }
               } catch (processingError) {
                 // Check if this is a rate limit error
                 const errorMessage = processingError.message || '';
@@ -4949,97 +4450,44 @@
                   
                   debug(`🔄 [RATE-LIMIT] Retrying page ${currentPageNum} after cooldown...`);
                 } else {
-                  // Not a rate limit error, or we've exhausted retries
-                  // Create placeholder page and save to failed pages queue
-                  debug(`⚠️ [RATE-LIMIT] Exhausted retries for page ${currentPageNum}, creating placeholder...`);
+                  // Check if this is a timeout error (v11.0.6)
+                  const isTimeout = errorMessage.includes('timeout') || 
+                                   errorMessage.includes('Timeout') ||
+                                   errorMessage.includes('timed out');
                   
-                  // Initialize failedPages array if it doesn't exist
-                  if (!autoExtractState.failedPages) {
-                    autoExtractState.failedPages = [];
-                  }
-                  
-                  // Get database ID from app
-                  const databaseId = typeof GM_getValue === 'function' 
-                    ? GM_getValue('w2n_database_id', null)
-                    : null;
-                  
-                  // Create placeholder page info
-                  const failedPageInfo = {
-                    pageNumber: currentPageNum,
-                    title: extractedData?.title || 'Unknown',
-                    url: currentUrl,
-                    reason: errorMessage.substring(0, 200), // Truncate long error messages
-                    timestamp: new Date().toISOString(),
-                    errorType: isRateLimit ? 'rate_limit' : 'other',
-                    databaseId: databaseId
-                  };
-                  
-                  // Try to create placeholder page
-                  debug(`📝 [PLACEHOLDER] Creating placeholder page for failed extraction...`);
-                  if (button) {
-                    button.textContent = `Creating placeholder for page ${currentPageNum}...`;
-                  }
-                  
-                  try {
-                    // Import the placeholder function
-                    const { createPlaceholderPage } = await Promise.resolve().then(function () { return proxyApi; });
-                    const placeholderResult = await createPlaceholderPage(failedPageInfo);
+                  if (isTimeout) {
+                    debug(`⚠️ [TIMEOUT-RECOVERY] Request timed out for page ${currentPageNum}`);
+                    debug(`⚠️ [TIMEOUT-RECOVERY] Server may still be processing. Waiting 60s to check if page was created...`);
                     
-                    if (placeholderResult.success) {
-                      debug(`✅ [PLACEHOLDER] Created placeholder page: ${placeholderResult.pageUrl}`);
-                      
-                      // Add placeholder page info to failed page record
-                      failedPageInfo.placeholderPageId = placeholderResult.pageId;
-                      failedPageInfo.placeholderPageUrl = placeholderResult.pageUrl;
-                      
-                      showToast(
-                        `⚠️ Page ${currentPageNum} failed - placeholder created. Continuing...`,
-                        4000
-                      );
-                    } else {
-                      debug(`⚠️ [PLACEHOLDER] Failed to create placeholder (non-fatal), continuing anyway`);
-                      showToast(
-                        `⚠️ Page ${currentPageNum} failed. Continuing with next page...`,
-                        4000
-                      );
-                    }
-                  } catch (placeholderError) {
-                    debug(`⚠️ [PLACEHOLDER] Error creating placeholder (non-fatal):`, placeholderError);
+                    overlayModule.setMessage(`⏳ Timeout - checking if page was created...`);
+                    
+                    // Wait 60 seconds for server to finish processing
+                    await new Promise(resolve => setTimeout(resolve, 60000));
+                    
+                    // TODO: Query Notion to check if page exists and trigger validation
+                    // For now, log warning and continue (page may have been created with unresolved markers)
+                    debug(`⚠️ [TIMEOUT-RECOVERY] Unable to verify page creation. It may exist with unresolved markers.`);
+                    debug(`⚠️ [TIMEOUT-RECOVERY] Run marker sweep script manually on database if needed.`);
+                    
                     showToast(
-                      `⚠️ Page ${currentPageNum} failed. Continuing with next page...`,
-                      4000
+                      `⚠️ Timeout on page ${currentPageNum}. Page may exist but need marker cleanup.`,
+                      8000
                     );
+                    
+                    // Count as processed (even though we can't confirm)
+                    autoExtractState.totalProcessed++;
+                    processingSuccess = true; // Continue to next page
+                  } else {
+                    // Not a rate limit or timeout error, or we've exhausted retries - rethrow
+                    throw processingError;
                   }
-                  
-                  // Add to failed pages queue (whether placeholder succeeded or not)
-                  autoExtractState.failedPages.push(failedPageInfo);
-                  
-                  // Mark as NOT successful but DON'T throw - continue with next page
-                  processingSuccess = false;
-                  break; // Exit retry loop
                 }
               }
             }
             
-          // If processing failed after all retries, log it but DON'T stop AutoExtract
-          if (!processingSuccess) {
-            debug(`⚠️ [AUTO-EXTRACT] Page ${currentPageNum} failed after retries - continuing with next page`);
-            // Don't throw - just continue to navigation
-          } else {
-            // Only increment totalProcessed on success
-            autoExtractState.totalProcessed++;
-            debug(`[AUTO-EXTRACT] ✅ Page ${currentPageNum} saved to Notion`);
-            overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
-              // Persist URL to cross-session store
-              try {
-                autoExtractState.persistentProcessedUrls.add(currentUrl);
-                if (typeof GM_setValue === 'function') {
-                  GM_setValue('w2n_processed_urls', JSON.stringify(Array.from(autoExtractState.persistentProcessedUrls)));
-                }
-                debug(`[DEDUPE-PERSIST] 💾 Persisted URL: ${currentUrl} (total ${autoExtractState.persistentProcessedUrls.size})`);
-              } catch(e) {
-                debug('[DEDUPE-PERSIST] Failed persisting URL:', e);
-              }
+            if (!processingSuccess) {
+              throw new Error(`Failed to process page ${currentPageNum} after ${maxRateLimitRetries} rate limit retries`);
+            }
           }
         } else {
           debug(`[NAV-RETRY] ⏩ Skipped extraction for expected duplicate, proceeding to navigation...`);
@@ -5199,11 +4647,7 @@
         debug(`❌ Error in AutoExtract loop:`, error);
         const errorMessage = `❌ AutoExtract ERROR: ${error.message}\n\nTotal pages processed: ${autoExtractState.totalProcessed}`;
         alert(errorMessage);
-        
-        // Pass error details to stop reason for persistent logging
-        const stopReason = `Error: ${error.message.substring(0, 100)}`;
-        stopAutoExtract(autoExtractState, stopReason);
-        
+        stopAutoExtract(autoExtractState);
         if (button)
           button.textContent = `❌ Error: ${error.message.substring(0, 20)}...`;
         overlayModule.error({
@@ -5232,23 +4676,16 @@
         debug(`💾 Failed pages saved to storage for manual retry`);
       }
       
-      // Count how many have placeholders
-      const placeholderCount = autoExtractState.failedPages.filter(fp => fp.placeholderPageId).length;
-      
       // Show warning to user
       const failedPagesMessage = `⚠️ AutoExtract completed with warnings!\n\n` +
         `✅ Successfully processed: ${autoExtractState.totalProcessed} pages\n` +
         `❌ Failed/Skipped: ${autoExtractState.failedPages.length} pages\n` +
-        `� Placeholders created: ${placeholderCount} pages\n` +
-        `�🚦 Rate limit hits: ${autoExtractState.rateLimitHits || 0}\n\n` +
+        `🚦 Rate limit hits: ${autoExtractState.rateLimitHits}\n\n` +
         `Failed pages list:\n` +
         autoExtractState.failedPages.map((fp, i) => 
-          `${i + 1}. ${fp.title || 'Untitled'} (page ${fp.pageNumber})\n` +
-          `   Reason: ${fp.reason}\n` +
-          `   ${fp.placeholderPageId ? '✓ Placeholder created' : '✗ No placeholder'}`
+          `${i + 1}. ${fp.title || 'Untitled'} (page ${fp.pageNumber})\n   Reason: ${fp.reason}`
         ).join('\n') +
-        `\n\n${placeholderCount > 0 ? 'Placeholder pages have been created in Notion to hold the sequence.\n' : ''}` +
-        `Failed pages data saved for later retry.`;
+        `\n\nFailed pages have been saved. You can manually retry them later.`;
       
       alert(failedPagesMessage);
       
@@ -5256,34 +4693,6 @@
         `⚠️ Completed with ${autoExtractState.failedPages.length} failed pages. See console for details.`,
         7000
       );
-      
-      // Ask user if they want to auto-retry failed pages after cooldown
-      const retryablePagesCount = autoExtractState.failedPages.filter(fp => fp.placeholderPageId).length;
-      if (retryablePagesCount > 0) {
-        const shouldRetry = confirm(
-          `🔄 Auto-Retry Failed Pages?\n\n` +
-          `${retryablePagesCount} failed page(s) have placeholders and can be auto-retried.\n\n` +
-          `The system will:\n` +
-          `• Wait 5 minutes for rate limits to clear\n` +
-          `• Visit each failed page in ServiceNow\n` +
-          `• Extract the content\n` +
-          `• PATCH update the placeholder pages\n\n` +
-          `Would you like to start the auto-retry process?`
-        );
-        
-        if (shouldRetry) {
-          debug(`🔄 [AUTO-RETRY] User confirmed auto-retry of failed pages`);
-          
-          // Start retry process in background
-          setTimeout(() => {
-            retryFailedPages(autoExtractState.failedPages, button);
-          }, 1000); // Small delay to let UI settle
-          
-          // Don't call stopAutoExtract yet - retry will handle it
-          if (button) button.textContent = "⏳ Preparing retry...";
-          return; // Exit without stopping
-        }
-      }
     } else {
       showToast(
         `✅ AutoExtract complete! Processed ${autoExtractState.totalProcessed} page(s)`,
@@ -5297,13 +4706,7 @@
       autoCloseMs: 5000,
     });
     
-    // Pass completion reason with stats
-    const failedCount = autoExtractState.failedPages?.length || 0;
-    const stopReason = failedCount > 0 
-      ? `Completed with ${failedCount} failed page(s)`
-      : `Completed successfully`;
-    stopAutoExtract(autoExtractState, stopReason);
-    
+    stopAutoExtract(autoExtractState);
     if (button) button.textContent = "Start AutoExtract";
   }
 
@@ -5437,43 +4840,8 @@
     return pageId;
   }
 
-  function stopAutoExtract(autoExtractState, reason = "Unknown") {
+  function stopAutoExtract(autoExtractState) {
     debug("[AUTO-EXTRACT] 🛑 stopAutoExtract called - cleaning up");
-    debug(`[AUTO-EXTRACT] Stop reason: ${reason}`);
-    
-    // FIX v11.0.27: Save stop reason to persistent log for post-mortem analysis
-    try {
-      const stopLog = {
-        timestamp: new Date().toISOString(),
-        reason: reason,
-        totalProcessed: autoExtractState.totalProcessed || 0,
-        lastPageNum: autoExtractState.currentPageNum || 0,
-        duplicateCount: autoExtractState.duplicateCount || 0,
-        url: window.location.href
-      };
-      
-      // Get existing logs (keep last 10)
-      let logs = [];
-      try {
-        const existingLogs = GM_getValue("w2n_autoExtractStopLogs", "[]");
-        logs = JSON.parse(existingLogs);
-      } catch (e) {
-        logs = [];
-      }
-      
-      logs.push(stopLog);
-      if (logs.length > 10) {
-        logs = logs.slice(-10); // Keep only last 10 entries
-      }
-      
-      GM_setValue("w2n_autoExtractStopLogs", JSON.stringify(logs, null, 2));
-      debug("[PERSISTENT-LOG] 💾 Saved stop reason to persistent log");
-      
-      // Also log to console with special marker for easy searching
-      console.log("🔴 [AUTOEXTRACT-STOP-LOG] 🔴", stopLog);
-    } catch (logError) {
-      debug(`[PERSISTENT-LOG] ❌ Failed to save stop log: ${logError.message}`);
-    }
     
     autoExtractState.running = false;
     overlayModule.setProgress(100);
@@ -5855,6 +5223,41 @@
     });
   }
 
+  function diagnoseAutoExtraction() {
+    const nextPageSelector =
+      typeof GM_getValue === "function"
+        ? GM_getValue("w2n_next_page_selector", "div.zDocsNextTopicButton a")
+        : "div.zDocsNextTopicButton a";
+
+    let diagnosis = "AutoExtract Diagnosis:\n\n";
+    diagnosis += `Next page selector: ${nextPageSelector || "Not set"}\n\n`;
+
+    if (!nextPageSelector) {
+      diagnosis +=
+        "❌ No next page selector configured. Use 'Select Next Page Element' first.\n";
+    } else {
+      diagnosis += "✅ Next page selector configured.\n";
+      // Test if selector exists on current page
+      try {
+        const element = document.querySelector(nextPageSelector);
+        if (element) {
+          diagnosis += `✅ Selector found on current page: ${
+          element.textContent?.trim().substring(0, 50) || element.tagName
+        }\n`;
+        } else {
+          diagnosis += "⚠️ Selector not found on current page.\n";
+        }
+      } catch (e) {
+        diagnosis += `❌ Invalid selector: ${e.message}\n`;
+      }
+    }
+
+    diagnosis +=
+      "\nNote: Full auto-extraction functionality is not yet implemented.";
+
+    alert(diagnosis);
+  }
+
   // Advanced element discovery with multiple strategies
   function findNextPageElement(savedSelector) {
     // Strategy 1: Try saved selector
@@ -6157,400 +5560,6 @@
     }
 
     return false;
-  }
-
-  /**
-   * Retry failed pages by navigating to each URL and updating placeholder pages
-   * @param {Array} failedPages - Array of failed page objects with placeholder info
-   * @param {HTMLElement} button - The AutoExtract button for status updates
-   */
-  async function retryFailedPages(failedPages, button) {
-    debug(`🔄 [AUTO-RETRY] Starting retry process for ${failedPages.length} failed page(s)`);
-    
-    const { overlayModule } = await Promise.resolve().then(function () { return overlayProgress; });
-    const app = window.ServiceNowToNotion?.app?.();
-    
-    if (!app) {
-      debug(`❌ [AUTO-RETRY] App not available, cannot retry`);
-      alert('Error: ServiceNow-2-Notion app not initialized');
-      return;
-    }
-    
-    // Filter to only pages with placeholder IDs (can be patched)
-    const retryablePages = failedPages.filter(fp => fp.placeholderPageId);
-    
-    if (retryablePages.length === 0) {
-      debug(`⚠️ [AUTO-RETRY] No retryable pages (no placeholder IDs)`);
-      if (button) button.textContent = "Start AutoExtract";
-      return;
-    }
-    
-    debug(`🔄 [AUTO-RETRY] Found ${retryablePages.length} retryable page(s) with placeholders`);
-    
-    // Initial 5-minute cooldown to avoid rate limits
-    const cooldownMinutes = 5;
-    const cooldownMs = cooldownMinutes * 60 * 1000;
-    
-    debug(`⏳ [AUTO-RETRY] Starting ${cooldownMinutes}-minute cooldown to clear rate limits...`);
-    
-    if (button) {
-      button.textContent = `⏳ Cooldown: ${cooldownMinutes}m remaining...`;
-    }
-    
-    overlayModule.setMessage(`⏳ Waiting ${cooldownMinutes} minutes for rate limit cooldown...`);
-    
-    // Countdown with updates every 30 seconds
-    const updateInterval = 30000; // 30 seconds
-    let remainingMs = cooldownMs;
-    
-    while (remainingMs > 0) {
-      await new Promise(resolve => setTimeout(resolve, Math.min(updateInterval, remainingMs)));
-      remainingMs -= updateInterval;
-      
-      const remainingMinutes = Math.ceil(remainingMs / 60000);
-      if (remainingMs > 0 && button) {
-        button.textContent = `⏳ Cooldown: ${remainingMinutes}m remaining...`;
-      }
-    }
-    
-    debug(`✅ [AUTO-RETRY] Cooldown complete, starting retry process`);
-    
-    if (button) {
-      button.textContent = `🔄 Retrying failed pages...`;
-    }
-    
-    overlayModule.setMessage(`🔄 Starting retry of ${retryablePages.length} failed pages...`);
-    
-    // Track retry results
-    const retryResults = {
-      successful: [],
-      failed: [],
-      total: retryablePages.length
-    };
-    
-    // Process each failed page
-    for (let i = 0; i < retryablePages.length; i++) {
-      const failedPage = retryablePages[i];
-      const pageNum = i + 1;
-      
-      debug(`\n🔄 [AUTO-RETRY] ======================================`);
-      debug(`🔄 [AUTO-RETRY] Retrying page ${pageNum}/${retryablePages.length}`);
-      debug(`🔄 [AUTO-RETRY] Title: ${failedPage.title}`);
-      debug(`🔄 [AUTO-RETRY] URL: ${failedPage.url}`);
-      debug(`🔄 [AUTO-RETRY] Placeholder ID: ${failedPage.placeholderPageId}`);
-      debug(`🔄 [AUTO-RETRY] ======================================\n`);
-      
-      if (button) {
-        button.textContent = `🔄 Retry ${pageNum}/${retryablePages.length}: ${failedPage.title.substring(0, 20)}...`;
-      }
-      
-      overlayModule.setMessage(`🔄 Retrying ${pageNum}/${retryablePages.length}: ${failedPage.title}...`);
-      
-      try {
-        // Navigate to the failed page URL
-        debug(`🔄 [AUTO-RETRY] Step 1: Navigating to ${failedPage.url}...`);
-        window.location.href = failedPage.url;
-        
-        // Wait for page load
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        
-        // Extract page content
-        debug(`🔄 [AUTO-RETRY] Step 2: Extracting content...`);
-        overlayModule.setMessage(`📝 Extracting content from ${failedPage.title}...`);
-        
-        const extractedData = await app.extractCurrentPageData();
-        
-        if (!extractedData) {
-          throw new Error('Failed to extract content from page');
-        }
-        
-        // PATCH update the placeholder page
-        debug(`🔄 [AUTO-RETRY] Step 3: PATCH updating placeholder page...`);
-        overlayModule.setMessage(`📤 Updating placeholder page in Notion...`);
-        
-        // Import PATCH function
-        const { patchNotionPage } = await Promise.resolve().then(function () { return proxyApi; });
-        
-        const patchResult = await patchNotionPage(
-          failedPage.placeholderPageId,
-          extractedData.title,
-          extractedData.contentHtml || extractedData.content,
-          failedPage.url
-        );
-        
-        if (patchResult.success) {
-          debug(`✅ [AUTO-RETRY] Successfully updated placeholder for "${failedPage.title}"`);
-          retryResults.successful.push({
-            title: failedPage.title,
-            url: failedPage.url,
-            pageId: failedPage.placeholderPageId
-          });
-          
-          showToast(
-            `✅ Retry ${pageNum}/${retryablePages.length} successful: ${failedPage.title}`,
-            3000
-          );
-        } else {
-          throw new Error(patchResult.error || 'PATCH update failed');
-        }
-        
-        // Brief delay between retries (30 seconds to be safe)
-        if (i < retryablePages.length - 1) {
-          debug(`⏳ [AUTO-RETRY] Waiting 30s before next retry...`);
-          if (button) {
-            button.textContent = `⏳ Waiting 30s...`;
-          }
-          await new Promise(resolve => setTimeout(resolve, 30000));
-        }
-        
-      } catch (retryError) {
-        debug(`❌ [AUTO-RETRY] Failed to retry "${failedPage.title}": ${retryError.message}`);
-        
-        retryResults.failed.push({
-          title: failedPage.title,
-          url: failedPage.url,
-          pageId: failedPage.placeholderPageId,
-          reason: retryError.message
-        });
-        
-        showToast(
-          `❌ Retry ${pageNum}/${retryablePages.length} failed: ${failedPage.title}`,
-          4000
-        );
-        
-        // Check if it's another rate limit
-        const isRateLimit = retryError.message.includes('Rate limit') || 
-                           retryError.message.includes('rate limited') ||
-                           retryError.message.includes('429');
-        
-        if (isRateLimit) {
-          debug(`⚠️ [AUTO-RETRY] Hit rate limit again during retry - stopping retry process`);
-          alert(
-            `⚠️ Rate Limit Hit During Retry\n\n` +
-            `Successfully retried: ${retryResults.successful.length} page(s)\n` +
-            `Failed: ${retryResults.failed.length + (retryablePages.length - i)} page(s)\n\n` +
-            `Remaining pages still need manual retry.`
-          );
-          break;
-        }
-        
-        // For non-rate-limit errors, continue with next page
-        debug(`🔄 [AUTO-RETRY] Continuing with next page despite error...`);
-      }
-    }
-    
-    // Show final summary
-    debug(`\n🔄 [AUTO-RETRY] ======================================`);
-    debug(`🔄 [AUTO-RETRY] RETRY PROCESS COMPLETE`);
-    debug(`🔄 [AUTO-RETRY] ======================================`);
-    debug(`✅ Successful: ${retryResults.successful.length}`);
-    debug(`❌ Failed: ${retryResults.failed.length}`);
-    debug(`📊 Total: ${retryResults.total}`);
-    
-    if (retryResults.successful.length > 0) {
-      debug(`\n✅ Successfully retried pages:`);
-      retryResults.successful.forEach((page, i) => {
-        debug(`  ${i + 1}. ${page.title}`);
-      });
-    }
-    
-    if (retryResults.failed.length > 0) {
-      debug(`\n❌ Failed retry pages:`);
-      retryResults.failed.forEach((page, i) => {
-        debug(`  ${i + 1}. ${page.title}`);
-        debug(`     Reason: ${page.reason}`);
-      });
-    }
-    
-    // Show completion alert
-    const summaryMessage = `🔄 Auto-Retry Complete!\n\n` +
-      `✅ Successfully updated: ${retryResults.successful.length} page(s)\n` +
-      `❌ Still failed: ${retryResults.failed.length} page(s)\n` +
-      `📊 Total attempted: ${retryResults.total} page(s)\n\n` +
-      (retryResults.failed.length > 0 
-        ? `Failed pages still need manual attention. Check console for details.`
-        : `All failed pages have been successfully updated!`);
-    
-    alert(summaryMessage);
-    
-    overlayModule.done({
-      success: retryResults.failed.length === 0,
-      pageUrl: null,
-      autoCloseMs: 5000,
-    });
-    
-    if (button) {
-      button.textContent = retryResults.failed.length === 0 
-        ? "✅ All retries successful"
-        : `⚠️ ${retryResults.failed.length} still failed`;
-      
-      // Reset button after a few seconds
-      setTimeout(() => {
-        if (button) button.textContent = "Start AutoExtract";
-      }, 10000);
-    }
-    
-    // Save any still-failed pages back to localStorage
-    if (retryResults.failed.length > 0 && typeof GM_setValue === 'function') {
-      GM_setValue('w2n_failed_pages', JSON.stringify(retryResults.failed));
-      debug(`💾 Remaining failed pages saved to storage`);
-    } else if (typeof GM_setValue === 'function') {
-      // Clear failed pages if all succeeded
-      GM_setValue('w2n_failed_pages', JSON.stringify([]));
-      debug(`🧹 Cleared failed pages from storage (all retries successful)`);
-    }
-  }
-
-  /**
-   * Extract Notion page ID from a URL
-   * Supports various Notion URL formats:
-   * - https://www.notion.so/workspace/Page-Title-abc123def456...
-   * - https://www.notion.so/Page-Title-abc123def456...
-   * - https://notion.so/abc123def456...
-   * - abc123def456... (just the ID)
-   */
-  function extractPageIdFromUrl(input) {
-    if (!input || typeof input !== 'string') {
-      throw new Error('Invalid input: must provide a Notion page URL or ID');
-    }
-    
-    const trimmed = input.trim();
-    
-    // If it's already a valid 32-character UUID (with or without hyphens)
-    const uuidPattern = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
-    if (uuidPattern.test(trimmed)) {
-      // Remove hyphens and return
-      return trimmed.replace(/-/g, '');
-    }
-    
-    // Extract from Notion URL
-    // Pattern: last segment after last hyphen is the page ID (32 chars, may have hyphens)
-    const urlPattern = /([0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
-    const match = trimmed.match(urlPattern);
-    
-    if (match) {
-      // Remove hyphens from matched ID
-      return match[1].replace(/-/g, '');
-    }
-    
-    throw new Error('Could not extract page ID from input. Please provide a valid Notion page URL or 32-character page ID.');
-  }
-
-  /**
-   * Handle the "Update Existing Page" button click
-   * Prompts user for Notion page URL, extracts current ServiceNow content, and PATCHes the page
-   */
-  async function handleUpdateExistingPage() {
-    debug('\n🔄 [UPDATE-EXISTING] Starting manual page update...');
-    
-    // Prompt for Notion page URL or ID
-    const userInput = prompt(
-      '🔄 Update Existing Notion Page\n\n' +
-      'Paste the Notion page URL or ID:\n' +
-      '(e.g., https://notion.so/Page-Title-abc123... or abc123def456...)\n\n' +
-      'This will replace the page content with freshly extracted data from the current ServiceNow page.'
-    );
-    
-    if (!userInput || userInput.trim() === '') {
-      debug('[UPDATE-EXISTING] User cancelled');
-      return;
-    }
-    
-    try {
-      // Extract page ID from input
-      const pageId = extractPageIdFromUrl(userInput);
-      debug(`[UPDATE-EXISTING] Extracted page ID: ${pageId}`);
-      
-      // Show loading overlay
-      overlayModule.start({
-        title: 'Updating Notion Page',
-        message: '📝 Extracting current ServiceNow page content...'
-      });
-      
-      // Get app instance
-      const app = window.ServiceNowToNotion?.app?.();
-      if (!app) {
-        throw new Error('ServiceNow-2-Notion app not initialized');
-      }
-      
-      // Extract current page data
-      debug('[UPDATE-EXISTING] Extracting page data...');
-      const extractedData = await app.extractCurrentPageData();
-      
-      if (!extractedData) {
-        throw new Error('Failed to extract content from current page');
-      }
-      
-      debug(`[UPDATE-EXISTING] Extracted: ${extractedData.title}`);
-      
-      // Extract HTML content from the nested structure
-      const contentHtml = extractedData.content?.combinedHtml || 
-                          extractedData.content?.html || 
-                          extractedData.contentHtml || 
-                          '';
-      
-      debug(`[UPDATE-EXISTING] Content length: ${contentHtml.length} chars`);
-      
-      if (!contentHtml || contentHtml.length === 0) {
-        throw new Error('No content extracted from page');
-      }
-      
-      // Get current page URL
-      const currentUrl = window.location.href;
-      
-      overlayModule.setMessage(`📤 Updating Notion page: ${extractedData.title}...`);
-      
-      // Import PATCH function
-      const { patchNotionPage } = await Promise.resolve().then(function () { return proxyApi; });
-      
-      // PATCH the page
-      debug(`[UPDATE-EXISTING] Sending PATCH request to update page ${pageId}...`);
-      const patchResult = await patchNotionPage(
-        pageId,
-        extractedData.title,
-        contentHtml,
-        currentUrl
-      );
-      
-      if (patchResult.success) {
-        debug(`✅ [UPDATE-EXISTING] Successfully updated page: ${extractedData.title}`);
-        debug(`   Page URL: ${patchResult.url || 'N/A'}`);
-        
-        overlayModule.done({
-          success: true,
-          pageUrl: patchResult.url || `https://notion.so/${pageId}`,
-          autoCloseMs: 5000,
-        });
-        
-        showToast(
-          `✅ Successfully updated: ${extractedData.title}`,
-          5000
-        );
-        
-        // Show success alert with details
-        alert(
-          '✅ Page Updated Successfully!\n\n' +
-          `Title: ${extractedData.title}\n` +
-          `Page ID: ${pageId}\n\n` +
-          'The Notion page has been updated with fresh content from this ServiceNow page.'
-        );
-        
-      } else {
-        throw new Error(patchResult.error || 'PATCH update failed');
-      }
-      
-    } catch (error) {
-      debug(`❌ [UPDATE-EXISTING] Error: ${error.message}`);
-      
-      overlayModule.done({
-        success: false,
-        pageUrl: null,
-        autoCloseMs: 5000,
-      });
-      
-      // Re-throw to be caught by button handler
-      throw error;
-    }
   }
 
   // ServiceNow Metadata Extraction Module
@@ -7056,9 +6065,6 @@
 
       const videoIframes = Array.from(iframes).filter(isVideoIframe);
       metadata.hasVideos = videoTags.length > 0 || videoIframes.length > 0;
-      
-      // Add hasImages for property mapping
-      metadata.hasImages = contentImages.length > 0 || figuresWithImages.length > 0;
 
       // Generate current release URL from page URL pattern
       // Convert: https://www.servicenow.com/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/sgc-cmdb-integration-wiz.html
@@ -7310,18 +6316,6 @@
               // Clone the main element to modify it without affecting the page
               const mainClone = mainElement.cloneNode(true);
 
-              // Remove miniTOC elements first (unconditionally)
-              const miniTocElements = mainClone.querySelectorAll(".miniTOC, [class*='miniTOC']");
-              miniTocElements.forEach((el) => el.remove());
-              
-              // Also remove parent containers that have d-none d-md-block if they contain miniTOC elements
-              const responsiveContainers = mainClone.querySelectorAll(".d-none.d-md-block");
-              responsiveContainers.forEach((el) => {
-                if (el.querySelector(".miniTOC, [class*='miniTOC']") || el.textContent.includes("On this page")) {
-                  el.remove();
-                }
-              });
-
               // Remove navigation elements from the clone
               // BUT: Keep nav elements that are inside article/section tags (these are "Related Links" content)
               // Note: Can't use descendant selectors in :not(), so we'll remove manually
@@ -7476,24 +6470,6 @@
       // Clone the content element to avoid modifying the original DOM
       const contentClone = contentElement.cloneNode(true);
 
-      // Remove miniTOC elements first (unconditionally)
-      // Look for miniTOC by class name
-      const miniTocElements = contentClone.querySelectorAll(".miniTOC, [class*='miniTOC']");
-      console.log(`📄 Found ${miniTocElements.length} miniTOC elements to remove`);
-      miniTocElements.forEach((el) => {
-        console.log(`   ❌ Removing miniTOC: ${el.className}`);
-        el.remove();
-      });
-      
-      // Also remove parent containers that have d-none d-md-block if they contain miniTOC elements
-      const responsiveContainers = contentClone.querySelectorAll(".d-none.d-md-block");
-      responsiveContainers.forEach((el) => {
-        if (el.querySelector(".miniTOC, [class*='miniTOC']") || el.textContent.includes("On this page")) {
-          console.log(`   ❌ Removing responsive container with miniTOC content`);
-          el.remove();
-        }
-      });
-      
       // Apply nav filtering - remove navigation elements that are NOT inside article/section
       const navElements = contentClone.querySelectorAll(
         "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer"
@@ -8629,73 +7605,45 @@
         return;
       }
 
-      // Create a compact, outline-style main button with SVG icon for better integration
-      const button = createEl("button", {
-        id: "W2N-save-button",
-        title: `ServiceNow-2-Notion v${PROVIDER_VERSION} - Save current page to Notion`,
-        style: `
-        background: transparent;
-        color: ${BRANDING.primaryColor};
-        border: 1px solid ${BRANDING.primaryColor};
-        border-radius: 4px;
-        padding: 6px 10px;
-        height: 32px;
-        font-size: 13px;
-        font-weight: 600;
+      const button = createEl(
+        "button",
+        {
+          id: "W2N-save-button",
+          title: `ServiceNow-2-Notion v${PROVIDER_VERSION} - Save current page to Notion`,
+          style: `
+        background-color: ${BRANDING.primaryColor};
+        color: white;
+        border: none;
+        border-radius: 6px;
+        padding: 8px 16px;
+        font-size: 14px;
+        font-weight: bold;
         cursor: pointer;
-        margin-right: 10px;
+        margin-left: 10px;
         display: inline-flex;
         align-items: center;
-        gap: 8px;
-        transition: all 0.12s ease;
+        gap: 6px;
+        transition: all 0.2s ease;
       `,
-      });
-
-      // Compose icon (floppy disk) + label for better visuals
-      const iconSpan = document.createElement('span');
-      iconSpan.style.display = 'inline-flex';
-      iconSpan.style.width = '16px';
-      iconSpan.style.height = '16px';
-      iconSpan.style.alignItems = 'center';
-      iconSpan.style.justifyContent = 'center';
-      iconSpan.innerHTML = `
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="${BRANDING.primaryColor}" xmlns="http://www.w3.org/2000/svg">
-        <path d="M5 3h11l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
-        <path d="M12 17a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" fill="#fff" />
-      </svg>
-    `;
-
-      const labelSpan = document.createElement('span');
-      labelSpan.textContent = 'Save';
-      labelSpan.style.lineHeight = '16px';
-
-      button.appendChild(iconSpan);
-      button.appendChild(labelSpan);
+        },
+        "💾 Save to Notion"
+      );
 
       // Add click handler
       button.addEventListener("click", () => this.handleMainAction());
 
-      // Hover effects (outline -> filled)
+      // Add hover effects
       button.addEventListener("mouseenter", () => {
-        button.style.backgroundColor = BRANDING.primaryColor;
-        button.style.color = '#ffffff';
-        // Ensure icon fill becomes white on hover
-        const svg = iconSpan.querySelector('svg');
-        if (svg) svg.setAttribute('fill', '#ffffff');
-        button.style.transform = 'translateY(-1px)';
+        button.style.backgroundColor = BRANDING.hoverColor;
+        button.style.transform = "translateY(-1px)";
       });
 
       button.addEventListener("mouseleave", () => {
-        button.style.backgroundColor = 'transparent';
-        button.style.color = BRANDING.primaryColor;
-        const svg = iconSpan.querySelector('svg');
-        if (svg) svg.setAttribute('fill', BRANDING.primaryColor);
-        button.style.transform = 'translateY(0)';
+        button.style.backgroundColor = BRANDING.primaryColor;
+        button.style.transform = "translateY(0)";
       });
 
-    // Prepend so task buttons appear to the left side of the toolbar
-    if (container.prepend) container.prepend(button);
-    else container.insertBefore(button, container.firstChild);
+      container.appendChild(button);
       debug("✅ Main action button created");
     }
 
@@ -8713,51 +7661,40 @@
       const container = this.findButtonContainer();
       if (!container) return;
 
-      // Compact circular settings button with gear SVG
-      const settingsButton = createEl('button', {
-        id: 'W2N-settings-button',
-        title: 'ServiceNow-2-Notion Settings',
-        style: `
-        background: transparent;
-        color: ${BRANDING.primaryColor};
-        border: 1px solid rgba(0,0,0,0.08);
+      const settingsButton = createEl(
+        "button",
+        {
+          id: "W2N-settings-button",
+          title: "ServiceNow-2-Notion Settings",
+          style: `
+        background-color: #6b7280;
+        color: white;
+        border: none;
         border-radius: 6px;
-        width: 32px;
-        height: 32px;
-        padding: 0;
+        padding: 8px 12px;
         font-size: 14px;
         cursor: pointer;
-        margin-right: 5px;
+        margin-left: 5px;
         display: inline-flex;
         align-items: center;
-        justify-content: center;
-        transition: all 0.12s ease;
+        transition: all 0.2s ease;
       `,
+        },
+        "⚙️"
+      );
+
+      // Add click handler
+      settingsButton.addEventListener("click", () => this.showSettingsModal());
+
+      settingsButton.addEventListener("mouseenter", () => {
+        settingsButton.style.backgroundColor = "#4b5563";
       });
 
-      const gearIcon = document.createElement('span');
-      gearIcon.innerHTML = `
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="${BRANDING.primaryColor}" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 15.5A3.5 3.5 0 1 0 12 8.5a3.5 3.5 0 0 0 0 7z" />
-        <path d="M19.4 13.3c.04-.43.06-.87.06-1.3s-.02-.87-.06-1.3l2.11-1.65a.5.5 0 0 0 .12-.65l-2-3.46a.5.5 0 0 0-.6-.22l-2.49 1a8.12 8.12 0 0 0-2.24-1.3l-.38-2.65A.5.5 0 0 0 12.7 2h-4a.5.5 0 0 0-.5.43l-.38 2.65c-.8.3-1.54.73-2.24 1.3l-2.49-1a.5.5 0 0 0-.6.22l-2 3.46a.5.5 0 0 0 .12.65L4.6 10.7c-.04.43-.06.87-.06 1.3s.02.87.06 1.3L2.49 14.95a.5.5 0 0 0-.12.65l2 3.46c.14.24.44.34.7.22l2.49-1c.7.57 1.44 1 2.24 1.3l.38 2.65c.05.3.32.43.5.43h4c.18 0 .45-.13.5-.43l.38-2.65c.8-.3 1.54-.73 2.24-1.3l2.49 1c.26.12.56.02.7-.22l2-3.46a.5.5 0 0 0-.12-.65L19.4 13.3z" fill-opacity="0.9"/>
-      </svg>
-    `;
-      settingsButton.appendChild(gearIcon);
-
-      // Click handler
-      settingsButton.addEventListener('click', () => this.showSettingsModal());
-      settingsButton.addEventListener('mouseenter', () => {
-        settingsButton.style.backgroundColor = BRANDING.primaryColor;
-        const svg = gearIcon.querySelector('svg'); if (svg) svg.setAttribute('fill', '#ffffff');
-      });
-      settingsButton.addEventListener('mouseleave', () => {
-        settingsButton.style.backgroundColor = 'transparent';
-        const svg = gearIcon.querySelector('svg'); if (svg) svg.setAttribute('fill', BRANDING.primaryColor);
+      settingsButton.addEventListener("mouseleave", () => {
+        settingsButton.style.backgroundColor = "#6b7280";
       });
 
-    // Prepend settings button so it appears to the left of the toolbar items
-    if (container.prepend) container.prepend(settingsButton);
-    else container.insertBefore(settingsButton, container.firstChild);
+      container.appendChild(settingsButton);
       debug("✅ Settings button created");
     }
 
@@ -9039,10 +7976,7 @@
         const database = await getDatabase(config.databaseId);
         
         overlayModule.setMessage("Loading property mappings...");
-        const mappings = await getPropertyMappings(config.databaseId, {
-          database: database,
-          extractedData: extractedData
-        });
+        const mappings = await getPropertyMappings(config.databaseId);
 
         // Apply mappings to extracted data
         overlayModule.setMessage("Mapping properties to Notion format...");
@@ -9685,47 +8619,6 @@
     app: () => app,
     version: PROVIDER_VERSION,
     debug: debug,
-    
-    // FIX v11.0.27: Add helper to view AutoExtract stop logs
-    viewStopLogs: () => {
-      try {
-        const logs = GM_getValue("w2n_autoExtractStopLogs", "[]");
-        const parsed = JSON.parse(logs);
-        
-        if (parsed.length === 0) {
-          console.log("📋 No AutoExtract stop logs found");
-          return [];
-        }
-        
-        console.log(`\n${'='.repeat(80)}`);
-        console.log(`📋 AutoExtract Stop Logs (last ${parsed.length} entries)`);
-        console.log(`${'='.repeat(80)}\n`);
-        
-        parsed.forEach((log, idx) => {
-          console.log(`[${idx + 1}] ${log.timestamp}`);
-          console.log(`    Reason: ${log.reason}`);
-          console.log(`    Pages Processed: ${log.totalProcessed}`);
-          console.log(`    Last Page: ${log.lastPageNum}`);
-          console.log(`    Duplicate Count: ${log.duplicateCount}`);
-          console.log(`    URL: ${log.url}`);
-          console.log('');
-        });
-        
-        console.log(`${'='.repeat(80)}`);
-        console.log(`Tip: Run window.ServiceNowToNotion.clearStopLogs() to clear history`);
-        console.log(`${'='.repeat(80)}\n`);
-        
-        return parsed;
-      } catch (error) {
-        console.error("Failed to retrieve stop logs:", error);
-        return [];
-      }
-    },
-    
-    clearStopLogs: () => {
-      GM_setValue("w2n_autoExtractStopLogs", "[]");
-      console.log("✅ AutoExtract stop logs cleared");
-    }
   };
 
   // Auto-initialize when script loads
