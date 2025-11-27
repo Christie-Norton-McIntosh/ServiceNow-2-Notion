@@ -22,6 +22,7 @@ const { getAndClearPlaceholderWarnings } = require('../converters/rich-text.cjs'
 const { deduplicateTableBlocks } = require('../converters/table.cjs');
 const { logPlaceholderStripped, logUnprocessedContent, logImageUploadFailed, logCheerioParsingIssue } = require('../utils/verification-log.cjs');
 const { validateNotionPage } = require('../utils/validate-notion-page.cjs');
+const { validateContentOrder } = require('../services/content-validator.cjs');
 
 /**
  * Returns runtime global context for Notion and ServiceNow operations.
@@ -2159,6 +2160,165 @@ ${payload.contentHtml || ''}
       } catch (finalCheckError) {
         log(`⚠️ [FINAL-CHECK] Failed to verify validation property (non-fatal): ${finalCheckError.message}`);
       }
+    }
+    
+    // Run content validation if enabled (independent from block validation)
+    const shouldValidateContent = process.env.SN2N_CONTENT_VALIDATION === '1' || process.env.SN2N_CONTENT_VALIDATION === 'true';
+    
+    if (shouldValidateContent) {
+      log(`\n========================================`);
+      log(`📋 STARTING CONTENT VALIDATION for page ${response.id}`);
+      log(`   Title: "${payload.title}"`);
+      log(`========================================\n`);
+      
+      try {
+        // Wait briefly for Notion to be fully consistent
+        log(`⏳ Waiting 2s for Notion consistency before content validation...`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Run content validation
+        const contentResult = await validateContentOrder(
+          extractionResult?.fixedHtml || payload.contentHtml,
+          response.id,
+          notion
+        );
+        
+        log(`✅ Content validation completed`);
+        log(`   Similarity: ${contentResult.similarity}%`);
+        log(`   Result: ${contentResult.success ? 'PASS' : 'FAIL'}`);
+        
+        // Build content validation summary
+        const timestamp = new Date().toISOString().split('T')[0];
+        let contentSummary = `\n\n[${timestamp}] Content Validation: ${contentResult.success ? '✅ PASS' : '❌ FAIL'}`;
+        contentSummary += `\nSimilarity: ${contentResult.similarity}% (threshold: ≥95%)`;
+        contentSummary += `\nHTML: ${contentResult.htmlSegments} segments (${contentResult.htmlChars} chars)`;
+        contentSummary += `\nNotion: ${contentResult.notionSegments} segments (${contentResult.notionChars} chars)`;
+        
+        if (contentResult.charDiff !== 0) {
+          contentSummary += `\nChar Diff: ${contentResult.charDiff >= 0 ? '+' : ''}${contentResult.charDiff} (${contentResult.charDiffPercent >= 0 ? '+' : ''}${contentResult.charDiffPercent}%)`;
+        }
+        
+        if (contentResult.missing && contentResult.missing.length > 0) {
+          contentSummary += `\n⚠️ Missing: ${contentResult.missing.length} segment(s)`;
+        }
+        
+        if (contentResult.extra && contentResult.extra.length > 0) {
+          contentSummary += `\n⚠️ Extra: ${contentResult.extra.length} segment(s)`;
+        }
+        
+        if (contentResult.orderIssues && contentResult.orderIssues.length > 0) {
+          contentSummary += `\n⚠️ Order Issues: ${contentResult.orderIssues.length}`;
+        }
+        
+        // Append content validation to Validation property
+        try {
+          const maxRetries = 3;
+          let updateSuccess = false;
+          
+          for (let retry = 0; retry <= maxRetries && !updateSuccess; retry++) {
+            try {
+              // Get current page to read existing Validation property
+              const currentPage = await notion.pages.retrieve({ page_id: response.id });
+              const currentValidation = currentPage.properties.Validation;
+              
+              // Get existing validation text
+              let existingText = '';
+              if (currentValidation && currentValidation.rich_text && currentValidation.rich_text.length > 0) {
+                existingText = currentValidation.rich_text.map(rt => rt.text.content).join('');
+              }
+              
+              // Append content validation summary
+              const updatedText = existingText + contentSummary;
+              
+              // Update Validation property
+              await notion.pages.update({
+                page_id: response.id,
+                properties: {
+                  Validation: {
+                    rich_text: [
+                      {
+                        type: "text",
+                        text: { content: updatedText }
+                      }
+                    ]
+                  },
+                  // Set Error checkbox if content validation failed
+                  ...(contentResult.success ? {} : {
+                    Error: { checkbox: true }
+                  })
+                }
+              });
+              
+              updateSuccess = true;
+              log(`✅ Content validation result appended to Validation property${retry > 0 ? ` (after ${retry} ${retry === 1 ? 'retry' : 'retries'})` : ''}`);
+              
+              // If content validation failed, auto-save page
+              if (!contentResult.success && !savedToUpdateFolder) {
+                log(`⚠️ Content validation failed - auto-saving page for re-extraction...`);
+                
+                try {
+                  const fixturesDir = path.join(__dirname, '../../patch/pages/pages-to-update');
+                  if (!fs.existsSync(fixturesDir)) {
+                    fs.mkdirSync(fixturesDir, { recursive: true });
+                  }
+                  
+                  const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
+                  const sanitizedTitle = (payload.title || 'untitled')
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]+/g, '-')
+                    .replace(/^-+|-+$/g, '')
+                    .substring(0, 60);
+                  const filename = `${sanitizedTitle}-content-validation-failed-${timestamp}.html`;
+                  const filepath = path.join(fixturesDir, filename);
+                  
+                  const htmlContent = `<!--
+Auto-saved: Content validation failed (similarity ${contentResult.similarity}% < 95%)
+Page ID: ${response.id}
+Page URL: ${response.url}
+Page Title: ${payload.title}
+Created: ${new Date().toISOString()}
+Source URL: ${payload.url || 'N/A'}
+
+Content Validation Result:
+${JSON.stringify(contentResult, null, 2)}
+-->
+
+${payload.contentHtml || ''}
+`;
+                  
+                  fs.writeFileSync(filepath, htmlContent, 'utf-8');
+                  log(`✅ AUTO-SAVED: Page with failed content validation saved to ${filename}`);
+                  savedToUpdateFolder = true;
+                } catch (saveError) {
+                  log(`❌ Failed to auto-save page with failed content validation: ${saveError.message}`);
+                }
+              }
+              
+            } catch (appendError) {
+              const isLastRetry = retry >= maxRetries;
+              const waitTime = Math.pow(2, retry) * 1000; // 1s, 2s, 4s
+              
+              if (isLastRetry) {
+                log(`❌ Failed to append content validation after ${maxRetries + 1} attempts: ${appendError.message}`);
+              } else {
+                log(`⚠️ Failed to append content validation (attempt ${retry + 1}/${maxRetries + 1}): ${appendError.message}`);
+                log(`   Retrying in ${waitTime}ms...`);
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+              }
+            }
+          }
+        } catch (updateError) {
+          log(`❌ Error updating page with content validation: ${updateError.message}`);
+          // Non-fatal - continue processing
+        }
+        
+      } catch (contentValidationError) {
+        log(`⚠️ Content validation failed with error: ${contentValidationError.message}`);
+        log(`⚠️ Stack trace: ${contentValidationError.stack}`);
+        // Non-fatal - continue processing
+      }
+    } else {
+      log(`ℹ️ Content validation skipped (set SN2N_CONTENT_VALIDATION=1 to enable)`);
     }
     
     // Final summary
