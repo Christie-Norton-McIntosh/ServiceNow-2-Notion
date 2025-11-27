@@ -1711,6 +1711,40 @@ router.post('/W2N', async (req, res) => {
           );
           
           log(`✅ Validation function completed`);
+          
+          // FIX v11.0.35: Retry validation once if initial attempt fails
+          // Handles edge cases where Notion takes >15s to settle (rare but happens)
+          // Only retries if validation has actual errors (not just warnings)
+          if (validationResult && !validationResult.success && validationResult.hasErrors) {
+            log(`\n⚠️ Initial validation failed - attempting retry after additional wait...`);
+            log(`   Original issues: ${validationResult.issues?.join(', ') || 'unknown'}`);
+            
+            const retryWait = 5000; // Additional 5s wait
+            log(`⏳ Waiting ${retryWait}ms for Notion eventual consistency retry...`);
+            await new Promise(resolve => setTimeout(resolve, retryWait));
+            
+            log(`🔄 Retrying validation...`);
+            const retryResult = await validateNotionPage(
+              notion,
+              response.id,
+              {
+                expectedMinBlocks: minBlocks,
+                expectedMaxBlocks: maxBlocks,
+                sourceHtml: extractionResult?.fixedHtml || payload.contentHtml
+              },
+              log
+            );
+            
+            if (retryResult.success) {
+              log(`✅ Validation succeeded on retry - Notion eventual consistency resolved`);
+              validationResult = retryResult;
+            } else {
+              log(`⚠️ Validation still failing after retry - issues persist`);
+              // Keep original validationResult with retry note
+              if (!validationResult.warnings) validationResult.warnings = [];
+              validationResult.warnings.push('Validation retried after +5s wait but still failed');
+            }
+          }
         }
         
       } catch (validationError) {
@@ -3187,24 +3221,37 @@ router.patch('/W2N/:pageId', async (req, res) => {
       log(`🔍 STEP 5: Validating updated page`);
       
       // Dynamic wait time based on orchestration complexity (same as POST)
-      // Base: 2s for uploads + deduplication
+      // FIX v11.0.35: Equalized PATCH wait times with POST to reduce false negative validation failures
+      // PATCH was using 2s base / 10s max while POST uses 5s base / 15s max
+      // Root cause: PATCH validation ran too soon, causing identical content to fail validation
+      // Solution: Use same wait formula as POST for consistent eventual consistency handling
+      // 
+      // Wait time formula:
+      // Base: 5s for uploads + deduplication + Notion eventual consistency
       // +300ms per marker processed (orchestration PATCH requests)
-      // Max: 10s to prevent excessive delays
+      // +1s if page has >100 blocks (needs chunked append settling time)
+      // Max: 15s to match POST behavior
       const markerCount = markerMap ? Object.keys(markerMap).length : 0;
-      const baseWait = 2000; // Base for uploads + deduplication
+      const totalBlocks = extractedBlocks.length;
+      const baseWait = 5000; // 5 seconds base (increased from 2s - matches POST)
       const extraWaitPerMarker = 300; // 300ms per marker (orchestration PATCH)
+      const largePageWait = totalBlocks > 100 ? 1000 : 0; // +1s for pages >100 blocks
       
       let validationDelay = baseWait;
       if (markerCount > 0) {
         validationDelay += (markerCount * extraWaitPerMarker);
         log(`   +${markerCount * extraWaitPerMarker}ms for ${markerCount} markers (orchestration)`);
       }
+      if (largePageWait > 0) {
+        validationDelay += largePageWait;
+        log(`   +${largePageWait}ms for large page (${totalBlocks} blocks - chunked appends)`);
+      }
       
-      // Cap at 10 seconds
-      validationDelay = Math.min(validationDelay, 10000);
+      // Cap at 15 seconds (increased from 10s - matches POST)
+      validationDelay = Math.min(validationDelay, 15000);
       
       log(`⏳ Waiting ${validationDelay}ms for Notion's eventual consistency...`);
-      log(`   (Base: 2s + Markers: ${markerCount} × 300ms = ${validationDelay}ms)`);
+      log(`   (Base: 5s + Markers: ${markerCount} × 300ms + Large page: ${largePageWait}ms = ${validationDelay}ms)`);
       await new Promise(resolve => setTimeout(resolve, validationDelay));
       
       // FIX v11.0.30: Verify page has content after PATCH before validation
@@ -3250,6 +3297,35 @@ router.patch('/W2N/:pageId', async (req, res) => {
             log(`✅ Validation passed`);
           } else {
             log(`⚠️ Validation warnings detected`);
+          }
+          
+          // FIX v11.0.35: Retry validation once if initial attempt fails (same as POST)
+          // Handles edge cases where Notion takes >15s to settle after PATCH
+          // Only retries if validation has actual errors (not just warnings)
+          if (validationResult && !validationResult.success && validationResult.hasErrors) {
+            log(`\n⚠️ Initial PATCH validation failed - attempting retry after additional wait...`);
+            log(`   Original issues: ${validationResult.issues?.join(', ') || 'unknown'}`);
+            
+            const retryWait = 5000; // Additional 5s wait
+            log(`⏳ Waiting ${retryWait}ms for Notion eventual consistency retry...`);
+            await new Promise(resolve => setTimeout(resolve, retryWait));
+            
+            log(`🔄 Retrying PATCH validation...`);
+            const retryResult = await validateNotionPage(notion, pageId, {
+              sourceHtml: extractionResult.fixedHtml || html,
+              expectedTitle: pageTitle,
+              verbose: true
+            });
+            
+            if (retryResult.success) {
+              log(`✅ PATCH validation succeeded on retry - Notion eventual consistency resolved`);
+              validationResult = retryResult;
+            } else {
+              log(`⚠️ PATCH validation still failing after retry - issues persist`);
+              // Keep original validationResult with retry note
+              if (!validationResult.warnings) validationResult.warnings = [];
+              validationResult.warnings.push('PATCH validation retried after +5s wait but still failed');
+            }
           }
         } catch (valError) {
           log(`⚠️ Validation failed (non-fatal): ${valError.message}`);
