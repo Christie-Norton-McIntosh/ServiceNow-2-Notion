@@ -25,6 +25,29 @@ const { validateNotionPage } = require('../utils/validate-notion-page.cjs');
 const { validateContentOrder } = require('../services/content-validator.cjs');
 
 /**
+ * Validation status tracker for async validation monitoring
+ * Maps pageId -> { status: 'pending'|'running'|'complete'|'error', startTime, endTime, result }
+ */
+const validationStatus = new Map();
+
+/**
+ * Clean up old validation status entries (older than 10 minutes)
+ */
+function cleanupValidationStatus() {
+  const now = Date.now();
+  const maxAge = 10 * 60 * 1000; // 10 minutes
+  
+  for (const [pageId, data] of validationStatus.entries()) {
+    if (data.endTime && (now - data.endTime) > maxAge) {
+      validationStatus.delete(pageId);
+    }
+  }
+}
+
+// Clean up validation status every 5 minutes
+setInterval(cleanupValidationStatus, 5 * 60 * 1000);
+
+/**
  * Returns runtime global context for Notion and ServiceNow operations.
  * @returns {Object} Global context object
  */
@@ -1555,6 +1578,14 @@ router.post('/W2N', async (req, res) => {
     let validationResult = null;
     const shouldValidate = process.env.SN2N_VALIDATE_OUTPUT === '1' || process.env.SN2N_VALIDATE_OUTPUT === 'true';
     
+    // Track validation status for polling endpoint
+    if (shouldValidate) {
+      validationStatus.set(response.id, {
+        status: 'pending',
+        startTime: new Date().toISOString()
+      });
+    }
+    
     // FIX v11.0.18: Always create a validation result, even if validation is disabled
     // This ensures properties are never left blank
     if (!shouldValidate) {
@@ -1570,6 +1601,12 @@ router.post('/W2N', async (req, res) => {
     }
     
     if (shouldValidate) {
+      // Update status to running
+      const statusData = validationStatus.get(response.id);
+      if (statusData) {
+        statusData.status = 'running';
+      }
+      
       log(`\n========================================`);
       log(`🔍 STARTING VALIDATION for page ${response.id}`);
       log(`   Title: "${payload.title}"`);
@@ -1679,6 +1716,15 @@ router.post('/W2N', async (req, res) => {
       } catch (validationError) {
         log(`⚠️ Validation failed with error: ${validationError.message}`);
         log(`⚠️ Stack trace: ${validationError.stack}`);
+        
+        // Update validation status to error
+        const statusData = validationStatus.get(response.id);
+        if (statusData) {
+          statusData.status = 'error';
+          statusData.endTime = new Date().toISOString();
+          statusData.error = validationError.message;
+        }
+        
         // FIX v11.0.18: Create a validation result even when validation throws
         // This ensures properties are ALWAYS updated, never left blank
         validationResult = {
@@ -2321,6 +2367,18 @@ ${payload.contentHtml || ''}
       log(`ℹ️ Content validation skipped (set SN2N_CONTENT_VALIDATION=1 to enable)`);
     }
     
+    // Mark validation as complete
+    const statusData = validationStatus.get(response.id);
+    if (statusData) {
+      statusData.status = 'complete';
+      statusData.endTime = new Date().toISOString();
+      statusData.result = {
+        blockValidation: validationResult,
+        hasErrors: validationResult?.hasErrors || false
+      };
+      log(`✅ Validation complete - status updated for polling endpoint`);
+    }
+    
     // Final summary
     log(`📋 Final page structure summary:`);
     log(`   - Initial blocks sent: ${children.length}`);
@@ -2352,6 +2410,47 @@ ${payload.contentHtml || ''}
       log("⚠️ Page was created successfully, but post-processing failed");
     }
   }
+});
+
+/**
+ * GET endpoint to check validation status for a page
+ * 
+ * Returns:
+ * - status: 'pending'|'running'|'complete'|'error'|'not_found'
+ * - startTime: When validation started (ISO string)
+ * - endTime: When validation completed (ISO string, if complete)
+ * - duration: Validation duration in ms (if complete)
+ * - result: Validation result object (if complete)
+ */
+router.get('/W2N/:pageId/validation', async (req, res) => {
+  const { pageId } = req.params;
+  const { log } = getGlobals();
+  
+  // Normalize pageId (remove hyphens for comparison)
+  const normalizedPageId = pageId.replace(/-/g, '');
+  
+  // Check both with and without hyphens
+  let statusData = validationStatus.get(pageId) || validationStatus.get(normalizedPageId);
+  
+  if (!statusData) {
+    return res.json({
+      status: 'not_found',
+      message: 'No validation status found for this page. Page may not have been created recently, or validation tracking was not enabled.'
+    });
+  }
+  
+  const response = {
+    status: statusData.status,
+    startTime: statusData.startTime,
+    ...(statusData.endTime && { endTime: statusData.endTime }),
+    ...(statusData.endTime && statusData.startTime && { 
+      duration: new Date(statusData.endTime).getTime() - new Date(statusData.startTime).getTime() 
+    }),
+    ...(statusData.result && { result: statusData.result })
+  };
+  
+  log(`📊 Validation status check for ${pageId}: ${statusData.status}`);
+  res.json(response);
 });
 
 /**
