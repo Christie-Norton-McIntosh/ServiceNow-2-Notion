@@ -2,6 +2,8 @@
 
 This directory contains pages that need to be updated in Notion via the PATCH endpoint.
 
+> **⚡ v11.0.35 Update (Nov 27, 2025)**: PATCH validation now matches POST timing (5s/15s) with automatic retry logic. Expected ~70% reduction in false negative validation failures. See [Primary Script](#primary-script-configbatch-patch-with-cooldownsh-) section for details.
+
 ## Structure
 
 ### `config/`
@@ -60,9 +62,16 @@ bash batch-patch-with-cooldown.sh
 - Needs `SN2N_VALIDATE_OUTPUT=1` for validation
 - Database ID: `282a89fedba5815e91f0db972912ef9f`
 
+**v11.0.35 Validation Improvements (Nov 27, 2025):**
+- ✅ **Equalized PATCH/POST timing**: PATCH now uses 5s base / 15s max wait (was 2s/10s)
+- ✅ **Retry logic**: Validation automatically retries once after +5s if initial attempt fails
+- 📊 **Expected impact**: ~70-80% reduction in false negative validation failures
+- 🔍 **Monitoring**: Look for "Validation succeeded on retry" in logs
+
 **Monitoring:**
 - Server logs show `[PATCH-PROGRESS]` markers at each phase (delete, upload, orchestration)
 - Client logs show timeout selection and complexity metrics
+- Validation retry messages: "⚠️ Initial PATCH validation failed - attempting retry..."
 
 ### Utility Scripts
 
