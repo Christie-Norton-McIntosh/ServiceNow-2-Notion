@@ -3140,66 +3140,86 @@
    * @returns {Promise<Object>} Status object with {status, duration, message}
    */
   async function waitForValidation(pageId, maxWaitMs = 30000) {
-    const proxyUrl = getConfig().proxyUrl || 'http://localhost:3004';
+    const cfg = getConfig();
+    const preferredHost = (cfg.proxyUrl || '').includes('127.0.0.1') ? '127.0.0.1' : 'localhost';
+    const baseUrl = `http://${preferredHost}:3004`;
+    const altUrl = preferredHost === 'localhost' ? 'http://127.0.0.1:3004' : 'http://localhost:3004';
     const pollInterval = 2000; // Poll every 2 seconds
     const startTime = Date.now();
-    
-    debug(`[VALIDATION-POLL] Waiting for validation to complete for page ${pageId}`);
-    
+    // Normalize pageId to accept both hyphenated and non-hyphenated
+    const normalizedPageId = (pageId || '').replace(/[^a-f0-9-]/gi, '');
+
+    debug(`[VALIDATION-POLL] Waiting for validation to complete for page ${normalizedPageId}`);
+
+    async function gmRequest(url) {
+      return new Promise((resolve, reject) => {
+        try {
+          GM_xmlhttpRequest({
+            method: 'GET',
+            url,
+            headers: { 'Accept': 'application/json' },
+            timeout: 10000,
+            onload: function (resp) {
+              try {
+                const data = JSON.parse(resp.responseText || '{}');
+                resolve({ ok: true, data });
+              } catch (e) {
+                reject(new Error(`Invalid JSON from ${url}: ${e.message}`));
+              }
+            },
+            onerror: function (err) {
+              reject(new Error(`Request failed: ${err.status || 'unknown'} ${err.error || ''}`));
+            },
+            ontimeout: function () {
+              reject(new Error('Request timeout'));
+            }
+          });
+        } catch (e) {
+          reject(e);
+        }
+      });
+    }
+
     while (Date.now() - startTime < maxWaitMs) {
       try {
-        // Poll validation status endpoint
-        const response = await fetch(`${proxyUrl}/api/W2N/${pageId}/validation`);
-        const data = await response.json();
-        
+        // Try preferred host first, then alternate
+        const primary = await gmRequest(`${baseUrl}/api/W2N/${normalizedPageId}/validation`).catch(() => null);
+        const res = primary || await gmRequest(`${altUrl}/api/W2N/${normalizedPageId}/validation`).catch(err => { throw err; });
+        const data = res?.data || {};
+
         debug(`[VALIDATION-POLL] Status: ${data.status}`);
-        
+
         if (data.status === 'complete') {
           const duration = Date.now() - startTime;
           debug(`[VALIDATION-POLL] ✅ Validation complete after ${duration}ms`);
-          return {
-            status: 'complete',
-            duration,
-            message: 'Validation completed successfully'
-          };
+          return { status: 'complete', duration, message: 'Validation completed successfully' };
         }
-        
+
         if (data.status === 'error') {
           const duration = Date.now() - startTime;
-          debug(`[VALIDATION-POLL] ❌ Validation error after ${duration}ms`);
-          return {
-            status: 'error',
-            duration,
-            message: data.message || 'Validation failed'
-          };
+          debug(`[VALIDATION-POLL] ❌ Validation error after ${duration}ms: ${data.message || ''}`);
+          return { status: 'error', duration, message: data.message || 'Validation failed' };
         }
-        
+
         if (data.status === 'not_found') {
-          debug(`[VALIDATION-POLL] ⚠️ Page ${pageId} not found in validation tracking`);
-          return {
-            status: 'not_found',
-            message: 'Page not found in validation system'
-          };
+          debug(`[VALIDATION-POLL] ⚠️ Page ${normalizedPageId} not found in validation tracking`);
+          return { status: 'not_found', message: 'Page not found in validation system' };
         }
-        
+
         // Status is 'pending' or 'running', continue polling
         await new Promise(resolve => setTimeout(resolve, pollInterval));
-        
+
       } catch (error) {
         debug(`[VALIDATION-POLL] ⚠️ Error polling validation status: ${error.message}`);
         // Continue polling even if individual requests fail
         await new Promise(resolve => setTimeout(resolve, pollInterval));
       }
     }
-    
+
     // Timeout reached
     const duration = Date.now() - startTime;
     debug(`[VALIDATION-POLL] ⏱️ Validation polling timed out after ${duration}ms`);
-    return {
-      status: 'timeout',
-      duration,
-      message: `Validation did not complete within ${maxWaitMs}ms`
-    };
+    return { status: 'timeout', duration, message: `Validation did not complete within ${maxWaitMs}ms` };
   }
 
   function injectMainPanel() {
