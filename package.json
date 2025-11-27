@@ -1,6 +1,6 @@
 {
   "name": "servicenow-2-notion",
-  "version": "11.0.82",
+  "version": "11.0.81",
   "description": "Modular ServiceNow content extractor for Universal Workflow",
   "type": "module",
   "main": "src/main.js",
@@ -21,6 +21,10 @@
     "test:all:server": "node scripts/run-tests.cjs --with-server",
     "test:unit": "node server/tests/unit/dedupe-unit-test.cjs",
     "test:smoke": "node \"Smoke Test/proxy-smoke-test.cjs\"",
+    "validate": "node scripts/validate-html-to-notion-conversion.cjs",
+    "validate:batch": "node scripts/batch-validate-conversions.cjs",
+    "validate:deep": "node scripts/validate-content-order-and-nesting.cjs",
+    "test:fixtures": "node tests/test-fixture-batch.cjs",
     "release:patch": "node scripts/release.js patch",
     "release:minor": "node scripts/release.js minor",
     "release:major": "node scripts/release.js major"
@@ -36,7 +40,6 @@
     "@notionhq/client": "^2.2.15",
     "@tryfabric/martian": "^1.2.4",
     "axios": "^1.6.2",
-    "cheerio": "^1.1.2",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
