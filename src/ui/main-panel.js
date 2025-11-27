@@ -609,6 +609,62 @@ function populateDatabaseSelect(selectEl, databases) {
 
 // AutoExtract functionality
 
+/**
+ * Poll validation status endpoint until validation completes
+ * @param {string} pageId - Notion page ID (with or without hyphens)
+ * @param {number} maxWaitMs - Maximum wait time in milliseconds (default 30s)
+ * @returns {Promise<object>} Validation status result
+ */
+async function waitForValidation(pageId, maxWaitMs = 30000) {
+  const config = getConfig();
+  const proxyUrl = config.proxyUrl || 'http://localhost:3004';
+  const pollInterval = 2000; // Poll every 2 seconds
+  const startTime = Date.now();
+  
+  debug(`[VALIDATION-POLL] Waiting for validation to complete for page ${pageId}`);
+  
+  while (Date.now() - startTime < maxWaitMs) {
+    try {
+      // Poll validation status endpoint
+      const response = await fetch(`${proxyUrl}/api/W2N/${pageId}/validation`);
+      const statusData = await response.json();
+      
+      debug(`[VALIDATION-POLL] Status: ${statusData.status}`);
+      
+      // Check if validation is complete
+      if (statusData.status === 'complete') {
+        const duration = statusData.duration || (Date.now() - startTime);
+        debug(`[VALIDATION-POLL] ✅ Validation complete after ${duration}ms`);
+        return statusData;
+      }
+      
+      // Check if validation errored
+      if (statusData.status === 'error') {
+        debug(`[VALIDATION-POLL] ❌ Validation failed: ${statusData.error || 'Unknown error'}`);
+        return statusData;
+      }
+      
+      // Check if status not found (validation may not be enabled)
+      if (statusData.status === 'not_found') {
+        debug(`[VALIDATION-POLL] ℹ️ No validation status found - validation may not be enabled`);
+        return statusData;
+      }
+      
+      // Still pending or running - wait and poll again
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+      
+    } catch (error) {
+      debug(`[VALIDATION-POLL] ⚠️ Error checking validation status: ${error.message}`);
+      // If fetch fails, assume validation not enabled and continue
+      return { status: 'not_found', error: error.message };
+    }
+  }
+  
+  // Timeout reached
+  debug(`[VALIDATION-POLL] ⏱️ Timeout after ${maxWaitMs}ms - continuing anyway`);
+  return { status: 'timeout', message: 'Validation check timed out' };
+}
+
 async function startAutoExtraction() {
   const config = getConfig();
   if (!config.databaseId) {
@@ -1608,14 +1664,44 @@ async function continueAutoExtractionLoop(autoExtractState) {
               // - "Checking proxy connection..."
               // - "Converting content to Notion blocks..."
               // - "Page created successfully!"
-              await app.processWithProxy(extractedData);
+              const result = await app.processWithProxy(extractedData);
               
               // If we get here without throwing, it succeeded
               processingSuccess = true;
               
               autoExtractState.totalProcessed++;
               debug(`[AUTO-EXTRACT] ✅ Page ${currentPageNum} saved to Notion`);
-              overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
+              
+              // Wait for validation to complete if page ID is available
+              if (result && result.data && result.data.page && result.data.page.id) {
+                const pageId = result.data.page.id;
+                debug(`[AUTO-EXTRACT] ⏳ Waiting for validation to complete for page ${pageId}...`);
+                overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Waiting for validation...`);
+                
+                try {
+                  const validationStatus = await waitForValidation(pageId, 30000); // 30 second timeout
+                  
+                  if (validationStatus.status === 'complete') {
+                    const duration = validationStatus.duration ? `${(validationStatus.duration / 1000).toFixed(1)}s` : 'unknown time';
+                    debug(`[AUTO-EXTRACT] ✅ Validation complete after ${duration}`);
+                    overlayModule.setMessage(`✓ Page ${currentPageNum} validated! Continuing...`);
+                  } else if (validationStatus.status === 'error') {
+                    debug(`[AUTO-EXTRACT] ⚠️ Validation failed but continuing anyway`);
+                    overlayModule.setMessage(`✓ Page ${currentPageNum} saved (validation failed). Continuing...`);
+                  } else if (validationStatus.status === 'not_found' || validationStatus.status === 'timeout') {
+                    debug(`[AUTO-EXTRACT] ℹ️ Validation status: ${validationStatus.status} - continuing`);
+                    overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
+                  }
+                } catch (validationError) {
+                  debug(`[AUTO-EXTRACT] ⚠️ Error waiting for validation: ${validationError.message}`);
+                  // Non-fatal - continue with AutoExtract
+                  overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
+                }
+              } else {
+                // No page ID available - skip validation check
+                debug(`[AUTO-EXTRACT] ℹ️ No page ID available - skipping validation check`);
+                overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
+              }
             } catch (processingError) {
               // Check if this is a rate limit error
               const errorMessage = processingError.message || '';
@@ -1650,8 +1736,37 @@ async function continueAutoExtractionLoop(autoExtractState) {
                 
                 debug(`🔄 [RATE-LIMIT] Retrying page ${currentPageNum} after cooldown...`);
               } else {
-                // Not a rate limit error, or we've exhausted retries - rethrow
-                throw processingError;
+                // Check if this is a timeout error (v11.0.6)
+                const isTimeout = errorMessage.includes('timeout') || 
+                                 errorMessage.includes('Timeout') ||
+                                 errorMessage.includes('timed out');
+                
+                if (isTimeout) {
+                  debug(`⚠️ [TIMEOUT-RECOVERY] Request timed out for page ${currentPageNum}`);
+                  debug(`⚠️ [TIMEOUT-RECOVERY] Server may still be processing. Waiting 60s to check if page was created...`);
+                  
+                  overlayModule.setMessage(`⏳ Timeout - checking if page was created...`);
+                  
+                  // Wait 60 seconds for server to finish processing
+                  await new Promise(resolve => setTimeout(resolve, 60000));
+                  
+                  // TODO: Query Notion to check if page exists and trigger validation
+                  // For now, log warning and continue (page may have been created with unresolved markers)
+                  debug(`⚠️ [TIMEOUT-RECOVERY] Unable to verify page creation. It may exist with unresolved markers.`);
+                  debug(`⚠️ [TIMEOUT-RECOVERY] Run marker sweep script manually on database if needed.`);
+                  
+                  showToast(
+                    `⚠️ Timeout on page ${currentPageNum}. Page may exist but need marker cleanup.`,
+                    8000
+                  );
+                  
+                  // Count as processed (even though we can't confirm)
+                  autoExtractState.totalProcessed++;
+                  processingSuccess = true; // Continue to next page
+                } else {
+                  // Not a rate limit or timeout error, or we've exhausted retries - rethrow
+                  throw processingError;
+                }
               }
             }
           }
