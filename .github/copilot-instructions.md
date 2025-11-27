@@ -1,10 +1,10 @@
 
-# ServiceNow-2-Notion — Copilot Instructions (2025) — v11.0.0
+# ServiceNow-2-Notion — Copilot Instructions (2025) — v11.0.35
 
 Quick, actionable guidance for AI coding agents working in this repo. Keep edits small, reference real files, and verify with a local build and proxy run.
 
 ## Agent quickstart (TL;DR)
-- **Version**: 11.0.0 (Navigation retry, rate limit protection, 5 validation fixes)
+- **Version**: 11.0.35 (Equalized PATCH/POST validation timing, automatic retry logic)
 - Big picture: ES6 userscript in `src/**` → bundled to `dist/ServiceNow-2-Notion.user.js` (Rollup IIFE). Local proxy in `server/**` converts ServiceNow HTML to Notion blocks and creates pages.
 - Build userscript: `npm run build` (or `build:prod`); dev watch: `npm run dev`. After any `src/**` change, rebuild and re-upload the userscript to Tampermonkey.
 - Versioning (REQUIRED before build): bump the version so Tampermonkey detects updates and Rollup injects the correct banner/runtime. Use `npm version patch|minor|major` (or `npm run release:patch|minor|major`).
@@ -29,7 +29,7 @@ Quick, actionable guidance for AI coding agents working in this repo. Keep edits
     - Issue 6: Callout detection with underscore-separated classes (removed `\b` word boundaries from regex patterns to match `note_note`, `warning_type`, etc.)
 - API surface: POST `/api/W2N` with `{ title, databaseId, contentHtml|content, properties?, url?, dryRun? }`. `dryRun` returns `{ children, hasVideos }` without creating a page. PATCH `/api/W2N/:pageId` with `{ title, contentHtml, url }` deletes all blocks and re-uploads content (requires 32-char UUID, accepts with/without hyphens). Health: `/health`, `/ping`, `/api/status`; DB: `/api/databases/:id`; logging: `/api/logging`.
 - Auto-validation: Enable with `SN2N_VALIDATE_OUTPUT=1`. On each extraction, proxy validates HTML→Notion conversion with ±30% tolerance (70%-150% of expected blocks). Updates Notion properties (Error checkbox, Validation text, Stats). Failed pages auto-saved to `patch/pages-to-update/` with metadata for re-extraction. See `docs/AUTO-VALIDATION.md`.
-- PATCH workflow: Use dry-run validation before PATCH (`dryRun:true`), execute PATCH with 120s timeout, verify post-PATCH validation. Script: `patch/config/batch-patch-validated.sh` (validation → PATCH → move to updated-pages). Known issue: curl may hang beyond timeout on large payloads; monitor with `ps aux | grep batch-patch` and check log files.
+- **PATCH workflow (v11.0.35 improvements)**: Use dry-run validation before PATCH (`dryRun:true`), execute PATCH with 120s timeout, verify post-PATCH validation. Script: `patch/config/batch-patch-with-cooldown.sh` (validation → PATCH → move to updated-pages). **NEW**: PATCH validation now matches POST (5s base, 15s max wait) with automatic retry logic (+5s, retry once on failure). Expected ~70% reduction in false negative validation failures. Monitor for "Validation succeeded on retry" in logs.
 - Pitfalls: search for `w2n-` IDs before UI renames; wire modal injectors only in `src/main.js`; respect Notion nesting/100-block caps; use `Array.from()` with DOM; rebuild userscript after edits; PATCH operations may timeout on complex pages (monitor logs).
 
 ---
