@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.81
+// @version      11.0.82
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.81";
+    window.BUILD_VERSION = "11.0.82";
 (function () {
 
   // Configuration constants and default settings
@@ -3130,6 +3130,76 @@
       hash |= 0; // Convert to 32bit signed integer
     }
     return hash;
+  }
+
+  /**
+   * Wait for server-side validation to complete
+   * Polls the validation status endpoint until complete/error/timeout
+   * @param {string} pageId - The Notion page ID to check validation status for
+   * @param {number} maxWaitMs - Maximum time to wait in milliseconds (default 30s)
+   * @returns {Promise<Object>} Status object with {status, duration, message}
+   */
+  async function waitForValidation(pageId, maxWaitMs = 30000) {
+    const proxyUrl = getConfig().proxyUrl || 'http://localhost:3004';
+    const pollInterval = 2000; // Poll every 2 seconds
+    const startTime = Date.now();
+    
+    debug(`[VALIDATION-POLL] Waiting for validation to complete for page ${pageId}`);
+    
+    while (Date.now() - startTime < maxWaitMs) {
+      try {
+        // Poll validation status endpoint
+        const response = await fetch(`${proxyUrl}/api/W2N/${pageId}/validation`);
+        const data = await response.json();
+        
+        debug(`[VALIDATION-POLL] Status: ${data.status}`);
+        
+        if (data.status === 'complete') {
+          const duration = Date.now() - startTime;
+          debug(`[VALIDATION-POLL] ✅ Validation complete after ${duration}ms`);
+          return {
+            status: 'complete',
+            duration,
+            message: 'Validation completed successfully'
+          };
+        }
+        
+        if (data.status === 'error') {
+          const duration = Date.now() - startTime;
+          debug(`[VALIDATION-POLL] ❌ Validation error after ${duration}ms`);
+          return {
+            status: 'error',
+            duration,
+            message: data.message || 'Validation failed'
+          };
+        }
+        
+        if (data.status === 'not_found') {
+          debug(`[VALIDATION-POLL] ⚠️ Page ${pageId} not found in validation tracking`);
+          return {
+            status: 'not_found',
+            message: 'Page not found in validation system'
+          };
+        }
+        
+        // Status is 'pending' or 'running', continue polling
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+        
+      } catch (error) {
+        debug(`[VALIDATION-POLL] ⚠️ Error polling validation status: ${error.message}`);
+        // Continue polling even if individual requests fail
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+      }
+    }
+    
+    // Timeout reached
+    const duration = Date.now() - startTime;
+    debug(`[VALIDATION-POLL] ⏱️ Validation polling timed out after ${duration}ms`);
+    return {
+      status: 'timeout',
+      duration,
+      message: `Validation did not complete within ${maxWaitMs}ms`
+    };
   }
 
   function injectMainPanel() {
@@ -9290,6 +9360,41 @@
         if (result.success) {
           // Check if we're in autoextract mode (global state exists)
           const isAutoExtracting = window.ServiceNowToNotion?.autoExtractState?.running;
+
+          // Wait for validation if page ID is available
+          if (result.data && result.data.page && result.data.page.id) {
+            const pageId = result.data.page.id;
+            debug(`[AUTO-EXTRACT] ⏳ Waiting for validation to complete for page ${pageId}...`);
+            
+            if (isAutoExtracting) {
+              overlayModule.setMessage(`✓ Page saved! Waiting for validation...`);
+            }
+            
+            try {
+              const validationStatus = await waitForValidation(pageId, 30000); // 30 second timeout
+              
+              if (validationStatus.status === 'complete') {
+                const duration = validationStatus.duration ? `${(validationStatus.duration / 1000).toFixed(1)}s` : 'unknown time';
+                debug(`[AUTO-EXTRACT] ✅ Validation complete after ${duration}`);
+                if (isAutoExtracting) {
+                  overlayModule.setMessage(`✓ Page validated! Continuing...`);
+                }
+              } else if (validationStatus.status === 'error') {
+                debug(`[AUTO-EXTRACT] ⚠️ Validation failed but continuing anyway`);
+                if (isAutoExtracting) {
+                  overlayModule.setMessage(`✓ Page saved (validation failed). Continuing...`);
+                }
+              } else if (validationStatus.status === 'not_found' || validationStatus.status === 'timeout') {
+                debug(`[AUTO-EXTRACT] ℹ️ Validation status: ${validationStatus.status} - continuing`);
+                if (isAutoExtracting) {
+                  overlayModule.setMessage(`✓ Page saved! Continuing...`);
+                }
+              }
+            } catch (validationError) {
+              debug(`[AUTO-EXTRACT] ⚠️ Error waiting for validation: ${validationError.message}`);
+              // Non-fatal: continue with extraction even if validation polling fails
+            }
+          }
 
           if (!isAutoExtracting) {
             // Single page save: show success state and auto-close the overlay after a short delay
