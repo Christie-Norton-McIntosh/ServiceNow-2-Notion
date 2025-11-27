@@ -131,7 +131,8 @@ async function findParentListItemByMarker(rootBlockId, marker) {
           if (
             child.type === "numbered_list_item" ||
             child.type === "bulleted_list_item" ||
-            child.type === "callout"
+            child.type === "callout" ||
+            child.type === "heading_3"
           ) {
             // First, check the block's own rich_text for the token
             try {
@@ -145,6 +146,7 @@ async function findParentListItemByMarker(rootBlockId, marker) {
               log(`🔍 BFS: Checking ${child.type} ${child.id}, text="${ownPlain.substring(0, 100)}"`);
               if (ownPlain.includes(token)) {
                 log(`✅ BFS: FOUND marker ${token} in ${child.type} ${child.id}`);
+                log(`🔍 [RELATED-CONTENT] Found heading_3 toggle parent for marker ${token}`);
                 return { parentId: child.id, paragraphId: null };
               }
             } catch (e) {
@@ -246,6 +248,17 @@ async function orchestrateDeepNesting(pageId, markerMap) {
       log(`🖼️ [IMAGE-DEBUG] Marker "${marker}" has ${imageCount} image block(s) out of ${blocksToAppend.length} total`);
     }
     
+    // DEBUG: Log if this marker has table blocks
+    const tableCount = blocksToAppend.filter(b => b && b.type === 'table').length;
+    if (tableCount > 0) {
+      log(`📊 [TABLE-DEBUG] Marker "${marker}" has ${tableCount} table block(s) out of ${blocksToAppend.length} total`);
+      blocksToAppend.filter(b => b.type === 'table').forEach((table, idx) => {
+        const tableWidth = table.table?.table_width || 'unknown';
+        const tableRows = table.table?.children?.length || 0;
+        log(`📊 [TABLE-DEBUG]   Table ${idx+1}: ${tableWidth} cols x ${tableRows} rows`);
+      });
+    }
+    
     try {
       const parentInfo = await findParentListItemByMarker(pageId, marker);
       const parentId = parentInfo ? parentInfo.parentId : null;
@@ -257,6 +270,10 @@ async function orchestrateDeepNesting(pageId, markerMap) {
         );
         if (imageCount > 0) {
           log(`🖼️ [IMAGE-DEBUG] Parent not found! ${imageCount} image(s) will be appended to page root as fallback`);
+        }
+        if (tableCount > 0) {
+          log(`📊 [TABLE-DEBUG] Parent not found! ${tableCount} table(s) will be appended to page root as FALLBACK`);
+          log(`📊 [TABLE-DEBUG] ⚠️ THIS IS THE BUG! Table should be nested, not at root level!`);
         }
         // Clean orphaned markers (preserve all markers in the map) and ensure no private keys
         blocksToAppend = cleanOrphanedMarkersFromBlocks(blocksToAppend, markerKeys);
@@ -272,6 +289,11 @@ async function orchestrateDeepNesting(pageId, markerMap) {
       
       if (imageCount > 0) {
         log(`🖼️ [IMAGE-DEBUG] Parent found! Will append ${imageCount} image(s) to parent ${parentId}`);
+      }
+      
+      if (tableCount > 0) {
+        log(`📊 [TABLE-DEBUG] Parent found! Will append ${tableCount} table(s) to parent ${parentId}`);
+        log(`📊 [TABLE-DEBUG] ✅ Appending to correct parent: ${parentId}`);
       }
       
       // Log marker details for debugging
@@ -443,6 +465,11 @@ async function orchestrateDeepNesting(pageId, markerMap) {
         } blocks for marker sn2n:${marker}`
       );
       
+      // DEBUG: Log successful table append
+      if (tableCount > 0) {
+        log(`📊 [TABLE-DEBUG] ✅ Successfully appended ${tableCount} table(s) to parent ${parentId}`);
+      }
+      
       // Attempt to clean up the inline marker from the paragraph we used to locate the parent
       if (paragraphId) {
         try {
@@ -464,7 +491,7 @@ async function orchestrateDeepNesting(pageId, markerMap) {
             const maxConflictRetries = 3;
             
             let rateLimitRetries = 0;
-            const maxRateLimitRetries = 5;
+            const maxRateLimitRetries = 8; // FIX v11.0.6: Increased from 5 to 8 for better rate limit recovery
             while (!updateSuccess && (conflictRetries <= maxConflictRetries || rateLimitRetries <= maxRateLimitRetries)) {
               try {
                 await notion.blocks.update({
@@ -478,8 +505,10 @@ async function orchestrateDeepNesting(pageId, markerMap) {
               } catch (updateError) {
                 if (updateError.status === 429 && rateLimitRetries < maxRateLimitRetries) {
                   rateLimitRetries++;
-                  const delay = Math.min(1000 * Math.pow(2, rateLimitRetries - 1), 5000);
-                  log(`⏳ Orchestrator: rate limit on paragraph ${paragraphId}, retry ${rateLimitRetries}/${maxRateLimitRetries} after ${delay}ms`);
+                  // FIX v11.0.6: Extended exponential backoff (15s base, max 120s)
+                  // Delays: 15s, 22.5s, 33.75s, 50.6s, 75.9s, 113.8s, 120s, 120s
+                  const delay = Math.min(15000 * Math.pow(1.5, rateLimitRetries - 1), 120000);
+                  log(`⏳ 🚦 Orchestrator: rate limit on paragraph ${paragraphId}, retry ${rateLimitRetries}/${maxRateLimitRetries} after ${Math.round(delay / 1000)}s`);
                   await new Promise(resolve => setTimeout(resolve, delay));
                 } else if (updateError.code === 'conflict_error' && conflictRetries < maxConflictRetries) {
                   conflictRetries++;
@@ -509,7 +538,7 @@ async function orchestrateDeepNesting(pageId, markerMap) {
         let success = false;
         
         let rateLimitRetries = 0;
-        const maxRateLimitRetries = 5;
+        const maxRateLimitRetries = 8; // FIX v11.0.6: Increased from 5 to 8 for better rate limit recovery
         while ((retries > 0 || rateLimitRetries <= maxRateLimitRetries) && !success) {
           try {
             const block = await notion.blocks.retrieve({ block_id: parentId });
@@ -544,8 +573,9 @@ async function orchestrateDeepNesting(pageId, markerMap) {
               delay *= 2; // Exponential backoff for non-conflict errors
             } else if (e && e.status === 429 && rateLimitRetries < maxRateLimitRetries) {
               rateLimitRetries++;
-              const rlDelay = Math.min(1000 * Math.pow(2, rateLimitRetries - 1), 5000);
-              log(`⏳ Orchestrator: rate limit on block ${parentId}, retry ${rateLimitRetries}/${maxRateLimitRetries} after ${rlDelay}ms`);
+              // FIX v11.0.6: Extended exponential backoff (15s base, max 120s)
+              const rlDelay = Math.min(15000 * Math.pow(1.5, rateLimitRetries - 1), 120000);
+              log(`⏳ 🚦 Orchestrator: rate limit on block ${parentId}, retry ${rateLimitRetries}/${maxRateLimitRetries} after ${Math.round(rlDelay / 1000)}s`);
               await new Promise(resolve => setTimeout(resolve, rlDelay));
               // give one more normal retry after rate limit backoff
               retries = Math.max(retries, 1);

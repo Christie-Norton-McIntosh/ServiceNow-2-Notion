@@ -783,29 +783,112 @@ async function convertTableBlock(tableHtml, options = {}) {
   console.log(`📊 [table.cjs] Final table metrics: rows=${rows.length}, width=${tableWidth}`);
   if (tableWidth === 0) return blocks.length > 0 ? blocks : null;
 
-  // Create Notion table block
-  const tableBlock = {
-    object: "block",
-    type: "table",
-    table: {
-      table_width: tableWidth,
-      has_column_header: theadRows.length > 0,
-      has_row_header: false,
-      children: [],
-    },
-  };
-  rows.forEach((row) => {
-    const tableRow = {
-      object: "block",
-      type: "table_row",
-      table_row: { cells: [] },
-    };
-    for (let i = 0; i < tableWidth; i++) {
-      tableRow.table_row.cells.push(row[i] || [{ type: "text", text: { content: "" } }]);
+  // Notion API limit: tables can have max 100 rows
+  const MAX_TABLE_ROWS = 100;
+  const originalRowCount = rows.length;
+  
+  // Split large tables into multiple 100-row chunks
+  if (rows.length > MAX_TABLE_ROWS) {
+    console.warn(`⚠️ [table.cjs] Table exceeds Notion's 100-row limit (${rows.length} rows). Splitting into ${Math.ceil(rows.length / MAX_TABLE_ROWS)} tables.`);
+    
+    const numChunks = Math.ceil(rows.length / MAX_TABLE_ROWS);
+    
+    for (let chunkIndex = 0; chunkIndex < numChunks; chunkIndex++) {
+      const startRow = chunkIndex * MAX_TABLE_ROWS;
+      const endRow = Math.min(startRow + MAX_TABLE_ROWS, rows.length);
+      const chunkRows = rows.slice(startRow, endRow);
+      
+      // Add a heading before each chunk (except the first one)
+      if (chunkIndex > 0) {
+        blocks.push({
+          object: "block",
+          type: "heading_3",
+          heading_3: {
+            rich_text: [
+              {
+                type: "text",
+                text: {
+                  content: `(continued - rows ${startRow + 1}-${endRow})`
+                }
+              }
+            ],
+            color: "default",
+            is_toggleable: false
+          }
+        });
+      }
+      
+      // Create table chunk with header row if this is the first chunk
+      const tableBlock = {
+        object: "block",
+        type: "table",
+        table: {
+          table_width: tableWidth,
+          has_column_header: (chunkIndex === 0 && theadRows.length > 0),
+          has_row_header: false,
+          children: [],
+        },
+      };
+      
+      chunkRows.forEach((row) => {
+        const tableRow = {
+          object: "block",
+          type: "table_row",
+          table_row: { cells: [] },
+        };
+        for (let i = 0; i < tableWidth; i++) {
+          tableRow.table_row.cells.push(row[i] || [{ type: "text", text: { content: "" } }]);
+        }
+        tableBlock.table.children.push(tableRow);
+      });
+      
+      blocks.push(tableBlock);
     }
-    tableBlock.table.children.push(tableRow);
-  });
-  blocks.push(tableBlock);
+    
+    // Add informational callout after all chunks
+    blocks.push({
+      object: "block",
+      type: "callout",
+      callout: {
+        icon: { type: "emoji", emoji: "ℹ️" },
+        color: "blue_background",
+        rich_text: [
+          {
+            type: "text",
+            text: {
+              content: `Note: This table had ${originalRowCount} rows and was split into ${numChunks} tables above due to Notion's 100-row table limit.`
+            }
+          }
+        ]
+      }
+    });
+  } else {
+    // Single table fits within limit
+    const tableBlock = {
+      object: "block",
+      type: "table",
+      table: {
+        table_width: tableWidth,
+        has_column_header: theadRows.length > 0,
+        has_row_header: false,
+        children: [],
+      },
+    };
+    
+    rows.forEach((row) => {
+      const tableRow = {
+        object: "block",
+        type: "table_row",
+        table_row: { cells: [] },
+      };
+      for (let i = 0; i < tableWidth; i++) {
+        tableRow.table_row.cells.push(row[i] || [{ type: "text", text: { content: "" } }]);
+      }
+      tableBlock.table.children.push(tableRow);
+    });
+    
+    blocks.push(tableBlock);
+  }
   
   // Add extracted images as separate image blocks after the table
   if (extractedImages.length > 0) {
@@ -899,6 +982,14 @@ function deduplicateTableBlocks(blocks) {
     if (block.type !== "table") {
       result.push(block);
       prevTableKey = null; // Reset when we see a non-table block
+      continue;
+    }
+    
+    // FIX v11.0.71: Check if table.children exists (may be stripped by enforceNestingDepthLimit at depth 2+)
+    if (!block.table.children || !Array.isArray(block.table.children)) {
+      // Table without children (deferred for orchestration) - can't deduplicate, keep it
+      result.push(block);
+      prevTableKey = null;
       continue;
     }
     
