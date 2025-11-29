@@ -1844,15 +1844,28 @@ async function extractContentFromHtml(html) {
 
             const tableTexts = new Set();
             for (const b of processedBlocks) {
-              if (b && b.type === 'table' && b.table && Array.isArray(b.table.children)) {
-                for (const row of b.table.children) {
-                  const cells = (row.table_row && row.table_row.cells) || [];
-                  const cellTexts = cells.map(cellArr => {
-                    if (!Array.isArray(cellArr)) return '';
-                    return cellArr.map(rt => (rt && rt.text && rt.text.content) ? String(rt.text.content) : '').join(' ');
-                  }).filter(Boolean).join(' ');
-                  const key = normalize(cellTexts);
-                  if (key) tableTexts.add(key);
+              if (b && b.type === 'table' && b.table) {
+                // Prefer explicit row summaries metadata when present (non-emitted,
+                // internal-only). This makes dedupe independent of whether validation
+                // emitted plain-text row summary paragraphs.
+                if (Array.isArray(b._sn2n_row_summaries) && b._sn2n_row_summaries.length > 0) {
+                  for (const raw of b._sn2n_row_summaries) {
+                    const key = normalize(raw);
+                    if (key) tableTexts.add(key);
+                  }
+                  continue;
+                }
+
+                if (Array.isArray(b.table.children)) {
+                  for (const row of b.table.children) {
+                    const cells = (row.table_row && row.table_row.cells) || [];
+                    const cellTexts = cells.map(cellArr => {
+                      if (!Array.isArray(cellArr)) return '';
+                      return cellArr.map(rt => (rt && rt.text && rt.text.content) ? String(rt.text.content) : '').join(' ');
+                    }).filter(Boolean).join(' ');
+                    const key = normalize(cellTexts);
+                    if (key) tableTexts.add(key);
+                  }
                 }
               }
             }
