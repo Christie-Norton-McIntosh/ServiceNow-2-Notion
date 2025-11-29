@@ -1,5 +1,21 @@
 # CHANGELOG — ServiceNow-2-Notion
 
+## Unreleased
+Date: 2025-11-28
+
+### Summary
+
+**Safe dedupe default**: Changed the default Jaccard threshold for post-processing deduplication to exact-match (1.0) so production runs only remove exact token-set duplicates by default. This is a conservative, low-risk rollout step; the threshold remains configurable via the `SN2N_DEDUPE_JACCARD` environment variable.
+
+### Rationale
+
+Validation runs showed dedupe candidates are overwhelmingly exact matches. Defaulting to exact-match prevents accidental removal of paraphrased or semantically similar content while preserving an opt-in path to lower thresholds for tuned rollouts.
+
+### Files Modified
+
+- `server/services/servicenow.cjs` — changed default SN2N_DEDUPE_JACCARD fallback to '1'
+
+
 ## Version: 11.0.6
 Date: 2025-11-10
 
