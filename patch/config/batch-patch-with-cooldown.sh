@@ -17,8 +17,16 @@ DST_DIR="$BASE_DIR/updated-pages"
 PROBLEMATIC_DIR="$BASE_DIR/problematic-files"
 LOG_DIR="$BASE_DIR/log"
 FAILED_VALIDATION_DIR="$BASE_DIR/failed-validation"
-mkdir -p "$LOG_DIR" "$DST_DIR" "$PROBLEMATIC_DIR"
+UNSUCCESSFUL_DIR="$BASE_DIR/patch-unsuccessful"
+PAGE_NOT_FOUND_DIR="$BASE_DIR/page-not-found"
+UPDATED_ARCHIVE_DIR="$BASE_DIR/updated-archive"
+mkdir -p "$LOG_DIR" "$DST_DIR" "$PROBLEMATIC_DIR" "$UNSUCCESSFUL_DIR" "$PAGE_NOT_FOUND_DIR" "$UPDATED_ARCHIVE_DIR"
 mkdir -p "$FAILED_VALIDATION_DIR"
+
+# Automatic retry settings for transient generic HTTP failures (5xx, 429, network timeouts)
+# Override with environment variable MAX_GENERIC_RETRIES
+MAX_GENERIC_RETRIES="${MAX_GENERIC_RETRIES:-2}"  # Total additional attempts AFTER the initial try
+GENERIC_RETRY_BASE_DELAY="${GENERIC_RETRY_BASE_DELAY:-5}" # seconds
 
 TS="$(date +%Y%m%d-%H%M%S)"
 LOG_FILE="$LOG_DIR/batch-patch-cooldown-$TS.log"
@@ -116,9 +124,13 @@ total=0
 patched=0
 failed_validation=0
 failed_patch=0
+unsuccessful_moved=0
+page_not_found=0
 skipped=0
 timeouts=0
 chunk_count=0
+retried_generic=0
+successful_after_retry=0
 
 shopt -s nullglob
 
@@ -358,6 +370,10 @@ for html_file in "$SRC_DIR"/*.html; do
         if [[ "$has_errors" != "false" ]]; then
           echo "  ❌ PATCH completed but validation failed" | tee -a "$LOG_FILE"
           failed_patch=$((failed_patch+1))
+          # Move failing page to patch-unsuccessful for later investigation
+          mv "$html_file" "$UNSUCCESSFUL_DIR/" 2>/dev/null || true
+          echo "  🚫 Moved to patch-unsuccessful/ (post-PATCH validation failed)" | tee -a "$LOG_FILE"
+          unsuccessful_moved=$((unsuccessful_moved+1))
         else
           echo "  ✅ PATCH successful with clean validation" | tee -a "$LOG_FILE"
           mv "$html_file" "$DST_DIR/"
@@ -383,7 +399,113 @@ for html_file in "$SRC_DIR"/*.html; do
         fi
       else
         echo "  ❌ PATCH HTTP error: $patch_http_code" | tee -a "$LOG_FILE"
-        failed_patch=$((failed_patch+1))
+        # Capture body details for diagnostics
+        if [[ -n "$patch_body" ]]; then
+          echo "     ↳ Response snippet:" | tee -a "$LOG_FILE"
+          echo "$patch_body" | head -n 20 | sed 's/^/        /' | tee -a "$LOG_FILE"
+        fi
+
+        # Detect 'page not found' / deleted page scenarios
+        body_lower=$(echo "$patch_body" | tr 'A-Z' 'a-z')
+        if [[ "$patch_http_code" == "404" ]] || \
+           echo "$body_lower" | grep -qi 'object_not_found' || \
+           echo "$body_lower" | grep -qi 'could not find block' || \
+           echo "$body_lower" | grep -qi 'page not found'; then
+          echo "     ↳ Classification: page-not-found / deleted / integration access revoked" | tee -a "$LOG_FILE"
+          echo "     ↳ Common causes:" | tee -a "$LOG_FILE"
+          echo "        • Page manually deleted in Notion UI" | tee -a "$LOG_FILE"
+          echo "        • Page moved to another workspace or database not shared with integration" | tee -a "$LOG_FILE"
+          echo "        • Integration lost access (sharing or token permissions changed)" | tee -a "$LOG_FILE"
+          echo "        • Stale ID: file references old page ID after recreation" | tee -a "$LOG_FILE"
+          echo "        • Hyphen-stripped vs hyphenated ID mismatch (ensure canonical 32-char UUID)" | tee -a "$LOG_FILE"
+          mv "$html_file" "$PAGE_NOT_FOUND_DIR/" 2>/dev/null || true
+          echo "  🚫 Moved to page-not-found/ (irrecoverable for PATCH)" | tee -a "$LOG_FILE"
+          page_not_found=$((page_not_found+1))
+        else
+          echo "     ↳ Classification: generic HTTP failure" | tee -a "$LOG_FILE"
+          echo "     ↳ Common causes:" | tee -a "$LOG_FILE"
+          echo "        • Network interruption or proxy server restart mid-request" | tee -a "$LOG_FILE"
+          echo "        • Notion API transient outage / 5xx response" | tee -a "$LOG_FILE"
+          echo "        • Rate limit spike beyond retry logic (429)" | tee -a "$LOG_FILE"
+          echo "        • Oversized payload hitting internal timeout" | tee -a "$LOG_FILE"
+          echo "        • Content mutation edge-case causing validation to abort early" | tee -a "$LOG_FILE"
+          echo "        • Unexpected schema issue (properties removed or renamed)" | tee -a "$LOG_FILE"
+          # Attempt automatic retry for transient generic HTTP failures
+          # Criteria: HTTP 5xx, 429, or body contains common transient signals (timeout, ECONNRESET)
+          body_lower=$(echo "$patch_body" | tr 'A-Z' 'a-z')
+          is_transient=0
+          if [[ "$patch_http_code" =~ ^5 ]] || [[ "$patch_http_code" == "429" ]] || \
+             echo "$body_lower" | grep -qi 'timeout' || \
+             echo "$body_lower" | grep -qi 'econnreset' || \
+             echo "$body_lower" | grep -qi 'temporarily unavailable' || \
+             echo "$body_lower" | grep -qi 'server error'; then
+             is_transient=1
+          fi
+
+          if [[ $is_transient -eq 1 && $MAX_GENERIC_RETRIES -gt 0 ]]; then
+            generic_attempt=1
+            while [[ $generic_attempt -le $MAX_GENERIC_RETRIES ]]; do
+              retried_generic=$((retried_generic+1))
+              retry_delay=$(( GENERIC_RETRY_BASE_DELAY * 2 ** (generic_attempt - 1) ))
+              echo "     ↳ [RETRY] Transient failure detected (HTTP $patch_http_code). Attempt $generic_attempt/$MAX_GENERIC_RETRIES after ${retry_delay}s" | tee -a "$LOG_FILE"
+              sleep $retry_delay
+              # Re-run PATCH synchronously (simplified; no progress loop)
+              retry_temp="/tmp/patch-retry-response-$$-$total-attempt-$generic_attempt.txt"
+              curl -s -m "$manual_timeout" -w "\n%{http_code}" -X PATCH "$API_URL/$page_id" \
+                -H "Content-Type: application/json" \
+                -d "{\"title\":\"$title\",\"contentHtml\":$(echo "$content" | jq -Rs .),\"url\":\"https://docs.servicenow.com\"}" > "$retry_temp" 2>&1
+              retry_http_code=$(tail -n1 "$retry_temp")
+              retry_body=$(sed '$d' "$retry_temp")
+              rm -f "$retry_temp"
+              echo "        ↳ Retry HTTP: $retry_http_code" | tee -a "$LOG_FILE"
+              if [[ "$retry_http_code" == "200" ]]; then
+                retry_has_errors=$(echo "$retry_body" | jq -r '.validationResult.hasErrors // false')
+                if [[ "$retry_has_errors" == "false" ]]; then
+                  echo "        ✅ Retry succeeded (attempt $generic_attempt)." | tee -a "$LOG_FILE"
+                  mv "$html_file" "$DST_DIR/"
+                  echo "        📦 Moved to updated-pages/ (success after retry)" | tee -a "$LOG_FILE"
+                  patched=$((patched+1))
+                  successful_after_retry=$((successful_after_retry+1))
+                  # Property refresh after retry success
+                  clean_page_id=$(echo "$page_id" | tr -d '-')
+                  echo "        🔄 Refresh properties for page: $clean_page_id" | tee -a "$LOG_FILE"
+                  refresh_resp=$(curl -s -w "\n%{http_code}" -X POST "http://localhost:3004/api/validate" \
+                    -H "Content-Type: application/json" \
+                    -d "{\"pageIds\":[\"$clean_page_id\"]}" 2>&1 || echo -e "\n000")
+                  refresh_http=$(echo "$refresh_resp" | tail -n1)
+                  refresh_body=$(echo "$refresh_resp" | sed '$d')
+                  if [[ "$refresh_http" == "200" ]]; then
+                    updated=$(echo "$refresh_body" | jq -r '.data.summary.updated // 0' 2>/dev/null || echo 0)
+                    cleared=$(echo "$refresh_body" | jq -r '.data.summary.errorsCleared // 0' 2>/dev/null || echo 0)
+                    failed_prop=$(echo "$refresh_body" | jq -r '.data.summary.failed // 0' 2>/dev/null || echo 0)
+                    echo "           ↳ Property refresh: updated=$updated errorsCleared=$cleared failed=$failed_prop" | tee -a "$LOG_FILE"
+                  else
+                    echo "           ↳ [WARN] Property refresh HTTP $refresh_http" | tee -a "$LOG_FILE"
+                  fi
+                  # Mark retry loop as completed successfully
+                  is_transient=0
+                  break
+                else
+                  echo "        ❌ Retry attempt $generic_attempt validation failed (HTTP 200)." | tee -a "$LOG_FILE"
+                fi
+              else
+                echo "        ❌ Retry attempt $generic_attempt HTTP $retry_http_code" | tee -a "$LOG_FILE"
+              fi
+              generic_attempt=$((generic_attempt+1))
+            done
+          fi
+
+          if [[ $is_transient -eq 1 ]]; then
+            # All retries exhausted or not transient → classify unsuccessful
+            failed_patch=$((failed_patch+1))
+            mv "$html_file" "$UNSUCCESSFUL_DIR/" 2>/dev/null || true
+            echo "  🚫 Moved to patch-unsuccessful/ (PATCH HTTP error after retries)" | tee -a "$LOG_FILE"
+            unsuccessful_moved=$((unsuccessful_moved+1))
+          elif [[ $is_transient -eq 0 && "$patch_http_code" != "200" ]]; then
+            # Already handled success-after-retry; no further action needed if success
+            :
+          fi
+        fi
       fi
       
       rm -f "$temp_response"
@@ -420,9 +542,45 @@ echo "Total processed: $total" | tee -a "$LOG_FILE"
 echo "Successfully patched: $patched" | tee -a "$LOG_FILE"
 echo "Failed validation: $failed_validation" | tee -a "$LOG_FILE"
 echo "Failed PATCH: $failed_patch" | tee -a "$LOG_FILE"
+echo "Moved to patch-unsuccessful: $unsuccessful_moved" | tee -a "$LOG_FILE"
+echo "Moved to page-not-found: $page_not_found" | tee -a "$LOG_FILE"
 echo "Timeouts: $timeouts" | tee -a "$LOG_FILE"
+echo "Generic retries attempted: $retried_generic" | tee -a "$LOG_FILE"
+echo "Successful after retry: $successful_after_retry" | tee -a "$LOG_FILE"
 echo "Skipped: $skipped" | tee -a "$LOG_FILE"
 echo "========================================" | tee -a "$LOG_FILE"
+
+# Post-batch archival of updated pages older than ARCHIVE_DAYS (default 3)
+ARCHIVE_DAYS="${ARCHIVE_DAYS:-3}"
+ARCHIVED_COUNT=0
+ARCHIVE_THRESHOLD_SECONDS=$(( ARCHIVE_DAYS * 86400 ))
+NOW_EPOCH=$(date +%s)
+
+if [[ -d "$DST_DIR" ]]; then
+  echo "" | tee -a "$LOG_FILE"
+  echo "[ARCHIVE] Scanning $DST_DIR for files older than $ARCHIVE_DAYS day(s)" | tee -a "$LOG_FILE"
+  for f in "$DST_DIR"/*.html; do
+    [[ -e "$f" ]] || continue
+    # Portable mtime retrieval (macOS vs Linux)
+    if stat -f %m "$f" >/dev/null 2>&1; then
+      MTIME=$(stat -f %m "$f")
+    else
+      MTIME=$(stat -c %Y "$f")
+    fi
+    AGE=$(( NOW_EPOCH - MTIME ))
+    if (( AGE > ARCHIVE_THRESHOLD_SECONDS )); then
+      mv "$f" "$UPDATED_ARCHIVE_DIR/" 2>/dev/null || true
+      ARCHIVED_COUNT=$(( ARCHIVED_COUNT + 1 ))
+      echo "  ↳ Archived $(basename "$f") (age ${AGE}s)" | tee -a "$LOG_FILE"
+    fi
+  done
+  if (( ARCHIVED_COUNT > 0 )); then
+    echo "[ARCHIVE] Moved $ARCHIVED_COUNT file(s) to updated-archive" | tee -a "$LOG_FILE"
+  else
+    echo "[ARCHIVE] No files older than $ARCHIVE_DAYS day(s) to archive" | tee -a "$LOG_FILE"
+  fi
+fi
+
 
 # Failure artifact summary (validation failures captured earlier)
 failed_validation_artifacts=$(ls -1 "$FAILED_VALIDATION_DIR"/*.json 2>/dev/null | wc -l | tr -d ' ')

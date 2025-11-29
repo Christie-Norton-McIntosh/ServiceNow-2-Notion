@@ -261,7 +261,6 @@ router.post('/W2N', async (req, res) => {
                     }
                   }
                 }
-                // Strip marker tokens from rich_text after attaching
                 if (typed) {
                   typed.rich_text = stripMarkerTokens(rich);
                 }
@@ -271,7 +270,6 @@ router.post('/W2N', async (req, res) => {
               if (Array.isArray(blk.children)) attachToParents(blk.children);
             }
           };
-
           attachToParents(children);
           log('🔖 (dryRun) Marker attachment simulation complete');
         }
@@ -290,7 +288,7 @@ router.post('/W2N', async (req, res) => {
         if (calloutIndices.length > 1) {
           log(`🔍 [DRYRUN-CALLOUT-DEDUPE] Found ${calloutIndices.length} callouts at indices: [${calloutIndices.join(', ')}]`);
           
-          const seenCalloutTexts = new Map(); // text -> {firstIdx, count}
+          const seenCalloutTexts = new Map();
           const indicesToRemove = [];
           
           calloutIndices.forEach((idx) => {
@@ -1825,32 +1823,119 @@ router.post('/W2N', async (req, res) => {
         for (let propRetry = 0; propRetry <= maxPropertyRetries && !propertyUpdateSuccess; propRetry++) {
           try {
             const propertyUpdates = {};
+
+            // Refined formatting (v11.0.35+): structured Validation & Stats properties
+            // Determine validation status based on similarity, order issues, and missing segments
+            const simPercent = (typeof validationResult.similarity === 'number')
+              ? Math.round(validationResult.similarity)
+              : null;
+            const similarityLine = simPercent != null ? `Similarity: ${simPercent}% (threshold: ≥95%)` : null;
             
-            // Set Validation property with results summary (without stats)
-            // Using rich_text property type (multi-line text)
-            propertyUpdates["Validation"] = {
-              rich_text: [
-                {
-                  type: "text",
-                  text: { content: validationResult.summary }
-                }
-              ]
-            };
+            const similarityPass = simPercent != null && simPercent >= 95;
+            const hasOrderIssues = Array.isArray(validationResult.orderIssues) && validationResult.orderIssues.length > 0;
+            const hasMissingSegments = Array.isArray(validationResult.missing) && validationResult.missing.length > 0;
+            const hasMarkerLeaks = validationResult.hasErrors && 
+                                   validationResult.issues?.some(issue => 
+                                     issue.toLowerCase().includes('marker') || 
+                                     issue.toLowerCase().includes('sn2n:')
+                                   );
             
-            // Set Stats property with detailed statistics
-            // Using rich_text property type (multi-line text)
-            if (validationResult.stats) {
-              const statsText = JSON.stringify(validationResult.stats, null, 2);
-              propertyUpdates["Stats"] = {
-                rich_text: [
-                  {
-                    type: "text",
-                    text: { content: statsText }
-                  }
-                ]
-              };
-              log(`📊 Setting Stats property with validation statistics`);
+            // Determine status: FAIL if similarity fails OR missing segments exist OR marker leaks detected
+            // WARNING if similarity passes but order issues exist
+            // PASS only if similarity passes and no order or missing issues
+            let validationStatus;
+            let statusIcon;
+            if (!similarityPass || hasMissingSegments || hasMarkerLeaks) {
+              validationStatus = 'FAIL';
+              statusIcon = '❌';
+            } else if (hasOrderIssues) {
+              validationStatus = 'WARNING';
+              statusIcon = '🔀';
+            } else {
+              validationStatus = 'PASS';
+              statusIcon = '✅';
             }
+            
+            // Use same icon for Stats property
+            const passFail = validationStatus;
+
+            // (Removed deprecated Status property logic; counts handled in Stats header)
+
+            // Order issues section: list ALL issues (not just first 2)
+            let orderSection = '';
+            if (Array.isArray(validationResult.orderIssues) && validationResult.orderIssues.length > 0) {
+              const lines = [`⚠️ Order Issues (${validationResult.orderIssues.length} detected):`];
+              
+              validationResult.orderIssues.forEach((iss, idx) => {
+                lines.push(`${idx + 1}. Inversion detected:`);
+                lines.push(`   A: "${iss.segmentA || 'Unknown'}..."`);
+                lines.push(`   B: "${iss.segmentB || 'Unknown'}..."`);
+                lines.push(`   HTML order: A at ${iss.htmlOrder?.[0] ?? '?'}, B at ${iss.htmlOrder?.[1] ?? '?'}`);
+                lines.push(`   Notion order: A at ${iss.notionOrder?.[0] ?? '?'}, B at ${iss.notionOrder?.[1] ?? '?'}`);
+              });
+              
+              orderSection = lines.join('\n');
+            }
+
+            // Missing segments section: list ALL missing segments (not just first 3)
+            let missingSection = '';
+            if (Array.isArray(validationResult.missing) && validationResult.missing.length > 0) {
+              const lines = [`⚠️ Missing: ${validationResult.missing.length} segment(s)`];
+              lines.push(`(in HTML but not Notion)`);
+              
+              validationResult.missing.forEach((m, idx) => {
+                const text = m?.text || m?.segment || m || '';
+                const preview = text.length > 80 ? text.substring(0, 80) + '...' : text;
+                lines.push(`${idx + 1}. ${preview}`);
+              });
+              
+              missingSection = lines.join('\n');
+            }
+
+            // Assemble Validation content
+            const validationLines = [`${statusIcon} Text Content Validation: ${validationStatus}`];
+            // Do not include similarity/content summary lines in Validation per spec
+            if (orderSection) {
+              validationLines.push(''); // blank line before order issues
+              validationLines.push(orderSection);
+            }
+            if (missingSection) {
+              validationLines.push(''); // blank line before missing section
+              validationLines.push(missingSection);
+            }
+            const validationContent = validationLines.join('\n');
+
+            propertyUpdates["Validation"] = {
+              rich_text: [ { type: 'text', text: { content: validationContent } } ]
+            };
+
+            // Stats breakdown formatting (first line reflects table/image/callout count match, not validation status)
+            const stats = validationResult.stats || {};
+            const breakdown = stats.breakdown || {};
+            const getNum = (v) => (typeof v === 'number' ? v : (v && v.count) || 0);
+            const tablesMatch = (typeof breakdown.tablesSource !== 'undefined') && (typeof breakdown.tablesNotion !== 'undefined') && ((breakdown.tablesSource || 0) === (breakdown.tablesNotion || 0));
+            const imagesMatch = (typeof breakdown.imagesSource !== 'undefined') && (typeof breakdown.imagesNotion !== 'undefined') && ((breakdown.imagesSource || 0) === (breakdown.imagesNotion || 0));
+            const calloutsMatch = (typeof breakdown.calloutsSource !== 'undefined') && (typeof breakdown.calloutsNotion !== 'undefined') && ((breakdown.calloutsSource || 0) === (breakdown.calloutsNotion || 0));
+            const countsPass = tablesMatch && imagesMatch && calloutsMatch;
+            const countsIcon = countsPass ? '✅' : '❌';
+            const statsHeader = `${countsIcon}  Content Comparison: ${countsPass ? 'PASS' : 'FAIL'}`; // two spaces after icon per spec
+            const statsLines = [
+              statsHeader,
+              '📊 (Source → Notion):',
+              `• Ordered list items: ${getNum(breakdown.orderedListSource)} → ${getNum(breakdown.orderedListNotion)}`,
+              `• Unordered list items: ${getNum(breakdown.unorderedListSource)} → ${getNum(breakdown.unorderedListNotion)}`,
+              `• Paragraphs: ${getNum(breakdown.paragraphsSource)} → ${getNum(breakdown.paragraphsNotion)}`,
+              `• Headings: ${getNum(breakdown.headingsSource)} → ${getNum(breakdown.headingsNotion)}`,
+              `• Tables: ${getNum(breakdown.tablesSource)} → ${getNum(breakdown.tablesNotion)}`,
+              `• Images: ${getNum(breakdown.imagesSource)} → ${getNum(breakdown.imagesNotion)}`,
+              `• Callouts: ${getNum(breakdown.calloutsSource)} → ${getNum(breakdown.calloutsNotion)}`,
+            ];
+            const statsContent = statsLines.join('\n');
+
+            propertyUpdates["Stats"] = {
+              rich_text: [ { type: 'text', text: { content: statsContent } } ]
+            };
+            log(`📊 Setting Stats property with refined comparison breakdown`);
             
             // Update the page properties
             await notion.pages.update({
@@ -1860,6 +1945,62 @@ router.post('/W2N', async (req, res) => {
             
             propertyUpdateSuccess = true;
             log(`✅ Validation properties updated successfully${propRetry > 0 ? ` (after ${propRetry} ${propRetry === 1 ? 'retry' : 'retries'})` : ''}`);
+            
+            // Auto-save pages with order issues for investigation
+            if (Array.isArray(validationResult.orderIssues) && validationResult.orderIssues.length > 0) {
+              try {
+                log(`📋 Order issues detected (${validationResult.orderIssues.length}) - auto-saving for investigation...`);
+                const fs = require('fs');
+                const path = require('path');
+                
+                const orderIssuesDir = path.join(__dirname, '../../patch/pages/validation-order-issues');
+                if (!fs.existsSync(orderIssuesDir)) {
+                  fs.mkdirSync(orderIssuesDir, { recursive: true });
+                }
+                
+                const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
+                const sanitizedTitle = (payload.title || 'untitled')
+                  .toLowerCase()
+                  .replace(/[^a-z0-9]+/g, '-')
+                  .replace(/^-+|-+$/g, '')
+                  .substring(0, 60);
+                const filename = `${sanitizedTitle}-order-issues-${timestamp}.html`;
+                const filepath = path.join(orderIssuesDir, filename);
+                
+                const htmlContent = `<!--
+Auto-saved: Order issues detected in content validation
+Page ID: ${response.id}
+Page URL: ${response.url}
+Page Title: ${payload.title}
+Created: ${new Date().toISOString()}
+Source URL: ${payload.url || 'N/A'}
+
+Order Issues Detected: ${validationResult.orderIssues.length}
+Similarity: ${validationResult.similarity}%
+
+Order Issues:
+${JSON.stringify(validationResult.orderIssues, null, 2)}
+
+Missing Segments: ${validationResult.missing?.length || 0}
+${validationResult.missing?.length > 0 ? '\nMissing:\n' + JSON.stringify(validationResult.missing.slice(0, 5), null, 2) : ''}
+
+Full Validation Result:
+${JSON.stringify(validationResult, null, 2)}
+
+Action Required: Investigate why content order differs between HTML source and Notion output
+-->
+
+${payload.contentHtml || ''}
+`;
+                
+                fs.writeFileSync(filepath, htmlContent, 'utf-8');
+                log(`✅ AUTO-SAVED: ${filename}`);
+                log(`   Location: ${filepath}`);
+                log(`   Order issues: ${validationResult.orderIssues.length}`);
+              } catch (saveError) {
+                log(`❌ Failed to auto-save page with order issues: ${saveError.message}`);
+              }
+            }
             
             // FIX v11.0.28: Verify properties were actually set by retrieving the page
             // This catches cases where empty strings are sent but Notion stores empty arrays
@@ -3433,30 +3574,118 @@ ${html || ''}
         }
       }
       
-      // Set Validation property with PATCH indicator and results summary
+      // Refined PATCH Validation & Stats formatting (v11.0.35+)
       const patchIndicator = "🔄 PATCH\n\n";
-      propertyUpdates["Validation"] = {
-        rich_text: [
-          {
-            type: "text",
-            text: { content: patchIndicator + validationResult.summary }
-          }
-        ]
-      };
       
-      // Set Stats property with detailed statistics
-      if (validationResult.stats) {
-        const statsText = JSON.stringify(validationResult.stats, null, 2);
-        propertyUpdates["Stats"] = {
-          rich_text: [
-            {
-              type: "text",
-              text: { content: statsText }
-            }
-          ]
-        };
-        log(`📊 Setting Stats property with validation statistics`);
+      // Determine validation status based on similarity, order issues, and missing segments
+      const simPercent = (typeof validationResult.similarity === 'number')
+        ? Math.round(validationResult.similarity)
+        : null;
+      const similarityLine = simPercent != null ? `Similarity: ${simPercent}% (threshold: ≥95%)` : null;
+
+      const similarityPass = simPercent != null && simPercent >= 95;
+      const hasOrderIssues = Array.isArray(validationResult.orderIssues) && validationResult.orderIssues.length > 0;
+      const hasMissingSegments = Array.isArray(validationResult.missing) && validationResult.missing.length > 0;
+      const hasMarkerLeaks = validationResult.hasErrors && 
+                             validationResult.issues?.some(issue => 
+                               issue.toLowerCase().includes('marker') || 
+                               issue.toLowerCase().includes('sn2n:')
+                             );
+
+      // Determine status: FAIL if similarity fails OR missing segments exist OR marker leaks detected
+      // WARNING if similarity passes but order issues exist
+      // PASS only if similarity passes and no order or missing issues
+      let validationStatus;
+      let statusIcon;
+      if (!similarityPass || hasMissingSegments || hasMarkerLeaks) {
+        validationStatus = 'FAIL';
+        statusIcon = '❌';
+      } else if (hasOrderIssues) {
+        validationStatus = 'WARNING';
+        statusIcon = '🔀';
+      } else {
+        validationStatus = 'PASS';
+        statusIcon = '✅';
       }
+
+      // Use same icon for Stats property
+      const passFail = validationStatus;
+
+      // Order issues section: list ALL issues (not just first 2)
+      let orderSection = '';
+      if (Array.isArray(validationResult.orderIssues) && validationResult.orderIssues.length > 0) {
+        const lines = [`⚠️ Order Issues (${validationResult.orderIssues.length} detected):`];
+        
+        validationResult.orderIssues.forEach((iss, idx) => {
+          lines.push(`${idx + 1}. Inversion detected:`);
+          lines.push(`   A: "${iss.segmentA || 'Unknown'}..."`);
+          lines.push(`   B: "${iss.segmentB || 'Unknown'}..."`);
+          lines.push(`   HTML order: A at ${iss.htmlOrder?.[0] ?? '?'}, B at ${iss.htmlOrder?.[1] ?? '?'}`);
+          lines.push(`   Notion order: A at ${iss.notionOrder?.[0] ?? '?'}, B at ${iss.notionOrder?.[1] ?? '?'}`);
+        });
+        
+        orderSection = lines.join('\n');
+      }
+
+      // Missing segments section: list ALL missing segments (not just first 3)
+      let missingSection = '';
+      if (Array.isArray(validationResult.missing) && validationResult.missing.length > 0) {
+        const lines = [`⚠️ Missing: ${validationResult.missing.length} segment(s)`];
+        lines.push(`(in HTML but not Notion)`);
+        
+        validationResult.missing.forEach((m, idx) => {
+          const text = m?.text || m?.segment || m || '';
+          const preview = text.length > 80 ? text.substring(0, 80) + '...' : text;
+          lines.push(`${idx + 1}. ${preview}`);
+        });
+        
+        missingSection = lines.join('\n');
+      }
+
+  const validationLines = [`${statusIcon} Text Content Validation: ${validationStatus}`];
+  // Do not include similarity/content summary lines in Validation per spec
+      if (orderSection) {
+        validationLines.push(''); // blank line before order issues
+        validationLines.push(orderSection);
+      }
+      if (missingSection) {
+        validationLines.push(''); // blank line before missing section
+        validationLines.push(missingSection);
+      }
+      const validationContent = patchIndicator + validationLines.join('\n');
+
+      propertyUpdates["Validation"] = {
+        rich_text: [ { type: 'text', text: { content: validationContent } } ]
+      };
+
+  // (Removed deprecated Status property logic; counts handled in Stats header)
+
+      // Stats property refined breakdown (first line reflects table/image/callout count match, not validation status)
+      const stats = validationResult.stats || {};
+      const breakdown = stats.breakdown || {};
+      const getNum = (v) => (typeof v === 'number' ? v : (v && v.count) || 0);
+      const tablesMatch = (typeof breakdown.tablesSource !== 'undefined') && (typeof breakdown.tablesNotion !== 'undefined') && ((breakdown.tablesSource || 0) === (breakdown.tablesNotion || 0));
+      const imagesMatch = (typeof breakdown.imagesSource !== 'undefined') && (typeof breakdown.imagesNotion !== 'undefined') && ((breakdown.imagesSource || 0) === (breakdown.imagesNotion || 0));
+      const calloutsMatch = (typeof breakdown.calloutsSource !== 'undefined') && (typeof breakdown.calloutsNotion !== 'undefined') && ((breakdown.calloutsSource || 0) === (breakdown.calloutsNotion || 0));
+      const countsPass = tablesMatch && imagesMatch && calloutsMatch;
+      const countsIcon = countsPass ? '✅' : '❌';
+      const statsHeader = `${countsIcon}  Content Comparison: ${countsPass ? 'PASS' : 'FAIL'}`;
+      const statsLines = [
+        statsHeader,
+        '📊 (Source → Notion):',
+        `• Ordered list items: ${getNum(breakdown.orderedListSource)} → ${getNum(breakdown.orderedListNotion)}`,
+        `• Unordered list items: ${getNum(breakdown.unorderedListSource)} → ${getNum(breakdown.unorderedListNotion)}`,
+        `• Paragraphs: ${getNum(breakdown.paragraphsSource)} → ${getNum(breakdown.paragraphsNotion)}`,
+        `• Headings: ${getNum(breakdown.headingsSource)} → ${getNum(breakdown.headingsNotion)}`,
+        `• Tables: ${getNum(breakdown.tablesSource)} → ${getNum(breakdown.tablesNotion)}`,
+        `• Images: ${getNum(breakdown.imagesSource)} → ${getNum(breakdown.imagesNotion)}`,
+        `• Callouts: ${getNum(breakdown.calloutsSource)} → ${getNum(breakdown.calloutsNotion)}`,
+      ];
+      const statsContent = statsLines.join('\n');
+      propertyUpdates["Stats"] = {
+        rich_text: [ { type: 'text', text: { content: statsContent } } ]
+      };
+      log(`📊 Setting Stats property with refined comparison breakdown (PATCH)`);
       
       // Update the page properties
       await notion.pages.update({
@@ -3465,6 +3694,62 @@ ${html || ''}
       });
       
       log(`✅ Validation properties updated with PATCH indicator`);
+      
+      // Auto-save pages with order issues for investigation (PATCH)
+      if (Array.isArray(validationResult.orderIssues) && validationResult.orderIssues.length > 0) {
+        try {
+          log(`📋 Order issues detected (${validationResult.orderIssues.length}) - auto-saving PATCH for investigation...`);
+          const fs = require('fs');
+          const path = require('path');
+          
+          const orderIssuesDir = path.join(__dirname, '../../patch/pages/validation-order-issues');
+          if (!fs.existsSync(orderIssuesDir)) {
+            fs.mkdirSync(orderIssuesDir, { recursive: true });
+          }
+          
+          const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
+          const sanitizedTitle = (pageTitle || 'untitled')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .substring(0, 60);
+          const filename = `${sanitizedTitle}-patch-order-issues-${timestamp}.html`;
+          const filepath = path.join(orderIssuesDir, filename);
+          
+          const htmlContent = `<!--
+Auto-saved: Order issues detected in PATCH content validation
+Page ID: ${pageId}
+Page Title: ${pageTitle}
+PATCH Completed: ${new Date().toISOString()}
+Source URL: ${payload.url || 'N/A'}
+
+Order Issues Detected: ${validationResult.orderIssues.length}
+Similarity: ${validationResult.similarity}%
+
+Order Issues:
+${JSON.stringify(validationResult.orderIssues, null, 2)}
+
+Missing Segments: ${validationResult.missing?.length || 0}
+${validationResult.missing?.length > 0 ? '\nMissing:\n' + JSON.stringify(validationResult.missing.slice(0, 5), null, 2) : ''}
+
+Full Validation Result:
+${JSON.stringify(validationResult, null, 2)}
+
+Action Required: Investigate why content order differs between HTML source and Notion output (PATCH)
+-->
+
+${html || ''}
+`;
+          
+          fs.writeFileSync(filepath, htmlContent, 'utf-8');
+          log(`✅ AUTO-SAVED (PATCH): ${filename}`);
+          log(`   Location: ${filepath}`);
+          log(`   Order issues: ${validationResult.orderIssues.length}`);
+        } catch (saveError) {
+          log(`❌ Failed to auto-save PATCH with order issues: ${saveError.message}`);
+        }
+      }
+      
     } catch (propError) {
       log(`⚠️ Failed to update validation properties: ${propError.message}`);
       // Don't throw - page was updated successfully, just property update failed

@@ -7,6 +7,7 @@
  * - Reasonable block count
  * - Expected content structure
  * - Key headings/sections present
+ * - Content order and completeness (text similarity)
  * 
  * HEADING COUNT VALIDATION:
  * Heading counts use ±20% tolerance to account for:
@@ -24,6 +25,8 @@
  * 5. Wrapped orphan content: Text not in containers gets wrapped in paragraph blocks
  * 6. In tables: Paragraphs inside tables are excluded (table cells don't contain paragraph blocks)
  */
+
+const { validateContentOrder } = require('../services/content-validator.cjs');
 
 /**
  * Recursively fetch all blocks from a Notion page or block
@@ -669,6 +672,44 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
       }
     }
 
+    // CONTENT VALIDATION: Run text similarity check and block counting
+    if (options.sourceHtml) {
+      try {
+        log(`🔍 [VALIDATION] Running content validation (text similarity & block counts)...`);
+        const contentResult = await validateContentOrder(options.sourceHtml, pageId, notion);
+        
+        // Merge content validation results into main result
+        result.similarity = contentResult.similarity;
+        result.htmlSegments = contentResult.htmlSegments;
+        result.notionSegments = contentResult.notionSegments;
+        result.htmlChars = contentResult.htmlChars;
+        result.notionChars = contentResult.notionChars;
+        result.charDiff = contentResult.charDiff;
+        result.charDiffPercent = contentResult.charDiffPercent;
+        result.missing = contentResult.missing;
+        result.extra = contentResult.extra;
+        result.orderIssues = contentResult.orderIssues;
+        
+        // Add detailed block counts to stats
+        if (contentResult.stats && contentResult.stats.breakdown) {
+          result.stats.breakdown = contentResult.stats.breakdown;
+          log(`✅ [VALIDATION] Content validation complete - similarity: ${contentResult.similarity}%, blocks: ${JSON.stringify(contentResult.stats.breakdown)}`);
+        }
+        
+        // If content validation failed similarity threshold, mark as error
+        if (!contentResult.success) {
+          result.hasErrors = true;
+          result.success = false;
+          result.issues.push(`Content similarity below threshold: ${contentResult.similarity}% (expected ≥95%)`);
+        }
+      } catch (contentError) {
+        log(`⚠️ [VALIDATION] Content validation failed: ${contentError.message}`);
+        result.warnings.push(`Content validation error: ${contentError.message}`);
+      }
+    } else {
+      log(`⚠️ [VALIDATION] No source HTML provided - skipping content validation`);
+    }
+
     // Generate summary based on critical element validation
     if (result.hasErrors) {
       result.success = false;
@@ -697,21 +738,10 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
       result.summary = `✅ Validation passed: ${allBlocks.length} blocks, ${headings.length} headings, all critical elements match`;
     }
 
-    // Add source comparison to summary if available
-    if (result.sourceCounts && result.notionCounts) {
-      result.summary += `\n\n📊 Content Comparison (Source → Notion):`;
-      result.summary += `\n• Ordered list items: ${result.sourceCounts.orderedListItems} → ${result.notionCounts.orderedListItems}`;
-      result.summary += `\n• Unordered list items: ${result.sourceCounts.unorderedListItems} → ${result.notionCounts.unorderedListItems}`;
-      result.summary += `\n• Paragraphs: ${result.sourceCounts.paragraphs} → ${result.notionCounts.paragraphs}`;
-      result.summary += `\n• Headings: ${result.sourceCounts.headings} → ${result.notionCounts.headings}`;
-      result.summary += `\n• Tables: ${result.sourceCounts.tables} → ${result.notionCounts.tables}`;
-      result.summary += `\n• Images: ${result.sourceCounts.images} → ${result.notionCounts.images}`;
-      result.summary += `\n• Callouts: ${result.sourceCounts.callouts} → ${result.notionCounts.callouts}`;
-    }
-
-    // Note: Stats are now stored in a separate "Stats" property, not in the summary
-    // This keeps the Validation property focused on issues/warnings
-    // and makes Stats separately queryable in Notion
+    // Note: Source comparison (Content Comparison) has been REMOVED from summary
+    // This data is now exclusively in the "Stats" property to avoid duplication
+    // The Validation property focuses only on pass/fail, similarity, order issues, and missing segments
+    // The Stats property shows detailed block counts (Source → Notion)
 
     log(`🔍 [VALIDATION] Complete: ${result.success ? 'PASSED' : 'FAILED'}`);
     
