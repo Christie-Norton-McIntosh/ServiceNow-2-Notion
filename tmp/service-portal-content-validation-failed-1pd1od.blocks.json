@@ -1,0 +1,341 @@
+[
+  {
+    "object": "block",
+    "type": "paragraph",
+    "paragraph": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Service Portal allows you to build a mobile-friendly self-service portal experience for your employees or customers. Service Portal is a ServiceNow AI Platform feature that is active by default and interacts with parts of the platform so users can access platform features through portals."
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "object": "block",
+    "type": "embed",
+    "embed": {
+      "url": "https://player.vimeo.com/video/1088513009?h=944a2d483d&amp;badge=0&amp;autopause=0&amp;player_id=0&amp;app_id=58479&amp;allowfullscreen=true"
+    }
+  },
+  {
+    "object": "block",
+    "type": "paragraph",
+    "paragraph": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Both beginner and expert developers and can configure portals using Service Portal. Less technical users can make basic configuration changes to the UI using Branding Editor and other components of Service Portal. More advanced users can edit and extend portals, pages, and widgets. Expert users can use the Widget Editor tool to write scripts to power a portal, and even create rich web applications on the ServiceNow AI Platform."
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "object": "block",
+    "type": "heading_2",
+    "heading_2": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Get started"
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "object": "block",
+    "type": "table",
+    "table": {
+      "table_width": 3,
+      "has_column_header": false,
+      "has_row_header": false,
+      "children": [
+        {
+          "object": "block",
+          "type": "table_row",
+          "table_row": {
+            "cells": [
+              [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Explore  • Learn about how administrators, developers, and end users use portals built with Service Portal.",
+                    "link": {
+                      "url": "https://www.servicenow.com/docs/bundle/yokohama-platform-user-interface/page/build/service-portal/concept/exploring-service-portal.html"
+                    }
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  }
+                }
+              ],
+              [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Configure  • Plan and configure your portal.",
+                    "link": {
+                      "url": "https://www.servicenow.com/docs/bundle/yokohama-platform-user-interface/page/build/service-portal/concept/configuring-service-portal.html"
+                    }
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  }
+                }
+              ],
+              [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Develop widgets • Develop custom widgets using AngularJS, Bootstrap, and the ServiceNow API.",
+                    "link": {
+                      "url": "https://www.servicenow.com/docs/bundle/yokohama-platform-user-interface/page/build/service-portal/concept/widget-dev-guide.html"
+                    }
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  }
+                }
+              ]
+            ]
+          }
+        },
+        {
+          "object": "block",
+          "type": "table_row",
+          "table_row": {
+            "cells": [
+              [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "\n"
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  }
+                },
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Improve SEO • Make public portal pages more findable by improving how external search engines index and rank pages.",
+                    "link": {
+                      "url": "https://www.servicenow.com/docs/bundle/yokohama-platform-user-interface/page/build/service-portal/concept/seo-sp.html"
+                    }
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  }
+                }
+              ],
+              [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Analyze • Get insights to optimize your portal.",
+                    "link": {
+                      "url": "https://www.servicenow.com/docs/bundle/yokohama-platform-user-interface/page/build/service-portal/concept/using-portal-analytics.html"
+                    }
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  }
+                }
+              ],
+              [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Reference • Get details about properties, SCSS variables, and more.",
+                    "link": {
+                      "url": "https://www.servicenow.com/docs/bundle/yokohama-platform-user-interface/page/build/service-portal/concept/reference-service-portal.html"
+                    }
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  }
+                }
+              ]
+            ]
+          }
+        }
+      ]
+    }
+  },
+  {
+    "object": "block",
+    "type": "heading_2",
+    "heading_2": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Troubleshoot and get help"
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "object": "block",
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "To learn more about what's new and what's changed in Yokohama, see the Service Portal release notes ."
+          }
+        }
+      ]
+    }
+  },
+  {
+    "object": "block",
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Ask or answer questions in the ServiceNow AI Platform community forum",
+            "link": {
+              "url": "https://www.servicenow.com/community/now-platform/ct-p/now-platform"
+            }
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "object": "block",
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Search the Known Error Portal for known error articles",
+            "link": {
+              "url": "https://support.servicenow.com/kb?id=kb_article_view&sysparm_article=KB0597477"
+            }
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "object": "block",
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Contact Customer Service and Support",
+            "link": {
+              "url": "https://support.servicenow.com/now?draw=case"
+            }
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          }
+        }
+      ]
+    }
+  }
+]

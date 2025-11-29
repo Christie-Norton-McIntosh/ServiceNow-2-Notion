@@ -97,12 +97,19 @@ async function convertTableBlock(tableHtml, options = {}) {
   const blocks = [];
   if (captionMatch) {
     let captionContent = captionMatch[1];
+    // Preserve the table title label (e.g., "Table 1.") instead of stripping it
+    // so that validation expects like "Table 1. Empty state..." match exactly.
+    let titleLabel = '';
     captionContent = captionContent.replace(
-      /<span[^>]*class="[^\"]*table--title-label[^\"]*"[^>]*>[\s\S]*?<\/span>/gi,
-      ""
+      /<span[^>]*class="[^"]*table--title-label[^"]*"[^>]*>([\s\S]*?)<\/span>/gi,
+      (m, p1) => {
+        titleLabel = cleanHtmlText(p1 || '');
+        return '';
+      }
     );
-    const captionText = cleanHtmlText(captionContent);
-    if (captionText) {
+    const captionBody = cleanHtmlText(captionContent);
+    const captionText = (titleLabel ? `${titleLabel} ` : '') + (captionBody || '');
+    if (captionText && captionText.trim()) {
       blocks.push({
         object: "block",
         type: "heading_3",
@@ -891,9 +898,18 @@ async function convertTableBlock(tableHtml, options = {}) {
   }
   
   // Add extracted images as separate image blocks after the table
-  if (extractedImages.length > 0) {
-    console.log(`📸 Extracted ${extractedImages.length} images from table cells`);
-    for (const image of extractedImages) {
+  // Only append images when explicitly requested (options.preserveImages)
+  // or when the image has a non-empty caption. This avoids promoting
+  // decorative/thumbnail images out of tables and changing visual order
+  // in the document for consumers that don't expect table images as blocks.
+  const imagesToAppend = extractedImages.filter(img => {
+    const hasCaption = img.alt && String(img.alt).trim().length > 0;
+    return !!(options.preserveImages || hasCaption);
+  });
+
+  if (imagesToAppend.length > 0) {
+    console.log(`📸 Will append ${imagesToAppend.length} of ${extractedImages.length} extracted images from table cells`);
+    for (const image of imagesToAppend) {
       const isServiceNowImage = /servicenow\.(com|net)/i.test(image.src);
       let imageBlock = null;
 
@@ -941,6 +957,9 @@ async function convertTableBlock(tableHtml, options = {}) {
         console.log(`⚠️ [table.cjs] Skipped image (no upload and external not allowed): ${image.src.substring(0, 80)}...`);
       }
     }
+  } else if (extractedImages.length > 0) {
+    // Log that we found images but intentionally did not append any
+    console.log(`📸 Found ${extractedImages.length} image(s) in table cells, but none met the criteria to be appended as separate blocks (preserveImages=${!!options.preserveImages}).`);
   }
   
   return blocks;

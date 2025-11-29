@@ -62,6 +62,10 @@ async function runNode(file, options = {}) {
 
 async function main() {
   const args = process.argv.slice(2);
+  // Ensure tests run in test mode so code paths that rely on NODE_ENV === 'test'
+  // (for example, marker stripping in servicenow.cjs) are executed during the
+  // full-suite runner. Some CI or npm-run invocations don't set NODE_ENV.
+  process.env.NODE_ENV = process.env.NODE_ENV || 'test';
   const listOnly = args.includes('--list');
   const withServer = args.includes('--with-server');
   const bail = args.includes('--bail');
