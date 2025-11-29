@@ -848,6 +848,26 @@ async function convertTableBlock(tableHtml, options = {}) {
         }
         tableBlock.table.children.push(tableRow);
       });
+
+      // Attach internal row summaries to the table block to aid downstream
+      // post-processing (dedupe) without relying on emitting validation-only
+      // plain-text paragraphs. These summaries are used as an internal
+      // metadata hint and are not emitted to the Notion page output.
+      try {
+        tableBlock._sn2n_row_summaries = tableBlock.table.children.map(r => {
+          try {
+            const cells = (r.table_row && r.table_row.cells) || [];
+            const cellTexts = cells.map(cellArr => {
+              if (!Array.isArray(cellArr)) return '';
+              return cellArr.map(rt => (rt && rt.text && rt.text.content) ? String(rt.text.content).trim() : '').join(' ');
+            }).filter(Boolean);
+            return cellTexts.join(' ').trim();
+          } catch (e) { return ''; }
+        }).filter(Boolean);
+      } catch (e) {
+        // noop - row summaries are optional metadata
+        console.log(`⚠️ Failed to attach _sn2n_row_summaries: ${e && e.message}`);
+      }
       
       blocks.push(tableBlock);
     }
@@ -894,6 +914,25 @@ async function convertTableBlock(tableHtml, options = {}) {
       tableBlock.table.children.push(tableRow);
     });
     
+    // Attach internal row summaries to the table block so downstream
+    // post-processing (dedupe) can match paragraph/heading blocks against
+    // table row content even when validation-only summary paragraphs are
+    // not emitted. This is non-destructive metadata (not sent to Notion).
+    try {
+      tableBlock._sn2n_row_summaries = tableBlock.table.children.map(r => {
+        try {
+          const cells = (r.table_row && r.table_row.cells) || [];
+          const cellTexts = cells.map(cellArr => {
+            if (!Array.isArray(cellArr)) return '';
+            return cellArr.map(rt => (rt && rt.text && rt.text.content) ? String(rt.text.content).trim() : '').join(' ');
+          }).filter(Boolean);
+          return cellTexts.join(' ').trim();
+        } catch (e) { return ''; }
+      }).filter(Boolean);
+    } catch (e) {
+      // Best-effort: failure to attach metadata is non-fatal
+      console.log(`⚠️ Failed to attach _sn2n_row_summaries: ${e && e.message}`);
+    }
     blocks.push(tableBlock);
   }
   
