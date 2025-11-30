@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.89
+// @version      11.0.90
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.89";
+    window.BUILD_VERSION = "11.0.90";
 (function () {
 
   // Configuration constants and default settings
@@ -2856,9 +2856,8 @@
         <select id="w2n-database-select" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px;">
           <option value="${config.databaseId || ""}">${config.databaseName || "(no database)"}</option>
         </select>
-        <div id="w2n-selected-database-label" style="margin-top:8px;font-size:12px;color:#6b7280;">ID: ${config.databaseId ? config.databaseId.slice(0, 8) + '...' + config.databaseId.slice(-8) : "(no database)"}</div>
+        <div id="w2n-selected-database-label" style="margin-top:8px;font-size:11px;color:#6b7280;font-family:monospace;">${config.databaseId ? config.databaseId.replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, '$1-$2-$3-$4-$5') : "(no database)"}</div>
         <div style="margin-top:8px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-          <button id="w2n-list-all-dbs" style="flex:1; font-size:11px;padding:6px 8px;border:1px solid #3b82f6;border-radius:4px;background:#3b82f6;color:white;cursor:pointer;min-width:80px;">📋 List All</button>
           <button id="w2n-search-dbs" style="flex:1; font-size:11px;padding:6px 8px;border:1px solid #10b981;border-radius:4px;background:#10b981;color:white;cursor:pointer;min-width:120px;">🔍 Search (Name/URL/ID)</button>
         </div>
         <div id="w2n-db-spinner" style="display:none; margin-top:8px; font-size:12px; color:#6b7280; align-items:center;">
@@ -3001,28 +3000,10 @@
     };
 
     // Database button handlers
-    const listAllBtn = panel.querySelector("#w2n-list-all-dbs");
     const searchBtn = panel.querySelector("#w2n-search-dbs");
     const databaseSelect = panel.querySelector("#w2n-database-select");
     const databaseLabel = panel.querySelector("#w2n-selected-database-label");
 
-    if (listAllBtn) {
-      listAllBtn.onclick = async () => {
-        try {
-          debug("� Fetching all databases...");
-          showSpinner();
-          const databases = await getAllDatabases({ forceRefresh: true });
-          populateDatabaseSelect(databaseSelect, databases);
-          debug(`[DATABASE] ✅ Loaded ${databases.length} databases`);
-          showToast(`✅ Loaded ${databases.length} databases`, 2000);
-        } catch (e) {
-          debug("Failed to fetch databases:", e);
-          showToast("❌ Failed to fetch databases", 3000);
-        } finally {
-          hideSpinner();
-        }
-      };
-    }
 
     if (searchBtn) {
       searchBtn.onclick = async () => {
@@ -3077,7 +3058,7 @@
 
               // Update UI
               databaseSelect.innerHTML = `<option value="${cleanDbId}">${config.databaseName}</option>`;
-              databaseLabel.textContent = `ID: ${cleanDbId.slice(0, 8)}...${cleanDbId.slice(-8)}`;
+              databaseLabel.textContent = cleanDbId.replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, '$1-$2-$3-$4-$5');
 
               debug(`✅ Set target database to: ${config.databaseName} (${cleanDbId})`);
               showToast(`✅ Found database: ${config.databaseName}`, 2000);
@@ -3132,7 +3113,7 @@
 
               // Update UI
               databaseSelect.innerHTML = `<option value="${matchingDb.id}">${config.databaseName}</option>`;
-              databaseLabel.textContent = `ID: ${matchingDb.id.slice(0, 8)}...${matchingDb.id.slice(-8)}`;
+              databaseLabel.textContent = matchingDb.id.replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, '$1-$2-$3-$4-$5');
 
               debug(
                 `✅ Set target database to: ${config.databaseName} (${matchingDb.id})`
@@ -3357,25 +3338,6 @@
       // noop
     }
   };
-
-  /**
-   * Populate the database select dropdown
-   * @param {HTMLElement} selectEl - The select element
-   * @param {Array} databases - Array of database objects
-   */
-  function populateDatabaseSelect(selectEl, databases) {
-    if (!selectEl) return;
-
-    selectEl.innerHTML = '<option value="">Select a database...</option>';
-
-    databases.forEach((db) => {
-      const option = document.createElement("option");
-      option.value = db.id;
-      option.textContent =
-        db.title && db.title[0] ? db.title[0].plain_text : "Untitled Database";
-      selectEl.appendChild(option);
-    });
-  }
 
   // AutoExtract functionality
 
