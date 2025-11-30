@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.83
+// @version      11.0.84
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.83";
+    window.BUILD_VERSION = "11.0.84";
 (function () {
 
   // Configuration constants and default settings
@@ -2888,7 +2888,7 @@
               <span>🔄 Update existing pages (search by title)</span>
             </label>
             <div style="font-size:11px; color:#6b7280; margin-top:4px; margin-left:24px;">
-              Updates matching pages instead of creating new ones
+              Updates matching pages, creates new ones with 🆕 if not found
             </div>
           </div>
           <div style="display:flex; gap:8px; margin-top:8px;">
@@ -4006,12 +4006,25 @@
                 );
                 showToast(`✅ Updated: ${extractedData.title}`, 2000);
               } else {
-                // Page not found, skip it
-                debug(`[AUTO-EXTRACT] ⊘ Page "${extractedData.title}" not found, skipping...`);
-                showToast(`⚠️ Skipped: "${extractedData.title}" (not found)`, 3000);
+                // Page not found, create new with 🆕 prefix
+                debug(`[AUTO-EXTRACT] 🆕 Page "${extractedData.title}" not found, creating new page with 🆕 prefix...`);
+                overlayModule.setMessage(`Creating new page ${currentPageNum} with 🆕...`);
                 
-                captureSuccess = true; // Don't retry, just move to next page
-                autoExtractState.totalSkipped = (autoExtractState.totalSkipped || 0) + 1;
+                // Add 🆕 emoji to title
+                const originalTitle = extractedData.title;
+                extractedData.title = `🆕 ${originalTitle}`;
+                
+                await app.processWithProxy(extractedData);
+                
+                captureSuccess = true;
+                autoExtractState.totalProcessed++;
+                autoExtractState.totalCreated = (autoExtractState.totalCreated || 0) + 1;
+                debug(
+                  `✅ Page ${currentPageNum} created with 🆕 prefix successfully${
+                  captureAttempts > 1 ? ` (attempt ${captureAttempts})` : ""
+                }`
+                );
+                showToast(`🆕 Created: ${originalTitle}`, 2000);
               }
             } else {
               // CREATE MODE: Normal creation
@@ -4741,11 +4754,11 @@
     
     // Prepare stats summary
     const totalUpdated = autoExtractState.totalUpdated || 0;
-    const totalSkipped = autoExtractState.totalSkipped || 0;
-    const totalCreated = autoExtractState.totalProcessed - totalUpdated - totalSkipped;
+    const totalCreated = autoExtractState.totalCreated || 0;
+    const totalNormalCreated = autoExtractState.totalProcessed - totalUpdated - totalCreated;
     
-    if (totalUpdated > 0 || totalSkipped > 0) {
-      debug(`[AUTO-EXTRACT] 📊 Stats: ${totalCreated} created, ${totalUpdated} updated, ${totalSkipped} skipped`);
+    if (totalUpdated > 0 || totalCreated > 0) {
+      debug(`[AUTO-EXTRACT] 📊 Stats: ${totalNormalCreated + totalCreated} created (${totalCreated} with 🆕), ${totalUpdated} updated`);
     }
     
     // Show summary of any failed pages
@@ -4766,8 +4779,18 @@
       
       // Build stats summary for alert
       let statsLine = `✅ Successfully processed: ${autoExtractState.totalProcessed} pages`;
-      if (totalUpdated > 0 || totalSkipped > 0) {
-        statsLine += ` (${totalCreated} created, ${totalUpdated} updated, ${totalSkipped} skipped)`;
+      if (totalUpdated > 0 || totalCreated > 0) {
+        const allCreated = totalNormalCreated + totalCreated;
+        const parts = [];
+        if (allCreated > 0) {
+          if (totalCreated > 0) {
+            parts.push(`${allCreated} created (${totalCreated} with 🆕)`);
+          } else {
+            parts.push(`${allCreated} created`);
+          }
+        }
+        if (totalUpdated > 0) parts.push(`${totalUpdated} updated`);
+        statsLine += ` (${parts.join(', ')})`;
       }
       
       // Show warning to user
@@ -4790,11 +4813,17 @@
     } else {
       // Build success message
       let successMsg = `✅ AutoExtract complete! Processed ${autoExtractState.totalProcessed} page(s)`;
-      if (totalUpdated > 0 || totalSkipped > 0) {
+      if (totalUpdated > 0 || totalCreated > 0) {
+        const allCreated = totalNormalCreated + totalCreated;
         const parts = [];
-        if (totalCreated > 0) parts.push(`${totalCreated} created`);
+        if (allCreated > 0) {
+          if (totalCreated > 0) {
+            parts.push(`${allCreated} created (${totalCreated} with 🆕)`);
+          } else {
+            parts.push(`${allCreated} created`);
+          }
+        }
         if (totalUpdated > 0) parts.push(`${totalUpdated} updated`);
-        if (totalSkipped > 0) parts.push(`${totalSkipped} skipped`);
         successMsg += ` (${parts.join(', ')})`;
       }
       
