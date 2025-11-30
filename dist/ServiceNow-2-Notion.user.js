@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.86
+// @version      11.0.87
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.86";
+    window.BUILD_VERSION = "11.0.87";
 (function () {
 
   // Configuration constants and default settings
@@ -3101,10 +3101,33 @@
     if (getByIdBtn) {
       getByIdBtn.onclick = async () => {
         try {
-          const dbId = prompt("Enter database ID:");
-          if (!dbId || dbId.trim() === "") return;
+          const input = prompt("Enter database ID or URL:");
+          if (!input || input.trim() === "") return;
 
-          const cleanDbId = dbId.trim();
+          const trimmedInput = input.trim();
+          let cleanDbId = trimmedInput;
+          
+          // Check if input is a URL and extract the database ID
+          if (trimmedInput.includes('notion.so/') || trimmedInput.includes('notion.site/')) {
+            debug(`[DATABASE] 🔗 Detected URL input, extracting database ID`);
+            
+            // Extract ID from URL patterns:
+            // https://www.notion.so/username/abc123...
+            // https://notion.so/abc123...
+            // https://username.notion.site/abc123...
+            const urlMatch = trimmedInput.match(/([a-f0-9]{32})|([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+            
+            if (urlMatch) {
+              cleanDbId = urlMatch[0].replace(/-/g, '');
+              debug(`[DATABASE] ✅ Extracted database ID from URL: ${cleanDbId}`);
+            } else {
+              throw new Error("Could not extract database ID from URL");
+            }
+          } else {
+            // Remove hyphens if present in raw ID
+            cleanDbId = cleanDbId.replace(/-/g, '');
+          }
+          
           debug(`[DATABASE] 🔍 Getting database by ID: ${cleanDbId}`);
           showSpinner();
 
@@ -3130,7 +3153,7 @@
         } catch (e) {
           debug("Failed to get database by ID:", e);
           alert(
-            `Error: Could not access database with ID "${dbId}". Make sure the database is shared with your Notion integration.`
+            `Error: Could not access database with the provided input. Make sure the database is shared with your Notion integration.`
           );
         } finally {
           hideSpinner();
