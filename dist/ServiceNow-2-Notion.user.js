@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.90
+// @version      11.0.91
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.90";
+    window.BUILD_VERSION = "11.0.91";
 (function () {
 
   // Configuration constants and default settings
@@ -785,7 +785,13 @@
           </div>
         </div>
         
-        <div style="display:flex; gap:10px; padding-top:16px; border-top:1px solid #eee;">
+        <div style="padding-top:16px; border-top:1px solid #eee; margin-bottom:16px;">
+          <button id="w2n-configure-property-mapping" style="width:100%;padding:10px;border-radius:6px;background:#8b5cf6;color:white;border:none;cursor:pointer;font-size:14px;">
+            🗺️ Configure Property Mapping
+          </button>
+        </div>
+        
+        <div style="display:flex; gap:10px;">
           <button id="w2n-save-advanced-settings" style="flex:1;padding:10px;border-radius:6px;background:#10b981;color:white;border:none;cursor:pointer;font-size:14px;">
             Save Settings
           </button>
@@ -809,6 +815,7 @@
     const closeBtn = modal.querySelector("#w2n-close-advanced-settings");
     const saveBtn = modal.querySelector("#w2n-save-advanced-settings");
     const cancelBtn = modal.querySelector("#w2n-cancel-advanced-settings");
+    const propertyMappingBtn = modal.querySelector("#w2n-configure-property-mapping");
 
     function closeModal() {
       if (modal.parentNode) {
@@ -818,6 +825,19 @@
 
     closeBtn.onclick = closeModal;
     cancelBtn.onclick = closeModal;
+    
+    // Property mapping button handler
+    if (propertyMappingBtn) {
+      propertyMappingBtn.onclick = () => {
+        closeModal();
+        // Import and show property mapping modal
+        Promise.resolve().then(function () { return propertyMappingModal; }).then(module => {
+          module.showPropertyMappingModal();
+        }).catch(e => {
+          debug("Failed to open property mapping modal:", e);
+        });
+      };
+    }
 
     // Click outside to close
     modal.onclick = (e) => {
@@ -2610,6 +2630,17 @@
     }
   }
 
+  var propertyMappingModal = /*#__PURE__*/Object.freeze({
+    __proto__: null,
+    injectPropertyMappingModal: injectPropertyMappingModal,
+    loadPropertyMappings: loadPropertyMappings,
+    populatePropertyMappings: populatePropertyMappings,
+    resetPropertyMappings: resetPropertyMappings,
+    savePropertyMappings: savePropertyMappings,
+    setupPropertyMappingModal: setupPropertyMappingModal,
+    showPropertyMappingModal: showPropertyMappingModal
+  });
+
   // UI Utilities and Common Functions
 
 
@@ -2868,7 +2899,7 @@
 
       <div style="display:grid; gap:8px; margin-bottom:16px;">
         <button id="w2n-capture-page" style="width:100%; padding:12px; background:#10b981; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">📄 Save Current Page</button>
-        <button id="w2n-update-page" style="width:100%; padding:12px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">� Update Current Page</button>
+        <button id="w2n-update-page" style="width:100%; padding:12px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">🔄 Update Current Page</button>
       </div>
 
       <div style="border-top:1px solid #e5e7eb; padding-top:16px;">
