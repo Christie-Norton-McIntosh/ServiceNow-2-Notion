@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.91
+// @version      11.0.92
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.91";
+    window.BUILD_VERSION = "11.0.92";
 (function () {
 
   // Configuration constants and default settings
@@ -2804,6 +2804,15 @@
 
     const config = getConfig();
 
+    // Helper function to format database ID with hyphens (8-4-4-4-12)
+    const formatDatabaseId = (id) => {
+      if (!id) return "(no database)";
+      // Remove any existing hyphens first
+      const cleanId = id.replace(/-/g, '');
+      // Format as 8-4-4-4-12
+      return cleanId.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5');
+    };
+
     const panel = document.createElement("div");
     panel.id = "w2n-notion-panel";
     
@@ -2887,7 +2896,7 @@
         <select id="w2n-database-select" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px;">
           <option value="${config.databaseId || ""}">${config.databaseName || "(no database)"}</option>
         </select>
-        <div id="w2n-selected-database-label" style="margin-top:8px;font-size:11px;color:#6b7280;font-family:monospace;">${config.databaseId ? config.databaseId.replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, '$1-$2-$3-$4-$5') : "(no database)"}</div>
+        <div id="w2n-selected-database-label" style="margin-top:8px;font-size:11px;color:#6b7280;font-family:monospace;">${formatDatabaseId(config.databaseId)}</div>
         <div style="margin-top:8px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
           <button id="w2n-search-dbs" style="flex:1; font-size:11px;padding:6px 8px;border:1px solid #10b981;border-radius:4px;background:#10b981;color:white;cursor:pointer;min-width:120px;">🔍 Search (Name/URL/ID)</button>
         </div>
@@ -3089,7 +3098,7 @@
 
               // Update UI
               databaseSelect.innerHTML = `<option value="${cleanDbId}">${config.databaseName}</option>`;
-              databaseLabel.textContent = cleanDbId.replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, '$1-$2-$3-$4-$5');
+              databaseLabel.textContent = formatDatabaseId(cleanDbId);
 
               debug(`✅ Set target database to: ${config.databaseName} (${cleanDbId})`);
               showToast(`✅ Found database: ${config.databaseName}`, 2000);
@@ -3144,7 +3153,7 @@
 
               // Update UI
               databaseSelect.innerHTML = `<option value="${matchingDb.id}">${config.databaseName}</option>`;
-              databaseLabel.textContent = matchingDb.id.replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, '$1-$2-$3-$4-$5');
+              databaseLabel.textContent = formatDatabaseId(matchingDb.id);
 
               debug(
                 `✅ Set target database to: ${config.databaseName} (${matchingDb.id})`
