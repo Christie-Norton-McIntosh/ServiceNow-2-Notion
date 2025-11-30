@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.88
+// @version      11.0.89
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.88";
+    window.BUILD_VERSION = "11.0.89";
 (function () {
 
   // Configuration constants and default settings
@@ -2856,7 +2856,7 @@
         <select id="w2n-database-select" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px;">
           <option value="${config.databaseId || ""}">${config.databaseName || "(no database)"}</option>
         </select>
-        <div id="w2n-selected-database-label" style="margin-top:8px;font-size:12px;color:#6b7280;">Database: ${config.databaseName || "(no database)"}</div>
+        <div id="w2n-selected-database-label" style="margin-top:8px;font-size:12px;color:#6b7280;">ID: ${config.databaseId ? config.databaseId.slice(0, 8) + '...' + config.databaseId.slice(-8) : "(no database)"}</div>
         <div style="margin-top:8px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
           <button id="w2n-list-all-dbs" style="flex:1; font-size:11px;padding:6px 8px;border:1px solid #3b82f6;border-radius:4px;background:#3b82f6;color:white;cursor:pointer;min-width:80px;">📋 List All</button>
           <button id="w2n-search-dbs" style="flex:1; font-size:11px;padding:6px 8px;border:1px solid #10b981;border-radius:4px;background:#10b981;color:white;cursor:pointer;min-width:120px;">🔍 Search (Name/URL/ID)</button>
@@ -2894,7 +2894,6 @@
           </div>
           <div style="display:flex; gap:8px; margin-top:8px;">
             <button id="w2n-open-icon-cover" style="flex:1; padding:8px; background:#6b7280; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px;">Icon & Cover</button>
-            <button id="w2n-diagnose-autoextract" style="flex:1; padding:8px; background:#0ea5e9; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px;">🔍 Diagnose</button>
           </div>
         </div>
       </div>
@@ -3078,7 +3077,7 @@
 
               // Update UI
               databaseSelect.innerHTML = `<option value="${cleanDbId}">${config.databaseName}</option>`;
-              databaseLabel.textContent = `Database: ${config.databaseName}`;
+              databaseLabel.textContent = `ID: ${cleanDbId.slice(0, 8)}...${cleanDbId.slice(-8)}`;
 
               debug(`✅ Set target database to: ${config.databaseName} (${cleanDbId})`);
               showToast(`✅ Found database: ${config.databaseName}`, 2000);
@@ -3133,7 +3132,7 @@
 
               // Update UI
               databaseSelect.innerHTML = `<option value="${matchingDb.id}">${config.databaseName}</option>`;
-              databaseLabel.textContent = `Database: ${config.databaseName}`;
+              databaseLabel.textContent = `ID: ${matchingDb.id.slice(0, 8)}...${matchingDb.id.slice(-8)}`;
 
               debug(
                 `✅ Set target database to: ${config.databaseName} (${matchingDb.id})`
@@ -3189,9 +3188,6 @@
     // AutoExtract button handlers
     const startAutoExtractBtn = panel.querySelector("#w2n-start-autoextract");
     const stopAutoExtractBtn = panel.querySelector("#w2n-stop-autoextract");
-    const diagnoseAutoExtractBtn = panel.querySelector(
-      "#w2n-diagnose-autoextract"
-    );
 
     if (startAutoExtractBtn) {
       startAutoExtractBtn.onclick = async () => {
@@ -3250,17 +3246,6 @@
         // Restore buttons
         startAutoExtractBtn.style.display = "block";
         stopAutoExtractBtn.style.display = "none";
-      };
-    }
-
-    if (diagnoseAutoExtractBtn) {
-      diagnoseAutoExtractBtn.onclick = () => {
-        try {
-          diagnoseAutoExtraction();
-        } catch (e) {
-          debug("Failed to diagnose auto extraction:", e);
-          alert("Error diagnosing auto extraction. Check console for details.");
-        }
       };
     }
 
@@ -5380,41 +5365,6 @@
         }
       }, 60000);
     });
-  }
-
-  function diagnoseAutoExtraction() {
-    const nextPageSelector =
-      typeof GM_getValue === "function"
-        ? GM_getValue("w2n_next_page_selector", "div.zDocsNextTopicButton a")
-        : "div.zDocsNextTopicButton a";
-
-    let diagnosis = "AutoExtract Diagnosis:\n\n";
-    diagnosis += `Next page selector: ${nextPageSelector || "Not set"}\n\n`;
-
-    if (!nextPageSelector) {
-      diagnosis +=
-        "❌ No next page selector configured. Use 'Select Next Page Element' first.\n";
-    } else {
-      diagnosis += "✅ Next page selector configured.\n";
-      // Test if selector exists on current page
-      try {
-        const element = document.querySelector(nextPageSelector);
-        if (element) {
-          diagnosis += `✅ Selector found on current page: ${
-          element.textContent?.trim().substring(0, 50) || element.tagName
-        }\n`;
-        } else {
-          diagnosis += "⚠️ Selector not found on current page.\n";
-        }
-      } catch (e) {
-        diagnosis += `❌ Invalid selector: ${e.message}\n`;
-      }
-    }
-
-    diagnosis +=
-      "\nNote: Full auto-extraction functionality is not yet implemented.";
-
-    alert(diagnosis);
   }
 
   // Advanced element discovery with multiple strategies
