@@ -287,13 +287,24 @@ async function orchestrateDeepNesting(pageId, markerMap) {
         `✅ Orchestrator: Found parent ${parentId} for marker sn2n:${marker}. Will append ${blocksToAppend.length} block(s).`
       );
       
+      // [ORDER-DEBUG] Log orchestration content movement
+      log(`\n[ORDER-DEBUG] ========================================`);
+      log(`[ORDER-DEBUG] ORCHESTRATION: Moving content to parent`);
+      log(`[ORDER-DEBUG] Marker: ${marker}`);
+      log(`[ORDER-DEBUG] Parent block ID: ${parentId}`);
+      log(`[ORDER-DEBUG] Number of blocks being moved: ${blocksToAppend.length}`);
+      log(`[ORDER-DEBUG] This content was originally at page root and is being nested`);
+      log(`[ORDER-DEBUG] This MAY cause legitimate order changes in validation`);
+      
       if (imageCount > 0) {
         log(`🖼️ [IMAGE-DEBUG] Parent found! Will append ${imageCount} image(s) to parent ${parentId}`);
+        log(`[ORDER-DEBUG] ${imageCount} image(s) being moved from page root to nested position`);
       }
       
       if (tableCount > 0) {
         log(`📊 [TABLE-DEBUG] Parent found! Will append ${tableCount} table(s) to parent ${parentId}`);
         log(`📊 [TABLE-DEBUG] ✅ Appending to correct parent: ${parentId}`);
+        log(`[ORDER-DEBUG] ${tableCount} table(s) being moved from page root to nested position`);
       }
       
       // Log marker details for debugging
@@ -319,7 +330,10 @@ async function orchestrateDeepNesting(pageId, markerMap) {
           contentPreview = '[unable to extract]';
         }
         log(`  📦 Block ${idx + 1}: type=${block.type}, content="${contentPreview}${contentPreview.length >= 100 ? '...' : ''}"`);
-      });      // Before appending, perform an append-time dedupe check for table blocks
+        log(`[ORDER-DEBUG]   Content snippet: "${contentPreview.substring(0, 60)}..."`);
+      });
+      
+      log(`[ORDER-DEBUG] ========================================\n`);      // Before appending, perform an append-time dedupe check for table blocks
       // to avoid duplicating tables that may already exist under the parent.
       try {
         // helper: compute a lightweight signature for table blocks

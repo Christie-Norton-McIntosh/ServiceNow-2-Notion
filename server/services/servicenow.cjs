@@ -278,6 +278,21 @@ async function extractContentFromHtml(html) {
 
   // Block array for collecting converted Notion blocks
   const blocks = [];
+  
+  // FIX v11.0.39: Pre-scan HTML for table captions BEFORE processing
+  // This ensures captions are known when paragraphs are checked (regardless of DOM order)
+  const processedTableCaptions = new Set();
+  const $temp = cheerio.load(html);
+  $temp('table caption').each((i, el) => {
+    const captionText = $temp(el).text().trim();
+    if (captionText) {
+      const normalized = captionText.toLowerCase();
+      processedTableCaptions.add(normalized);
+      console.log(`📊 [CAPTION-PRESCAN] Found table caption: "${captionText}" (normalized: "${normalized}")`);
+    }
+  });
+  console.log(`📊 [CAPTION-PRESCAN] Pre-scanned ${processedTableCaptions.size} table caption(s)`);
+
 
   // Helper: join an array of Notion rich_text elements into a single string while
   // preserving a space when adjacent fragments would otherwise collapse words.
@@ -1595,6 +1610,25 @@ async function extractContentFromHtml(html) {
           if (tableBlocks.length > 1) {
             console.log(`⚠️ WARNING: Single <table> converted to ${tableBlocks.length} blocks! Block types:`, tableBlocks.map(b => b.type).join(', '));
           }
+          
+          // FIX v11.0.38: Track table captions to prevent duplicates
+          // If first block is a heading (caption), store its text
+          console.log(`📊 [CAPTION-DEBUG] First block type: ${tableBlocks[0]?.type}, has heading_3: ${!!tableBlocks[0]?.heading_3}`);
+          if (tableBlocks[0] && tableBlocks[0].type === 'heading_3') {
+            const captionText = tableBlocks[0].heading_3?.rich_text?.[0]?.text?.content;
+            console.log(`📊 [CAPTION-DEBUG] Caption text extracted: "${captionText}"`);
+            if (captionText) {
+              const normalized = captionText.trim().toLowerCase();
+              processedTableCaptions.add(normalized);
+              console.log(`📊 [CAPTION-TRACK] Added to Set: "${captionText}" (normalized: "${normalized}")`);
+              console.log(`📊 [CAPTION-TRACK] Set now has ${processedTableCaptions.size} caption(s)`);
+            } else {
+              console.log(`📊 [CAPTION-DEBUG] Caption text is empty or undefined`);
+            }
+          } else {
+            console.log(`📊 [CAPTION-DEBUG] First block is not heading_3, skipping caption tracking`);
+          }
+          
           processedBlocks.push(...tableBlocks);
 
           // To improve deterministic validation (some fixtures expect plain-text
@@ -1618,17 +1652,18 @@ async function extractContentFromHtml(html) {
                 }
               }
               // Emit header first (if present) then data rows in order
-              // Emit validation-only table summary paragraphs when validation is enabled.
-              // This prevents duplicating summary paragraphs in production runs.
-              if (process.env.SN2N_VALIDATE_OUTPUT === '1' || process.env.SN2N_VALIDATE_OUTPUT === 'true') {
-                for (const txt of rowSummaries) {
-                  processedBlocks.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: [{ type: 'text', text: { content: txt } }] } });
-                }
-                log(`📊 Emitted ${rowSummaries.length} table summary paragraph(s) for validation matching`);
-              } else {
-                // Validation not enabled: skip emitting plain-text row summaries to avoid duplicates
-                log(`📊 Skipped ${rowSummaries.length} table summary paragraph(s) (validation disabled)`);
-              }
+              // FIX v11.0.37: REMOVED validation-only table summary paragraphs
+              // These caused duplicate content and were not needed for validation
+              // Content validator now extracts table cell text directly from table_row blocks
+              // Skipping emission to avoid duplicates in all modes
+              log(`📊 Skipped ${rowSummaries.length} table summary paragraph(s) (not needed - validation extracts from table cells directly)`);
+              
+              // NOTE: Previously we emitted validation paragraphs with [SN2N-VALIDATION-PARAGRAPH] markers
+              // and tried to clean them up after validation. This approach was flawed because:
+              // 1. It created duplicate content visible to users before cleanup
+              // 2. Cleanup wasn't reliable (nested blocks not always found)
+              // 3. The content validator can extract table text directly from Notion table_row blocks
+              // Solution: Don't create them at all
             }
           } catch (errEmit) {
             console.log(`⚠️ Error emitting table summary paragraphs: ${errEmit.message}`);
@@ -1885,13 +1920,15 @@ async function extractContentFromHtml(html) {
 
               const THRESHOLD = parseFloat(process.env.SN2N_DEDUPE_JACCARD || '1');
 
-              // Precompute token sets for table rows
+              // Precompute token sets for table rows and keep original texts
               const tableTokenSets = [];
+              const tableTextList = [];
               for (const t of tableTexts) {
                 if (!t) continue;
                 const toks = t.split(' ').map(x => x.trim()).filter(Boolean);
                 if (toks.length === 0) continue;
                 tableTokenSets.push(new Set(toks));
+                tableTextList.push(t);
               }
 
               const jaccard = (aSet, bSet) => {
@@ -1960,6 +1997,8 @@ async function extractContentFromHtml(html) {
                       blockTokenCount: (key.split(' ').filter(Boolean)).length,
                       bestScore: Number(bestScore.toFixed(3)),
                       bestTableRowIndex: bestIdx,
+                      bestTableRowText: (bestIdx >= 0 && tableTextList[bestIdx]) ? tableTextList[bestIdx] : null,
+                      bestTableRowTokenCount: (bestIdx >= 0 && tableTokenSets[bestIdx]) ? tableTokenSets[bestIdx].size : 0,
                       // include threshold metadata to make the dump self-contained
                       threshold: THRESHOLD,
                       minChars: MIN_CHARS,
@@ -2012,11 +2051,13 @@ async function extractContentFromHtml(html) {
               try {
                 // Precompute token sets for table rows (same as production branch)
                 const tableTokenSets_dbg = [];
+                const tableTextList_dbg = [];
                 for (const t of tableTexts) {
                   if (!t) continue;
                   const toks = t.split(' ').map(x => x.trim()).filter(Boolean);
                   if (toks.length === 0) continue;
                   tableTokenSets_dbg.push(new Set(toks));
+                  tableTextList_dbg.push(t);
                 }
 
                 const jaccard_dbg = (aSet, bSet) => {
@@ -2066,7 +2107,9 @@ async function extractContentFromHtml(html) {
                     blockText: text,
                     blockTokenCount: blockTokens.length,
                     bestScore: Number(bestScore.toFixed(3)),
-                    bestTableRowIndex: bestIdx
+                    bestTableRowIndex: bestIdx,
+                    bestTableRowText: (bestIdx >= 0 && tableTextList_dbg[bestIdx]) ? tableTextList_dbg[bestIdx] : null,
+                    bestTableRowTokenCount: (bestIdx >= 0 && tableTokenSets_dbg[bestIdx]) ? tableTokenSets_dbg[bestIdx].size : 0
                   });
                 }
 
@@ -2120,10 +2163,9 @@ async function extractContentFromHtml(html) {
   console.log('🔍 Figure: img src="' + (src ? String(src).substring(0,50) : '') + '", caption="' + (captionText ? String(captionText).substring(0,50) : '') + '"');
 
         if (src && isValidImageUrl(src)) {
-          // Create image block without embedding the figcaption as the
-          // image's caption; we'll emit the caption as a separate
-          // paragraph block to keep ordering and matching stable.
-          const imageBlock = await createImageBlock(src, '');
+          // FIX v11.0.36: Pass captionText to image block so figcaptions appear as image captions in Notion
+          // (Figcaptions are also excluded from validation segment extraction to avoid false order issues)
+          const imageBlock = await createImageBlock(src, captionText);
           if (imageBlock) {
             console.log(`✅ Created image block with caption from figcaption`);
             console.log(`📋 Image block structure:`, JSON.stringify(imageBlock, null, 2));
@@ -2139,45 +2181,6 @@ async function extractContentFromHtml(html) {
                 $figcaption.attr('data-sn2n-caption-processed', '1');
               }
             } catch (e) { /* ignore */ }
-
-            // Ensure figcaption text is preserved as a paragraph in the output
-            // if it is not already present in the imageBlock.caption (avoid duplicates).
-            try {
-              const existingCaption = imageBlock.image && imageBlock.image.caption && imageBlock.image.caption[0] && imageBlock.image.caption[0].text && imageBlock.image.caption[0].text.content
-                ? String(imageBlock.image.caption[0].text.content || '').trim()
-                : '';
-
-              if (captionText && captionText.trim()) {
-                // Some figcaptions are purely labels like "Figure 1..." which
-                // are not desired in the final Notion output for our fixtures
-                // (they show up as extras in validation). Skip emitting those
-                // purely-label captions. Otherwise emit as a separate paragraph
-                // to keep ordering stable.
-                try {
-                  const captionTrim = String(captionText || '').trim();
-                  const isFigureLabel = /^figure\s*\d+/i.test(captionTrim);
-                  if (isFigureLabel) {
-                    console.log(`🔍 Skipping figcaption paragraph because it appears to be a figure label: "${captionTrim.substring(0,60)}"`);
-                  } else {
-                    const captionRich = convertRichTextBlock(captionText);
-                    if (captionRich && captionRich.length > 0) {
-                      processedBlocks.push({
-                        object: "block",
-                        type: "paragraph",
-                        paragraph: {
-                          rich_text: captionRich
-                        }
-                      });
-                      console.log('🔍 Emitted figcaption as separate paragraph for: "' + String(captionText).substring(0,60) + '"');
-                    }
-                  }
-                } catch (err) {
-                  console.log(`⚠️ Error while emitting figcaption paragraph: ${err.message}`);
-                }
-              }
-            } catch (err) {
-                  console.log(`⚠️ Error while adding figcaption paragraph: ${err.message}`);
-                }
 
             // Also extract any descriptive paragraphs inside the <figure>
             // (for example: "The theme hook required for this variation is <kbd>...</kbd>.")
@@ -2416,6 +2419,25 @@ async function extractContentFromHtml(html) {
         const cleanedText = cleanHtmlText(innerHtml).trim();
         
         if (cleanedText) {
+          // FIX v11.0.39: Skip div.p elements that match table captions
+          const normalizedText = cleanedText.toLowerCase();
+          console.log(`📊 [CAPTION-CHECK-DIVP] Checking div.p: "${cleanedText.substring(0, 60)}..."`);
+          console.log(`📊 [CAPTION-CHECK-DIVP] Set has ${processedTableCaptions.size} caption(s)`);
+          
+          let shouldSkip = false;
+          for (const caption of processedTableCaptions) {
+            if (normalizedText.startsWith(caption) || normalizedText === caption) {
+              console.log(`📊 [CAPTION-CHECK-DIVP] ✓ MATCH! Skipping div.p with caption: "${caption.substring(0, 60)}..."`);
+              shouldSkip = true;
+              break;
+            }
+          }
+          
+          if (shouldSkip) {
+            $elem.remove();
+            return processedBlocks;
+          }
+          
           const { richText: divRichText, imageBlocks: divImages } = await parseRichText(innerHtml);
           
           if (divImages && divImages.length > 0) {
@@ -3157,6 +3179,26 @@ async function extractContentFromHtml(html) {
           if (textOnlyHtml && cleanHtmlText(textOnlyHtml).trim()) {
             const { richText: liRichText, imageBlocks: liImages } = await parseRichText(textOnlyHtml);
             
+            // FIX v11.0.39: Skip list items that start with table captions
+            // Table captions appear as headings above tables, so list items with same text are duplicates
+            const listItemText = cleanHtmlText(textOnlyHtml).toLowerCase();
+            console.log(`📊 [CAPTION-CHECK-OL] Checking list item: "${listItemText.substring(0, 60)}..."`);
+            console.log(`📊 [CAPTION-CHECK-OL] Set has ${processedTableCaptions.size} caption(s)`);
+            
+            let shouldSkipListItem = false;
+            for (const caption of processedTableCaptions) {
+              if (listItemText.startsWith(caption)) {
+                console.log(`📊 [CAPTION-CHECK-OL] ✓ MATCH! Skipping list item starting with caption: "${caption.substring(0, 60)}..."`);
+                shouldSkipListItem = true;
+                break;
+              }
+            }
+            
+            if (shouldSkipListItem) {
+              $li.remove();
+              continue; // Skip this list item entirely
+            }
+            
             // Filter nested blocks: Notion list items can only have certain block types as children
             // Supported: bulleted_list_item, numbered_list_item, to_do, toggle, image
             // NOT supported: table, code, heading, callout, paragraph (must use marker system for 2nd action)
@@ -3571,6 +3613,26 @@ async function extractContentFromHtml(html) {
             console.log(`🔍 Ordered list item text content: "${textPreview}"`);
           }
           
+          // FIX v11.0.39: Skip list items that start with table captions
+          // Table captions appear as headings above tables, so list items with same text are duplicates
+          const listItemText = cleanHtmlText(liHtml).toLowerCase();
+          console.log(`📊 [CAPTION-CHECK-OL-SIMPLE] Checking simple list item: "${listItemText.substring(0, 60)}..."`);
+          console.log(`📊 [CAPTION-CHECK-OL-SIMPLE] Set has ${processedTableCaptions.size} caption(s)`);
+          
+          let shouldSkipListItem = false;
+          for (const caption of processedTableCaptions) {
+            if (listItemText.startsWith(caption)) {
+              console.log(`📊 [CAPTION-CHECK-OL-SIMPLE] ✓ MATCH! Skipping list item starting with caption: "${caption.substring(0, 60)}..."`);
+              shouldSkipListItem = true;
+              break;
+            }
+          }
+          
+          if (shouldSkipListItem) {
+            $li.remove();
+            continue; // Skip this list item entirely
+          }
+          
           const richTextChunks = splitRichTextArray(liRichText);
           for (let chunkIndex = 0; chunkIndex < richTextChunks.length; chunkIndex++) {
             const chunk = richTextChunks[chunkIndex];
@@ -3813,6 +3875,30 @@ async function extractContentFromHtml(html) {
         $elem.remove();
         return processedBlocks;
       }
+      
+      // FIX v11.0.39: Skip paragraphs that start with processed table captions
+      // Table captions appear as headings above tables, so skip duplicate text below
+      // Check if paragraph STARTS WITH any tracked caption (paragraph may contain more content)
+      const normalizedText = cleanedText.toLowerCase();
+      console.log(`📊 [CAPTION-CHECK] Checking paragraph: "${cleanedText.substring(0, 60)}..."`);
+      console.log(`📊 [CAPTION-CHECK] Set has ${processedTableCaptions.size} caption(s): [${Array.from(processedTableCaptions).map(c => `"${c.substring(0, 40)}..."`).join(', ')}]`);
+      
+      for (const caption of processedTableCaptions) {
+        if (normalizedText.startsWith(caption)) {
+          console.log(`� [CAPTION-CHECK] ✓ MATCH! Skipping paragraph starting with caption: "${caption.substring(0, 60)}..."`);
+          $elem.remove();
+          return processedBlocks;
+        }
+      }
+      
+      // Also check exact match for backward compatibility
+      if (processedTableCaptions.has(normalizedText)) {
+        console.log(`� [CAPTION-CHECK] ✓ EXACT MATCH! Skipping duplicate caption: "${cleanedText.substring(0, 80)}..."`);
+        $elem.remove();
+        return processedBlocks;
+      }
+      
+      console.log(`📊 [CAPTION-CHECK] ✗ No match - keeping paragraph`);
       
       const classAttr = $elem.attr('class') || '';
       console.log(`🔍 Paragraph <${tagName}${classAttr ? ` class="${classAttr}"` : ''}> innerHtml length: ${innerHtml.length}, cleaned: ${cleanedText.length}`);
@@ -4154,60 +4240,11 @@ async function extractContentFromHtml(html) {
         }
       }
       
-      // Emit validation-only prereq role split paragraphs to help deterministic validator
-      if (process.env.SN2N_VALIDATE_OUTPUT === '1' || process.env.SN2N_VALIDATE_OUTPUT === 'true') {
-        try {
-          const combinedText = richTextElements.map(rt => rt.text && rt.text.content ? rt.text.content : '').join('\n');
-          // Try to extract a full "Role required: ..." line even if the role value was placed on the next line
-          // Prefer emitting a single combined "Role required: ..." paragraph that joins
-          // the role label and any following continuation lines (e.g. "or admin").
-          const linesForRoles = combinedText.split(/\n+/).map(s => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
-          let emittedRoleParagraph = false;
-          for (let i = 0; i < linesForRoles.length; i++) {
-            const ln = linesForRoles[i];
-            if (/^Role required:/i.test(ln)) {
-              // Join this line with the next up to two continuation lines to form a fuller role sentence
-              const tailParts = [ln];
-              for (let j = i + 1; j < Math.min(i + 3, linesForRoles.length); j++) {
-                const next = linesForRoles[j];
-                // If the next line looks like a short continuation (starts lowercase or contains 'or '), include it
-                if (/^[a-z\d]|^or\b/i.test(next) || next.length < 40) {
-                  tailParts.push(next);
-                } else {
-                  break;
-                }
-              }
-              const roleLine = tailParts.join(' ').replace(/\s+/g, ' ').trim();
-              if (roleLine) {
-                processedBlocks.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: [{ type: 'text', text: { content: roleLine } }] } });
-                emittedRoleParagraph = true;
-                log(`🔍 Emitted validation-only prereq role paragraph: "${roleLine}"`);
-              }
-              break;
-            }
-          }
-          if (!emittedRoleParagraph) log(`🔍 No prereq role lines found for validation split`);
-        } catch (err) {
-          console.log('⚠️ Error while emitting validation-only prereq role paragraphs', err);
-        }
-        // Additionally, emit validation-only paragraph blocks for each top-level prereq line
-        // (e.g. "Before you begin", separate role lines) so the validator can match HTML
-        // segments that are split across lines in the source. Keep this strictly validation-only.
-        try {
-          const combinedText = richTextElements.map(rt => rt.text && rt.text.content ? rt.text.content : '').join('\n');
-          const lines = combinedText.split(/\n+/).map(s => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
-          // Avoid duplicating role lines already emitted above
-          const rolePrefixRx = /^Role required:/i;
-          for (const line of lines) {
-            if (rolePrefixRx.test(line)) continue; // already emitted as role paragraph(s)
-            // Emit each line as its own paragraph block for validation matching
-            processedBlocks.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: [{ type: 'text', text: { content: line } }] } });
-          }
-          log(`🔍 Emitted ${lines.length} validation-only prereq line paragraph(s) for validator matching`);
-        } catch (err) {
-          console.log('⚠️ Error while emitting validation-only prereq line paragraphs', err);
-        }
-      }
+      // FIX v11.0.37: REMOVED validation-only prereq split paragraphs
+      // These created duplicate content (e.g., "Role required: admin" appearing twice)
+      // The content validator can extract text from callout blocks directly
+      // No need to emit separate paragraphs that duplicate the callout content
+      log(`🔍 Skipped validation-only prereq paragraphs (not needed - validation extracts from callouts directly)`);
 
       $elem.remove(); // Mark as processed
       
@@ -5660,6 +5697,7 @@ async function extractContentFromHtml(html) {
   const THRESHOLD = parseFloat(process.env.SN2N_DEDUPE_JACCARD || '1');
 
       const tableTokenSets_final = [];
+      const tableTextList_final = [];
       for (const b of blocks) {
         if (b && b.type === 'table' && b.table && Array.isArray(b.table.children)) {
           for (const row of b.table.children) {
@@ -5673,6 +5711,7 @@ async function extractContentFromHtml(html) {
             const toks = key.split(' ').map(x => x.trim()).filter(Boolean);
             if (toks.length === 0) continue;
             tableTokenSets_final.push(new Set(toks));
+            tableTextList_final.push(key);
           }
         }
       }
@@ -5723,7 +5762,9 @@ async function extractContentFromHtml(html) {
           blockText: text,
           blockTokenCount: blockTokens.length,
           bestScore: Number(bestScore.toFixed(3)),
-          bestTableRowIndex: bestIdx
+          bestTableRowIndex: bestIdx,
+          bestTableRowText: (bestIdx >= 0 && tableTextList_final[bestIdx]) ? tableTextList_final[bestIdx] : null,
+          bestTableRowTokenCount: (bestIdx >= 0 && tableTokenSets_final[bestIdx]) ? tableTokenSets_final[bestIdx].size : 0
         });
       }
 

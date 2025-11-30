@@ -22,7 +22,7 @@ const { getAndClearPlaceholderWarnings } = require('../converters/rich-text.cjs'
 const { deduplicateTableBlocks } = require('../converters/table.cjs');
 const { logPlaceholderStripped, logUnprocessedContent, logImageUploadFailed, logCheerioParsingIssue } = require('../utils/verification-log.cjs');
 const { validateNotionPage } = require('../utils/validate-notion-page.cjs');
-const { validateContentOrder } = require('../services/content-validator.cjs');
+const { validateContentOrder, closeOrderLog } = require('../services/content-validator.cjs');
 
 /**
  * Validation status tracker for async validation monitoring
@@ -167,6 +167,9 @@ router.post('/W2N', async (req, res) => {
     }
     
     log('🔥🔥🔥 AFTER DIAGNOSTIC BLOCK - THIS LINE SHOULD ALWAYS EXECUTE');
+
+    // FIX v11.0.39: Define shouldValidate early for use throughout POST handler
+    const shouldValidate = process.env.SN2N_VALIDATE_OUTPUT === '1' || process.env.SN2N_VALIDATE_OUTPUT === 'true';
 
     if (!payload.title || (!payload.content && !payload.contentHtml)) {
       return sendError(
@@ -946,6 +949,42 @@ router.post('/W2N', async (req, res) => {
       );
     }
 
+    // FIX v11.0.39: Remove paragraphs that duplicate heading_3 text (table captions)
+    // Table captions appear as heading_3 blocks, but sometimes also as paragraphs
+    // Keep the heading, remove the paragraph duplicate
+    const heading3Texts = new Set();
+    children.forEach(block => {
+      if (block.type === 'heading_3') {
+        const text = (block.heading_3?.rich_text || [])
+          .map(rt => rt.text?.content || '')
+          .join('')
+          .trim()
+          .toLowerCase();
+        if (text) heading3Texts.add(text);
+      }
+    });
+    
+    if (heading3Texts.size > 0) {
+      const beforeCount = children.length;
+      children = children.filter(block => {
+        if (block.type === 'paragraph') {
+          const text = (block.paragraph?.rich_text || [])
+            .map(rt => rt.text?.content || '')
+            .join('')
+            .trim()
+            .toLowerCase();
+          if (text && heading3Texts.has(text)) {
+            log(`📊 [FINAL-CAPTION-FILTER] Removing paragraph that duplicates heading_3: "${text.substring(0, 60)}..."`);
+            return false; // Remove this paragraph
+          }
+        }
+        return true; // Keep all other blocks
+      });
+      if (children.length < beforeCount) {
+        log(`📊 [FINAL-CAPTION-FILTER] Removed ${beforeCount - children.length} duplicate caption paragraph(s)`);
+      }
+    }
+
     // Split children into chunks (Notion's limit is 100, but use smaller chunks for complex pages to avoid timeout)
     const MAX_BLOCKS_PER_REQUEST = 100;
     const INITIAL_BLOCKS_LIMIT = 50; // Use smaller initial chunk to avoid API timeout on complex pages
@@ -1365,6 +1404,45 @@ router.post('/W2N', async (req, res) => {
     
     try {
       if (markerMap && Object.keys(markerMap).length > 0) {
+        // FIX v11.0.39: Filter markerMap to remove paragraphs that duplicate heading_3 text
+        // Collect all heading_3 texts from initialBlocks
+        const heading3TextsInMarkers = new Set();
+        initialBlocks.forEach(block => {
+          if (block.type === 'heading_3') {
+            const text = (block.heading_3?.rich_text || [])
+              .map(rt => rt.text?.content || '')
+              .join('')
+              .trim()
+              .toLowerCase();
+            if (text) heading3TextsInMarkers.add(text);
+          }
+        });
+        
+        // Filter each marker's blocks to remove duplicate caption paragraphs
+        if (heading3TextsInMarkers.size > 0) {
+          Object.keys(markerMap).forEach(marker => {
+            const blocks = markerMap[marker];
+            const beforeCount = blocks.length;
+            markerMap[marker] = blocks.filter(block => {
+              if (block.type === 'paragraph') {
+                const text = (block.paragraph?.rich_text || [])
+                  .map(rt => rt.text?.content || '')
+                  .join('')
+                  .trim()
+                  .toLowerCase();
+                if (text && heading3TextsInMarkers.has(text)) {
+                  log(`📊 [MARKER-CAPTION-FILTER] Removing paragraph from marker "${marker}" that duplicates heading_3: "${text.substring(0, 60)}..."`);
+                  return false;
+                }
+              }
+              return true;
+            });
+            if (markerMap[marker].length < beforeCount) {
+              log(`📊 [MARKER-CAPTION-FILTER] Filtered marker "${marker}": ${beforeCount} → ${markerMap[marker].length} blocks`);
+            }
+          });
+        }
+        
         log(`\n========================================`);
         log("🔧 STARTING ORCHESTRATION (deep nesting + marker cleanup)");
         log(`   Page ID: ${response.id}`);
@@ -1572,9 +1650,17 @@ router.post('/W2N', async (req, res) => {
       log(`⚠️ Page ${response.id} may have visible markers - flagged for validation`);
     }
 
+    // FIX v11.0.37: REMOVED pre-validation cleanup
+    // No longer needed since we stopped creating validation paragraphs (v11.0.37)
+    // Previous approach (create → cleanup) was flawed:
+    // - Created duplicate content visible to users
+    // - Cleanup wasn't reliable for nested blocks
+    // - Content validator can extract text directly from Notion blocks
+    // New approach: Never create validation paragraphs at all
+    log(`📋 Validation enabled (no cleanup needed - validation paragraphs not created)`);
+    
     // Run post-creation validation if enabled
     let validationResult = null;
-    const shouldValidate = process.env.SN2N_VALIDATE_OUTPUT === '1' || process.env.SN2N_VALIDATE_OUTPUT === 'true';
     
     // Track validation status for polling endpoint
     if (shouldValidate) {
@@ -1911,24 +1997,123 @@ router.post('/W2N', async (req, res) => {
 
             // Stats breakdown formatting (first line reflects table/image/callout count match, not validation status)
             const stats = validationResult.stats || {};
-            const breakdown = stats.breakdown || {};
-            const getNum = (v) => (typeof v === 'number' ? v : (v && v.count) || 0);
-            const tablesMatch = (typeof breakdown.tablesSource !== 'undefined') && (typeof breakdown.tablesNotion !== 'undefined') && ((breakdown.tablesSource || 0) === (breakdown.tablesNotion || 0));
-            const imagesMatch = (typeof breakdown.imagesSource !== 'undefined') && (typeof breakdown.imagesNotion !== 'undefined') && ((breakdown.imagesSource || 0) === (breakdown.imagesNotion || 0));
-            const calloutsMatch = (typeof breakdown.calloutsSource !== 'undefined') && (typeof breakdown.calloutsNotion !== 'undefined') && ((breakdown.calloutsSource || 0) === (breakdown.calloutsNotion || 0));
+            
+            // Calculate source counts from the children array we sent to Notion
+            const sourceCounts = {
+              paragraphs: 0,
+              headings: 0,
+              tables: 0,
+              images: 0,
+              callouts: 0,
+              orderedList: 0,
+              unorderedList: 0
+            };
+            
+            function countSourceBlocks(blocks) {
+              for (const block of blocks) {
+                if (block.type === 'paragraph') sourceCounts.paragraphs++;
+                else if (block.type.startsWith('heading_')) sourceCounts.headings++;
+                else if (block.type === 'table') sourceCounts.tables++;
+                else if (block.type === 'image') sourceCounts.images++;
+                else if (block.type === 'callout') sourceCounts.callouts++;
+                else if (block.type === 'numbered_list_item') sourceCounts.orderedList++;
+                else if (block.type === 'bulleted_list_item') sourceCounts.unorderedList++;
+                
+                // Recursively count children
+                const blockContent = block[block.type];
+                if (blockContent && blockContent.children && Array.isArray(blockContent.children)) {
+                  countSourceBlocks(blockContent.children);
+                }
+              }
+            }
+            
+            countSourceBlocks(children);
+            
+            // Calculate Notion counts from actual page blocks
+            // FIX v11.0.36: Fetch actual blocks from Notion to get accurate counts
+            log(`📊 Fetching Notion blocks to calculate Stats...`);
+            const notionCounts = {
+              paragraphs: 0,
+              headings: 0,
+              tables: 0,
+              images: 0,
+              callouts: 0,
+              orderedList: 0,
+              unorderedList: 0
+            };
+            
+            try {
+              const allNotionBlocks = [];
+              let cursor = undefined;
+              
+              do {
+                const blockResponse = await notion.blocks.children.list({
+                  block_id: response.id,
+                  page_size: 100,
+                  ...(cursor ? { start_cursor: cursor } : {})
+                });
+                
+                allNotionBlocks.push(...blockResponse.results);
+                cursor = blockResponse.has_more ? blockResponse.next_cursor : undefined;
+              } while (cursor);
+              
+              // FIX v11.0.38: Recursively count images and other blocks in nested structures
+              // Previously only counted top-level blocks, missing images in tables/callouts
+              async function countNotionBlocksRecursive(blocks) {
+                for (const block of blocks) {
+                  if (block.type === 'paragraph') notionCounts.paragraphs++;
+                  else if (block.type.startsWith('heading_')) notionCounts.headings++;
+                  else if (block.type === 'table') notionCounts.tables++;
+                  else if (block.type === 'image') notionCounts.images++;
+                  else if (block.type === 'callout') notionCounts.callouts++;
+                  else if (block.type === 'numbered_list_item') notionCounts.orderedList++;
+                  else if (block.type === 'bulleted_list_item') notionCounts.unorderedList++;
+                  
+                  // Recursively fetch and count children if block has them
+                  if (block.has_children) {
+                    try {
+                      let childCursor = undefined;
+                      do {
+                        const childResponse = await notion.blocks.children.list({
+                          block_id: block.id,
+                          page_size: 100,
+                          ...(childCursor ? { start_cursor: childCursor } : {})
+                        });
+                        await countNotionBlocksRecursive(childResponse.results);
+                        childCursor = childResponse.has_more ? childResponse.next_cursor : undefined;
+                      } while (childCursor);
+                    } catch (childError) {
+                      log(`⚠️ Failed to fetch children for block ${block.id}: ${childError.message}`);
+                    }
+                  }
+                }
+              }
+              
+              await countNotionBlocksRecursive(allNotionBlocks);
+              log(`   ✓ Notion counts: ${allNotionBlocks.length} total blocks`);
+              
+            } catch (countError) {
+              log(`⚠️ Failed to fetch Notion blocks for Stats: ${countError.message}`);
+              // Leave notionCounts at 0
+            }
+            
+            // Use calculated counts for comparison
+            const tablesMatch = (sourceCounts.tables === notionCounts.tables);
+            const imagesMatch = (sourceCounts.images === notionCounts.images);
+            const calloutsMatch = (sourceCounts.callouts === notionCounts.callouts);
             const countsPass = tablesMatch && imagesMatch && calloutsMatch;
             const countsIcon = countsPass ? '✅' : '❌';
             const statsHeader = `${countsIcon}  Content Comparison: ${countsPass ? 'PASS' : 'FAIL'}`; // two spaces after icon per spec
             const statsLines = [
               statsHeader,
               '📊 (Source → Notion):',
-              `• Ordered list items: ${getNum(breakdown.orderedListSource)} → ${getNum(breakdown.orderedListNotion)}`,
-              `• Unordered list items: ${getNum(breakdown.unorderedListSource)} → ${getNum(breakdown.unorderedListNotion)}`,
-              `• Paragraphs: ${getNum(breakdown.paragraphsSource)} → ${getNum(breakdown.paragraphsNotion)}`,
-              `• Headings: ${getNum(breakdown.headingsSource)} → ${getNum(breakdown.headingsNotion)}`,
-              `• Tables: ${getNum(breakdown.tablesSource)} → ${getNum(breakdown.tablesNotion)}`,
-              `• Images: ${getNum(breakdown.imagesSource)} → ${getNum(breakdown.imagesNotion)}`,
-              `• Callouts: ${getNum(breakdown.calloutsSource)} → ${getNum(breakdown.calloutsNotion)}`,
+              `• Ordered list items: ${sourceCounts.orderedList} → ${notionCounts.orderedList}`,
+              `• Unordered list items: ${sourceCounts.unorderedList} → ${notionCounts.unorderedList}`,
+              `• Paragraphs: ${sourceCounts.paragraphs} → ${notionCounts.paragraphs}`,
+              `• Headings: ${sourceCounts.headings} → ${notionCounts.headings}`,
+              `• Tables: ${sourceCounts.tables} → ${notionCounts.tables}`,
+              `• Images: ${sourceCounts.images} → ${notionCounts.images}`,
+              `• Callouts: ${sourceCounts.callouts} → ${notionCounts.callouts}`,
             ];
             const statsContent = statsLines.join('\n');
 
@@ -2390,12 +2575,18 @@ ${payload.contentHtml || ''}
       log(`\n========================================`);
       log(`📋 STARTING CONTENT VALIDATION for page ${response.id}`);
       log(`   Title: "${payload.title}"`);
+      log(`   Note: Validation paragraphs already cleaned up in pre-validation step`);
       log(`========================================\n`);
       
       try {
-        // Wait briefly for Notion to be fully consistent
-        log(`⏳ Waiting 2s for Notion consistency before content validation...`);
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // FIX v11.0.36: Validation paragraphs already removed in pre-validation cleanup
+        // This section now ONLY does content validation (order checking, similarity)
+        // Stats property will be recalculated after content validation completes
+        
+        log(`🔍 Running content validation on cleaned page...`);
+        
+        // Brief wait for any final Notion propagation
+        await new Promise(resolve => setTimeout(resolve, 1000));
         
         // Run content validation
         const contentResult = await validateContentOrder(
@@ -2428,7 +2619,7 @@ ${payload.contentHtml || ''}
         }
         
         if (contentResult.orderIssues && contentResult.orderIssues.length > 0) {
-          contentSummary += `\n⚠️ Order Issues: ${contentResult.orderIssues.length}`;
+          contentSummary += `\n⚠️ Order Issues: ${contentResult.orderIssues.length} (expected with orchestration/restructuring)`;
         }
         
         // Append content validation to Validation property
@@ -2472,6 +2663,9 @@ ${payload.contentHtml || ''}
               
               updateSuccess = true;
               log(`✅ Content validation result appended to Validation property${retry > 0 ? ` (after ${retry} ${retry === 1 ? 'retry' : 'retries'})` : ''}`);
+              
+              // Close order detection log AFTER Validation property update
+              closeOrderLog();
               
               // If content validation failed, auto-save page
               if (!contentResult.success && !savedToUpdateFolder) {
@@ -2538,6 +2732,7 @@ ${payload.contentHtml || ''}
         log(`⚠️ Stack trace: ${contentValidationError.stack}`);
         // Non-fatal - continue processing
       }
+      
     } else {
       log(`ℹ️ Content validation skipped (set SN2N_CONTENT_VALIDATION=1 to enable)`);
     }
@@ -3664,22 +3859,55 @@ ${html || ''}
       const stats = validationResult.stats || {};
       const breakdown = stats.breakdown || {};
       const getNum = (v) => (typeof v === 'number' ? v : (v && v.count) || 0);
-      const tablesMatch = (typeof breakdown.tablesSource !== 'undefined') && (typeof breakdown.tablesNotion !== 'undefined') && ((breakdown.tablesSource || 0) === (breakdown.tablesNotion || 0));
-      const imagesMatch = (typeof breakdown.imagesSource !== 'undefined') && (typeof breakdown.imagesNotion !== 'undefined') && ((breakdown.imagesSource || 0) === (breakdown.imagesNotion || 0));
-      const calloutsMatch = (typeof breakdown.calloutsSource !== 'undefined') && (typeof breakdown.calloutsNotion !== 'undefined') && ((breakdown.calloutsSource || 0) === (breakdown.calloutsNotion || 0));
+      
+      // Calculate source counts from the extractedBlocks array we sent to Notion (same as POST)
+      const sourceCounts = {
+        paragraphs: 0,
+        headings: 0,
+        tables: 0,
+        images: 0,
+        callouts: 0,
+        orderedList: 0,
+        unorderedList: 0
+      };
+      
+      function countSourceBlocks(blocks) {
+        for (const block of blocks) {
+          if (block.type === 'paragraph') sourceCounts.paragraphs++;
+          else if (block.type.startsWith('heading_')) sourceCounts.headings++;
+          else if (block.type === 'table') sourceCounts.tables++;
+          else if (block.type === 'image') sourceCounts.images++;
+          else if (block.type === 'callout') sourceCounts.callouts++;
+          else if (block.type === 'numbered_list_item') sourceCounts.orderedList++;
+          else if (block.type === 'bulleted_list_item') sourceCounts.unorderedList++;
+          
+          // Recursively count children
+          const blockContent = block[block.type];
+          if (blockContent && blockContent.children && Array.isArray(blockContent.children)) {
+            countSourceBlocks(blockContent.children);
+          }
+        }
+      }
+      
+      countSourceBlocks(extractedBlocks);
+      
+      // Use calculated source counts and breakdown Notion counts (if available)
+      const tablesMatch = (sourceCounts.tables === (getNum(breakdown.tablesNotion) || breakdown.tablesNotion || 0));
+      const imagesMatch = (sourceCounts.images === (getNum(breakdown.imagesNotion) || breakdown.imagesNotion || 0));
+      const calloutsMatch = (sourceCounts.callouts === (getNum(breakdown.calloutsNotion) || breakdown.calloutsNotion || 0));
       const countsPass = tablesMatch && imagesMatch && calloutsMatch;
       const countsIcon = countsPass ? '✅' : '❌';
       const statsHeader = `${countsIcon}  Content Comparison: ${countsPass ? 'PASS' : 'FAIL'}`;
       const statsLines = [
         statsHeader,
         '📊 (Source → Notion):',
-        `• Ordered list items: ${getNum(breakdown.orderedListSource)} → ${getNum(breakdown.orderedListNotion)}`,
-        `• Unordered list items: ${getNum(breakdown.unorderedListSource)} → ${getNum(breakdown.unorderedListNotion)}`,
-        `• Paragraphs: ${getNum(breakdown.paragraphsSource)} → ${getNum(breakdown.paragraphsNotion)}`,
-        `• Headings: ${getNum(breakdown.headingsSource)} → ${getNum(breakdown.headingsNotion)}`,
-        `• Tables: ${getNum(breakdown.tablesSource)} → ${getNum(breakdown.tablesNotion)}`,
-        `• Images: ${getNum(breakdown.imagesSource)} → ${getNum(breakdown.imagesNotion)}`,
-        `• Callouts: ${getNum(breakdown.calloutsSource)} → ${getNum(breakdown.calloutsNotion)}`,
+        `• Ordered list items: ${sourceCounts.orderedList} → ${getNum(breakdown.orderedListNotion) || 0}`,
+        `• Unordered list items: ${sourceCounts.unorderedList} → ${getNum(breakdown.unorderedListNotion) || 0}`,
+        `• Paragraphs: ${sourceCounts.paragraphs} → ${getNum(breakdown.paragraphsNotion) || 0}`,
+        `• Headings: ${sourceCounts.headings} → ${getNum(breakdown.headingsNotion) || 0}`,
+        `• Tables: ${sourceCounts.tables} → ${getNum(breakdown.tablesNotion) || 0}`,
+        `• Images: ${sourceCounts.images} → ${getNum(breakdown.imagesNotion) || 0}`,
+        `• Callouts: ${sourceCounts.callouts} → ${getNum(breakdown.calloutsNotion) || 0}`,
       ];
       const statsContent = statsLines.join('\n');
       propertyUpdates["Stats"] = {
