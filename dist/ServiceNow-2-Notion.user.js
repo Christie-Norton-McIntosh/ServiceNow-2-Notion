@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.93
+// @version      11.0.94
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.93";
+    window.BUILD_VERSION = "11.0.94";
 (function () {
 
   // Configuration constants and default settings
@@ -7932,18 +7932,50 @@
       this.isProcessing = true;
 
       try {
-        // Prompt for page ID
-        const pageId = prompt("Enter the Notion Page ID to update (32 characters, with or without hyphens):");
-        if (!pageId || pageId.trim() === "") {
+        // Prompt for page ID or URL
+        const input = prompt("Enter the Notion Page ID or URL to update:");
+        if (!input || input.trim() === "") {
           overlayModule.close();
           this.isProcessing = false;
           return;
         }
 
-        // Validate page ID format (32 hex chars with optional hyphens)
-        const cleanPageId = pageId.replace(/-/g, '');
+        const trimmedInput = input.trim();
+        let cleanPageId = null;
+        
+        // Check if input is a URL and extract the page ID
+        if (trimmedInput.includes('notion.so/') || trimmedInput.includes('notion.site/')) {
+          debug(`[UPDATE-PAGE] 🔗 Detected URL input, extracting page ID`);
+          
+          // Extract ID from URL patterns:
+          // https://www.notion.so/username/Page-Title-abc123...
+          // https://notion.so/abc123...
+          // https://username.notion.site/abc123...
+          const urlMatch = trimmedInput.match(/([a-f0-9]{32})|([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+          
+          if (urlMatch) {
+            cleanPageId = urlMatch[0].replace(/-/g, '');
+            debug(`[UPDATE-PAGE] ✅ Extracted page ID from URL: ${cleanPageId}`);
+          } else {
+            alert("Could not extract a valid page ID from the URL. Please check the URL and try again.");
+            overlayModule.close();
+            this.isProcessing = false;
+            return;
+          }
+        } else if (/^[a-f0-9-]{32,36}$/i.test(trimmedInput)) {
+          // Input looks like a page ID (32 hex chars with optional hyphens)
+          cleanPageId = trimmedInput.replace(/-/g, '');
+          debug(`[UPDATE-PAGE] ✅ Using page ID: ${cleanPageId}`);
+        } else {
+          alert("Invalid input. Please enter a valid Notion page URL or page ID (32 hexadecimal characters).");
+          overlayModule.close();
+          this.isProcessing = false;
+          return;
+        }
+
+        // Validate final page ID format
         if (!/^[a-f0-9]{32}$/i.test(cleanPageId)) {
-          alert("Invalid Page ID format. Must be 32 hexadecimal characters (with or without hyphens).");
+          alert("Invalid Page ID format. Must be 32 hexadecimal characters.");
           overlayModule.close();
           this.isProcessing = false;
           return;
