@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.92
+// @version      11.0.93
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.92";
+    window.BUILD_VERSION = "11.0.93";
 (function () {
 
   // Configuration constants and default settings
@@ -2907,7 +2907,7 @@
       </div>
 
       <div style="display:grid; gap:8px; margin-bottom:16px;">
-        <button id="w2n-capture-page" style="width:100%; padding:12px; background:#10b981; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">📄 Save Current Page</button>
+        <button id="w2n-capture-page" style="width:100%; padding:12px; background:#8b5cf6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">📄 Save Current Page</button>
         <button id="w2n-update-page" style="width:100%; padding:12px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">🔄 Update Current Page</button>
       </div>
 
