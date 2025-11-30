@@ -13,9 +13,11 @@ function computeBlockKey(blk) {
   try {
     if (blk.type === "callout" && blk.callout) {
       const txt = plainTextFromRich(blk.callout.rich_text || []);
+      // Strip marker tokens for deduplication (same callout may have different markers)
+      const normalizedTxt = txt.replace(/\(sn2n:[a-z0-9\-]+\)/gi, "").replace(/\s+/g, " ").trim();
       const emoji = blk.callout.icon?.type === "emoji" ? blk.callout.icon.emoji : "";
       const color = blk.callout.color || "";
-      return `callout:${txt}|${emoji}|${color}`;
+      return `callout:${normalizedTxt}|${emoji}|${color}`;
     }
     if (blk.type === "image" && blk.image) {
       const fileId = blk.image.file_upload && blk.image.file_upload.id;
@@ -35,7 +37,9 @@ function computeBlockKey(blk) {
           .substring(0, 200);
       let rowSamples = [];
       if (Array.isArray(blk.table.children)) {
-        for (let i = 0; i < Math.min(3, blk.table.children.length); i++) {
+        // Sample MORE rows to better distinguish tables (up to 5 rows instead of 3)
+        // This helps prevent false positives when tables have similar headers
+        for (let i = 0; i < Math.min(5, blk.table.children.length); i++) {
           const cells = blk.table.children[i]?.table_row?.cells || [];
           const rowText = cells
             .map((c) => {
@@ -48,6 +52,8 @@ function computeBlockKey(blk) {
           rowSamples.push(rowText);
         }
       }
+      // Include row count in key to distinguish tables with different sizes
+      // (e.g., 20-row table vs 1-row table should never be considered duplicates)
       return `table:${w}x${rows}:${rowSamples.join("||")}`;
     }
     if (blk.type === "numbered_list_item" || blk.type === "bulleted_list_item") {
@@ -70,7 +76,7 @@ function computeBlockKey(blk) {
 }
 
 function dedupeAndFilterBlocks(blockArray, options = {}) {
-  const { log = () => {} } = options;
+  const { log = () => {}, expectedCallouts = null } = options;
   if (!Array.isArray(blockArray)) return blockArray;
   
   // Use a sliding window approach: only dedupe if identical blocks appear within N positions
@@ -79,12 +85,32 @@ function dedupeAndFilterBlocks(blockArray, options = {}) {
   const recentBlocks = []; // Stores [key, index] pairs for the last N blocks
   const out = [];
   let removed = 0;
-  let filteredCallouts = 0;
   let duplicates = 0;
 
   for (let i = 0; i < blockArray.length; i++) {
     const blk = blockArray[i];
     try {
+      // Determine whether Note: callouts should be eligible for deduplication.
+      // Only enable note-callout dedupe when the caller provides an expected
+      // callout count and the actual number of Note callouts exceeds it.
+      // This prevents removing legitimate repeated "Note:" warnings when
+      // the expected baseline is unknown.
+      let allowNoteDedupe = false;
+      if (typeof expectedCallouts === 'number') {
+        try {
+          const actualNoteCount = blockArray.reduce((acc, b) => {
+            if (b && b.type === 'callout') {
+              const txt = plainTextFromRich(b.callout?.rich_text || []).trim();
+              if (/^Note:/i.test(txt)) return acc + 1;
+            }
+            return acc;
+          }, 0);
+          if (actualNoteCount > expectedCallouts) allowNoteDedupe = true;
+        } catch (e) {
+          // If counting fails, be conservative and do not allow note dedupe
+          allowNoteDedupe = false;
+        }
+      }
       // Never dedupe dividers - they're always unique by position
       if (blk && blk.type === 'divider') {
         out.push(blk);
@@ -110,34 +136,35 @@ function dedupeAndFilterBlocks(blockArray, options = {}) {
       }
       
       // Never dedupe callouts with common STANDALONE patterns (title-only without content)
-      // But DO dedupe callouts with full content (e.g., "Note: Any customizations...")
+      // Also exempt "Note:" and "Before you begin" callouts from ALL deduplication
+      // FIX v11.0.19: Removed adjacent-duplicate check for Note callouts
+      // Reason: Identical "Note:" callouts in different sections are legitimate (not duplicates)
+      // Example: "Historical data might not be available..." appears in 3 different feature descriptions
       if (blk && blk.type === 'callout') {
         const txt = plainTextFromRich(blk.callout?.rich_text || []);
         const trimmed = txt.trim();
-        // Only exempt if it's JUST the title pattern with no additional content
+        // Exempt if it's JUST the title pattern with no content, OR if it starts with "Note:" or "Before you begin"
+        // This prevents legitimate repeated warnings/prereqs in different sections from being deduped
         const isTitleOnly = /^(Before you begin|Role required:|Prerequisites?|Note:|Important:|Warning:)\s*$/i.test(trimmed);
-        if (isTitleOnly) {
+        const isNoteCallout = /^Note:/i.test(trimmed);
+        const isBeforeYouBeginCallout = /^Before you begin/i.test(trimmed);
+        // Only exempt Note: callouts from deduplication when we DO NOT have
+        // an expectedCallouts baseline (safe default). If the caller provided
+        // an expectedCallouts and the actual Note count exceeds it, allow
+        // deduplication of Note callouts by falling through to the normal logic.
+        const exemptNote = isNoteCallout && !allowNoteDedupe;
+        if (isTitleOnly || exemptNote || isBeforeYouBeginCallout) {
+          const calloutType = isTitleOnly ? 'Title-only' : (isNoteCallout ? 'Note:' : 'Before you begin');
+          log(`✓ ${calloutType} callout, NEVER deduped: "${trimmed.substring(0, 60)}..."`);
+          // FIX v11.0.19: Do NOT check for adjacent duplicates - these callouts can legitimately repeat
+          // Add to output without deduplication
           out.push(blk);
           continue;
         }
-        // For callouts with content after the title, use normal deduplication
+        // For other callouts with content, use normal proximity-based deduplication
+        log(`→ Callout with content will use proximity deduplication: "${trimmed.substring(0, 60)}..."`);
       }
       
-      // Filter out gray info callouts only (keep blue notes)
-      if (
-        blk &&
-        blk.type === "callout" &&
-        blk.callout &&
-        blk.callout.color === "gray_background" &&
-        blk.callout.icon?.type === "emoji" &&
-        String(blk.callout.icon.emoji).includes("ℹ")
-      ) {
-        log(`🚫 Filtering gray callout: emoji="${blk.callout.icon?.emoji}", color="${blk.callout.color}"`);
-        removed++;
-        filteredCallouts++;
-        continue;
-      }
-
       // Special-case image dedupe by uploaded file id ONLY - use global dedupe for images
       if (blk && blk.type === 'image' && blk.image) {
         const fileId = blk.image.file_upload && blk.image.file_upload.id;
@@ -158,12 +185,85 @@ function dedupeAndFilterBlocks(blockArray, options = {}) {
         continue;
       }
 
+      // Special-case table dedupe: check for immediately adjacent identical tables (within proximity window)
+      // Tables can legitimately appear multiple times in different sections, so only dedupe if very close
+      if (blk && blk.type === 'table' && blk.table) {
+        const tableKey = computeBlockKey(blk);
+        
+        // Check if an identical table appears within the proximity window
+        const foundInWindow = recentBlocks.find(entry => {
+          const [entryKey, entryIndex] = entry;
+          return entryKey === tableKey && (i - entryIndex) <= PROXIMITY_WINDOW;
+        });
+        
+        if (foundInWindow) {
+          const distance = i - foundInWindow[1];
+          const preview = (() => {
+            try {
+              const firstRow = blk.table.children?.[0]?.table_row?.cells?.[0] || [];
+              if (Array.isArray(firstRow)) {
+                return firstRow.map(rt => rt?.text?.content || '').join('').substring(0, 40);
+              }
+              return '[no preview]';
+            } catch (e) {
+              return '[error]';
+            }
+          })();
+          log(`🚫 Deduping table at index ${i}: duplicate of table at ${foundInWindow[1]} (distance: ${distance}, preview: "${preview}")`);
+          removed++;
+          duplicates++;
+          continue;
+        }
+        
+        // Not a duplicate, add to recent blocks
+        recentBlocks.push([tableKey, i]);
+        
+        // Keep window size manageable for tables too
+        while (recentBlocks.length > 0 && (i - recentBlocks[0][1]) > PROXIMITY_WINDOW) {
+          recentBlocks.shift();
+        }
+        
+        out.push(blk);
+        continue;
+      }
+
       const key = computeBlockKey(blk);
+      
+      // Special handling for callouts: stricter deduplication for immediately adjacent duplicates
+      // Use different proximity windows based on block type and adjacency
+      let effectiveWindow = PROXIMITY_WINDOW;
+      
+      // For callouts (Note, Important, Warning, etc.), check for immediately adjacent duplicates (within 1 position)
+      // This catches duplicate callouts that appear right next to each other due to processing paths
+      if (blk && blk.type === 'callout') {
+        const calloutText = plainTextFromRich(blk.callout?.rich_text || []).substring(0, 60);
+        const calloutType = blk.callout?.icon?.emoji || 'unknown';
+        
+        log(`🔍 [CALLOUT-DEDUPE-CHECK] Checking callout ${i}: "${calloutText}..." key="${key}"`);
+        log(`🔍 [CALLOUT-DEDUPE-CHECK] Recent blocks: ${recentBlocks.map(e => `[${e[1]}: ${e[0].substring(0, 40)}]`).join(', ')}`);
+        
+        const adjacentDuplicate = recentBlocks.find(entry => {
+          const [entryKey, entryIndex] = entry;
+          const distance = i - entryIndex;
+          return entryKey === key && distance <= 1; // Immediately adjacent (current or previous position)
+        });
+        
+        if (adjacentDuplicate) {
+          const distance = i - adjacentDuplicate[1];
+          log(`🚫 Deduping adjacent ${calloutType} callout at index ${i}: "${calloutText}..." (duplicate of block ${adjacentDuplicate[1]}, distance: ${distance})`);
+          removed++;
+          duplicates++;
+          continue;
+        }
+        log(`✓ [CALLOUT-DEDUPE-CHECK] Not a duplicate, adding to output`);
+        // If not immediately adjacent, use normal window for callouts with content
+        effectiveWindow = PROXIMITY_WINDOW;
+      }
       
       // Check if this block appears in the recent window
       const foundInWindow = recentBlocks.find(entry => {
         const [entryKey, entryIndex] = entry;
-        return entryKey === key && (i - entryIndex) <= PROXIMITY_WINDOW;
+        return entryKey === key && (i - entryIndex) <= effectiveWindow;
       });
       
       if (foundInWindow) {
@@ -188,7 +288,7 @@ function dedupeAndFilterBlocks(blockArray, options = {}) {
   }
 
   if (removed > 0) {
-    log(`🔧 dedupeAndFilterBlocks: removed ${removed} total (${filteredCallouts} callouts, ${duplicates} duplicates)`);
+    log(`🔧 dedupeAndFilterBlocks: removed ${removed} duplicate(s)`);
   }
 
   return out;

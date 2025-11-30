@@ -205,6 +205,20 @@ function cleanHtmlText(html) {
       String.fromCharCode(parseInt(hex, 16))
     ); // All hex entities
 
+  // Normalize any stray non-breaking space characters and literal 'xa0' tokens.
+  // Some fixtures contain various NBSP-like unicode characters or literal 'xa0'
+  // sequences after intermediate processing; convert them to regular spaces to
+  // avoid spurious missing-token reports in the validator.
+  // Handle: U+00A0, narrow NBSP (U+202F), figure space (U+2007), and literal 'xa0'.
+  text = text
+    .replace(/\u00A0/g, ' ')
+    .replace(/\u202F/g, ' ')
+    .replace(/\u2007/g, ' ')
+    // Replace any remaining literal sequence 'xa0' (case-insensitive) appearing
+    // either as a standalone token or adjacent to punctuation. Using a global
+    // replacement because some fixtures contain 'xa0' inserted by earlier steps.
+    .replace(/xa0/gi, ' ');
+
   // CRITICAL: Remove collapsible content buttons (Expand/Collapse) and their containers
   // These are UI chrome elements that should not appear in Notion content
   // Must be done BEFORE general HTML tag removal to catch the structure
@@ -245,12 +259,14 @@ function cleanHtmlText(html) {
   // REMOVED: Don't strip standalone < and > characters - they may be legitimate content like navigation arrows
   // text = text.replace(/</g, " ").replace(/>/g, " ");
 
-  // Clean up whitespace - normalize ALL whitespace (including newlines from HTML formatting) to spaces
+  // Clean up whitespace - normalize spaces/tabs but preserve intentional newlines
+  // FIX v11.0.39: Preserve newlines from list item paragraph breaks (inserted as \n\n markers)
   // Intentional newlines from <br> tags are marked with __BR_NEWLINE__ and will be restored after
   // Block boundaries are marked with __BLOCK_START__ and __BLOCK_END__ and will be restored as newlines
-  // HTML formatting newlines (indentation) should become spaces
-  text = text.replace(/\s+/g, " ");
-  // Trim spaces from start and end
+  // HTML formatting indentation should become spaces, but \n should stay
+  text = text.replace(/[ \t]+/g, " ");  // Collapse spaces/tabs only
+  text = text.replace(/\n{3,}/g, '\n\n');  // Collapse 3+ newlines to double newline
+  // Trim spaces from start and end (but keep newlines)
   text = text.trim();
   
   // Restore block-level element boundaries as newlines
@@ -284,6 +300,93 @@ function cleanHtmlText(html) {
  * @property {string} color - Text/background color from VALID_RICH_TEXT_COLORS
  */
 
+/**
+ * Recursively validate and clean block structure before Notion API upload
+ * Removes:
+ * - Blocks without a type property
+ * - Empty objects in children arrays
+ * - Children arrays that become empty after cleaning
+ * 
+ * @param {Object|Array} blocks - Block or array of blocks to validate
+ * @returns {Object|Array} Cleaned block(s)
+ */
+function cleanInvalidBlocks(blocks, depth = 0) {
+  const indent = '  '.repeat(depth);
+  console.log(`${indent}🧹 [BLOCK-CLEAN] Called at depth ${depth}, input type: ${Array.isArray(blocks) ? 'array' : typeof blocks}`);
+  
+  // Handle array of blocks
+  if (Array.isArray(blocks)) {
+    console.log(`${indent}🧹 [BLOCK-CLEAN] Processing array of ${blocks.length} blocks at depth ${depth}`);
+    const beforeCount = blocks.length;
+    
+    const filtered = blocks.filter(block => {
+      // Remove null, undefined, or non-objects
+      if (!block || typeof block !== 'object') {
+        console.log(`${indent}🗑️ [BLOCK-CLEAN] Filtered: null/undefined/non-object at depth ${depth}`);
+        return false;
+      }
+      
+      // Remove blocks without type property
+      if (!block.type) {
+        console.log(`${indent}🗑️ [BLOCK-CLEAN] Filtered: block with no type property at depth ${depth}`);
+        console.log(`${indent}🗑️ [BLOCK-CLEAN] Block keys: ${Object.keys(block).join(', ')}`);
+        return false;
+      }
+      
+      return true;
+    });
+    
+    const afterFilterCount = filtered.length;
+    if (beforeCount !== afterFilterCount) {
+      console.log(`${indent}🧹 [BLOCK-CLEAN] Filtered ${beforeCount} → ${afterFilterCount} blocks (removed ${beforeCount - afterFilterCount})`);
+    }
+    
+    // Recurse into each valid block
+    const cleaned = filtered.map(block => cleanInvalidBlocks(block, depth + 1));
+    console.log(`${indent}🧹 [BLOCK-CLEAN] Returning ${cleaned.length} cleaned blocks at depth ${depth}`);
+    return cleaned;
+  }
+  
+  // Handle single block object
+  if (blocks && typeof blocks === 'object' && blocks.type) {
+    const blockType = blocks.type;
+    const blockContent = blocks[blockType];
+    console.log(`${indent}🧹 [BLOCK-CLEAN] Processing ${blockType} block at depth ${depth}`);
+    
+    // Clean typed children (e.g., paragraph.children, bulleted_list_item.children)
+    if (blockContent && Array.isArray(blockContent.children)) {
+      const beforeCount = blockContent.children.length;
+      console.log(`${indent}🧹 [BLOCK-CLEAN] Found ${beforeCount} children in ${blockType}.children`);
+      blockContent.children = cleanInvalidBlocks(blockContent.children, depth + 1);
+      
+      // Remove children property if array is now empty
+      if (blockContent.children.length === 0) {
+        delete blockContent.children;
+        console.log(`${indent}🗑️ [BLOCK-CLEAN] Removed empty ${blockType}.children array`);
+      } else if (beforeCount !== blockContent.children.length) {
+        console.log(`${indent}🧹 [BLOCK-CLEAN] Cleaned ${blockType}.children: ${beforeCount} → ${blockContent.children.length}`);
+      }
+    }
+    
+    // Clean generic .children property (legacy/fallback)
+    if (Array.isArray(blocks.children)) {
+      const beforeCount = blocks.children.length;
+      console.log(`${indent}🧹 [BLOCK-CLEAN] Found ${beforeCount} children in .children (legacy)`);
+      blocks.children = cleanInvalidBlocks(blocks.children, depth + 1);
+      
+      // Remove children property if array is now empty
+      if (blocks.children.length === 0) {
+        delete blocks.children;
+        console.log(`${indent}🗑️ [BLOCK-CLEAN] Removed empty .children array`);
+      } else if (beforeCount !== blocks.children.length) {
+        console.log(`${indent}🧹 [BLOCK-CLEAN] Cleaned .children: ${beforeCount} → ${blocks.children.length}`);
+      }
+    }
+  }
+  
+  return blocks;
+}
+
 // Export formatting utilities
 module.exports = { 
   /** @type {Set<string>} Set of valid Notion rich text colors */
@@ -291,5 +394,7 @@ module.exports = {
   /** @type {function(*): NotionAnnotations} */
   normalizeAnnotations, 
   /** @type {function(string): string} */
-  cleanHtmlText 
+  cleanHtmlText,
+  /** @type {function(Object|Array): Object|Array} */
+  cleanInvalidBlocks
 };

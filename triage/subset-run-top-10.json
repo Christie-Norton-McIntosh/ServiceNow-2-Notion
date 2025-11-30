@@ -1,0 +1,55 @@
+{
+  "date": "2025-11-28T08:12:22.595Z",
+  "results": [
+    {
+      "ok": true,
+      "title": "working-on-records-in-your-workspace-content-validation-failed-2025-11-27T10-31-16",
+      "similarity": 100
+    },
+    {
+      "ok": true,
+      "title": "resize-select-modals-in-configurable-workspace-content-validation-failed-2025-11-27T10-07-39",
+      "similarity": 100
+    },
+    {
+      "ok": true,
+      "title": "administering-tags-2025-11-27t12-23-41-patch-validation-fail-patch-validation-failed-2025-11-28T03-55-15",
+      "similarity": 100
+    },
+    {
+      "ok": true,
+      "title": "navigate-directly-to-a-table-2025-11-27T12-09-21",
+      "similarity": 100
+    },
+    {
+      "ok": true,
+      "title": "navigate-directly-to-a-table-patch-validation-failed-2025-11-27T20-18-48",
+      "similarity": 100
+    },
+    {
+      "ok": true,
+      "title": "activate-the-knowledge-article-view-page-on-upgrade-order-issues-2025-11-27T23-47-48",
+      "similarity": 100
+    },
+    {
+      "ok": true,
+      "title": "activate-the-knowledge-article-view-page-on-upgrade-order-issues-2025-11-28T02-06-13",
+      "similarity": 100
+    },
+    {
+      "ok": true,
+      "title": "add-content-to-a-page-2025-11-27t13-31-26-patch-validation-f-patch-order-issues-2025-11-28T03-04-07",
+      "similarity": 100
+    },
+    {
+      "ok": true,
+      "title": "add-content-to-a-page-2025-11-27t13-31-26-patch-validation-f-patch-validation-failed-2025-11-28T03-49-50",
+      "similarity": 100
+    },
+    {
+      "ok": true,
+      "title": "add-content-to-a-page-2025-11-27t13-31-26-patch-validation-f-patch-order-issues-2025-11-28T02-34-04",
+      "similarity": 100
+    }
+  ]
+}

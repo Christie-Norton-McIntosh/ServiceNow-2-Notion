@@ -73,6 +73,24 @@
 
 ## 📖 Technical Reference
 
+### patch-workflow.md
+**Purpose**: Complete guide for PATCH operations and batch processing  
+**Use When**:
+- Updating existing Notion pages with corrected content
+- Re-processing pages that failed validation
+- Batch updating multiple pages
+
+**Contains**:
+- PATCH API endpoint documentation
+- Batch processing script workflow
+- Timeout configuration and troubleshooting
+- Validation integration
+- Known issues and solutions
+
+**Audience**: Developers and operations performing page updates
+
+---
+
 ### notion-blocks-reference.md
 **Purpose**: Complete reference for Notion block types and API  
 **Use When**:

@@ -1,0 +1,331 @@
+<!--
+Auto-saved: Validation properties failed to update after 6 retries
+Page ID: 2b4a89fe-dba5-81d2-a7a6-dc180ccbf513
+Page URL: https://www.notion.so/Test-depth-logging-CMDB-Query-Builder-2b4a89fedba581d2a7a6dc180ccbf513
+Page Title: Test depth logging - CMDB Query Builder
+Created: 2025-11-23T07:43:44.541Z
+Source URL: https://docs.servicenow.com/bundle/xanadu-platform-administration/page/administer/managing-data/task/t_BuildQueryUsingQueryBuilder.html
+
+Validation Result:
+{
+  "success": false,
+  "hasErrors": true,
+  "issues": [
+    "Block count too low: expected at least 15, got 0",
+    "Table count mismatch: expected 2, got 0",
+    "Missing images: expected 1, got 0 (1 missing)",
+    "Missing callouts: expected 4, got 0 (4 missing)"
+  ],
+  "warnings": [
+    "Ordered list item count differs: expected 37, got 0 (37 fewer - may be counting methodology difference)",
+    "Unordered list item count differs: expected 48, got 0 (48 fewer - may be counting methodology difference)",
+    "ℹ️ Paragraph count lower than expected: ~18 (±9), got 0 (may be filtered empty paragraphs or promoted to list items)"
+  ],
+  "stats": {
+    "totalBlocks": 0,
+    "blockTypes": {},
+    "headingCount": 0,
+    "fetchTimeMs": 171
+  },
+  "summary": "❌ Validation failed: 4 critical error(s), 3 informational warning(s)\n\n❌ Critical Errors:\n1. Block count too low: expected at least 15, got 0\n2. Table count mismatch: expected 2, got 0\n3. Missing images: expected 1, got 0 (1 missing)\n4. Missing callouts: expected 4, got 0 (4 missing)\n\nℹ️ Informational Warnings:\n1. Ordered list item count differs: expected 37, got 0 (37 fewer - may be counting methodology difference)\n2. Unordered list item count differs: expected 48, got 0 (48 fewer - may be counting methodology difference)\n3. ℹ️ Paragraph count lower than expected: ~18 (±9), got 0 (may be filtered empty paragraphs or promoted to list items)\n\n📊 Content Comparison (Source → Notion):\n• Ordered list items: 37 → 0\n• Unordered list items: 48 → 0\n• Paragraphs: 18 → 0\n• Headings: 1 → 0\n• Tables: 2 → 0\n• Images: 1 → 0\n• Callouts: 4 → 0",
+  "sourceCounts": {
+    "orderedListItems": 37,
+    "unorderedListItems": 48,
+    "totalListItems": 85,
+    "paragraphs": 18,
+    "headings": 1,
+    "tables": 2,
+    "images": 1,
+    "callouts": 4,
+    "codeBlocks": 0
+  },
+  "notionCounts": {
+    "orderedListItems": 0,
+    "unorderedListItems": 0,
+    "totalListItems": 0,
+    "paragraphs": 0,
+    "headings": 0,
+    "tables": 0,
+    "images": 0,
+    "callouts": 0,
+    "codeBlocks": 0
+  }
+}
+
+Error Details:
+- Primary Error: Can't edit block that is archived. You must unarchive the block before editing.
+-->
+
+<!--
+  Page: Build a CMDB query using the CMDB Query Builder
+  URL: https://www.servicenow.com/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/use-cmdb-query-builder.html
+  Captured: 2025-11-23T01:07:00.536Z
+  Validation Errors: Table count mismatch: expected 2, got 3
+  Warnings: Block count high: expected at most 33, got 89; Extra headings: expected ~1 (±20%), got 3 (may be split headings); Ordered list item count differs: expected 37, got 22 (15 fewer - may be counting methodology difference); Unordered list item count differs: expected 48, got 27 (21 fewer - may be counting methodology difference)
+  Page ID: 2b4a89fe-dba5-81bc-ac42-e396ea2c4eda
+  Block Count (expected): 22
+  Block Count (actual): 89
+-->
+<div class="zDocsTopicPageBody" data-prismjs-copy="Copy" data-prismjs-copy-error="Text could not be copied. Try using keyboard shortcuts like Ctrl + C to copy instead." data-prismjs-copy-success="Copied!"><div dir="ltr" class="zDocsTopicPageBodyContent"><div><article class="hascomments" data-page="bundle:yokohama-servicenow-platform/enus/product/configuration-management/task/use-cmdb-query-builder.html" id="bundle:yokohama-servicenow-platform/enus/product/configuration-management/task/use-cmdb-query-builder.html"><main role="main"><article role="article" class="dita" id="use-cmdb-query-builder" aria-labelledby="title_use-cmdb-query-builder">
+   
+   
+   
+   <div class="body taskbody"><p class="shortdesc">A CMDB query type that queries the infrastructure for CI classes and optionally non-CMDB tables, and the relationships and references that connect them.</p>
+      <section class="section prereq"><div class="tasklabel"><p class="sectiontitle tasklabel">Before you begin</p></div>
+         <p class="p">Role required: cmdb_query_builder_read to only view and run saved queries, and cmdb_query_builder (contained for itil, itil_admin, and asset) to create and save queries, modify saved queries, and run queries. For reporting on
+            queries, report related ACLs are required.</p>
+         <p class="p">Authorized users can update and <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task/delete-cmdb-query.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/delete-cmdb-query.html" class="xref" title="Delete a CMDB query that is no longer used or needed.">delete</a> a
+                query created by another user.</p>
+      </section>
+      <section class="section context"><div class="tasklabel"><p class="sectiontitle tasklabel">About this task</p></div>
+         <p class="p">Build the query by dragging the CI classes and non-CMDB tables that you want to
+                include in the query. Then dropping them as nodes on the canvas, and defining
+                relationship properties between them. You can filter on the attributes of any node
+                to narrow down the results to a specific set of CIs of that class or to a single
+                specific CI. You can also select which property columns appear in the query
+                results.</p>
+         <p class="p">As you step through building a query, list options and other user interface elements
+                of the CMDB Query Builder, are dynamically filtered as appropriate to your
+                selections.</p>
+         <p class="p">To learn more about using Query Builder, see the <a class="xref true-external" href="https://www.youtube.com/watch?v=NArqszOamHc" target="_blank">CMDB Query Builder Queries and Reporting - Platform Analytics Academy</a>
+            <span class="ph">ServiceNow Community</span> video. For a step-by-step walk through of building CMDB queries in the Query Builder, including queries with application services, see <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/concept/sample-queries.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/sample-queries.html" class="xref" title="Use the example queries as models for building your custom CMDB queries and Service Mapping queries.">Example queries</a>.</p>
+      </section>
+      <section><div class="tasklabel"><p class="sectiontitle tasklabel">Procedure</p></div><ol class="ol steps"><li class="li step stepexpand">
+            <span class="ph cmd">Navigate to <span class="ph menucascade"><span class="ph uicontrol">All</span><abbr> &gt; </abbr><span class="ph uicontrol">Configuration</span></span> and select <span class="ph uicontrol">CMDB Query Builder</span>.</span>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">On the <span class="ph uicontrol">CMDB Query Builder</span> page do either of the
+                    following steps:</span>
+            <ul class="ul choices" id="use-cmdb-query-builder__choices_c2f_3zg_b3b">
+               <li class="li choice">Select <span class="ph uicontrol">Create new</span>. Type in a
+                            <span class="ph uicontrol">Name</span>, choose <span class="ph uicontrol">CMDB Query</span> as
+                        the <span class="ph uicontrol">Query type</span>, and then select
+                            <span class="ph uicontrol">Create</span>.</li>
+               <li class="li choice">Select a widget of a saved query to continue building an existing query.
+                            <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task/search-saved-queries.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/search-saved-queries.html" class="xref" title="The CMDB Query Builder allows you to search for a specific saved query using any combination of search criteria such as the query's name, type, custom tags, and who created or updated the query.">Search for a saved query</a> first if needed.</li>
+               <li class="li choice">Point to the upper right corner of a saved query widget, and select the
+                            <span class="ph uicontrol">Duplicate Query</span> icon to edit a copy of a saved
+                        query. The default name of the new query contains the string
+                        'copy'.</li>
+            </ul>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">On the canvas, you can do any of the following operations:</span>
+            <div class="itemgroup info">
+               <ul class="ul" id="use-cmdb-query-builder__ul_umc_tjd_rw">
+                  <li class="li">Add CI classes to the query: On the <span class="ph uicontrol">CMDB Classes</span>
+                            tab, select classes from the hierarchy list and drag them to the
+                            canvas.</li>
+                  <li class="li"><p class="p">Add an Application Service CI to the query: On the <span class="ph uicontrol">CMDB
+                                    Classes</span> tab, select the <span class="ph uicontrol">Application
+                                    Service</span> class from the hierarchy list and drag it to
+                                the canvas.</p>
+                     <p class="p">In Application Service
+                                Properties on the right-side bar, you can select <span class="ph uicontrol">Convert
+                                    attached nodes to pattern</span> to query on patterns
+                                between the application service and other CMDB class nodes. When
+                                querying on a pattern, the nodes on both ends of the pattern
+                                connection, can be any number of levels apart. If <span class="ph uicontrol">Convert
+                                    attached nodes to pattern</span> is not selected, then the
+                                connection between the application service node and other CMDB class
+                                nodes, represent direct relationships.</p></li>
+                  <li class="li">Add non-CMDB tables to the query: Select a table from the
+                                <span class="ph uicontrol">Non-CMDB Tables</span> list and drag it to the
+                            canvas. <div class="note note note_note"><span class="note__title">Note:</span> A non-CMDB table cannot be the starting node in the
+                                query.</div></li>
+                  <li class="li"><div class="p">Add connections (relationships or patterns for application services)
+                                between two nodes on the canvas:<ol class="ol" type="a" id="use-cmdb-query-builder__ol_ig1_fw5_plb">
+                           <li class="li">On the first node in the connection, select the small square
+                                        at the center of the right side.</li>
+                           <li class="li">On the second node in the connection, select the small square
+                                        at the center of the left side to create the
+                                        connection.</li>
+                        </ol></div>
+                     <div class="p"><div class="table-wrap"><div id="use-cmdb-query-builder__table_ipf_qw5_plb_wrapper" class="dataTables_wrapper no-footer"><div id="use-cmdb-query-builder__table_ipf_qw5_plb_filter" class="dataTables_filter"></div><div class="zDocsFilterTableDiv zDocsFilterColumnsTableDiv"><div><button type="button" data-toggle="dropdown" aria-label="Export table to a file" class="zDocsTopicPageTableExportButton"><svg aria-hidden="true" class="ico-ellipsis-v"><use xlink:href="#ico-ellipsis-v"></use></svg></button><div class="dropdown-menu zDocsDropdownMenu zDocsTopicPageTableExportMenu"><button type="button" aria-label="Export to Excel" class="dropdown-item">Export to Excel</button><button type="button" aria-label="Export to CSV" class="dropdown-item">Export to CSV</button></div></div></div><table count-columns="2" class="table frame-all dataTable no-footer" id="use-cmdb-query-builder__table_ipf_qw5_plb"><caption><span class="table--title-label">Table 1. </span><span class="title">Connection UI Notations</span></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                                 <tr class="row"><th class="entry colsep-1 rowsep-1 sorting" id="use-cmdb-query-builder__table_ipf_qw5_plb__entry__1" tabindex="0" aria-controls="use-cmdb-query-builder__table_ipf_qw5_plb" rowspan="1" colspan="1" aria-label="Notation: activate to sort column ascending">Notation</th><th class="entry colsep-1 rowsep-1 sorting" id="use-cmdb-query-builder__table_ipf_qw5_plb__entry__2" tabindex="0" aria-controls="use-cmdb-query-builder__table_ipf_qw5_plb" rowspan="1" colspan="1" aria-label="Description: activate to sort column ascending">Description</th></tr>
+                              </thead><tbody class="tbody">
+                                 
+                                 
+                                 
+                                 
+                              <tr class="row odd">
+                                    <td class="entry colsep-1 rowsep-1" headers="use-cmdb-query-builder__table_ipf_qw5_plb__entry__1">Full line</td>
+                                    <td class="entry colsep-1 rowsep-1" headers="use-cmdb-query-builder__table_ipf_qw5_plb__entry__2">A relationship in a CMDB query.</td>
+                                 </tr><tr class="row even">
+                                    <td class="entry colsep-1 rowsep-1" headers="use-cmdb-query-builder__table_ipf_qw5_plb__entry__1">Red asterisk at the center of the connection
+                                                  line</td>
+                                    <td class="entry colsep-1 rowsep-1" headers="use-cmdb-query-builder__table_ipf_qw5_plb__entry__2">Information such as relationship type is
+                                                  missing, invalidating the query.</td>
+                                 </tr><tr class="row odd">
+                                    <td class="entry colsep-1 rowsep-1" headers="use-cmdb-query-builder__table_ipf_qw5_plb__entry__1"><span class="ph uicontrol">Levels:&lt;n&gt;
+                                                  Types:&lt;n&gt;</span> or a
+                                                  <span class="ph uicontrol">&lt;Reference type&gt;</span>
+                                                  notation on the connection line</td>
+                                    <td class="entry colsep-1 rowsep-1" headers="use-cmdb-query-builder__table_ipf_qw5_plb__entry__2"><p class="p">As applicable: The number of relationship
+                                                  levels and the number of relationship types
+                                                  included for the connection. Or, a reference type
+                                                  for a relationship that is a reference.</p></td>
+                                 </tr><tr class="row even">
+                                    <td class="entry colsep-1 rowsep-1" headers="use-cmdb-query-builder__table_ipf_qw5_plb__entry__1">Dashed line</td>
+                                    <td class="entry colsep-1 rowsep-1" headers="use-cmdb-query-builder__table_ipf_qw5_plb__entry__2">A pattern connection between an application
+                                                  service node and another node.</td>
+                                 </tr></tbody></table></div></div></div></li>
+                  <li class="li">In Connection Properties on the right-side bar, configure relationship
+                            settings (select the connection line if necessary):<ol class="ol" type="a" id="use-cmdb-query-builder__ol_mb1_xld_rw">
+                        <li class="li">In the Relationship Direction section, select the
+                                        <span class="ph uicontrol">Parent</span> node (the
+                                        <span class="ph uicontrol">Child</span> node automatically
+                                    adjusts).</li>
+                        <li class="li">In the Relationship Levels section, set
+                                        <span class="ph uicontrol">Level</span> to <span class="ph uicontrol">First level
+                                        relationships</span> if the CIs are directly connected.
+                                    Or, <span class="ph uicontrol">Up to 2nd level relationships</span> if the
+                                    CIs are connected either directly or indirectly through another
+                                    CI.</li>
+                        <li class="li"><div class="p">In the Relationship Types and Related Items section, select
+                                        either option:<div class="table-wrap"><table count-columns="2" class="table frame-all" id="use-cmdb-query-builder__table_xsh_c1h_b3b"><caption></caption><colgroup><col style="width:50%"><col style="width:50%"></colgroup><thead class="thead">
+                                       <tr class="row">
+                                          <th class="entry colsep-1 rowsep-1" id="use-cmdb-query-builder__table_xsh_c1h_b3b__entry__1">Option</th>
+                                          <th class="entry colsep-1 rowsep-1" id="use-cmdb-query-builder__table_xsh_c1h_b3b__entry__2">Description</th>
+                                       </tr>
+                                    </thead><tbody class="tbody">
+                                       <tr class="row">
+                                          <td class="entry colsep-1 rowsep-1" headers="use-cmdb-query-builder__table_xsh_c1h_b3b__entry__1"><span class="ph uicontrol">No
+                                                  Relationships</span></td>
+                                          <td class="entry colsep-1 rowsep-1" headers="use-cmdb-query-builder__table_xsh_c1h_b3b__entry__2">To query for CIs with no connecting
+                                                  relationships, such as <code class="ph codeph">All Tomcat WAR CIs
+                                                  which are not connected to a Windows
+                                                  Server</code>.</td>
+                                       </tr>
+                                       <tr class="row">
+                                          <td class="entry colsep-1 rowsep-1" headers="use-cmdb-query-builder__table_xsh_c1h_b3b__entry__1"><span class="ph uicontrol">Add Relationship
+                                                  Types</span></td>
+                                          <td class="entry colsep-1 rowsep-1" headers="use-cmdb-query-builder__table_xsh_c1h_b3b__entry__2">To select specific or any relationship
+                                                  type.</td>
+                                       </tr>
+                                       <tr class="row">
+                                          <td class="entry colsep-1 rowsep-1" headers="use-cmdb-query-builder__table_xsh_c1h_b3b__entry__1"><span class="ph uicontrol">Add a Related
+                                                  Item</span></td>
+                                          <td class="entry colsep-1 rowsep-1" headers="use-cmdb-query-builder__table_xsh_c1h_b3b__entry__2">To query for related CIs between the
+                                                  nodes.</td>
+                                       </tr>
+                                    </tbody></table></div></div></li>
+                     </ol></li>
+                  <li class="li">Configure CI reference column for a connection to a non-CMDB table: In
+                            the Connection Properties right-side bar, in the CI Reference Column
+                            section, select the column with a reference to a CI from the
+                                <span class="ph uicontrol">Use CI reference column</span> list. If only one
+                            option is available, it is automatically selected.</li>
+                  <li class="li">Configure the pattern between an application service node set with the
+                                <span class="ph uicontrol">Convert attached nodes to pattern</span> option, and
+                            a non-CMDB table node: Select <span class="ph uicontrol">Apply &lt;table&gt; reference
+                                filter to all nodes in the pattern</span> to apply the query to
+                            the application service CI itself and to the CIs within the application
+                            service.</li>
+                  <li class="li">Add filters to a class node: Apply filters to narrow down a class query
+                            to a specific set of CIs or to a single specific CI.<div class="p"><ol class="ol" type="a" id="use-cmdb-query-builder__ol_s2b_nnd_rw">
+                           <li class="li">Point to the node to add a filter to, and then select the
+                                            <span class="ph uicontrol">Apply filters</span> icon that pops up
+                                        above the node.</li>
+                           <li class="li">In the Filters section, add attribute and <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task//csh" href="/docs/csh?topicname=create-related-list-query&amp;version=yokohama&amp;pubname=yokohama-platform-user-interface" class="xref">related list conditions</a>.</li>
+                           <li class="li">Close the <span class="ph uicontrol">Filters</span> section.</li>
+                        </ol>For example: Add a filter for database location to query for
+                                databases located in Seattle.</div>
+                     <p class="p">Select <span class="ph uicontrol">Applied
+                                    Filters</span> in the right-side bar to view all filters
+                                for each node on the canvas.</p></li>
+                  <li class="li">Add And/Or operators to the query: <div class="p"><ol class="ol" type="a" id="use-cmdb-query-builder__ol_uyd_3vp_rw">
+                           <li class="li">Connect one node to two other nodes.</li>
+                           <li class="li">Select the <span class="ph uicontrol">And</span> box that appears on the
+                                        connection line, to toggle between the
+                                            <span class="ph uicontrol">And</span>/<span class="ph uicontrol">Or</span>
+                                        operators.</li>
+                        </ol>For example: C1 is Tomcat WAR, C2 is Linux Server, and C3 is
+                                Windows Server. Query for <code class="ph codeph">All Tomcat WAR CIs which are
+                                    connected either to Linux Server Or to a Windows
+                                Server</code>.</div></li>
+                  <li class="li">Add property columns for a node, to appear in the query
+                                results:<div class="note note note_note"><span class="note__title">Note:</span> For a relationship, the query results include the
+                                    <span class="keyword parmname">parent</span>, <span class="keyword parmname">child</span>, and
+                                    <span class="keyword parmname">type</span> columns. You cannot add any other
+                                columns from the [cmdb_rel_ci]
+                                table.</div>
+                     <ol class="ol" type="a" id="use-cmdb-query-builder__ol_bhh_3qd_rw">
+                        <li class="li">Select <span class="ph uicontrol">Properties</span> in the right-side
+                                    pane.</li>
+                        <li class="li">Select a node once or twice, so that the Report Columns section
+                                    appears in the right-side bar, and then select <span class="ph uicontrol">Add
+                                        Columns</span>.</li>
+                        <li class="li">Select properties and then select outside the properties list to
+                                    close it.</li>
+                     </ol></li>
+                  <li class="li">Create a combination query by integrating a <span class="ph">Service Mapping</span>
+                            query into a CMDB query: <div class="p"><ol class="ol" type="a" id="use-cmdb-query-builder__ol_zlh_lgh_hx">
+                           <li class="li">When building a CMDB query, select <span class="ph uicontrol">Saved Service
+                                            Queries</span> in the left-side bar.</li>
+                           <li class="li">Select and then drag a <span class="ph">Service Mapping</span> query to the canvas.</li>
+                        </ol>This query returns all CIs that satisfy the CMDB query, and
+                                that are included in the services returned by the embedded <span class="ph">Service Mapping</span>
+                                query.</div></li>
+                  <li class="li">Add a search tag that can then be used as a search criteria for saved
+                                queries:<ol class="ol" type="a" id="use-cmdb-query-builder__ol_sm5_1pb_4y">
+                        <li class="li">Select the <span class="ph uicontrol">Add Tags</span> icon at the top of the
+                                    canvas.</li>
+                        <li class="li">Select <span class="ph uicontrol">Add Tag</span> and in the <span class="ph uicontrol">Query
+                                        Tags</span> dialog box enter one or more tag
+                                    strings.</li>
+                        <li class="li">Select the <span class="ph uicontrol">Add Tags</span> icon again to close
+                                    the <span class="ph uicontrol">Query Tags</span> dialog box.</li>
+                     </ol></li>
+               </ul>
+            </div>
+         </li><li class="li step stepexpand">
+            <span class="ph cmd">Select <span class="ph uicontrol">Save</span>.</span>
+            <div class="itemgroup info">
+               <p class="p">On the <span class="ph uicontrol">Saved Queries</span> tab, point to a saved query
+                        widget and select <span class="ph uicontrol">Query Information</span>. Query details
+                        such as the query type, last update date, CMDB groups associated with the
+                        query, and the query schedules appear.</p>
+            </div>
+         </li></ol></section>
+      <section class="section postreq"><div class="tasklabel"><p class="sectiontitle tasklabel">What to do next</p></div>
+         <ul class="ul" id="use-cmdb-query-builder__ul_jhq_hdx_rw">
+            <li class="li"><p class="p">Select <span class="ph uicontrol">Run</span>.</p>
+               <div class="p">Only the first 100 results of the query appear in the results pane.<ul class="ul" id="use-cmdb-query-builder__ul_gfw_42t_w1b">
+                     <li class="li">Select <span class="ph uicontrol">Load More Results</span> to view the next set
+                                of 100 results.</li>
+                     <li class="li">Select <span class="ph uicontrol">Load All Results</span> to view the rest of
+                                the query results, up to the number specified by the <a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/reference/cmdb-querybldr-sysproprties.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/reference/cmdb-querybldr-sysproprties.html" class="xref" title="Set property values to configure query processing.">glide.cmdb.query.max_results_limit</a> system property
+                                (10,000 by default).</li>
+                  </ul></div>
+               <p class="p">Select a CI to open its CI form, and on the CI form select <span class="ph uicontrol">Open in CMDB Workspace</span> to view CI health in the CI Health tile in CMDB Workspace. This operation requires the sn_cmdb_user (CMDB user)
+                  role.</p>
+               <div class="note note note_note"><span class="note__title">Note:</span> <ul class="ul" id="use-cmdb-query-builder__ul_f44_jyr_mfb">
+                     <li class="li">Ensure that the <a data-bundleid="yokohama-servicenow-platform" data-navpath="administer/login/reference/win-security-properties-password-reset.html" href="/docs/bundle/yokohama-servicenow-platform/page/administer/login/reference/win-security-properties-password-reset.html" class="xref" title="Configuring security settings for the Password Reset Windows Application.">glide.security.use_csrf_token</a> property is set to true, allowing all results to appear.</li>
+                     <li class="li">When <span class="ph uicontrol">Level</span> is set to <span class="ph uicontrol">Up to 2nd
+                                    level relationships</span>, the relationship type does not
+                                appear in the query results.</li>
+                     <li class="li">When a query is running, wait for it to complete or to time out
+                                before opening or running another query.</li>
+                  </ul></div></li>
+            <li class="li"><a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task/cmdb-querybldr-config-display.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/cmdb-querybldr-config-display.html" class="xref" title="Configure settings that control some of the functionality of the CMDB Query Builder.">Modify Query Builder settings</a>: Select the <img src="https://servicenow-be-prod.servicenow.com/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/../../business-service-management-map-ng/image/dv-map-settings.png?_LANG=enus" class="image icon" id="use-cmdb-query-builder__image_x3w_sfg_nfb" alt="Settings icon."> (<span class="ph uicontrol">Settings</span>) icon to open the <span class="ph uicontrol">Query Builder Settings</span> dialog box.</li>
+            <li class="li">Copy and share the URL of a saved query with users that have access to the CMDB
+                    Query Builder. Pasting the shared URL in a new internet browser window, directly
+                    opens the saved query in the CMDB Query Builder.</li>
+            <li class="li"><a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/concept/create-query-results-report.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/create-query-results-report.html" class="xref" title="Use CMDB Query Builder reports to show the results of a CMDB query or a Service Mapping query. Create a basic report or a dynamic report that auto-updates when the results of the associated saved query change.">Create a report in CMDB Query Builder</a>.</li>
+            <li class="li"><a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task/create-cmdb-query-schedule.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/create-cmdb-query-schedule.html" class="xref" title="Schedule a saved CMDB query to run once at a scheduled time or on a recurring schedule, and to email the query results to specified users.">Create a schedule</a> to run the
+                    query at a future time, and to email the results to interested parties.</li>
+            <li class="li">Export query results: <p class="p">Select the Query Results context menu and select
+                            <span class="ph uicontrol">Export</span>. Even if the <span class="ph uicontrol">Load More
+                            Results</span> button is visible, indicating that there are
+                        additional query results, only the results that are visible are
+                        exported.</p></li>
+            <li class="li"><a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task/export-import-query.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/export-import-query.html" class="xref" title="Export a saved CMDB or Service Mapping query definition to an XML file which you can later import and run in the CMDB Query Builder. This process lets you port a saved query between instances, such as from a development environment to a production environment.">Export and import a CMDB query</a> to port a query definition between
+                    instances.</li>
+            <li class="li"><a data-bundleid="yokohama-servicenow-platform" data-navpath="Chunk517911533.html" href="/docs/bundle/yokohama-servicenow-platform/page/Chunk517911533.html#populate-cmdb-grp-saved-query" class="xref" title="Depending on the group type, you can populate a CMDB group by manually adding individual CIs, selecting saved CMDB queries, or building encoded queries in the CMDB group itself. The resulting CIs from each query are added as members to the group.">Populate a CMDB group</a>
+                    using a saved query.</li>
+            <li class="li"><a data-bundleid="yokohama-servicenow-platform" data-navpath="product/configuration-management/task/delete-cmdb-query.html" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/task/delete-cmdb-query.html" class="xref" title="Delete a CMDB query that is no longer used or needed.">Delete a CMDB query</a>.</li>
+         </ul>
+      </section>
+   </div>
+   <nav role="navigation"></nav><nav role="navigation" class="tasksNavigation"></nav>
+</article></main></article></div></div><div class="contentPlaceholder" style="height: 394px;"><div class="contentContainer zDocsSideBoxes withExpandCollapse zDocsSideBoxesFloating
+        withStickyTitle floating" style="top: 30px;"><div class="contentWrapper" style="height: 394px;"><button aria-hidden="true" data-tooltip-id="zDocsMiniTocCollapseToolTip" data-tooltip-content="Hide Mini TOC" data-testid="expand-collapse-button" class="zDocsMiniTocCollapseButton" aria-label="Hide" aria-expanded="true"><svg aria-hidden="true" class="ico-angle-arrow-right"><use xlink:href="#ico-angle-arrow-right"></use></svg></button><div><h5 class=" css-g931ng" aria-level="5">Related Content</h5><ul><li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-servicenow-platform/page/product/configuration-management/concept/sample-queries.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Example queries</a><p>Use the example queries as models for building your custom CMDB queries and Service Mapping queries.</p></li></ul></div></div></div></div></div>

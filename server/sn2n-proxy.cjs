@@ -142,6 +142,11 @@ const fallbackOrchestrateDeepNesting = orchestrateDeepNesting || (async (pageId,
   return { appended: 0 };
 });
 
+const fallbackSweepAndRemoveMarkersFromPage = sweepAndRemoveMarkersFromPage || (async (pageId) => {
+  console.log("⚠️ Using fallback sweepAndRemoveMarkersFromPage - orchestration modules not available");
+  return { updated: 0, checked: 0 };
+});
+
 const fallbackDeepStripPrivateKeys = deepStripPrivateKeys || ((blocks) => {
   console.log("⚠️ Using fallback deepStripPrivateKeys - orchestration modules not available");
   // Simple fallback that removes _sn2n_ keys
@@ -169,6 +174,7 @@ const fallbackRemoveCollectedBlocks = removeCollectedBlocks || ((blocks) => {
 const safeAppendBlocksToBlockId = appendBlocksToBlockId || fallbackAppendBlocksToBlockId;
 const safeCollectAndStripMarkers = collectAndStripMarkers || fallbackCollectAndStripMarkers;
 const safeOrchestrateDeepNesting = orchestrateDeepNesting || fallbackOrchestrateDeepNesting;
+const safeSweepAndRemoveMarkersFromPage = sweepAndRemoveMarkersFromPage || fallbackSweepAndRemoveMarkersFromPage;
 const safeDeepStripPrivateKeys = deepStripPrivateKeys || fallbackDeepStripPrivateKeys;
 const safeGenerateMarker = generateMarker || fallbackGenerateMarker;
 const safeRemoveCollectedBlocks = removeCollectedBlocks || fallbackRemoveCollectedBlocks;
@@ -878,7 +884,7 @@ let hasDetectedVideos = false;
 // Helper function to check if an iframe URL is from a known video platform
 // Import URL utilities
 const { isVideoIframeUrl, isValidNotionUrl } = require("./utils/url.cjs");
-const { cleanHtmlText } = require("./utils/notion-format.cjs");
+const { cleanHtmlText, cleanInvalidBlocks } = require("./utils/notion-format.cjs");
 
 // HTML to Notion blocks conversion function
 async function htmlToNotionBlocks(html) {
@@ -1789,14 +1795,17 @@ global.collectAndStripMarkers = safeCollectAndStripMarkers;
 global.removeCollectedBlocks = safeRemoveCollectedBlocks;
 global.deepStripPrivateKeys = safeDeepStripPrivateKeys;
 global.orchestrateDeepNesting = safeOrchestrateDeepNesting;
+global.sweepAndRemoveMarkersFromPage = safeSweepAndRemoveMarkersFromPage;
 global.getExtraDebug = getExtraDebug;
 global.normalizeAnnotations = normalizeAnnotations;
 global.normalizeUrl = normalizeUrl;
 global.isValidImageUrl = isValidImageUrl;
 global.isValidNotionUrl = isValidNotionUrl;
 global.appendBlocksToBlockId = safeAppendBlocksToBlockId;
+global.createImageBlock = createImageBlock;
 global.downloadAndUploadImage = downloadAndUploadImage;
 global.normalizeCodeLanguage = normalizeCodeLanguage;
+global.cleanInvalidBlocks = cleanInvalidBlocks;
 
 // Main API routes with fallback for legacy monolith usage (loaded after global context)
 try {
@@ -1820,6 +1829,10 @@ try {
     const servicenowPath = require.resolve('./services/servicenow.cjs');
     delete require.cache[servicenowPath];
     
+    // FIX v11.0.18: Also clear validation cache since w2n imports it
+    const validationPath = require.resolve('./utils/validate-notion-page.cjs');
+    delete require.cache[validationPath];
+    
     const freshRouter = require('./routes/w2n.cjs');
     
     console.log('🔥 Reloaded w2n.cjs + servicenow.cjs, delegating to freshly loaded router');
@@ -1836,9 +1849,42 @@ try {
     });
   });
   
-  console.log('✅ W2N router configured with HOT-RELOAD wrapper');
+  // HOT-RELOAD FIX for PATCH endpoint: Same pattern as POST
+  app.patch("/api/W2N/:pageId", (req, res, next) => {
+    console.log('🔥🔥🔥 PATCH HOT-RELOAD WRAPPER HIT! Method:', req.method, 'URL:', req.url, 'at', new Date().toISOString());
+    
+    // Resolve path and clear cache on EVERY W2N request
+    const w2nPath = require.resolve('./routes/w2n.cjs');
+    delete require.cache[w2nPath];
+    
+    // Also clear servicenow.cjs cache since w2n depends on it
+    const servicenowPath = require.resolve('./services/servicenow.cjs');
+    delete require.cache[servicenowPath];
+    
+    // FIX v11.0.18: Also clear validation cache since w2n imports it
+    const validationPath = require.resolve('./utils/validate-notion-page.cjs');
+    delete require.cache[validationPath];
+    
+    const freshRouter = require('./routes/w2n.cjs');
+    
+    console.log('🔥 Reloaded w2n.cjs + servicenow.cjs for PATCH, delegating to freshly loaded router');
+    
+    // The router expects the request path to be /W2N/:pageId (without /api prefix)
+    // So we strip /api from req.url before delegating to the router
+    const originalUrl = req.url;
+    req.url = req.url.replace(/^\/api/, '');
+    
+    // Directly invoke the router (it handles PATCH /W2N/:pageId internally)
+    freshRouter(req, res, (err) => {
+      req.url = originalUrl; // Restore original URL
+      if (err) next(err);
+    });
+  });
+  
+  console.log('✅ W2N router configured with HOT-RELOAD wrapper (POST + PATCH)');
   app.use("/api", require('./routes/databases.cjs'));
   app.use("/api", require('./routes/upload.cjs'));
+  app.use("/api", require('./routes/validate.cjs'));
 } catch (e) {
   console.log("⚠️ API route modules not available, using inline fallbacks:", e.message);
   // Main API routes will be handled by the inline endpoints defined above
