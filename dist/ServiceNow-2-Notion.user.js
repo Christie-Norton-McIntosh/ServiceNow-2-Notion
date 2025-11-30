@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.84
+// @version      11.0.85
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.84";
+    window.BUILD_VERSION = "11.0.85";
 (function () {
 
   // Configuration constants and default settings
@@ -2835,10 +2835,13 @@
     </style>
     <div id="w2n-header" style="padding: 16px; border-bottom: 1px solid #e5e7eb; background: #f9fafb; border-radius: 8px 8px 0 0; cursor: move; position: relative;">
       <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h3 style="margin:0; font-size:16px; color:#1f2937; display:flex; align-items:center; gap:8px;">
-          📚 ServiceNow to Notion
-          <span style="font-size:12px; color:#6b7280; font-weight:normal;">⇄ drag to move</span>
-        </h3>
+        <div>
+          <h3 style="margin:0 0 4px 0; font-size:16px; color:#1f2937; display:flex; align-items:center; gap:8px;">
+            📚 ServiceNow to Notion
+            <span style="font-size:12px; color:#6b7280; font-weight:normal;">⇄ drag to move</span>
+          </h3>
+          <div style="font-size:11px; color:#9ca3af;">v${window.BUILD_VERSION || "11.0.84"}</div>
+        </div>
         <div style="display:flex; align-items:center; gap:8px;">
           <button id="w2n-reset-position-btn" title="Reset panel position to top-right corner" style="background:none;border:none;font-size:16px;cursor:pointer;color:#6b7280;padding:4px;line-height:1;">↗️</button>
           <button id="w2n-advanced-settings-btn" title="Advanced Settings" style="background:none;border:none;font-size:16px;cursor:pointer;color:#6b7280;padding:4px;line-height:1;">⚙️</button>
@@ -2855,10 +2858,9 @@
         </select>
         <div id="w2n-selected-database-label" style="margin-top:8px;font-size:12px;color:#6b7280;">Database: ${config.databaseName || "(no database)"}</div>
         <div style="margin-top:8px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-          <button id="w2n-refresh-dbs" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">Refresh</button>
-          <button id="w2n-search-dbs" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">Search</button>
-          <button id="w2n-get-db" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">By ID</button>
-          <button id="w2n-configure-mapping" style="font-size:11px;padding:6px 8px;border:1px solid #10b981;border-radius:4px;background:#10b981;color:white;cursor:pointer;">Configure Property Mapping</button>
+          <button id="w2n-list-all-dbs" style="flex:1; font-size:11px;padding:6px 8px;border:1px solid #3b82f6;border-radius:4px;background:#3b82f6;color:white;cursor:pointer;min-width:80px;">📋 List All</button>
+          <button id="w2n-search-dbs" style="flex:1; font-size:11px;padding:6px 8px;border:1px solid #10b981;border-radius:4px;background:#10b981;color:white;cursor:pointer;min-width:80px;">🔍 Search</button>
+          <button id="w2n-get-db" style="flex:1; font-size:11px;padding:6px 8px;border:1px solid #f59e0b;border-radius:4px;background:#f59e0b;color:white;cursor:pointer;min-width:80px;">🆔 By ID</button>
         </div>
         <div id="w2n-db-spinner" style="display:none; margin-top:8px; font-size:12px; color:#6b7280; align-items:center;">
           <span style="display:inline-block; width:12px; height:12px; border:2px solid #d1d5db; border-top:2px solid #10b981; border-radius:50%; animation:spin 1s linear infinite; margin-right:8px;"></span>
@@ -2868,7 +2870,7 @@
 
       <div style="display:grid; gap:8px; margin-bottom:16px;">
         <button id="w2n-capture-page" style="width:100%; padding:12px; background:#10b981; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">📄 Save Current Page</button>
-        <button id="w2n-capture-description" style="width:100%; padding:12px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">📖 Download PDF</button>
+        <button id="w2n-update-page" style="width:100%; padding:12px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">� Update Current Page</button>
       </div>
 
       <div style="border-top:1px solid #e5e7eb; padding-top:16px;">
@@ -2925,7 +2927,7 @@
     const resetPositionBtn = panel.querySelector("#w2n-reset-position-btn");
     const advancedBtn = panel.querySelector("#w2n-advanced-settings-btn");
     const captureBtn = panel.querySelector("#w2n-capture-page");
-    const configureBtn = panel.querySelector("#w2n-configure-mapping");
+    const updateBtn = panel.querySelector("#w2n-update-page");
     const iconCoverBtn = panel.querySelector("#w2n-open-icon-cover");
 
     closeBtn.onclick = () => panel.remove();
@@ -2974,13 +2976,23 @@
       }
     };
 
-    configureBtn.onclick = () => {
-      try {
-        showPropertyMappingModal();
-      } catch (e) {
-        debug("Failed to open property mapping modal:", e);
-      }
-    };
+    if (updateBtn) {
+      updateBtn.onclick = async () => {
+        try {
+          if (
+            window.ServiceNowToNotion &&
+            typeof window.ServiceNowToNotion.app === "function"
+          ) {
+            const app = window.ServiceNowToNotion.app();
+            if (app && typeof app.handleUpdateExistingPage === "function") {
+              await app.handleUpdateExistingPage();
+            }
+          }
+        } catch (e) {
+          debug("Failed to execute update action:", e);
+        }
+      };
+    }
 
     iconCoverBtn.onclick = () => {
       try {
@@ -2991,22 +3003,24 @@
     };
 
     // Database button handlers
-    const refreshBtn = panel.querySelector("#w2n-refresh-dbs");
+    const listAllBtn = panel.querySelector("#w2n-list-all-dbs");
     const searchBtn = panel.querySelector("#w2n-search-dbs");
     const getByIdBtn = panel.querySelector("#w2n-get-db");
     const databaseSelect = panel.querySelector("#w2n-database-select");
     const databaseLabel = panel.querySelector("#w2n-selected-database-label");
 
-    if (refreshBtn) {
-      refreshBtn.onclick = async () => {
+    if (listAllBtn) {
+      listAllBtn.onclick = async () => {
         try {
-          debug("🔄 Refreshing database list...");
+          debug("� Fetching all databases...");
           showSpinner();
           const databases = await getAllDatabases({ forceRefresh: true });
           populateDatabaseSelect(databaseSelect, databases);
-          debug(`[DATABASE] ✅ Refreshed ${databases.length} databases`);
+          debug(`[DATABASE] ✅ Loaded ${databases.length} databases`);
+          showToast(`✅ Loaded ${databases.length} databases`, 2000);
         } catch (e) {
-          debug("Failed to refresh databases:", e);
+          debug("Failed to fetch databases:", e);
+          showToast("❌ Failed to fetch databases", 3000);
         } finally {
           hideSpinner();
         }
