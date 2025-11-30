@@ -344,10 +344,32 @@ async function extractContentFromHtml(html) {
       return `<${normalized}>`;
     });
     
-    // Step 2: Remove newlines immediately before closing tags
-    text = text.replace(/\s*\n\s*(<\/[^>]+>)/g, '$1');
+    // Step 2: Preserve significant whitespace (multiple newlines or substantial spacing)
+    // but collapse single newlines around tags
+    // FIX v11.0.39: Detect paragraph breaks between closing tags and next content
+    // Match closing tag followed by whitespace that contains newlines and leading spaces
+    text = text.replace(/(<\/[^>]+>)([\s\n]+?)(?=[^\s]|$)/g, (match, closingTag, whitespace, offset, fullString) => {
+      // Count newlines and total whitespace length
+      const newlineCount = (whitespace.match(/\n/g) || []).length;
+      const totalLength = whitespace.length;
+      
+      // Debug: Log what we found
+      if (totalLength > 10) {
+        console.log(`🔍 [parseRichText] Whitespace after ${closingTag.substring(0, 20)}: ${newlineCount} newlines, ${totalLength} chars total`);
+      }
+      
+      // If 2+ newlines or substantial spacing (40+ chars with newline), preserve as paragraph break
+      // ServiceNow often indents with ~70+ spaces, so use 40 as threshold
+      if (newlineCount >= 2 || totalLength >= 40) {
+        console.log(`🔍 [parseRichText] ✓ Preserving paragraph break after ${closingTag} (${newlineCount} newlines, ${totalLength} chars)`);
+        return closingTag + '\n\n'; // Preserve as double newline
+      }
+      
+      // Otherwise collapse to single space
+      return closingTag + ' ';
+    });
     
-    // Step 3: Remove newlines immediately after opening tags  
+    // Step 3: Remove newlines immediately after opening tags (keep this - prevents tag-text gaps)
     text = text.replace(/(<[^/>][^>]*>)\s*\n\s*/g, '$1');
     
     // DEBUG: Log AFTER normalization
@@ -475,7 +497,11 @@ async function extractContentFromHtml(html) {
     text = text.replace(/^[^<]+?(?:class|id|style|href|src)=[^>]*>/gi, ' ');  // Incomplete tag at beginning
     
     // Clean up extra whitespace from tag removal
-    text = text.replace(/\s+/g, ' ').trim();
+    // FIX v11.0.39: Preserve newlines (specifically double newlines for paragraph breaks)
+    // Replace runs of spaces/tabs with single space, but keep newlines intact
+    text = text.replace(/[ \t]+/g, ' ');  // Collapse spaces/tabs only
+    text = text.replace(/\n{3,}/g, '\n\n');  // Collapse 3+ newlines to double newline
+    text = text.trim();
 
     console.log('🔍 [parseRichText] After HTML cleanup:', text.substring(0, 300));
     console.log('🔍 [parseRichText] Has newline after cleanup?', text.includes('\n'));
@@ -773,6 +799,8 @@ async function extractContentFromHtml(html) {
           .replace(/__\s+CODE\s+END__/g, '__CODE_END__')
           .replace(/__\s+BOLD\s+START__/g, '__BOLD_START__')
           .replace(/__\s+BOLD\s+END__/g, '__BOLD_END__')
+          .replace(/__\s+BOLD\s+BLUE\s+START__/g, '__BOLD_BLUE_START__')
+          .replace(/__\s+BOLD\s+BLUE\s+END__/g, '__BOLD_BLUE_END__')
           .replace(/__\s+ITALIC\s+START__/g, '__ITALIC_START__')
           .replace(/__\s+ITALIC\s+END__/g, '__ITALIC_END__')
           .replace(/[\u200B\u200C\u200D\uFEFF]/g, '');
@@ -886,21 +914,16 @@ async function extractContentFromHtml(html) {
       }
     }
 
-    // Coalesce multi-element chunks into a single plain text element when
-    // they consist of multiple small pieces (e.g., text + code + text).
-    // This helps the validation runner compare HTML plain-text segments with
-    // Notion output more reliably by avoiding artificial segment splits.
-    const coalesced = chunks.map(chunk => {
-      if (!Array.isArray(chunk) || chunk.length <= 1) return chunk;
-      try {
-        const combined = chunk.map(rt => (rt && rt.text && rt.text.content) ? String(rt.text.content) : (rt && rt.plain_text ? String(rt.plain_text) : '')).join('').trim();
-        return [{ type: 'text', text: { content: combined } }];
-      } catch (err) {
-        return chunk;
-      }
-    });
-
-    return coalesced;
+    // FIX v11.0.40: REMOVED coalescing that was stripping all formatting annotations
+    // The coalescing was added for validation but it removes bold, italic, code, and color
+    // formatting by merging all rich_text elements into plain text. Validation should work
+    // with properly formatted rich_text by comparing the plain text content when needed.
+    //
+    // NOTE: For validation purposes, use createPlainTextBlocksForValidation() which creates
+    // a separate coalesced copy without affecting the actual formatted blocks sent to Notion.
+    
+    // Return chunks with formatting preserved
+    return chunks;
   }
 
   // Helper function to create image blocks (needed by parseRichText)
@@ -3600,10 +3623,38 @@ async function extractContentFromHtml(html) {
           }
         } else {
           // Simple list item with no nested blocks
+          
+          // FIX v11.0.39: Check for paragraph breaks at DOM level before HTML serialization
+          // Cheerio's .html() collapses whitespace, so check text nodes directly
+          const textNodes = [];
+          $li.contents().each((i, node) => {
+            if (node.type === 'text') {
+              textNodes.push({ index: i, text: node.data, length: node.data.length });
+            }
+          });
+          
+          // If we find a text node with significant whitespace (40+ chars or 2+ newlines), insert break marker
+          let hasSignificantBreak = false;
+          textNodes.forEach(node => {
+            const newlineCount = (node.text.match(/\n/g) || []).length;
+            if (node.length >= 40 || newlineCount >= 2) {
+              console.log(`🔍 [LIST-ITEM-BREAK] Found text node with ${node.length} chars, ${newlineCount} newlines at index ${node.index}`);
+              hasSignificantBreak = true;
+            }
+          });
+          
           let liHtml = $li.html() || '';
           // Strip SVG icon elements (decorative only, no content value)
           liHtml = liHtml.replace(/<svg[\s\S]*?<\/svg>/gi, '');
           console.log(`🔍 Ordered list item HTML: "${liHtml.substring(0, 100)}"`);
+          
+          // If significant break detected, insert \n\n marker in the reconstructed HTML
+          if (hasSignificantBreak) {
+            // Find the first substantial text node and insert break before it
+            liHtml = liHtml.replace(/(<\/(?:span|p|div|a)>)\s+([A-Z][a-z]{2,})/, '$1\n\n$2');
+            console.log(`🔍 [LIST-ITEM-BREAK] Inserted paragraph break marker`);
+          }
+          
           const { richText: liRichText, imageBlocks: liImages } = await parseRichText(liHtml);
           console.log(`🔍 Ordered list item rich_text: ${liRichText.length} elements`);
           
@@ -5833,6 +5884,75 @@ async function extractContentFromHtml(html) {
  * 
  * @see {@link extractContentFromHtml} for content extraction from the same page
  */
+
+/**
+ * Creates a plain-text version of blocks for validation comparison.
+ * This coalesces multiple rich_text elements into single plain text strings
+ * WITHOUT affecting the actual formatted blocks sent to Notion.
+ * 
+ * Used for validation statistics (Validation & Stats properties) where formatted
+ * variations should be normalized for accurate comparison.
+ * 
+ * @param {Array} blocks - Array of Notion block objects with formatting
+ * @returns {Array} Plain-text version of blocks for validation
+ * 
+ * @example
+ * const formattedBlocks = [{
+ *   type: 'paragraph',
+ *   paragraph: {
+ *     rich_text: [
+ *       { text: { content: 'Click ' }, annotations: {} },
+ *       { text: { content: 'Save' }, annotations: { bold: true, color: 'blue' } },
+ *       { text: { content: ' to continue.' }, annotations: {} }
+ *     ]
+ *   }
+ * }];
+ * 
+ * const plainBlocks = createPlainTextBlocksForValidation(formattedBlocks);
+ * // Returns: [{
+ * //   type: 'paragraph',
+ * //   paragraph: {
+ * //     rich_text: [
+ * //       { type: 'text', text: { content: 'Click Save to continue.' }, plain_text: 'Click Save to continue.' }
+ * //     ]
+ * //   }
+ * // }]
+ */
+function createPlainTextBlocksForValidation(blocks) {
+  if (!blocks || !Array.isArray(blocks)) return blocks;
+  
+  return blocks.map(block => {
+    if (!block || typeof block !== 'object') return block;
+    
+    // Create a shallow copy so we don't modify the original
+    const plainBlock = { ...block };
+    
+    // Get the block type data (paragraph, heading_1, callout, etc.)
+    const blockType = block.type;
+    const blockData = block[blockType];
+    
+    if (blockData && Array.isArray(blockData.rich_text) && blockData.rich_text.length > 1) {
+      // Coalesce multiple rich_text elements into a single plain text element
+      const combinedText = blockData.rich_text
+        .map(rt => (rt && rt.text && rt.text.content) ? String(rt.text.content) : '')
+        .join('')
+        .trim();
+      
+      // Replace with single plain text element
+      plainBlock[blockType] = {
+        ...blockData,
+        rich_text: [{ 
+          type: 'text', 
+          text: { content: combinedText },
+          plain_text: combinedText
+        }]
+      };
+    }
+    
+    return plainBlock;
+  });
+}
+
 function parseMetadataFromUrl(url) {
   // Basic metadata extraction from ServiceNow URLs
   if (!url || typeof url !== "string") {
@@ -5893,4 +6013,6 @@ module.exports = {
   extractContentFromHtml,
   /** @type {function(string): UrlMetadata} */
   parseMetadataFromUrl,
+  /** @type {function(Array): Array} */
+  createPlainTextBlocksForValidation,
 };

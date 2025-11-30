@@ -5,6 +5,7 @@ import { showPropertyMappingModal } from "./property-mapping-modal.js";
 import { injectAdvancedSettingsModal } from "./advanced-settings-modal.js";
 import { injectIconCoverModal } from "./icon-cover-modal.js";
 import { getAllDatabases, getDatabase } from "../api/database-api.js";
+import { queryDatabase, apiCall } from "../api/proxy-api.js";
 import { overlayModule } from "./overlay-progress.js";
 import { showToast } from "./utils.js";
 
@@ -19,6 +20,81 @@ function simpleHash(str) {
     hash |= 0; // Convert to 32bit signed integer
   }
   return hash;
+}
+
+/**
+ * Search Notion database for a page with matching title
+ * @param {string} databaseId - Database ID to search
+ * @param {string} title - Title to search for
+ * @returns {Promise<Object|null>} Matching page or null if not found
+ */
+async function searchNotionPageByTitle(databaseId, title) {
+  if (!databaseId || !title) {
+    debug("[AUTOEXTRACT-UPDATE] ⚠️ Missing databaseId or title for search");
+    return null;
+  }
+
+  try {
+    debug(`[AUTOEXTRACT-UPDATE] 🔍 Searching for page with title: "${title}"`);
+    
+    // Query database with title filter
+    const queryBody = {
+      filter: {
+        property: "title",
+        rich_text: {
+          equals: title
+        }
+      },
+      page_size: 1
+    };
+
+    const response = await queryDatabase(databaseId, queryBody);
+    const results = Array.isArray(response?.results) ? response.results : [];
+
+    if (results.length > 0) {
+      const page = results[0];
+      debug(`[AUTOEXTRACT-UPDATE] ✅ Found existing page: ${page.id}`);
+      return page;
+    }
+
+    debug(`[AUTOEXTRACT-UPDATE] ⊘ No existing page found with title: "${title}"`);
+    return null;
+  } catch (error) {
+    debug(`[AUTOEXTRACT-UPDATE] ❌ Error searching for page: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Update existing Notion page via PATCH endpoint
+ * @param {string} pageId - Page ID to update
+ * @param {Object} extractedData - Extracted page data
+ * @returns {Promise<Object>} Update result
+ */
+async function updateNotionPage(pageId, extractedData) {
+  debug(`[AUTOEXTRACT-UPDATE] 📝 Updating page ${pageId}...`);
+  
+  try {
+    // Prepare PATCH payload (similar to POST but with pageId in URL)
+    const patchData = {
+      title: extractedData.title,
+      contentHtml: extractedData.contentHtml || extractedData.content,
+      url: extractedData.url
+    };
+
+    // Call PATCH endpoint
+    const result = await apiCall("PATCH", `/api/W2N/${pageId}`, patchData);
+
+    if (result && result.success) {
+      debug(`[AUTOEXTRACT-UPDATE] ✅ Page updated successfully`);
+      return result;
+    }
+
+    throw new Error(result?.error || "Failed to update page");
+  } catch (error) {
+    debug(`[AUTOEXTRACT-UPDATE] ❌ Failed to update page: ${error.message}`);
+    throw error;
+  }
 }
 
 export function injectMainPanel() {
@@ -88,10 +164,13 @@ export function injectMainPanel() {
     </style>
     <div id="w2n-header" style="padding: 16px; border-bottom: 1px solid #e5e7eb; background: #f9fafb; border-radius: 8px 8px 0 0; cursor: move; position: relative;">
       <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h3 style="margin:0; font-size:16px; color:#1f2937; display:flex; align-items:center; gap:8px;">
-          📚 ServiceNow to Notion
-          <span style="font-size:12px; color:#6b7280; font-weight:normal;">⇄ drag to move</span>
-        </h3>
+        <div>
+          <h3 style="margin:0 0 4px 0; font-size:16px; color:#1f2937; display:flex; align-items:center; gap:8px;">
+            📚 ServiceNow to Notion
+            <span style="font-size:12px; color:#6b7280; font-weight:normal;">⇄ drag to move</span>
+          </h3>
+          <div style="font-size:11px; color:#9ca3af;">v${window.BUILD_VERSION || "11.0.84"}</div>
+        </div>
         <div style="display:flex; align-items:center; gap:8px;">
           <button id="w2n-reset-position-btn" title="Reset panel position to top-right corner" style="background:none;border:none;font-size:16px;cursor:pointer;color:#6b7280;padding:4px;line-height:1;">↗️</button>
           <button id="w2n-advanced-settings-btn" title="Advanced Settings" style="background:none;border:none;font-size:16px;cursor:pointer;color:#6b7280;padding:4px;line-height:1;">⚙️</button>
@@ -108,10 +187,9 @@ export function injectMainPanel() {
         </select>
         <div id="w2n-selected-database-label" style="margin-top:8px;font-size:12px;color:#6b7280;">Database: ${config.databaseName || "(no database)"}</div>
         <div style="margin-top:8px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-          <button id="w2n-refresh-dbs" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">Refresh</button>
-          <button id="w2n-search-dbs" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">Search</button>
-          <button id="w2n-get-db" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">By ID</button>
-          <button id="w2n-configure-mapping" style="font-size:11px;padding:6px 8px;border:1px solid #10b981;border-radius:4px;background:#10b981;color:white;cursor:pointer;">Configure Property Mapping</button>
+          <button id="w2n-list-all-dbs" style="flex:1; font-size:11px;padding:6px 8px;border:1px solid #3b82f6;border-radius:4px;background:#3b82f6;color:white;cursor:pointer;min-width:80px;">📋 List All</button>
+          <button id="w2n-search-dbs" style="flex:1; font-size:11px;padding:6px 8px;border:1px solid #10b981;border-radius:4px;background:#10b981;color:white;cursor:pointer;min-width:80px;">🔍 Search</button>
+          <button id="w2n-get-db" style="flex:1; font-size:11px;padding:6px 8px;border:1px solid #f59e0b;border-radius:4px;background:#f59e0b;color:white;cursor:pointer;min-width:80px;">🆔 By ID</button>
         </div>
         <div id="w2n-db-spinner" style="display:none; margin-top:8px; font-size:12px; color:#6b7280; align-items:center;">
           <span style="display:inline-block; width:12px; height:12px; border:2px solid #d1d5db; border-top:2px solid #10b981; border-radius:50%; animation:spin 1s linear infinite; margin-right:8px;"></span>
@@ -121,7 +199,7 @@ export function injectMainPanel() {
 
       <div style="display:grid; gap:8px; margin-bottom:16px;">
         <button id="w2n-capture-page" style="width:100%; padding:12px; background:#10b981; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">📄 Save Current Page</button>
-        <button id="w2n-capture-description" style="width:100%; padding:12px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">📖 Download PDF</button>
+        <button id="w2n-update-page" style="width:100%; padding:12px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">� Update Current Page</button>
       </div>
 
       <div style="border-top:1px solid #e5e7eb; padding-top:16px;">
@@ -134,6 +212,15 @@ export function injectMainPanel() {
           <div style="display:flex; gap:8px;">
             <button id="w2n-start-autoextract" style="flex:1; padding:10px; background:#f59e0b; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">Start AutoExtract</button>
             <button id="w2n-stop-autoextract" style="flex:1; padding:10px; background:#dc2626; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500; display:none;">⏹ Stop</button>
+          </div>
+          <div style="margin-top:10px; padding:8px; background:#f3f4f6; border-radius:6px;">
+            <label style="display:flex; align-items:center; cursor:pointer; font-size:13px;">
+              <input type="checkbox" id="w2n-autoextract-update-mode" style="margin-right:8px; cursor:pointer;">
+              <span>🔄 Update existing pages (search by title)</span>
+            </label>
+            <div style="font-size:11px; color:#6b7280; margin-top:4px; margin-left:24px;">
+              Updates matching pages, creates new ones with 🆕 if not found
+            </div>
           </div>
           <div style="display:flex; gap:8px; margin-top:8px;">
             <button id="w2n-open-icon-cover" style="flex:1; padding:8px; background:#6b7280; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px;">Icon & Cover</button>
@@ -169,7 +256,7 @@ export function setupMainPanel(panel) {
   const resetPositionBtn = panel.querySelector("#w2n-reset-position-btn");
   const advancedBtn = panel.querySelector("#w2n-advanced-settings-btn");
   const captureBtn = panel.querySelector("#w2n-capture-page");
-  const configureBtn = panel.querySelector("#w2n-configure-mapping");
+  const updateBtn = panel.querySelector("#w2n-update-page");
   const iconCoverBtn = panel.querySelector("#w2n-open-icon-cover");
 
   closeBtn.onclick = () => panel.remove();
@@ -218,13 +305,23 @@ export function setupMainPanel(panel) {
     }
   };
 
-  configureBtn.onclick = () => {
-    try {
-      showPropertyMappingModal();
-    } catch (e) {
-      debug("Failed to open property mapping modal:", e);
-    }
-  };
+  if (updateBtn) {
+    updateBtn.onclick = async () => {
+      try {
+        if (
+          window.ServiceNowToNotion &&
+          typeof window.ServiceNowToNotion.app === "function"
+        ) {
+          const app = window.ServiceNowToNotion.app();
+          if (app && typeof app.handleUpdateExistingPage === "function") {
+            await app.handleUpdateExistingPage();
+          }
+        }
+      } catch (e) {
+        debug("Failed to execute update action:", e);
+      }
+    };
+  }
 
   iconCoverBtn.onclick = () => {
     try {
@@ -235,22 +332,24 @@ export function setupMainPanel(panel) {
   };
 
   // Database button handlers
-  const refreshBtn = panel.querySelector("#w2n-refresh-dbs");
+  const listAllBtn = panel.querySelector("#w2n-list-all-dbs");
   const searchBtn = panel.querySelector("#w2n-search-dbs");
   const getByIdBtn = panel.querySelector("#w2n-get-db");
   const databaseSelect = panel.querySelector("#w2n-database-select");
   const databaseLabel = panel.querySelector("#w2n-selected-database-label");
 
-  if (refreshBtn) {
-    refreshBtn.onclick = async () => {
+  if (listAllBtn) {
+    listAllBtn.onclick = async () => {
       try {
-        debug("🔄 Refreshing database list...");
+        debug("� Fetching all databases...");
         showSpinner();
         const databases = await getAllDatabases({ forceRefresh: true });
         populateDatabaseSelect(databaseSelect, databases);
-        debug(`[DATABASE] ✅ Refreshed ${databases.length} databases`);
+        debug(`[DATABASE] ✅ Loaded ${databases.length} databases`);
+        showToast(`✅ Loaded ${databases.length} databases`, 2000);
       } catch (e) {
-        debug("Failed to refresh databases:", e);
+        debug("Failed to fetch databases:", e);
+        showToast("❌ Failed to fetch databases", 3000);
       } finally {
         hideSpinner();
       }
@@ -1222,20 +1321,71 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
             return;
           }
 
-          // STEP 2: Create Notion page and wait for success
-          debug(
-            `[AUTO-EXTRACT] 💾 Step 2: Creating Notion page for page ${currentPageNum}...`
-          );
-          overlayModule.setMessage(`Creating Notion page ${currentPageNum}...`);
-          await app.processWithProxy(extractedData);
+          // STEP 2: Create or Update Notion page based on mode
+          const updateModeCheckbox = document.getElementById('w2n-autoextract-update-mode');
+          const updateMode = updateModeCheckbox?.checked || false;
 
-          captureSuccess = true;
-          autoExtractState.totalProcessed++;
-          debug(
-            `✅ Page ${currentPageNum} captured and saved to Notion successfully${
-              captureAttempts > 1 ? ` (attempt ${captureAttempts})` : ""
-            }`
-          );
+          if (updateMode) {
+            // UPDATE MODE: Search for existing page and update
+            debug(
+              `[AUTO-EXTRACT] 🔄 Step 2: Searching for existing page "${extractedData.title}"...`
+            );
+            overlayModule.setMessage(`Searching for page "${extractedData.title}"...`);
+            
+            const existingPage = await searchNotionPageByTitle(config.databaseId, extractedData.title);
+            
+            if (existingPage) {
+              // Page found, update it
+              debug(`[AUTO-EXTRACT] 📝 Updating existing page ${existingPage.id}...`);
+              overlayModule.setMessage(`Updating page ${currentPageNum}...`);
+              await updateNotionPage(existingPage.id, extractedData);
+              
+              captureSuccess = true;
+              autoExtractState.totalProcessed++;
+              autoExtractState.totalUpdated = (autoExtractState.totalUpdated || 0) + 1;
+              debug(
+                `✅ Page ${currentPageNum} updated successfully${
+                  captureAttempts > 1 ? ` (attempt ${captureAttempts})` : ""
+                }`
+              );
+              showToast(`✅ Updated: ${extractedData.title}`, 2000);
+            } else {
+              // Page not found, create new with 🆕 prefix
+              debug(`[AUTO-EXTRACT] 🆕 Page "${extractedData.title}" not found, creating new page with 🆕 prefix...`);
+              overlayModule.setMessage(`Creating new page ${currentPageNum} with 🆕...`);
+              
+              // Add 🆕 emoji to title
+              const originalTitle = extractedData.title;
+              extractedData.title = `🆕 ${originalTitle}`;
+              
+              await app.processWithProxy(extractedData);
+              
+              captureSuccess = true;
+              autoExtractState.totalProcessed++;
+              autoExtractState.totalCreated = (autoExtractState.totalCreated || 0) + 1;
+              debug(
+                `✅ Page ${currentPageNum} created with 🆕 prefix successfully${
+                  captureAttempts > 1 ? ` (attempt ${captureAttempts})` : ""
+                }`
+              );
+              showToast(`🆕 Created: ${originalTitle}`, 2000);
+            }
+          } else {
+            // CREATE MODE: Normal creation
+            debug(
+              `[AUTO-EXTRACT] 💾 Step 2: Creating Notion page for page ${currentPageNum}...`
+            );
+            overlayModule.setMessage(`Creating Notion page ${currentPageNum}...`);
+            await app.processWithProxy(extractedData);
+
+            captureSuccess = true;
+            autoExtractState.totalProcessed++;
+            debug(
+              `✅ Page ${currentPageNum} captured and saved to Notion successfully${
+                captureAttempts > 1 ? ` (attempt ${captureAttempts})` : ""
+              }`
+            );
+          }
 
           // Brief wait to ensure API call fully completes
           await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -1946,6 +2096,15 @@ async function continueAutoExtractionLoop(autoExtractState) {
   // Loop completed successfully - show completion overlay
   debug(`[AUTO-EXTRACT] 🎉 AutoExtract completed! Total pages processed: ${autoExtractState.totalProcessed}`);
   
+  // Prepare stats summary
+  const totalUpdated = autoExtractState.totalUpdated || 0;
+  const totalCreated = autoExtractState.totalCreated || 0;
+  const totalNormalCreated = autoExtractState.totalProcessed - totalUpdated - totalCreated;
+  
+  if (totalUpdated > 0 || totalCreated > 0) {
+    debug(`[AUTO-EXTRACT] 📊 Stats: ${totalNormalCreated + totalCreated} created (${totalCreated} with 🆕), ${totalUpdated} updated`);
+  }
+  
   // Show summary of any failed pages
   if (autoExtractState.failedPages && autoExtractState.failedPages.length > 0) {
     debug(`⚠️ ${autoExtractState.failedPages.length} page(s) failed during AutoExtract:`);
@@ -1962,9 +2121,25 @@ async function continueAutoExtractionLoop(autoExtractState) {
       debug(`💾 Failed pages saved to storage for manual retry`);
     }
     
+    // Build stats summary for alert
+    let statsLine = `✅ Successfully processed: ${autoExtractState.totalProcessed} pages`;
+    if (totalUpdated > 0 || totalCreated > 0) {
+      const allCreated = totalNormalCreated + totalCreated;
+      const parts = [];
+      if (allCreated > 0) {
+        if (totalCreated > 0) {
+          parts.push(`${allCreated} created (${totalCreated} with 🆕)`);
+        } else {
+          parts.push(`${allCreated} created`);
+        }
+      }
+      if (totalUpdated > 0) parts.push(`${totalUpdated} updated`);
+      statsLine += ` (${parts.join(', ')})`;
+    }
+    
     // Show warning to user
     const failedPagesMessage = `⚠️ AutoExtract completed with warnings!\n\n` +
-      `✅ Successfully processed: ${autoExtractState.totalProcessed} pages\n` +
+      `${statsLine}\n` +
       `❌ Failed/Skipped: ${autoExtractState.failedPages.length} pages\n` +
       `🚦 Rate limit hits: ${autoExtractState.rateLimitHits}\n\n` +
       `Failed pages list:\n` +
@@ -1980,10 +2155,23 @@ async function continueAutoExtractionLoop(autoExtractState) {
       7000
     );
   } else {
-    showToast(
-      `✅ AutoExtract complete! Processed ${autoExtractState.totalProcessed} page(s)`,
-      5000
-    );
+    // Build success message
+    let successMsg = `✅ AutoExtract complete! Processed ${autoExtractState.totalProcessed} page(s)`;
+    if (totalUpdated > 0 || totalCreated > 0) {
+      const allCreated = totalNormalCreated + totalCreated;
+      const parts = [];
+      if (allCreated > 0) {
+        if (totalCreated > 0) {
+          parts.push(`${allCreated} created (${totalCreated} with 🆕)`);
+        } else {
+          parts.push(`${allCreated} created`);
+        }
+      }
+      if (totalUpdated > 0) parts.push(`${totalUpdated} updated`);
+      successMsg += ` (${parts.join(', ')})`;
+    }
+    
+    showToast(successMsg, 5000);
   }
   
   overlayModule.done({

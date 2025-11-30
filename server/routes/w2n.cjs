@@ -2,6 +2,27 @@
 /**
  * @file Express route for ServiceNow-2-Notion W2N (Web-to-Notion) endpoint.
  * @module routes/w2n
+ * 
+ * VALIDATION ARCHITECTURE (v11.0.40):
+ * ===================================
+ * This route creates Notion pages with FULL FORMATTING while using PLAIN-TEXT for validation.
+ * 
+ * Flow:
+ * 1. HTML → Formatted Notion blocks (with bold, italic, code, colors, etc.)
+ * 2. Create plain-text copy using createPlainTextBlocksForValidation() (coalesces rich_text)
+ * 3. Send FORMATTED blocks to Notion (users see formatting)
+ * 4. Use PLAIN-TEXT blocks for validation statistics (Validation & Stats properties)
+ * 5. Discard plain-text copy after validation
+ * 
+ * Why separate copies?
+ * - User Experience: Notion pages have full formatting (bold, colors, etc.)
+ * - Validation Accuracy: Plain-text comparison avoids false negatives from formatting variations
+ * - Stats Properties: Block counts based on plain-text (consistent with source HTML plain-text)
+ * 
+ * Key Variables:
+ * - children: Formatted blocks sent to Notion (preserves bold, italic, code, colors)
+ * - plainTextChildren: Coalesced blocks for validation (single rich_text per block, no formatting)
+ * - sourceBlocksForCounting: Uses plainTextChildren if available, else children
  */
 
 const express = require('express');
@@ -349,8 +370,28 @@ router.post('/W2N', async (req, res) => {
         log(`❌ [DRYRUN-CALLOUT-DEDUPE] Error during callout deduplication: ${dedupeError.message}`);
       }
 
+      // VALIDATION ENHANCEMENT v11.0.40: Create plain-text copy for validation without affecting formatted output
+      let plainTextChildren = null;
+      try {
+        // Use servicenowService which was imported at the top of this file
+        if (typeof servicenowService.createPlainTextBlocksForValidation === 'function') {
+          plainTextChildren = servicenowService.createPlainTextBlocksForValidation(children);
+          log(`📝 [DRYRUN-VALIDATION] Created plain-text copy with ${plainTextChildren.length} blocks for validation`);
+        } else {
+          log(`⚠️ [DRYRUN-VALIDATION] createPlainTextBlocksForValidation not available in servicenowService`);
+        }
+      } catch (plainTextError) {
+        log(`⚠️ [DRYRUN-VALIDATION] Failed to create plain-text copy: ${plainTextError.message}`);
+      }
+
       log(`📤 [DRYRUN] About to return response with ${children ? children.length : 'NULL'} children blocks`);
-      return sendSuccess(res, { dryRun: true, children, hasVideos, warnings: extractionWarnings });
+      return sendSuccess(res, { 
+        dryRun: true, 
+        children, 
+        plainTextChildren, // Plain-text version for validation (coalesced rich_text)
+        hasVideos, 
+        warnings: extractionWarnings 
+      });
     }
 
     if (!payload.databaseId) {
@@ -952,7 +993,11 @@ router.post('/W2N', async (req, res) => {
     // FIX v11.0.39: Remove paragraphs that duplicate heading_3 text (table captions)
     // Table captions appear as heading_3 blocks, but sometimes also as paragraphs
     // Keep the heading, remove the paragraph duplicate
+    // CRITICAL: Check BOTH children AND markerMap for heading_3 texts since heading may be in marker
+    log(`\n📊 [FINAL-CAPTION-FILTER] Starting filter (${children.length} blocks, ${Object.keys(markerMap).length} markers)`);
     const heading3Texts = new Set();
+    
+    // Collect heading_3 texts from children array
     children.forEach(block => {
       if (block.type === 'heading_3') {
         const text = (block.heading_3?.rich_text || [])
@@ -960,9 +1005,31 @@ router.post('/W2N', async (req, res) => {
           .join('')
           .trim()
           .toLowerCase();
-        if (text) heading3Texts.add(text);
+        if (text) {
+          heading3Texts.add(text);
+          log(`📊 [FINAL-CAPTION-FILTER] Collected heading_3 from children: "${text}"`);
+        }
       }
     });
+    
+    // Collect heading_3 texts from markerMap blocks (critical for markers with tables)
+    Object.keys(markerMap).forEach(marker => {
+      markerMap[marker].forEach(block => {
+        if (block.type === 'heading_3') {
+          const text = (block.heading_3?.rich_text || [])
+            .map(rt => rt.text?.content || '')
+            .join('')
+            .trim()
+            .toLowerCase();
+          if (text) {
+            heading3Texts.add(text);
+            log(`📊 [FINAL-CAPTION-FILTER] Collected heading_3 from marker "${marker}": "${text}"`);
+          }
+        }
+      });
+    });
+    
+    log(`📊 [FINAL-CAPTION-FILTER] Found ${heading3Texts.size} heading_3 texts to check against`);
     
     if (heading3Texts.size > 0) {
       const beforeCount = children.length;
@@ -973,16 +1040,41 @@ router.post('/W2N', async (req, res) => {
             .join('')
             .trim()
             .toLowerCase();
+          log(`📊 [FINAL-CAPTION-FILTER] Checking paragraph: "${text.substring(0, 60)}..." against Set`);
           if (text && heading3Texts.has(text)) {
-            log(`📊 [FINAL-CAPTION-FILTER] Removing paragraph that duplicates heading_3: "${text.substring(0, 60)}..."`);
+            log(`📊 [FINAL-CAPTION-FILTER] ✓ MATCH! Removing paragraph that duplicates heading_3: "${text.substring(0, 60)}..."`);
             return false; // Remove this paragraph
+          } else {
+            log(`📊 [FINAL-CAPTION-FILTER] ✗ No match - keeping paragraph`);
           }
         }
         return true; // Keep all other blocks
       });
       if (children.length < beforeCount) {
         log(`📊 [FINAL-CAPTION-FILTER] Removed ${beforeCount - children.length} duplicate caption paragraph(s)`);
+      } else {
+        log(`📊 [FINAL-CAPTION-FILTER] No paragraphs removed (all checks failed)`);
       }
+    } else {
+      log(`📊 [FINAL-CAPTION-FILTER] Skipping filter - no heading_3 texts found`);
+    }
+
+    // VALIDATION ENHANCEMENT v11.0.40: Create plain-text copy for validation before page creation
+    // This coalesced version is used ONLY for validation statistics (Validation & Stats properties)
+    // and is discarded after validation. The formatted blocks (children) are sent to Notion.
+    let plainTextChildren = null;
+    try {
+      // Use servicenowService which was imported at the top of this file
+      if (typeof servicenowService.createPlainTextBlocksForValidation === 'function') {
+        plainTextChildren = servicenowService.createPlainTextBlocksForValidation(children);
+        log(`📝 [VALIDATION-PREP] Created plain-text copy with ${plainTextChildren.length} blocks for validation stats`);
+        log(`   Formatted blocks (${children.length}) will be sent to Notion with all formatting preserved`);
+      } else {
+        log(`⚠️ [VALIDATION-PREP] createPlainTextBlocksForValidation not available in servicenowService`);
+      }
+    } catch (plainTextError) {
+      log(`⚠️ [VALIDATION-PREP] Failed to create plain-text copy: ${plainTextError.message}`);
+      log(`   Validation will use formatted blocks instead`);
     }
 
     // Split children into chunks (Notion's limit is 100, but use smaller chunks for complex pages to avoid timeout)
@@ -1405,8 +1497,11 @@ router.post('/W2N', async (req, res) => {
     try {
       if (markerMap && Object.keys(markerMap).length > 0) {
         // FIX v11.0.39: Filter markerMap to remove paragraphs that duplicate heading_3 text
-        // Collect all heading_3 texts from initialBlocks
+        // Collect all heading_3 texts from BOTH initialBlocks AND markerMap blocks
+        log(`\n📊 [MARKER-CAPTION-FILTER] Starting filter for ${Object.keys(markerMap).length} markers`);
         const heading3TextsInMarkers = new Set();
+        
+        // Collect from initialBlocks
         initialBlocks.forEach(block => {
           if (block.type === 'heading_3') {
             const text = (block.heading_3?.rich_text || [])
@@ -1414,15 +1509,38 @@ router.post('/W2N', async (req, res) => {
               .join('')
               .trim()
               .toLowerCase();
-            if (text) heading3TextsInMarkers.add(text);
+            if (text) {
+              heading3TextsInMarkers.add(text);
+              log(`📊 [MARKER-CAPTION-FILTER] Collected heading_3 from initialBlocks: "${text}"`);
+            }
           }
         });
+        
+        // Collect from all markerMap blocks
+        Object.keys(markerMap).forEach(marker => {
+          markerMap[marker].forEach(block => {
+            if (block.type === 'heading_3') {
+              const text = (block.heading_3?.rich_text || [])
+                .map(rt => rt.text?.content || '')
+                .join('')
+                .trim()
+                .toLowerCase();
+              if (text) {
+                heading3TextsInMarkers.add(text);
+                log(`📊 [MARKER-CAPTION-FILTER] Collected heading_3 from marker "${marker}": "${text}"`);
+              }
+            }
+          });
+        });
+        
+        log(`📊 [MARKER-CAPTION-FILTER] Found ${heading3TextsInMarkers.size} heading_3 texts to check against`);
         
         // Filter each marker's blocks to remove duplicate caption paragraphs
         if (heading3TextsInMarkers.size > 0) {
           Object.keys(markerMap).forEach(marker => {
             const blocks = markerMap[marker];
             const beforeCount = blocks.length;
+            log(`📊 [MARKER-CAPTION-FILTER] Checking marker "${marker}" (${beforeCount} blocks)`);
             markerMap[marker] = blocks.filter(block => {
               if (block.type === 'paragraph') {
                 const text = (block.paragraph?.rich_text || [])
@@ -1430,17 +1548,24 @@ router.post('/W2N', async (req, res) => {
                   .join('')
                   .trim()
                   .toLowerCase();
+                log(`📊 [MARKER-CAPTION-FILTER] Checking paragraph in marker: "${text.substring(0, 60)}..."`);
                 if (text && heading3TextsInMarkers.has(text)) {
-                  log(`📊 [MARKER-CAPTION-FILTER] Removing paragraph from marker "${marker}" that duplicates heading_3: "${text.substring(0, 60)}..."`);
+                  log(`📊 [MARKER-CAPTION-FILTER] ✓ MATCH! Removing paragraph from marker "${marker}" that duplicates heading_3: "${text.substring(0, 60)}..."`);
                   return false;
+                } else {
+                  log(`📊 [MARKER-CAPTION-FILTER] ✗ No match - keeping paragraph in marker`);
                 }
               }
               return true;
             });
             if (markerMap[marker].length < beforeCount) {
               log(`📊 [MARKER-CAPTION-FILTER] Filtered marker "${marker}": ${beforeCount} → ${markerMap[marker].length} blocks`);
+            } else {
+              log(`📊 [MARKER-CAPTION-FILTER] No changes to marker "${marker}"`);
             }
           });
+        } else {
+          log(`📊 [MARKER-CAPTION-FILTER] Skipping filter - no heading_3 texts found in initialBlocks`);
         }
         
         log(`\n========================================`);
@@ -1998,7 +2123,12 @@ router.post('/W2N', async (req, res) => {
             // Stats breakdown formatting (first line reflects table/image/callout count match, not validation status)
             const stats = validationResult.stats || {};
             
-            // Calculate source counts from the children array we sent to Notion
+            // FIX v11.0.40: Calculate source counts from plainTextChildren (coalesced blocks for validation)
+            // This ensures validation statistics compare like-for-like: plain-text source vs plain-text Notion
+            // The formatted blocks (children) are sent to Notion with all formatting intact
+            const sourceBlocksForCounting = plainTextChildren || children;
+            log(`📊 [STATS-COUNT] Using ${plainTextChildren ? 'plain-text' : 'formatted'} blocks for source counting`);
+            
             const sourceCounts = {
               paragraphs: 0,
               headings: 0,
@@ -2027,7 +2157,15 @@ router.post('/W2N', async (req, res) => {
               }
             }
             
-            countSourceBlocks(children);
+            countSourceBlocks(sourceBlocksForCounting);
+            
+            // FIX v11.0.39: Also count blocks in markerMap (tables/headings often nested in markers)
+            if (markerMap && Object.keys(markerMap).length > 0) {
+              Object.keys(markerMap).forEach(marker => {
+                countSourceBlocks(markerMap[marker]);
+              });
+              log(`📊 Also counted blocks from ${Object.keys(markerMap).length} marker(s)`);
+            }
             
             // Calculate Notion counts from actual page blocks
             // FIX v11.0.36: Fetch actual blocks from Notion to get accurate counts
@@ -3628,6 +3766,97 @@ router.patch('/W2N/:pageId', async (req, res) => {
             expectedTitle: pageTitle,
             verbose: true
           });
+          
+          // FIX v11.0.40: Ensure breakdown exists for Stats property by fetching Notion blocks
+          // validateContentOrder returns similarity but not block type breakdown
+          if (!validationResult.stats || !validationResult.stats.breakdown) {
+            log(`📊 [PATCH-VALIDATION] Fetching blocks from Notion to populate Stats breakdown...`);
+            
+            try {
+              let allNotionBlocks = [];
+              let cursor = undefined;
+              
+              do {
+                const blockResponse = await notion.blocks.children.list({
+                  block_id: pageId,
+                  page_size: 100,
+                  ...(cursor ? { start_cursor: cursor } : {})
+                });
+                
+                allNotionBlocks.push(...blockResponse.results);
+                cursor = blockResponse.has_more ? blockResponse.next_cursor : undefined;
+              } while (cursor);
+              
+              // Count block types recursively
+              const blockCounts = {
+                paragraphs: 0,
+                headings: 0,
+                tables: 0,
+                images: 0,
+                callouts: 0,
+                orderedList: 0,
+                unorderedList: 0
+              };
+              
+              // Recursive function to count blocks including nested children
+              async function countBlocksRecursively(blocks, depth = 0) {
+                for (const block of blocks) {
+                  if (block.type === 'paragraph') blockCounts.paragraphs++;
+                  else if (block.type.startsWith('heading_')) blockCounts.headings++;
+                  else if (block.type === 'table') blockCounts.tables++;
+                  else if (block.type === 'image') blockCounts.images++;
+                  else if (block.type === 'callout') blockCounts.callouts++;
+                  else if (block.type === 'numbered_list_item') blockCounts.orderedList++;
+                  else if (block.type === 'bulleted_list_item') blockCounts.unorderedList++;
+                  
+                  // Recursively fetch and count children blocks
+                  if (block.has_children && depth < 10) { // Limit depth to prevent infinite loops
+                    try {
+                      let childCursor = undefined;
+                      let allChildren = [];
+                      
+                      do {
+                        const childResponse = await notion.blocks.children.list({
+                          block_id: block.id,
+                          page_size: 100,
+                          ...(childCursor ? { start_cursor: childCursor } : {})
+                        });
+                        
+                        allChildren.push(...childResponse.results);
+                        childCursor = childResponse.has_more ? childResponse.next_cursor : undefined;
+                      } while (childCursor);
+                      
+                      // Recursively count children
+                      if (allChildren.length > 0) {
+                        await countBlocksRecursively(allChildren, depth + 1);
+                      }
+                    } catch (childError) {
+                      log(`⚠️ [PATCH-VALIDATION] Failed to fetch children for block ${block.id}: ${childError.message}`);
+                    }
+                  }
+                }
+              }
+              
+              await countBlocksRecursively(allNotionBlocks);
+              
+              // Populate breakdown in validationResult
+              if (!validationResult.stats) validationResult.stats = {};
+              validationResult.stats.breakdown = {
+                paragraphsNotion: blockCounts.paragraphs,
+                headingsNotion: blockCounts.headings,
+                tablesNotion: blockCounts.tables,
+                imagesNotion: blockCounts.images,
+                calloutsNotion: blockCounts.callouts,
+                orderedListNotion: blockCounts.orderedList,
+                unorderedListNotion: blockCounts.unorderedList
+              };
+              
+              log(`✅ [PATCH-VALIDATION] Stats breakdown populated: ${JSON.stringify(validationResult.stats.breakdown)}`);
+              
+            } catch (breakdownError) {
+              log(`⚠️ [PATCH-VALIDATION] Failed to populate Stats breakdown: ${breakdownError.message}`);
+            }
+          }
           
           if (validationResult.valid) {
             log(`✅ Validation passed`);
