@@ -26,24 +26,23 @@ function initOrderLog(pageId) {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0];
   logFilePath = path.join(logsDir, `order-detection-${pageId.substring(0, 8)}-${timestamp}.log`);
   logStream = fs.createWriteStream(logFilePath, { flags: 'a' });
-  console.log(`[ORDER-DEBUG] 📝 Detailed logs: ${logFilePath}`);
+  logToFile(`[ORDER-DEBUG] 📝 Detailed logs: ${logFilePath}`);
 }
 
 function logToFile(message) {
   if (logStream) {
     logStream.write(message + '\n');
   }
-  // Don't duplicate to console - file only
+  console.log(message); // Also log to console
 }
 
 function closeOrderLog() {
   if (logStream) {
-    const savedPath = logFilePath;
     logStream.end();
     logStream = null;
-    logFilePath = null;
-    if (savedPath) {
-      console.log(`[ORDER-DEBUG] 📝 Full log saved to: ${savedPath}`);
+    if (logFilePath) {
+      logToFile(`[ORDER-DEBUG] 📝 Full log saved to: ${logFilePath}`);
+      logFilePath = null;
     }
   }
 }
@@ -76,6 +75,10 @@ function closeOrderLog() {
       if (!node) continue;
       if (node.type === 'text') {
         let t = $(node).text() || '';
+        // If next node is a tag, ensure we end with a space to separate
+        // adjacent text -> tag boundaries (prevents run-on words)
+        const next = nodes[i + 1];
+        if (next && next.type === 'tag' && !/\s$/.test(t)) t = t + ' ';
         parts.push(t);
       } else if (node.type === 'tag') {
         const tag = node.name.toLowerCase();
@@ -87,18 +90,15 @@ function closeOrderLog() {
           parts.push($(node).text() || '');
           continue;
         }
-        // For other inline tags, recursively extract text
-        // DON'T use $(node).text() - Cheerio adds spaces between inline elements!
-        // Instead, recursively process child nodes to preserve original spacing
-        const childText = consolidatedText($(node));
-        if (!childText) continue;
-        
-        parts.push(childText);
+        // For other tags, ensure content is separated on both sides
+        let s = $(node).text() || '';
+        if (!/^\s/.test(s)) s = ' ' + s;
+        if (!/\s$/.test(s)) s = s + ' ';
+        parts.push(s);
       }
     }
     const raw = parts.join('');
-    // Normalize whitespace: collapse ALL whitespace to single spaces
-    return raw.replace(/\s+/g, ' ').trim();
+    return raw.replace(/\s*\n\s*/g, ' ').replace(/\s{2,}/g, ' ').trim();
   }
   
   // Helper: group segments from the same section
@@ -139,92 +139,70 @@ function closeOrderLog() {
      return boilerplatePatterns.some((re) => re.test(t));
    }
  
-   // CRITICAL FIX: Extract in document order, not by element type
-  // Previously extracted all headings first, then all paragraphs, etc.
-  // This caused "Learn" heading (at end) to appear before intro paragraphs
-  
-  // Track elements we've already processed to avoid duplicates
-  const processed = new Set();
-  
-  // Walk through all potential content elements in document order
-  $scope.find('h1, h2, h3, h4, h5, h6, p, li, div, aside, table').each((_, el) => {
-    if (processed.has(el)) return;
-    processed.add(el);
-    
-    const $el = $(el);
-    const tagName = el.tagName.toLowerCase();
-    
-    // Handle headings
-    if (/^h[1-6]$/.test(tagName)) {
-      // Skip headings that are inside tables - they'll be extracted as part of table content
-      if ($el.closest('table').length > 0) return;
-      
-      const txt = $el.text();
-      if (!txt) return;
-      if (!includeBoilerplate && isBoilerplate(txt)) return;
-      segments.push(txt);
-      return;
-    }
-    
-    // Handle paragraphs
-    if (tagName === 'p') {
-      const txt = consolidatedText($el);
-      if (!txt) return;
-      // Skip "What to do next" content if within a postreq section
-      const parentSection = $el.closest('section');
-      const sectionClass = (parentSection.attr('class') || '').toLowerCase();
-      const sectionTitle = normalizeText(parentSection.find('.sectiontitle, .tasklabel .sectiontitle').first().text() || '');
-      if (/postreq/.test(sectionClass) || /^what to do next$/.test(sectionTitle)) return;
-      if (!includeBoilerplate && isBoilerplate(txt)) return;
-      segments.push(txt);
-      return;
-    }
-    
-    // Handle list items
-    if (tagName === 'li') {
-      const txt = consolidatedText($el);
-      if (!txt) return;
-      if (!includeBoilerplate && isBoilerplate(txt)) return;
-      segments.push(txt);
-      return;
-    }
-    
-    // Handle callouts
-    if (tagName === 'div' || tagName === 'aside') {
-      const cls = ($el.attr('class') || '').toLowerCase();
-      if (/note|warning|info|tip|important|caution|note_note|warning_type/.test(cls)) {
-        const txt = consolidatedText($el);
-        if (txt && (includeBoilerplate || !isBoilerplate(txt))) segments.push(txt);
-      }
-      return;
-    }
-    
-    // Handle tables
-    if (tagName === 'table') {
-      const caption = $el.find('caption').text();
-      if (caption && (includeBoilerplate || !isBoilerplate(caption))) segments.push(caption);
-      const headers = $el.find('thead th');
-      if (headers.length) {
-        const headerText = headers
-          .map((i, th) => $(th).text().trim())
-          .get()
-          .filter(Boolean)
-          .join(' | ');
-        if (headerText) segments.push(headerText);
-      }
-      $el.find('tbody tr').each((__, tr) => {
-        const rowText = $(tr)
-          .find('td, th')
-          .map((i, cell) => consolidatedText($(cell)))
-          .get()
-          .filter(Boolean)
-          .join(' | ');
-        const cleaned = rowText.replace(/\s{2,}/g, ' ').trim();
-        if (cleaned) segments.push(cleaned);
-      });
-      return;
-    }
-  });
+   // Headings
+  $scope.find('h1, h2, h3, h4, h5, h6').each((_, el) => {
+     const txt = $(el).text();
+     if (!txt) return;
+     if (!includeBoilerplate && isBoilerplate(txt)) return;
+     segments.push(txt);
+   });
+ 
+  // Paragraphs (exclude postreq/What to do next section)
+  $scope.find('p').each((_, el) => {
+     const txt = consolidatedText($(el));
+     if (!txt) return;
+    // Skip "What to do next" content if within a postreq section
+    const parentSection = $(el).closest('section');
+    const sectionClass = (parentSection.attr('class') || '').toLowerCase();
+    const sectionTitle = normalizeText(parentSection.find('.sectiontitle, .tasklabel .sectiontitle').first().text() || '');
+    if (/postreq/.test(sectionClass) || /^what to do next$/.test(sectionTitle)) return;
+     if (!includeBoilerplate && isBoilerplate(txt)) return;
+     segments.push(txt);
+   });
+ 
+   // List items
+  $scope.find('li').each((_, el) => {
+     const txt = consolidatedText($(el));
+     if (!txt) return;
+     if (!includeBoilerplate && isBoilerplate(txt)) return;
+     segments.push(txt);
+   });
+ 
+   // Callouts
+  $scope.find('div, aside').each((_, el) => {
+     const $el = $(el);
+     const cls = ($el.attr('class') || '').toLowerCase();
+     if (/note|warning|info|tip|important|caution|note_note|warning_type/.test(cls)) {
+       const txt = consolidatedText($el);
+       if (txt && (includeBoilerplate || !isBoilerplate(txt))) segments.push(txt);
+     }
+   });
+ 
+   // Tables
+  $scope.find('table').each((_, tbl) => {
+     const $tbl = $(tbl);
+     const caption = $tbl.find('caption').text();
+     if (caption && (includeBoilerplate || !isBoilerplate(caption))) segments.push(caption);
+     const headers = $tbl.find('thead th');
+     if (headers.length) {
+       const headerText = headers
+         .map((i, th) => $(th).text().trim())
+         .get()
+         .filter(Boolean)
+         .join(' | ');
+       if (headerText) segments.push(headerText);
+     }
+     $tbl.find('tbody tr').each((__, tr) => {
+       const rowText = $(tr)
+         .find('td, th')
+         .map((i, cell) => consolidatedText($(cell)))
+         .get()
+         .filter(Boolean)
+         .join(' | ');
+       const cleaned = rowText.replace(/\s{2,}/g, ' ').trim();
+       if (cleaned) segments.push(cleaned);
+     });
+   });
  
    // Fallback leaves
   $scope.find('pre, code').each((_, el) => {
@@ -449,13 +427,7 @@ async function extractTextFromNotionBlocks(notion, blockId) {
     }
     
     // Handle table rows specially
-    // CRITICAL FIX: All cells in the same row should share the same position
-    // since they're part of one visual unit. This prevents false inversions
-    // when comparing table structure to surrounding content.
     if (type === 'table_row' && Array.isArray(data.cells)) {
-      const rowPosition = blockPosition; // Capture position before processing cells
-      let hasCells = false;
-      
       for (const cell of data.cells) {
         if (Array.isArray(cell) && cell.length > 0) {
           const cellText = cell
@@ -463,7 +435,6 @@ async function extractTextFromNotionBlocks(notion, blockId) {
             .join('')
             .trim();
           if (cellText) {
-            hasCells = true;
             const metaIndex = blockMetadata.length;
             textSegments.push(cellText);
             if (!textSegments._metaIndices) textSegments._metaIndices = [];
@@ -471,17 +442,12 @@ async function extractTextFromNotionBlocks(notion, blockId) {
             blockMetadata.push({
               blockId: block.id,
               blockType: type,
-              position: rowPosition, // Use same position for all cells in this row
+              position: blockPosition++,
               depth: depth,
               text: cellText.substring(0, 80)
             });
           }
         }
-      }
-      
-      // Only increment position once per row, not per cell
-      if (hasCells) {
-        blockPosition++;
       }
     }
     
@@ -920,25 +886,9 @@ function detectOrderIssues(htmlNormalized, notionNormalized, htmlRaw, blockMetad
           text: notionNormalized[j].substring(0, 60)
         });
         
-        // CRITICAL: Prioritize perfect/near-perfect length matches over proximity
-        // If we have a near-perfect length match (>90%), strongly prefer it
-        // This ensures "learn" (5 chars) matches "Learn" (5 chars), not "...to learn more..." (107 chars)
-        const isPerfectLengthMatch = lengthRatio > 0.9;
-        const currentBestIsPerfect = bestMatch !== null && 
-          candidates.find(c => c.j === bestMatch)?.lengthRatio > 0.9;
-        
-        let shouldUpdate = false;
-        if (isPerfectLengthMatch && !currentBestIsPerfect) {
-          // Strong preference: this candidate has perfect length match, current best doesn't
-          shouldUpdate = true;
-        } else if (!isPerfectLengthMatch && currentBestIsPerfect) {
-          // Don't replace perfect match with imperfect one
-          shouldUpdate = false;
-        } else {
-          // Both perfect or both imperfect: use score + proximity logic
-          shouldUpdate = maxScore > bestScore + 5 || 
-                         (Math.abs(maxScore - bestScore) <= 5 && proximity < bestProximity);
-        }
+        // Prefer better scores, but if scores are similar (within 5%), prefer closer proximity
+        const shouldUpdate = maxScore > bestScore + 5 || 
+                             (Math.abs(maxScore - bestScore) <= 5 && proximity < bestProximity);
         
         if (shouldUpdate) {
           bestMatch = j;
@@ -1035,20 +985,9 @@ function detectOrderIssues(htmlNormalized, notionNormalized, htmlRaw, blockMetad
           text: notionNormalized[j].substring(0, 60)
         });
         
-        // CRITICAL: Prioritize perfect/near-perfect length matches over proximity (same as first pass)
-        const isPerfectLengthMatch = lengthRatio > 0.9;
-        const currentBestIsPerfect = bestMatch !== null && 
-          candidates.find(c => c.j === bestMatch)?.lengthRatio > 0.9;
-        
-        let shouldUpdate = false;
-        if (isPerfectLengthMatch && !currentBestIsPerfect) {
-          shouldUpdate = true;
-        } else if (!isPerfectLengthMatch && currentBestIsPerfect) {
-          shouldUpdate = false;
-        } else {
-          shouldUpdate = maxScore > bestScore + 5 || 
-                         (Math.abs(maxScore - bestScore) <= 5 && proximity < bestProximity);
-        }
+        // Prefer better scores, but if scores are similar (within 5%), prefer closer proximity
+        const shouldUpdate = maxScore > bestScore + 5 || 
+                             (Math.abs(maxScore - bestScore) <= 5 && proximity < bestProximity);
         
         if (shouldUpdate) {
           bestMatch = j;
@@ -1163,88 +1102,6 @@ function detectOrderIssues(htmlNormalized, notionNormalized, htmlRaw, blockMetad
         continue; // Skip this false positive
       }
       
-      // Check if this is a known false positive pattern
-      
-      // Pattern 1: Table content vs heading with similar text (extraction artifact)
-      const isTableHeadingMismatch = (
-        (metaA.blockType === 'table_row' && metaB.blockType?.startsWith('heading_')) ||
-        (metaA.blockType?.startsWith('heading_') && metaB.blockType === 'table_row')
-      );
-      
-      if (isTableHeadingMismatch) {
-        // Calculate similarity between the two segments
-        const segA = normalizeText(htmlRaw[htmlIdxA]);
-        const segB = normalizeText(htmlRaw[htmlIdxB]);
-        const similarity = calculateSimilarity(segA, segB);
-        
-        if (similarity >= 70) {
-          logToFile(`[ORDER-DEBUG]   ⚠️ Skipping likely false positive: table/heading mismatch with ${similarity}% similarity`);
-          logToFile(`[ORDER-DEBUG]   Pattern: ${metaA.blockType} vs ${metaB.blockType}`);
-          logToFile(`[ORDER-DEBUG]   ✓ Order preserved (filtered false positive)`);
-          continue;
-        }
-      }
-      
-      // Pattern 2: Table row reorderings (CSS/JS reordering or flex order properties)
-      // HTML extraction gets raw DOM order, but CSS/JS may visually reorder rows
-      // Filter inversions where both blocks are table_row from same table (same parent)
-      const isBothTableRows = metaA.blockType === 'table_row' && metaB.blockType === 'table_row';
-      
-      if (isBothTableRows) {
-        // Check if they're from the same table by comparing parent context
-        // Table rows within the same table often have similar depth and close visual positions
-        const depthMatch = metaA.depth === metaB.depth;
-        const positionProximity = Math.abs(visualPosA - visualPosB);
-        const isCloseProximity = positionProximity <= 5; // Within 5 positions suggests same table
-        
-        if (depthMatch && isCloseProximity) {
-          logToFile(`[ORDER-DEBUG]   ⚠️ Skipping likely false positive: table_row reordering (CSS/JS order)`);
-          logToFile(`[ORDER-DEBUG]   Pattern: Both table_row at depth ${metaA.depth}, proximity ${positionProximity}`);
-          logToFile(`[ORDER-DEBUG]   Note: HTML extraction gets raw DOM order; visual order may differ due to CSS flex/grid`);
-          logToFile(`[ORDER-DEBUG]   ✓ Order preserved (filtered false positive)`);
-          continue;
-        }
-      }
-      
-      // Pattern 3: Segments from same Notion block (code blocks, long paragraphs split on newlines)
-      // When extracting Notion text, long blocks may be split into multiple segments
-      // These segments share the same blockId but have different array positions
-      // This creates false inversions because they're not actually reordered content
-      const sameBlockId = metaA.blockId && metaB.blockId && metaA.blockId === metaB.blockId;
-      
-      if (sameBlockId) {
-        logToFile(`[ORDER-DEBUG]   ⚠️ Skipping likely false positive: segments from same Notion block`);
-        logToFile(`[ORDER-DEBUG]   Pattern: Both segments share blockId ${metaA.blockId}`);
-        logToFile(`[ORDER-DEBUG]   Block type: ${metaA.blockType} (split during extraction)`);
-        logToFile(`[ORDER-DEBUG]   Note: Long blocks split on newlines create multiple segments with same blockId`);
-        logToFile(`[ORDER-DEBUG]   ✓ Order preserved (filtered false positive)`);
-        continue;
-      }
-      
-      // Pattern 4: Parent-child nesting (child block appears before parent content)
-      // In Notion, nested blocks are stored sequentially, so a child at depth N+1 
-      // may have an earlier position than its parent's text at depth N
-      // Example: list item (depth 0, pos 7) contains code block (depth 1, pos 6)
-      // Or: paragraph (depth 1, pos 28) vs table_row (depth 2, pos 25) - table nested deeper
-      // This is NOT a reordering - it's natural nested structure
-      // When depths differ, allow larger proximity (up to 5 positions) because nested structures
-      // create distance in the flattened array even when document order is correct
-      const isParentChild = metaA.depth !== metaB.depth;
-      const positionProximity = Math.abs(visualPosA - visualPosB);
-      const isCloseProximity = positionProximity <= 5;
-      
-      if (isParentChild && isCloseProximity) {
-        const higherDepth = Math.max(metaA.depth, metaB.depth);
-        const lowerDepth = Math.min(metaA.depth, metaB.depth);
-        logToFile(`[ORDER-DEBUG]   ⚠️ Skipping likely false positive: parent-child nesting`);
-        logToFile(`[ORDER-DEBUG]   Pattern: Different depths (${lowerDepth} vs ${higherDepth}), proximity ${positionProximity}`);
-        logToFile(`[ORDER-DEBUG]   Block A: ${metaA.blockType} (depth ${metaA.depth}, pos ${visualPosA})`);
-        logToFile(`[ORDER-DEBUG]   Block B: ${metaB.blockType} (depth ${metaB.depth}, pos ${visualPosB})`);
-        logToFile(`[ORDER-DEBUG]   Note: Nested blocks create positional gaps in flattened array`);
-        logToFile(`[ORDER-DEBUG]   ✓ Order preserved (filtered false positive)`);
-        continue;
-      }
-      
       logToFile(`[ORDER-DEBUG]   This is a genuine content reordering`);
       logToFile(`[ORDER-DEBUG]   Review this page manually if order matters for instructions`);
       
@@ -1261,13 +1118,10 @@ function detectOrderIssues(htmlNormalized, notionNormalized, htmlRaw, blockMetad
     }
   }
   
-  logToFile(`\n[ORDER-DEBUG] ========================================`);
+  console.log(`\n[ORDER-DEBUG] ========================================`);
   logToFile(`[ORDER-DEBUG] Order detection complete: ${issues.length} inversion(s) found`);
-  logToFile(`[ORDER-DEBUG] ========================================`);
-  logToFile(`[ORDER-DEBUG] Waiting for Validation property update before closing log...\n`);
+  logToFile(`[ORDER-DEBUG] ========================================\n`);
   
-  // DON'T close log here - let caller close it AFTER property update
-  // closeOrderLog();
   return issues;
 }
 
@@ -1433,6 +1287,5 @@ module.exports = {
   calculateSimilarity,
   validateContentOrder,
   updateNotionValidationProperty,
-  runValidationAndUpdate,
-  closeOrderLog
+  runValidationAndUpdate
 };

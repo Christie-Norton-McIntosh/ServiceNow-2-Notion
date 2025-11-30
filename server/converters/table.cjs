@@ -661,11 +661,14 @@ async function convertTableBlock(tableHtml, options = {}) {
         console.log(`   Bullet count: ${(textContent.match(/•/g) || []).length}`);
       }
       
-      // Use rich text block conversion for list items
-      const { convertRichTextBlock } = require("./rich-text.cjs");
-      const result = convertRichTextBlock(textContent, { skipSoftBreaks: true });
-      
-      // DEBUG: Log result structure for bullets
+    // CRITICAL: Add invisible prefix marker to help validation matching distinguish table content
+    // This prevents table cells from matching to H2 headings with similar text
+    // Using Zero-Width Space (U+200B) as an invisible prefix marker
+    textContent = `\u200B${textContent}`;
+    
+    // Use rich text block conversion for list items
+    const { convertRichTextBlock } = require("./rich-text.cjs");
+    const result = convertRichTextBlock(textContent, { skipSoftBreaks: true });      // DEBUG: Log result structure for bullets
       if (textContent.includes('•')) {
         console.log(`🔍 [table.cjs LIST PATH] After conversion:`);
         console.log(`   Rich text elements: ${result.length}`);
@@ -701,6 +704,11 @@ async function convertTableBlock(tableHtml, options = {}) {
       // For non-list content, restore intentional newlines from markers
       textContent = textContent.replace(/__NEWLINE__/g, '\n');
     }
+    
+    // CRITICAL: Add invisible prefix marker to help validation matching distinguish table content
+    // This prevents table cells from matching to H2 headings with similar text
+    // Using Zero-Width Space (U+200B) as an invisible prefix marker
+    textContent = `\u200B${textContent}`;
     
     // Use rich text block conversion for all other cell content
     const { convertRichTextBlock } = require("./rich-text.cjs");
