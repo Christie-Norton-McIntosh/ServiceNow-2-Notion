@@ -11,6 +11,7 @@
  * - Image extraction from table cells and placement as separate blocks
  * - Table deduplication to prevent duplicate content
  * - Support for nested lists within table cells
+ * - Smart icon detection: converts yes/no/check/cross icons to emojis (✅/❌)
  * 
  * Dependencies:
  * - server/utils/notion-format.cjs (cleanHtmlText)
@@ -22,7 +23,7 @@
  */
 
 const { cleanHtmlText } = require("../utils/notion-format.cjs");
-const { convertServiceNowUrl, isValidImageUrl } = require("../utils/url.cjs");
+const { convertServiceNowUrl } = require("../utils/url.cjs");
 const cheerio = require('cheerio');
 
 /**
@@ -96,12 +97,19 @@ async function convertTableBlock(tableHtml, options = {}) {
   const blocks = [];
   if (captionMatch) {
     let captionContent = captionMatch[1];
+    // Preserve the table title label (e.g., "Table 1.") instead of stripping it
+    // so that validation expects like "Table 1. Empty state..." match exactly.
+    let titleLabel = '';
     captionContent = captionContent.replace(
-      /<span[^>]*class="[^\"]*table--title-label[^\"]*"[^>]*>[\s\S]*?<\/span>/gi,
-      ""
+      /<span[^>]*class="[^"]*table--title-label[^"]*"[^>]*>([\s\S]*?)<\/span>/gi,
+      (m, p1) => {
+        titleLabel = cleanHtmlText(p1 || '');
+        return '';
+      }
     );
-    const captionText = cleanHtmlText(captionContent);
-    if (captionText) {
+    const captionBody = cleanHtmlText(captionContent);
+    const captionText = (titleLabel ? `${titleLabel} ` : '') + (captionBody || '');
+    if (captionText && captionText.trim()) {
       blocks.push({
         object: "block",
         type: "heading_3",
@@ -146,9 +154,26 @@ async function convertTableBlock(tableHtml, options = {}) {
         
         // Convert ServiceNow URLs to proper format
         src = convertServiceNowUrl(src);
-        
-        // Only add valid image URLs
-        if (src && isValidImageUrl(src)) {
+
+        // Determine if we should include this image:
+        // - Prefer including all ServiceNow-hosted images (we'll upload them)
+        // - Otherwise, include if a global URL validator approves
+        const isServiceNowImage = /servicenow\.(com|net)/i.test(src);
+        let include = false;
+        try {
+          if (isServiceNowImage) {
+            include = true;
+          } else if (typeof isValidImageUrl === 'function') {
+            include = !!isValidImageUrl(src);
+          } else {
+            // Fallback: basic check for absolute http(s)
+            include = /^https?:\/\//i.test(src);
+          }
+        } catch (_) {
+          include = false;
+        }
+
+        if (src && include) {
           extractedImages.push({ src, alt: caption });
           validImageUrls.add(originalSrc); // Track original URL for matching
         }
@@ -189,9 +214,305 @@ async function convertTableBlock(tableHtml, options = {}) {
       }
     });
     
-    // Replace any remaining standalone img tags with bullet placeholder
+    // Replace any remaining standalone img tags
+    // First, detect yes/no icons and replace with emojis
+    // Then use bullet placeholder for other images
     if (/<img[^>]*>/i.test(processedHtml)) {
-      processedHtml = processedHtml.replace(/<img[^>]*>/gi, ' • ');
+      processedHtml = processedHtml.replace(/<img([^>]*)>/gi, (match, attrs) => {
+        // Extract alt text and src for pattern matching
+        const altMatch = /alt=["']([^"']*)["']/i.exec(attrs);
+        const srcMatch = /src=["']([^"']*)["']/i.exec(attrs);
+        const widthMatch = /width=["']?(\d+)["']?/i.exec(attrs);
+        const heightMatch = /height=["']?(\d+)["']?/i.exec(attrs);
+        
+        const alt = altMatch ? altMatch[1].toLowerCase() : '';
+        const src = srcMatch ? srcMatch[1].toLowerCase() : '';
+        const width = widthMatch ? parseInt(widthMatch[1]) : 0;
+        const height = heightMatch ? parseInt(heightMatch[1]) : 0;
+        
+        // Check if this is a small icon (typical icons are <= 32px)
+        const isSmallIcon = (width > 0 && width <= 32) || (height > 0 && height <= 32);
+        
+        // Icon pattern definitions: [patterns, emoji, label]
+        const iconTypes = [
+          // YES/CHECK/AVAILABLE - Priority 1
+          {
+            patterns: [
+              /\b(yes|check|tick|available|enabled|true|success|valid|confirmed?|approved?|active)\b/i,
+              /\b(green.*check|checkmark|check.*mark)\b/i,
+              /\/(?:yes|check|tick|available|enabled|success|valid|ok|active)\.[a-z]{3,4}$/i
+            ],
+            emoji: '✅',
+            label: 'YES/CHECK'
+          },
+          // NO/CROSS/UNAVAILABLE - Priority 1
+          {
+            patterns: [
+              /\b(no|cross|unavailable|disabled|false|error|invalid|denied|rejected|inactive)\b/i,
+              /\b(red.*cross|x.*mark|cross.*mark)\b/i,
+              /\/(?:no|cross|error|invalid|disabled|unavailable|inactive)\.[a-z]{3,4}$/i
+            ],
+            emoji: '❌',
+            label: 'NO/CROSS'
+          },
+          // WARNING/CAUTION - Priority 2
+          {
+            patterns: [
+              /\b(warning|caution|alert|attention|important)\b/i,
+              /\b(yellow.*triangle|warning.*triangle|exclamation.*triangle)\b/i,
+              /\/(?:warning|caution|alert|important)\.[a-z]{3,4}$/i
+            ],
+            emoji: '⚠️',
+            label: 'WARNING'
+          },
+          // INFO/NOTE - Priority 2
+          {
+            patterns: [
+              /\b(info|information|note|notice|fyi)\b/i,
+              /\b(blue.*circle|info.*circle|information.*icon)\b/i,
+              /\/(?:info|information|note|notice)\.[a-z]{3,4}$/i
+            ],
+            emoji: 'ℹ️',
+            label: 'INFO'
+          },
+          // TIP/LIGHTBULB - Priority 2
+          {
+            patterns: [
+              /\b(tip|hint|suggestion|lightbulb|idea|best.*practice)\b/i,
+              /\/(?:tip|hint|lightbulb|idea)\.[a-z]{3,4}$/i
+            ],
+            emoji: '💡',
+            label: 'TIP'
+          },
+          // HELP/QUESTION - Priority 2
+          {
+            patterns: [
+              /\b(help|question|\?|support|assistance)\b/i,
+              /\/(?:help|question|support)\.[a-z]{3,4}$/i
+            ],
+            emoji: '❓',
+            label: 'HELP'
+          },
+          // SECURITY/LOCK - Priority 3
+          {
+            patterns: [
+              /\b(lock|locked|security|secure|protected|private|encrypted?)\b/i,
+              /\/(?:lock|security|secure|private)\.[a-z]{3,4}$/i
+            ],
+            emoji: '🔒',
+            label: 'SECURITY'
+          },
+          // UNLOCK/OPEN - Priority 3
+          {
+            patterns: [
+              /\b(unlock|unlocked|open|public|unprotected)\b/i,
+              /\/(?:unlock|open|public)\.[a-z]{3,4}$/i
+            ],
+            emoji: '🔓',
+            label: 'UNLOCK'
+          },
+          // SETTINGS/GEAR - Priority 3
+          {
+            patterns: [
+              /\b(settings?|config|configuration|gear|preferences?|options?)\b/i,
+              /\/(?:settings?|config|gear|preferences?)\.[a-z]{3,4}$/i
+            ],
+            emoji: '⚙️',
+            label: 'SETTINGS'
+          },
+          // EDIT/PENCIL - Priority 3
+          {
+            patterns: [
+              /\b(edit|pencil|modify|change|update)\b/i,
+              /\/(?:edit|pencil|modify)\.[a-z]{3,4}$/i
+            ],
+            emoji: '✏️',
+            label: 'EDIT'
+          },
+          // DELETE/TRASH - Priority 3
+          {
+            patterns: [
+              /\b(delete|trash|remove|discard|bin)\b/i,
+              /\/(?:delete|trash|remove|bin)\.[a-z]{3,4}$/i
+            ],
+            emoji: '🗑️',
+            label: 'DELETE'
+          },
+          // SEARCH/FIND - Priority 3
+          {
+            patterns: [
+              /\b(search|find|lookup|magnif|glass)\b/i,
+              /\/(?:search|find|lookup)\.[a-z]{3,4}$/i
+            ],
+            emoji: '🔍',
+            label: 'SEARCH'
+          },
+          // DOWNLOAD - Priority 3
+          {
+            patterns: [
+              /\b(download|down.*arrow|save)\b/i,
+              /\/(?:download|down.*arrow)\.[a-z]{3,4}$/i
+            ],
+            emoji: '⬇️',
+            label: 'DOWNLOAD'
+          },
+          // UPLOAD - Priority 3
+          {
+            patterns: [
+              /\b(upload|up.*arrow)\b/i,
+              /\/(?:upload|up.*arrow)\.[a-z]{3,4}$/i
+            ],
+            emoji: '⬆️',
+            label: 'UPLOAD'
+          },
+          // LINK/CHAIN - Priority 3
+          {
+            patterns: [
+              /\b(link|chain|url|hyperlink|connection)\b/i,
+              /\/(?:link|chain|url)\.[a-z]{3,4}$/i
+            ],
+            emoji: '🔗',
+            label: 'LINK'
+          },
+          // USER/PERSON - Priority 3
+          {
+            patterns: [
+              /\b(user|person|profile|account|individual)\b/i,
+              /\/(?:user|person|profile|account)\.[a-z]{3,4}$/i
+            ],
+            emoji: '👤',
+            label: 'USER'
+          },
+          // GROUP/PEOPLE - Priority 3
+          {
+            patterns: [
+              /\b(group|people|team|users|members)\b/i,
+              /\/(?:group|people|team|users)\.[a-z]{3,4}$/i
+            ],
+            emoji: '👥',
+            label: 'GROUP'
+          },
+          // STAR/FAVORITE - Priority 3
+          {
+            patterns: [
+              /\b(star|favorite|favourite|bookmark|featured)\b/i,
+              /\/(?:star|favorite|favourite|bookmark)\.[a-z]{3,4}$/i
+            ],
+            emoji: '⭐',
+            label: 'STAR'
+          },
+          // FLAG - Priority 3
+          {
+            patterns: [
+              /\b(flag|marker|marked)\b/i,
+              /\/(?:flag|marker)\.[a-z]{3,4}$/i
+            ],
+            emoji: '🚩',
+            label: 'FLAG'
+          },
+          // CALENDAR/DATE - Priority 3
+          {
+            patterns: [
+              /\b(calendar|date|schedule|appointment)\b/i,
+              /\/(?:calendar|date|schedule)\.[a-z]{3,4}$/i
+            ],
+            emoji: '📅',
+            label: 'CALENDAR'
+          },
+          // CLOCK/TIME - Priority 3
+          {
+            patterns: [
+              /\b(clock|time|timer|hour|minute)\b/i,
+              /\/(?:clock|time|timer)\.[a-z]{3,4}$/i
+            ],
+            emoji: '⏰',
+            label: 'CLOCK'
+          },
+          // FILE/DOCUMENT - Priority 3
+          {
+            patterns: [
+              /\b(file|document|doc|page|paper)\b/i,
+              /\/(?:file|document|doc|page)\.[a-z]{3,4}$/i
+            ],
+            emoji: '📄',
+            label: 'FILE'
+          },
+          // FOLDER/DIRECTORY - Priority 3
+          {
+            patterns: [
+              /\b(folder|directory|dir)\b/i,
+              /\/(?:folder|directory|dir)\.[a-z]{3,4}$/i
+            ],
+            emoji: '📁',
+            label: 'FOLDER'
+          },
+          // EMAIL/MAIL - Priority 3
+          {
+            patterns: [
+              /\b(email|mail|message|envelope)\b/i,
+              /\/(?:email|mail|message|envelope)\.[a-z]{3,4}$/i
+            ],
+            emoji: '📧',
+            label: 'EMAIL'
+          },
+          // PHONE - Priority 3
+          {
+            patterns: [
+              /\b(phone|telephone|call|mobile)\b/i,
+              /\/(?:phone|telephone|call|mobile)\.[a-z]{3,4}$/i
+            ],
+            emoji: '📞',
+            label: 'PHONE'
+          },
+          // HOME - Priority 3
+          {
+            patterns: [
+              /\b(home|house|main|dashboard)\b/i,
+              /\/(?:home|house|main|dashboard)\.[a-z]{3,4}$/i
+            ],
+            emoji: '🏠',
+            label: 'HOME'
+          }
+        ];
+        
+        // Try to match icon type by checking patterns (prioritize src over alt)
+        // First pass: check if src (filename) matches any pattern
+        let detectedIcon = null;
+        for (const iconType of iconTypes) {
+          const srcMatches = iconType.patterns.some(pattern => pattern.test(src));
+          if (srcMatches) {
+            detectedIcon = iconType;
+            break; // Use first src match
+          }
+        }
+        
+        // Second pass: if no src match, check alt text
+        if (!detectedIcon) {
+          for (const iconType of iconTypes) {
+            const altMatches = iconType.patterns.some(pattern => pattern.test(alt));
+            if (altMatches) {
+              detectedIcon = iconType;
+              break; // Use first alt match
+            }
+          }
+        }
+        
+        // If detected, use the emoji
+        if (detectedIcon) {
+          const filename = src.substring(src.lastIndexOf('/') + 1, src.length);
+          console.log(`✨ Detected ${detectedIcon.label} icon (alt="${alt}", src="${filename}", ${width}x${height}px) → replacing with ${detectedIcon.emoji}`);
+          return ` ${detectedIcon.emoji} `;
+        }
+        
+        // Fallback: if small icon without specific pattern, assume positive/yes
+        if (isSmallIcon) {
+          console.log(`✨ Detected small icon (alt="${alt}", src="${src.substring(src.lastIndexOf('/') + 1)}", ${width}x${height}px) → defaulting to ✅`);
+          return ' ✅ ';
+        }
+        
+        // Generic image - use bullet placeholder
+        return ' • ';
+      });
     }
     
     // Handle note callouts in table cells - strip the wrapper and keep only the content
@@ -340,11 +661,14 @@ async function convertTableBlock(tableHtml, options = {}) {
         console.log(`   Bullet count: ${(textContent.match(/•/g) || []).length}`);
       }
       
-      // Use rich text block conversion for list items
-      const { convertRichTextBlock } = require("./rich-text.cjs");
-      const result = convertRichTextBlock(textContent, { skipSoftBreaks: true });
-      
-      // DEBUG: Log result structure for bullets
+    // CRITICAL: Add invisible prefix marker to help validation matching distinguish table content
+    // This prevents table cells from matching to H2 headings with similar text
+    // Using Zero-Width Space (U+200B) as an invisible prefix marker
+    textContent = `\u200B${textContent}`;
+    
+    // Use rich text block conversion for list items
+    const { convertRichTextBlock } = require("./rich-text.cjs");
+    const result = convertRichTextBlock(textContent, { skipSoftBreaks: true });      // DEBUG: Log result structure for bullets
       if (textContent.includes('•')) {
         console.log(`🔍 [table.cjs LIST PATH] After conversion:`);
         console.log(`   Rich text elements: ${result.length}`);
@@ -380,6 +704,11 @@ async function convertTableBlock(tableHtml, options = {}) {
       // For non-list content, restore intentional newlines from markers
       textContent = textContent.replace(/__NEWLINE__/g, '\n');
     }
+    
+    // CRITICAL: Add invisible prefix marker to help validation matching distinguish table content
+    // This prevents table cells from matching to H2 headings with similar text
+    // Using Zero-Width Space (U+200B) as an invisible prefix marker
+    textContent = `\u200B${textContent}`;
     
     // Use rich text block conversion for all other cell content
     const { convertRichTextBlock } = require("./rich-text.cjs");
@@ -469,60 +798,215 @@ async function convertTableBlock(tableHtml, options = {}) {
   console.log(`📊 [table.cjs] Final table metrics: rows=${rows.length}, width=${tableWidth}`);
   if (tableWidth === 0) return blocks.length > 0 ? blocks : null;
 
-  // Create Notion table block
-  const tableBlock = {
-    object: "block",
-    type: "table",
-    table: {
-      table_width: tableWidth,
-      has_column_header: theadRows.length > 0,
-      has_row_header: false,
-      children: [],
-    },
-  };
-  rows.forEach((row) => {
-    const tableRow = {
-      object: "block",
-      type: "table_row",
-      table_row: { cells: [] },
-    };
-    for (let i = 0; i < tableWidth; i++) {
-      tableRow.table_row.cells.push(row[i] || [{ type: "text", text: { content: "" } }]);
-    }
-    tableBlock.table.children.push(tableRow);
-  });
-  blocks.push(tableBlock);
+  // Notion API limit: tables can have max 100 rows
+  const MAX_TABLE_ROWS = 100;
+  const originalRowCount = rows.length;
   
-  // Add extracted images as separate image blocks after the table
-  if (extractedImages.length > 0) {
-    console.log(`📸 Extracted ${extractedImages.length} images from table cells`);
-    for (const image of extractedImages) {
-      const imageBlock = {
-        object: "block",
-        type: "image",
-        image: {
-          type: "external",
-          external: {
-            url: image.src
+  // Split large tables into multiple 100-row chunks
+  if (rows.length > MAX_TABLE_ROWS) {
+    console.warn(`⚠️ [table.cjs] Table exceeds Notion's 100-row limit (${rows.length} rows). Splitting into ${Math.ceil(rows.length / MAX_TABLE_ROWS)} tables.`);
+    
+    const numChunks = Math.ceil(rows.length / MAX_TABLE_ROWS);
+    
+    for (let chunkIndex = 0; chunkIndex < numChunks; chunkIndex++) {
+      const startRow = chunkIndex * MAX_TABLE_ROWS;
+      const endRow = Math.min(startRow + MAX_TABLE_ROWS, rows.length);
+      const chunkRows = rows.slice(startRow, endRow);
+      
+      // Add a heading before each chunk (except the first one)
+      if (chunkIndex > 0) {
+        blocks.push({
+          object: "block",
+          type: "heading_3",
+          heading_3: {
+            rich_text: [
+              {
+                type: "text",
+                text: {
+                  content: `(continued - rows ${startRow + 1}-${endRow})`
+                }
+              }
+            ],
+            color: "default",
+            is_toggleable: false
           }
-        }
+        });
+      }
+      
+      // Create table chunk with header row if this is the first chunk
+      const tableBlock = {
+        object: "block",
+        type: "table",
+        table: {
+          table_width: tableWidth,
+          has_column_header: (chunkIndex === 0 && theadRows.length > 0),
+          has_row_header: false,
+          children: [],
+        },
       };
       
-      // Add caption if alt text exists
-      if (image.alt) {
-        imageBlock.image.caption = [
+      chunkRows.forEach((row) => {
+        const tableRow = {
+          object: "block",
+          type: "table_row",
+          table_row: { cells: [] },
+        };
+        for (let i = 0; i < tableWidth; i++) {
+          tableRow.table_row.cells.push(row[i] || [{ type: "text", text: { content: "" } }]);
+        }
+        tableBlock.table.children.push(tableRow);
+      });
+
+      // Attach internal row summaries to the table block to aid downstream
+      // post-processing (dedupe) without relying on emitting validation-only
+      // plain-text paragraphs. These summaries are used as an internal
+      // metadata hint and are not emitted to the Notion page output.
+      try {
+        tableBlock._sn2n_row_summaries = tableBlock.table.children.map(r => {
+          try {
+            const cells = (r.table_row && r.table_row.cells) || [];
+            const cellTexts = cells.map(cellArr => {
+              if (!Array.isArray(cellArr)) return '';
+              return cellArr.map(rt => (rt && rt.text && rt.text.content) ? String(rt.text.content).trim() : '').join(' ');
+            }).filter(Boolean);
+            return cellTexts.join(' ').trim();
+          } catch (e) { return ''; }
+        }).filter(Boolean);
+      } catch (e) {
+        // noop - row summaries are optional metadata
+        console.log(`⚠️ Failed to attach _sn2n_row_summaries: ${e && e.message}`);
+      }
+      
+      blocks.push(tableBlock);
+    }
+    
+    // Add informational callout after all chunks
+    blocks.push({
+      object: "block",
+      type: "callout",
+      callout: {
+        icon: { type: "emoji", emoji: "ℹ️" },
+        color: "blue_background",
+        rich_text: [
           {
             type: "text",
             text: {
-              content: image.alt
+              content: `Note: This table had ${originalRowCount} rows and was split into ${numChunks} tables above due to Notion's 100-row table limit.`
             }
           }
-        ];
+        ]
       }
-      
-      blocks.push(imageBlock);
-      console.log(`📸 Added image block: ${image.src.substring(0, 80)}...`);
+    });
+  } else {
+    // Single table fits within limit
+    const tableBlock = {
+      object: "block",
+      type: "table",
+      table: {
+        table_width: tableWidth,
+        has_column_header: theadRows.length > 0,
+        has_row_header: false,
+        children: [],
+      },
+    };
+    
+    rows.forEach((row) => {
+      const tableRow = {
+        object: "block",
+        type: "table_row",
+        table_row: { cells: [] },
+      };
+      for (let i = 0; i < tableWidth; i++) {
+        tableRow.table_row.cells.push(row[i] || [{ type: "text", text: { content: "" } }]);
+      }
+      tableBlock.table.children.push(tableRow);
+    });
+    
+    // Attach internal row summaries to the table block so downstream
+    // post-processing (dedupe) can match paragraph/heading blocks against
+    // table row content even when validation-only summary paragraphs are
+    // not emitted. This is non-destructive metadata (not sent to Notion).
+    try {
+      tableBlock._sn2n_row_summaries = tableBlock.table.children.map(r => {
+        try {
+          const cells = (r.table_row && r.table_row.cells) || [];
+          const cellTexts = cells.map(cellArr => {
+            if (!Array.isArray(cellArr)) return '';
+            return cellArr.map(rt => (rt && rt.text && rt.text.content) ? String(rt.text.content).trim() : '').join(' ');
+          }).filter(Boolean);
+          return cellTexts.join(' ').trim();
+        } catch (e) { return ''; }
+      }).filter(Boolean);
+    } catch (e) {
+      // Best-effort: failure to attach metadata is non-fatal
+      console.log(`⚠️ Failed to attach _sn2n_row_summaries: ${e && e.message}`);
     }
+    blocks.push(tableBlock);
+  }
+  
+  // Add extracted images as separate image blocks after the table
+  // Only append images when explicitly requested (options.preserveImages)
+  // or when the image has a non-empty caption. This avoids promoting
+  // decorative/thumbnail images out of tables and changing visual order
+  // in the document for consumers that don't expect table images as blocks.
+  const imagesToAppend = extractedImages.filter(img => {
+    const hasCaption = img.alt && String(img.alt).trim().length > 0;
+    return !!(options.preserveImages || hasCaption);
+  });
+
+  if (imagesToAppend.length > 0) {
+    console.log(`📸 Will append ${imagesToAppend.length} of ${extractedImages.length} extracted images from table cells`);
+    for (const image of imagesToAppend) {
+      const isServiceNowImage = /servicenow\.(com|net)/i.test(image.src);
+      let imageBlock = null;
+
+      // Prefer uploading ServiceNow images so they render outside an authenticated session
+      if (typeof downloadAndUploadImage === 'function') {
+        try {
+          const uploadId = await downloadAndUploadImage(image.src, image.alt || 'image');
+          if (uploadId) {
+            imageBlock = {
+              object: 'block',
+              type: 'image',
+              image: {
+                type: 'file_upload',
+                file_upload: { id: uploadId },
+                caption: image.alt
+                  ? [{ type: 'text', text: { content: image.alt } }]
+                  : [],
+              },
+            };
+          }
+        } catch (e) {
+          console.log(`❌ [table.cjs] Image upload failed: ${e.message || e}`);
+        }
+      }
+
+      // Fallback: for non-ServiceNow images, allow external URL if available
+      if (!imageBlock && !isServiceNowImage) {
+        imageBlock = {
+          object: 'block',
+          type: 'image',
+          image: {
+            type: 'external',
+            external: { url: image.src },
+            caption: image.alt
+              ? [{ type: 'text', text: { content: image.alt } }]
+              : [],
+          },
+        };
+      }
+
+      if (imageBlock) {
+        blocks.push(imageBlock);
+        console.log(`📸 Added image block: ${image.src.substring(0, 80)}...`);
+      } else {
+        console.log(`⚠️ [table.cjs] Skipped image (no upload and external not allowed): ${image.src.substring(0, 80)}...`);
+      }
+    }
+  } else if (extractedImages.length > 0) {
+    // Log that we found images but intentionally did not append any
+    console.log(`📸 Found ${extractedImages.length} image(s) in table cells, but none met the criteria to be appended as separate blocks (preserveImages=${!!options.preserveImages}).`);
   }
   
   return blocks;
@@ -553,14 +1037,42 @@ async function convertTableBlock(tableHtml, options = {}) {
  */
 function deduplicateTableBlocks(blocks) {
   if (!Array.isArray(blocks)) return blocks;
-  const seen = new Set();
-  return blocks.filter((block) => {
-    if (block.type !== "table") return true;
+  
+  // Only remove CONSECUTIVE/ADJACENT duplicate tables
+  // Preserve identical tables that appear in different parts of the document
+  // (e.g., repeated steps in a process with the same table structure)
+  const result = [];
+  let prevTableKey = null;
+  
+  for (const block of blocks) {
+    if (block.type !== "table") {
+      result.push(block);
+      prevTableKey = null; // Reset when we see a non-table block
+      continue;
+    }
+    
+    // FIX v11.0.71: Check if table.children exists (may be stripped by enforceNestingDepthLimit at depth 2+)
+    if (!block.table.children || !Array.isArray(block.table.children)) {
+      // Table without children (deferred for orchestration) - can't deduplicate, keep it
+      result.push(block);
+      prevTableKey = null;
+      continue;
+    }
+    
+    // Generate key based on table content
     const key = JSON.stringify(block.table.children.map(row => row.table_row.cells));
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+    
+    // Only skip if this table is identical to the IMMEDIATELY PREVIOUS block
+    if (key === prevTableKey) {
+      console.log(`🧹 Removing consecutive duplicate table`);
+      continue; // Skip this duplicate
+    }
+    
+    result.push(block);
+    prevTableKey = key;
+  }
+  
+  return result;
 }
 
 /**

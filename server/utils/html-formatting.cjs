@@ -11,6 +11,8 @@
  * Note: URLs are handled by <kbd> tag processing, not pattern matching
  */
 const TECHNICAL_PATTERNS = {
+  // Simple HTTP/HTTPS URL detection (https://example.com, http://host/path)
+  url: /^https?:\/\/[^\s]+/i,
   // File paths (Unix/Windows)
   path: /^[\/~\\]/i,
   
@@ -98,6 +100,19 @@ function isTechnicalContent(content) {
  * @returns {string} Formatted content with appropriate markers
  */
 function processKbdContent(content) {
+  // Heuristic: treat theme hook tokens and common ServiceNow token forms as technical
+  // Examples: $now-color_interactive-1, $now-color_border-secondary, color_interactive
+  try {
+    const trimmed = String(content || '').trim();
+    if (!trimmed) return `__BOLD_START__${content}__BOLD_END__`;
+
+    if (/\$?now[-_]?color|color[_-]/i.test(trimmed) || /\$now-/i.test(trimmed)) {
+      return `__CODE_START__${content}__CODE_END__`;
+    }
+  } catch (e) {
+    // ignore and fall back
+  }
+
   if (isTechnicalContent(content)) {
     return `__CODE_START__${content}__CODE_END__`;
   } else {

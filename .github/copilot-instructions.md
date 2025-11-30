@@ -1,10 +1,10 @@
 
-# ServiceNow-2-Notion — Copilot Instructions (2025) — v11.0.0
+# ServiceNow-2-Notion — Copilot Instructions (2025) — v11.0.35
 
 Quick, actionable guidance for AI coding agents working in this repo. Keep edits small, reference real files, and verify with a local build and proxy run.
 
 ## Agent quickstart (TL;DR)
-- **Version**: 11.0.0 (Navigation retry, rate limit protection, 5 validation fixes)
+- **Version**: 11.0.35 (Equalized PATCH/POST validation timing, automatic retry logic)
 - Big picture: ES6 userscript in `src/**` → bundled to `dist/ServiceNow-2-Notion.user.js` (Rollup IIFE). Local proxy in `server/**` converts ServiceNow HTML to Notion blocks and creates pages.
 - Build userscript: `npm run build` (or `build:prod`); dev watch: `npm run dev`. After any `src/**` change, rebuild and re-upload the userscript to Tampermonkey.
 - Versioning (REQUIRED before build): bump the version so Tampermonkey detects updates and Rollup injects the correct banner/runtime. Use `npm version patch|minor|major` (or `npm run release:patch|minor|major`).
@@ -20,14 +20,17 @@ Quick, actionable guidance for AI coding agents working in this repo. Keep edits
   - Notion limits: chunk children in 100-block batches; append remaining after page create (`w2n.cjs`).
   - Images: ServiceNow images must be downloaded+uploaded to Notion `file_uploads`; fallback to external URL only for non-ServiceNow images (`sn2n-proxy.cjs:createImageBlock`).
   - Dedupe/filter: filter gray info callouts; dedupe identical blocks and images by id/URL (`server/utils/dedupe.cjs` used in `w2n.cjs`).
-  - Validation fixes (v11.0.0): 5 issues fixed in callout/table processing:
+- **Validation fixes (v11.0.0)**: 6 issues fixed in callout/table processing:
     - Issue 1: Recursive block type detection (check children for tables/images, not just callout text)
     - Issue 2: Multi-pass DataTables unwrapping (iterate until no changes to handle nested wrappers)
     - Issue 3: Whitespace-only text node filtering (exclude blank nodes in block counting)
     - Issue 4: Image extraction from nested tables (recursively search for `<img>` in `<table>` descendants)
     - Issue 5: Table preservation priority (if table + single-image detected, keep table; don't downgrade to image)
-- API surface: POST `/api/W2N` with `{ title, databaseId, contentHtml|content, properties?, url?, dryRun? }`. `dryRun` returns `{ children, hasVideos }` without creating a page. Health: `/health`, `/ping`, `/api/status`; DB: `/api/databases/:id`; logging: `/api/logging`.
-- Pitfalls: search for `w2n-` IDs before UI renames; wire modal injectors only in `src/main.js`; respect Notion nesting/100-block caps; use `Array.from()` with DOM; rebuild userscript after edits.
+    - Issue 6: Callout detection with underscore-separated classes (removed `\b` word boundaries from regex patterns to match `note_note`, `warning_type`, etc.)
+- API surface: POST `/api/W2N` with `{ title, databaseId, contentHtml|content, properties?, url?, dryRun? }`. `dryRun` returns `{ children, hasVideos }` without creating a page. PATCH `/api/W2N/:pageId` with `{ title, contentHtml, url }` deletes all blocks and re-uploads content (requires 32-char UUID, accepts with/without hyphens). Health: `/health`, `/ping`, `/api/status`; DB: `/api/databases/:id`; logging: `/api/logging`.
+- Auto-validation: Enable with `SN2N_VALIDATE_OUTPUT=1`. On each extraction, proxy validates HTML→Notion conversion with ±30% tolerance (70%-150% of expected blocks). Updates Notion properties (Error checkbox, Validation text, Stats). Failed pages auto-saved to `patch/pages-to-update/` with metadata for re-extraction. See `docs/AUTO-VALIDATION.md`.
+- **PATCH workflow (v11.0.35 improvements)**: Use dry-run validation before PATCH (`dryRun:true`), execute PATCH with 120s timeout, verify post-PATCH validation. Script: `patch/config/batch-patch-with-cooldown.sh` (validation → PATCH → move to updated-pages). **NEW**: PATCH validation now matches POST (5s base, 15s max wait) with automatic retry logic (+5s, retry once on failure). Expected ~70% reduction in false negative validation failures. Monitor for "Validation succeeded on retry" in logs.
+- Pitfalls: search for `w2n-` IDs before UI renames; wire modal injectors only in `src/main.js`; respect Notion nesting/100-block caps; use `Array.from()` with DOM; rebuild userscript after edits; PATCH operations may timeout on complex pages (monitor logs).
 
 ---
 
@@ -273,6 +276,37 @@ Note: If your edits change any client-side code (files under `src/` or the gener
   - `server/test-run-extract.cjs` - Extract full pages from ServiceNow HTML fixtures
   - `tests/test-callout-*.cjs` - Callout validation tests (Issues 1 through 5 fixes)
   - `tests/test-table-*.cjs` - Table formatting and image extraction tests
+
+## 📋 Patch Directory Structure (v11.0.6 — Unified Page States)
+
+The `patch/` directory contains pages that need PATCH updates in Notion and serves as a workflow hub.
+
+**Organization:**
+- **`patch/pages/pages-to-update/`** - INPUT: HTML files awaiting PATCH operations (fresh extractions from AutoExtract)
+- **`patch/pages/updated-pages/`** - OUTPUT: Successfully updated pages (PATCH + validation passed)
+- **`patch/complete/`** - ARCHIVE: Reference collection of all completed pages (227 pages)
+- **`patch/docs/`** - DOCUMENTATION: Investigation notes, metadata, and guides
+- **`patch/logs/`** - LOGS: Timestamped runtime logs from batch operations
+- **`patch/config/`** - CONFIG: All scripts, utilities, and batch processing (consolidated from former scripts/ dir)
+
+**Key Points:**
+- Unified page state hub: both INPUT and OUTPUT under `patch/pages/`
+- `patch/pages/pages-to-update/` is flat (no subdirectories) — INPUT directory
+- `patch/pages/updated-pages/` stores successful updates — OUTPUT directory (58 pages)
+- Semantically clear: "pages" = status hub, root level = supporting infrastructure
+- Primary script: `patch/config/batch-patch-with-cooldown.sh` (adaptive timeout)
+
+**Workflow:**
+1. AutoExtract saves failing pages to `patch/pages/pages-to-update/`
+2. Manual inspection or code fixes applied
+3. Run batch script: `cd patch/config && bash batch-patch-with-cooldown.sh`
+4. Successful pages moved to `patch/pages/updated-pages/`
+5. Failed pages remain in `patch/pages/pages-to-update/` for retry or investigation
+
+**References:**
+- Batch workflow: `patch/README.md`
+- Auto-validation: `docs/AUTO-VALIDATION.md`
+- Consolidation details: `patch/docs/FOLDER_CONSOLIDATION_v11.0.5.md`
 
 ## 📋 Code-Edit Checklist
 

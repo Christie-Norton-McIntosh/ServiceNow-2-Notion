@@ -176,3 +176,28 @@ Example: `backup-v9.2.0-20251016-223113/`
 
 **Last Updated**: November 9, 2025  
 **Maintained By**: Christie Norton-McIntosh
+
+## v11.0.2-duplicate-callout-fix-20251110-111958
+
+**Date**: November 10, 2025
+**Version**: 11.0.2
+**Size**: ~10MB
+
+### Key Changes
+- ✅ Fixed duplicate callouts in list items (post-orchestration deduplication)
+- ✅ Extended deduplication to all container block types (callouts, toggles, quotes, columns)
+- ✅ Made deduplication recursive for deeply nested structures
+- ✅ Added automated validation testing script
+- ✅ 100% validation success rate (229/229 failures resolved)
+
+### Files Modified
+- `server/routes/w2n.cjs` - Post-orchestration deduplication
+- `server/utils/dedupe.cjs` - Cleaned up debug logging
+- `scripts/retest-validation-failures.cjs` - NEW validation testing automation
+
+### Impact
+All 229 validation failures were caused by duplicate callouts being added after initial deduplication. This fix ensures duplicates are caught and removed after the orchestration phase completes.
+
+**Status**: Production-ready, fully tested
+**Validation**: 100% passing
+

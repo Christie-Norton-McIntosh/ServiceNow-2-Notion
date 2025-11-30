@@ -5,6 +5,7 @@ import { showPropertyMappingModal } from "./property-mapping-modal.js";
 import { injectAdvancedSettingsModal } from "./advanced-settings-modal.js";
 import { injectIconCoverModal } from "./icon-cover-modal.js";
 import { getAllDatabases, getDatabase } from "../api/database-api.js";
+import { queryDatabase, apiCall } from "../api/proxy-api.js";
 import { overlayModule } from "./overlay-progress.js";
 import { showToast } from "./utils.js";
 
@@ -21,6 +22,81 @@ function simpleHash(str) {
   return hash;
 }
 
+/**
+ * Search Notion database for a page with matching title
+ * @param {string} databaseId - Database ID to search
+ * @param {string} title - Title to search for
+ * @returns {Promise<Object|null>} Matching page or null if not found
+ */
+async function searchNotionPageByTitle(databaseId, title) {
+  if (!databaseId || !title) {
+    debug("[AUTOEXTRACT-UPDATE] ⚠️ Missing databaseId or title for search");
+    return null;
+  }
+
+  try {
+    debug(`[AUTOEXTRACT-UPDATE] 🔍 Searching for page with title: "${title}"`);
+    
+    // Query database with title filter
+    const queryBody = {
+      filter: {
+        property: "title",
+        rich_text: {
+          equals: title
+        }
+      },
+      page_size: 1
+    };
+
+    const response = await queryDatabase(databaseId, queryBody);
+    const results = Array.isArray(response?.results) ? response.results : [];
+
+    if (results.length > 0) {
+      const page = results[0];
+      debug(`[AUTOEXTRACT-UPDATE] ✅ Found existing page: ${page.id}`);
+      return page;
+    }
+
+    debug(`[AUTOEXTRACT-UPDATE] ⊘ No existing page found with title: "${title}"`);
+    return null;
+  } catch (error) {
+    debug(`[AUTOEXTRACT-UPDATE] ❌ Error searching for page: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Update existing Notion page via PATCH endpoint
+ * @param {string} pageId - Page ID to update
+ * @param {Object} extractedData - Extracted page data
+ * @returns {Promise<Object>} Update result
+ */
+async function updateNotionPage(pageId, extractedData) {
+  debug(`[AUTOEXTRACT-UPDATE] 📝 Updating page ${pageId}...`);
+  
+  try {
+    // Prepare PATCH payload (similar to POST but with pageId in URL)
+    const patchData = {
+      title: extractedData.title,
+      contentHtml: extractedData.contentHtml || extractedData.content,
+      url: extractedData.url
+    };
+
+    // Call PATCH endpoint
+    const result = await apiCall("PATCH", `/api/W2N/${pageId}`, patchData);
+
+    if (result && result.success) {
+      debug(`[AUTOEXTRACT-UPDATE] ✅ Page updated successfully`);
+      return result;
+    }
+
+    throw new Error(result?.error || "Failed to update page");
+  } catch (error) {
+    debug(`[AUTOEXTRACT-UPDATE] ❌ Failed to update page: ${error.message}`);
+    throw error;
+  }
+}
+
 export function injectMainPanel() {
   if (document.getElementById("w2n-notion-panel")) return;
 
@@ -28,6 +104,8 @@ export function injectMainPanel() {
 
   const panel = document.createElement("div");
   panel.id = "w2n-notion-panel";
+  
+  // Set base CSS styles
   panel.style.cssText = `
     position: fixed;
     top: 20px;
@@ -44,6 +122,35 @@ export function injectMainPanel() {
     opacity: 0.95;
     transition: opacity 0.2s ease;
   `;
+  
+  // Try to restore saved position from localStorage
+  let savedPosition = null;
+  try {
+    const saved = localStorage.getItem('w2n-panel-position');
+    if (saved) {
+      savedPosition = JSON.parse(saved);
+      // Validate saved position is still on-screen
+      const margin = 8;
+      const panelWidth = 320;
+      const panelHeight = 200; // Estimated minimum height
+      
+      if (savedPosition.left < margin || 
+          savedPosition.top < margin ||
+          savedPosition.left + panelWidth > window.innerWidth - margin ||
+          savedPosition.top + panelHeight > window.innerHeight - margin) {
+        // Saved position is off-screen, reset it
+        savedPosition = null;
+        localStorage.removeItem('w2n-panel-position');
+      } else {
+        // Apply saved position
+        panel.style.left = `${savedPosition.left}px`;
+        panel.style.top = `${savedPosition.top}px`;
+        panel.style.right = 'auto'; // Override default right positioning
+      }
+    }
+  } catch (e) {
+    debug("Failed to restore panel position from localStorage:", e);
+  }
 
   panel.addEventListener("mouseenter", () => (panel.style.opacity = "1"));
   panel.addEventListener("mouseleave", () => (panel.style.opacity = "0.95"));
@@ -57,11 +164,15 @@ export function injectMainPanel() {
     </style>
     <div id="w2n-header" style="padding: 16px; border-bottom: 1px solid #e5e7eb; background: #f9fafb; border-radius: 8px 8px 0 0; cursor: move; position: relative;">
       <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h3 style="margin:0; font-size:16px; color:#1f2937; display:flex; align-items:center; gap:8px;">
-          📚 ServiceNow to Notion
-          <span style="font-size:12px; color:#6b7280; font-weight:normal;">⇄ drag to move</span>
-        </h3>
+        <div>
+          <h3 style="margin:0 0 4px 0; font-size:16px; color:#1f2937; display:flex; align-items:center; gap:8px;">
+            📚 ServiceNow to Notion
+            <span style="font-size:12px; color:#6b7280; font-weight:normal;">⇄ drag to move</span>
+          </h3>
+          <div style="font-size:11px; color:#9ca3af;">v${window.BUILD_VERSION || "11.0.84"}</div>
+        </div>
         <div style="display:flex; align-items:center; gap:8px;">
+          <button id="w2n-reset-position-btn" title="Reset panel position to top-right corner" style="background:none;border:none;font-size:16px;cursor:pointer;color:#6b7280;padding:4px;line-height:1;">↗️</button>
           <button id="w2n-advanced-settings-btn" title="Advanced Settings" style="background:none;border:none;font-size:16px;cursor:pointer;color:#6b7280;padding:4px;line-height:1;">⚙️</button>
           <button id="w2n-close" style="background:none;border:none;font-size:18px;cursor:pointer;color:#6b7280;padding:4px;line-height:1;">×</button>
         </div>
@@ -72,18 +183,13 @@ export function injectMainPanel() {
       <div style="margin-bottom:16px;">
         <label style="display:block;margin-bottom:5px;font-weight:500;">Database:</label>
         <select id="w2n-database-select" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px;">
-          <option value="${config.databaseId || ""}">${
-    config.databaseName || "(no database)"
-  }</option>
+          <option value="${config.databaseId || ""}">${config.databaseName || "(no database)"}</option>
         </select>
-        <div id="w2n-selected-database-label" style="margin-top:8px;font-size:12px;color:#6b7280;">Database: ${
-          config.databaseName || "(no database)"
-        }</div>
+        <div id="w2n-selected-database-label" style="margin-top:8px;font-size:12px;color:#6b7280;">Database: ${config.databaseName || "(no database)"}</div>
         <div style="margin-top:8px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-          <button id="w2n-refresh-dbs" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">Refresh</button>
-          <button id="w2n-search-dbs" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">Search</button>
-          <button id="w2n-get-db" style="font-size:11px;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;background:white;cursor:pointer;">By ID</button>
-          <button id="w2n-configure-mapping" style="font-size:11px;padding:6px 8px;border:1px solid #10b981;border-radius:4px;background:#10b981;color:white;cursor:pointer;">Configure Property Mapping</button>
+          <button id="w2n-list-all-dbs" style="flex:1; font-size:11px;padding:6px 8px;border:1px solid #3b82f6;border-radius:4px;background:#3b82f6;color:white;cursor:pointer;min-width:80px;">📋 List All</button>
+          <button id="w2n-search-dbs" style="flex:1; font-size:11px;padding:6px 8px;border:1px solid #10b981;border-radius:4px;background:#10b981;color:white;cursor:pointer;min-width:80px;">🔍 Search</button>
+          <button id="w2n-get-db" style="flex:1; font-size:11px;padding:6px 8px;border:1px solid #f59e0b;border-radius:4px;background:#f59e0b;color:white;cursor:pointer;min-width:80px;">🆔 By ID</button>
         </div>
         <div id="w2n-db-spinner" style="display:none; margin-top:8px; font-size:12px; color:#6b7280; align-items:center;">
           <span style="display:inline-block; width:12px; height:12px; border:2px solid #d1d5db; border-top:2px solid #10b981; border-radius:50%; animation:spin 1s linear infinite; margin-right:8px;"></span>
@@ -93,7 +199,7 @@ export function injectMainPanel() {
 
       <div style="display:grid; gap:8px; margin-bottom:16px;">
         <button id="w2n-capture-page" style="width:100%; padding:12px; background:#10b981; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">📄 Save Current Page</button>
-        <button id="w2n-capture-description" style="width:100%; padding:12px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">📖 Download PDF</button>
+        <button id="w2n-update-page" style="width:100%; padding:12px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">� Update Current Page</button>
       </div>
 
       <div style="border-top:1px solid #e5e7eb; padding-top:16px;">
@@ -106,6 +212,15 @@ export function injectMainPanel() {
           <div style="display:flex; gap:8px;">
             <button id="w2n-start-autoextract" style="flex:1; padding:10px; background:#f59e0b; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">Start AutoExtract</button>
             <button id="w2n-stop-autoextract" style="flex:1; padding:10px; background:#dc2626; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500; display:none;">⏹ Stop</button>
+          </div>
+          <div style="margin-top:10px; padding:8px; background:#f3f4f6; border-radius:6px;">
+            <label style="display:flex; align-items:center; cursor:pointer; font-size:13px;">
+              <input type="checkbox" id="w2n-autoextract-update-mode" style="margin-right:8px; cursor:pointer;">
+              <span>🔄 Update existing pages (search by title)</span>
+            </label>
+            <div style="font-size:11px; color:#6b7280; margin-top:4px; margin-left:24px;">
+              Updates matching pages, creates new ones with 🆕 if not found
+            </div>
           </div>
           <div style="display:flex; gap:8px; margin-top:8px;">
             <button id="w2n-open-icon-cover" style="flex:1; padding:8px; background:#6b7280; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px;">Icon & Cover</button>
@@ -138,12 +253,30 @@ export function setupMainPanel(panel) {
   };
 
   const closeBtn = panel.querySelector("#w2n-close");
+  const resetPositionBtn = panel.querySelector("#w2n-reset-position-btn");
   const advancedBtn = panel.querySelector("#w2n-advanced-settings-btn");
   const captureBtn = panel.querySelector("#w2n-capture-page");
-  const configureBtn = panel.querySelector("#w2n-configure-mapping");
+  const updateBtn = panel.querySelector("#w2n-update-page");
   const iconCoverBtn = panel.querySelector("#w2n-open-icon-cover");
 
   closeBtn.onclick = () => panel.remove();
+  
+  if (resetPositionBtn) {
+    resetPositionBtn.onclick = (event) => {
+      event.stopPropagation();
+      try {
+        // Reset to default top-right position
+        panel.style.left = 'auto';
+        panel.style.right = '20px';
+        panel.style.top = '20px';
+        // Clear saved position
+        localStorage.removeItem('w2n-panel-position');
+        showToast("Panel position reset to top-right corner", "success");
+      } catch (e) {
+        debug("Failed to reset panel position:", e);
+      }
+    };
+  }
 
   if (advancedBtn) {
     advancedBtn.onclick = (event) => {
@@ -172,13 +305,23 @@ export function setupMainPanel(panel) {
     }
   };
 
-  configureBtn.onclick = () => {
-    try {
-      showPropertyMappingModal();
-    } catch (e) {
-      debug("Failed to open property mapping modal:", e);
-    }
-  };
+  if (updateBtn) {
+    updateBtn.onclick = async () => {
+      try {
+        if (
+          window.ServiceNowToNotion &&
+          typeof window.ServiceNowToNotion.app === "function"
+        ) {
+          const app = window.ServiceNowToNotion.app();
+          if (app && typeof app.handleUpdateExistingPage === "function") {
+            await app.handleUpdateExistingPage();
+          }
+        }
+      } catch (e) {
+        debug("Failed to execute update action:", e);
+      }
+    };
+  }
 
   iconCoverBtn.onclick = () => {
     try {
@@ -189,22 +332,24 @@ export function setupMainPanel(panel) {
   };
 
   // Database button handlers
-  const refreshBtn = panel.querySelector("#w2n-refresh-dbs");
+  const listAllBtn = panel.querySelector("#w2n-list-all-dbs");
   const searchBtn = panel.querySelector("#w2n-search-dbs");
   const getByIdBtn = panel.querySelector("#w2n-get-db");
   const databaseSelect = panel.querySelector("#w2n-database-select");
   const databaseLabel = panel.querySelector("#w2n-selected-database-label");
 
-  if (refreshBtn) {
-    refreshBtn.onclick = async () => {
+  if (listAllBtn) {
+    listAllBtn.onclick = async () => {
       try {
-        debug("🔄 Refreshing database list...");
+        debug("� Fetching all databases...");
         showSpinner();
         const databases = await getAllDatabases({ forceRefresh: true });
         populateDatabaseSelect(databaseSelect, databases);
-        debug(`[DATABASE] ✅ Refreshed ${databases.length} databases`);
+        debug(`[DATABASE] ✅ Loaded ${databases.length} databases`);
+        showToast(`✅ Loaded ${databases.length} databases`, 2000);
       } catch (e) {
-        debug("Failed to refresh databases:", e);
+        debug("Failed to fetch databases:", e);
+        showToast("❌ Failed to fetch databases", 3000);
       } finally {
         hideSpinner();
       }
@@ -509,6 +654,18 @@ function enablePanelDrag(panel) {
     header.releasePointerCapture && header.releasePointerCapture(ev.pointerId);
     // restore transition
     panel.style.transition = "";
+    
+    // Save position to localStorage
+    try {
+      const rect = panel.getBoundingClientRect();
+      const position = {
+        left: rect.left,
+        top: rect.top
+      };
+      localStorage.setItem('w2n-panel-position', JSON.stringify(position));
+    } catch (e) {
+      console.warn('[W2N] Failed to save panel position:', e);
+    }
   };
 
   header.addEventListener("pointerdown", onPointerDown);
@@ -550,6 +707,62 @@ function populateDatabaseSelect(selectEl, databases) {
 }
 
 // AutoExtract functionality
+
+/**
+ * Poll validation status endpoint until validation completes
+ * @param {string} pageId - Notion page ID (with or without hyphens)
+ * @param {number} maxWaitMs - Maximum wait time in milliseconds (default 30s)
+ * @returns {Promise<object>} Validation status result
+ */
+async function waitForValidation(pageId, maxWaitMs = 30000) {
+  const config = getConfig();
+  const proxyUrl = config.proxyUrl || 'http://localhost:3004';
+  const pollInterval = 2000; // Poll every 2 seconds
+  const startTime = Date.now();
+  
+  debug(`[VALIDATION-POLL] Waiting for validation to complete for page ${pageId}`);
+  
+  while (Date.now() - startTime < maxWaitMs) {
+    try {
+      // Poll validation status endpoint
+      const response = await fetch(`${proxyUrl}/api/W2N/${pageId}/validation`);
+      const statusData = await response.json();
+      
+      debug(`[VALIDATION-POLL] Status: ${statusData.status}`);
+      
+      // Check if validation is complete
+      if (statusData.status === 'complete') {
+        const duration = statusData.duration || (Date.now() - startTime);
+        debug(`[VALIDATION-POLL] ✅ Validation complete after ${duration}ms`);
+        return statusData;
+      }
+      
+      // Check if validation errored
+      if (statusData.status === 'error') {
+        debug(`[VALIDATION-POLL] ❌ Validation failed: ${statusData.error || 'Unknown error'}`);
+        return statusData;
+      }
+      
+      // Check if status not found (validation may not be enabled)
+      if (statusData.status === 'not_found') {
+        debug(`[VALIDATION-POLL] ℹ️ No validation status found - validation may not be enabled`);
+        return statusData;
+      }
+      
+      // Still pending or running - wait and poll again
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+      
+    } catch (error) {
+      debug(`[VALIDATION-POLL] ⚠️ Error checking validation status: ${error.message}`);
+      // If fetch fails, assume validation not enabled and continue
+      return { status: 'not_found', error: error.message };
+    }
+  }
+  
+  // Timeout reached
+  debug(`[VALIDATION-POLL] ⏱️ Timeout after ${maxWaitMs}ms - continuing anyway`);
+  return { status: 'timeout', message: 'Validation check timed out' };
+}
 
 async function startAutoExtraction() {
   const config = getConfig();
@@ -1108,20 +1321,71 @@ async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
             return;
           }
 
-          // STEP 2: Create Notion page and wait for success
-          debug(
-            `[AUTO-EXTRACT] 💾 Step 2: Creating Notion page for page ${currentPageNum}...`
-          );
-          overlayModule.setMessage(`Creating Notion page ${currentPageNum}...`);
-          await app.processWithProxy(extractedData);
+          // STEP 2: Create or Update Notion page based on mode
+          const updateModeCheckbox = document.getElementById('w2n-autoextract-update-mode');
+          const updateMode = updateModeCheckbox?.checked || false;
 
-          captureSuccess = true;
-          autoExtractState.totalProcessed++;
-          debug(
-            `✅ Page ${currentPageNum} captured and saved to Notion successfully${
-              captureAttempts > 1 ? ` (attempt ${captureAttempts})` : ""
-            }`
-          );
+          if (updateMode) {
+            // UPDATE MODE: Search for existing page and update
+            debug(
+              `[AUTO-EXTRACT] 🔄 Step 2: Searching for existing page "${extractedData.title}"...`
+            );
+            overlayModule.setMessage(`Searching for page "${extractedData.title}"...`);
+            
+            const existingPage = await searchNotionPageByTitle(config.databaseId, extractedData.title);
+            
+            if (existingPage) {
+              // Page found, update it
+              debug(`[AUTO-EXTRACT] 📝 Updating existing page ${existingPage.id}...`);
+              overlayModule.setMessage(`Updating page ${currentPageNum}...`);
+              await updateNotionPage(existingPage.id, extractedData);
+              
+              captureSuccess = true;
+              autoExtractState.totalProcessed++;
+              autoExtractState.totalUpdated = (autoExtractState.totalUpdated || 0) + 1;
+              debug(
+                `✅ Page ${currentPageNum} updated successfully${
+                  captureAttempts > 1 ? ` (attempt ${captureAttempts})` : ""
+                }`
+              );
+              showToast(`✅ Updated: ${extractedData.title}`, 2000);
+            } else {
+              // Page not found, create new with 🆕 prefix
+              debug(`[AUTO-EXTRACT] 🆕 Page "${extractedData.title}" not found, creating new page with 🆕 prefix...`);
+              overlayModule.setMessage(`Creating new page ${currentPageNum} with 🆕...`);
+              
+              // Add 🆕 emoji to title
+              const originalTitle = extractedData.title;
+              extractedData.title = `🆕 ${originalTitle}`;
+              
+              await app.processWithProxy(extractedData);
+              
+              captureSuccess = true;
+              autoExtractState.totalProcessed++;
+              autoExtractState.totalCreated = (autoExtractState.totalCreated || 0) + 1;
+              debug(
+                `✅ Page ${currentPageNum} created with 🆕 prefix successfully${
+                  captureAttempts > 1 ? ` (attempt ${captureAttempts})` : ""
+                }`
+              );
+              showToast(`🆕 Created: ${originalTitle}`, 2000);
+            }
+          } else {
+            // CREATE MODE: Normal creation
+            debug(
+              `[AUTO-EXTRACT] 💾 Step 2: Creating Notion page for page ${currentPageNum}...`
+            );
+            overlayModule.setMessage(`Creating Notion page ${currentPageNum}...`);
+            await app.processWithProxy(extractedData);
+
+            captureSuccess = true;
+            autoExtractState.totalProcessed++;
+            debug(
+              `✅ Page ${currentPageNum} captured and saved to Notion successfully${
+                captureAttempts > 1 ? ` (attempt ${captureAttempts})` : ""
+              }`
+            );
+          }
 
           // Brief wait to ensure API call fully completes
           await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -1534,23 +1798,132 @@ async function continueAutoExtractionLoop(autoExtractState) {
           autoExtractState.processedUrls.add(currentUrl);
           autoExtractState.lastPageId = currentPageId;
           
-          // Process and save to Notion
+          // Process and save to Notion with rate limit retry
           debug(`[AUTO-EXTRACT] 📤 Saving page ${currentPageNum} to Notion...`);
           overlayModule.setMessage(`Processing page ${currentPageNum}...`);
         
-          // Process the content using the app's processWithProxy method
-          // This will internally show more detailed messages like:
-          // - "Checking proxy connection..."
-          // - "Converting content to Notion blocks..."
-          // - "Page created successfully!"
-          await app.processWithProxy(extractedData);
+          // Retry logic for rate limits
+          const maxRateLimitRetries = 3;
+          let rateLimitRetryCount = 0;
+          let processingSuccess = false;
           
-          // If we get here without throwing, it succeeded
-          const result = { success: true };
-
-          autoExtractState.totalProcessed++;
-          debug(`[AUTO-EXTRACT] ✅ Page ${currentPageNum} saved to Notion`);
-          overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
+          while (rateLimitRetryCount <= maxRateLimitRetries && !processingSuccess) {
+            try {
+              // Process the content using the app's processWithProxy method
+              // This will internally show more detailed messages like:
+              // - "Checking proxy connection..."
+              // - "Converting content to Notion blocks..."
+              // - "Page created successfully!"
+              const result = await app.processWithProxy(extractedData);
+              
+              // If we get here without throwing, it succeeded
+              processingSuccess = true;
+              
+              autoExtractState.totalProcessed++;
+              debug(`[AUTO-EXTRACT] ✅ Page ${currentPageNum} saved to Notion`);
+              
+              // Wait for validation to complete if page ID is available
+              if (result && result.data && result.data.page && result.data.page.id) {
+                const pageId = result.data.page.id;
+                debug(`[AUTO-EXTRACT] ⏳ Waiting for validation to complete for page ${pageId}...`);
+                overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Waiting for validation...`);
+                
+                try {
+                  const validationStatus = await waitForValidation(pageId, 30000); // 30 second timeout
+                  
+                  if (validationStatus.status === 'complete') {
+                    const duration = validationStatus.duration ? `${(validationStatus.duration / 1000).toFixed(1)}s` : 'unknown time';
+                    debug(`[AUTO-EXTRACT] ✅ Validation complete after ${duration}`);
+                    overlayModule.setMessage(`✓ Page ${currentPageNum} validated! Continuing...`);
+                  } else if (validationStatus.status === 'error') {
+                    debug(`[AUTO-EXTRACT] ⚠️ Validation failed but continuing anyway`);
+                    overlayModule.setMessage(`✓ Page ${currentPageNum} saved (validation failed). Continuing...`);
+                  } else if (validationStatus.status === 'not_found' || validationStatus.status === 'timeout') {
+                    debug(`[AUTO-EXTRACT] ℹ️ Validation status: ${validationStatus.status} - continuing`);
+                    overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
+                  }
+                } catch (validationError) {
+                  debug(`[AUTO-EXTRACT] ⚠️ Error waiting for validation: ${validationError.message}`);
+                  // Non-fatal - continue with AutoExtract
+                  overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
+                }
+              } else {
+                // No page ID available - skip validation check
+                debug(`[AUTO-EXTRACT] ℹ️ No page ID available - skipping validation check`);
+                overlayModule.setMessage(`✓ Page ${currentPageNum} saved! Continuing...`);
+              }
+            } catch (processingError) {
+              // Check if this is a rate limit error
+              const errorMessage = processingError.message || '';
+              const isRateLimit = errorMessage.includes('Rate limit') || 
+                                 errorMessage.includes('rate limited') ||
+                                 errorMessage.includes('429');
+              
+              if (isRateLimit && rateLimitRetryCount < maxRateLimitRetries) {
+                rateLimitRetryCount++;
+                const waitTime = Math.min(30 * Math.pow(2, rateLimitRetryCount - 1), 120); // 30s, 60s, 120s
+                
+                debug(`⚠️ [RATE-LIMIT] Hit rate limit on page ${currentPageNum}, waiting ${waitTime}s before retry ${rateLimitRetryCount}/${maxRateLimitRetries}...`);
+                
+                if (button) {
+                  button.textContent = `⏳ Rate limit - waiting ${waitTime}s...`;
+                }
+                
+                showToast(
+                  `⚠️ Rate limit hit. Waiting ${waitTime} seconds before retry ${rateLimitRetryCount}/${maxRateLimitRetries}...`,
+                  waitTime * 1000
+                );
+                
+                overlayModule.setMessage(`⏳ Rate limit - waiting ${waitTime}s...`);
+                
+                // Wait with countdown
+                for (let i = waitTime; i > 0; i -= 5) {
+                  await new Promise(resolve => setTimeout(resolve, 5000));
+                  if (button) {
+                    button.textContent = `⏳ Retry in ${i}s...`;
+                  }
+                }
+                
+                debug(`🔄 [RATE-LIMIT] Retrying page ${currentPageNum} after cooldown...`);
+              } else {
+                // Check if this is a timeout error (v11.0.6)
+                const isTimeout = errorMessage.includes('timeout') || 
+                                 errorMessage.includes('Timeout') ||
+                                 errorMessage.includes('timed out');
+                
+                if (isTimeout) {
+                  debug(`⚠️ [TIMEOUT-RECOVERY] Request timed out for page ${currentPageNum}`);
+                  debug(`⚠️ [TIMEOUT-RECOVERY] Server may still be processing. Waiting 60s to check if page was created...`);
+                  
+                  overlayModule.setMessage(`⏳ Timeout - checking if page was created...`);
+                  
+                  // Wait 60 seconds for server to finish processing
+                  await new Promise(resolve => setTimeout(resolve, 60000));
+                  
+                  // TODO: Query Notion to check if page exists and trigger validation
+                  // For now, log warning and continue (page may have been created with unresolved markers)
+                  debug(`⚠️ [TIMEOUT-RECOVERY] Unable to verify page creation. It may exist with unresolved markers.`);
+                  debug(`⚠️ [TIMEOUT-RECOVERY] Run marker sweep script manually on database if needed.`);
+                  
+                  showToast(
+                    `⚠️ Timeout on page ${currentPageNum}. Page may exist but need marker cleanup.`,
+                    8000
+                  );
+                  
+                  // Count as processed (even though we can't confirm)
+                  autoExtractState.totalProcessed++;
+                  processingSuccess = true; // Continue to next page
+                } else {
+                  // Not a rate limit or timeout error, or we've exhausted retries - rethrow
+                  throw processingError;
+                }
+              }
+            }
+          }
+          
+          if (!processingSuccess) {
+            throw new Error(`Failed to process page ${currentPageNum} after ${maxRateLimitRetries} rate limit retries`);
+          }
         }
       } else {
         debug(`[NAV-RETRY] ⏩ Skipped extraction for expected duplicate, proceeding to navigation...`);
@@ -1581,6 +1954,10 @@ async function continueAutoExtractionLoop(autoExtractState) {
         if (button) button.textContent = "Start AutoExtract";
         return;
       }
+
+      // Actually click the next button
+      debug(`[NEXT-BUTTON] 🖱️ Clicking next button...`);
+      await clickNextPageButton(nextButton);
 
       // Wait for page navigation
       debug(`[AUTO-EXTRACT] ⏳ Step 4: Waiting for page navigation...`);
@@ -1638,6 +2015,10 @@ async function continueAutoExtractionLoop(autoExtractState) {
             debug(`[NAV-RETRY] ❌ Could not find next button on retry ${navigationRetryCount}`);
             break;
           }
+          
+          // Actually click the button on retry
+          debug(`[NAV-RETRY] 🖱️ Clicking next button (retry ${navigationRetryCount})...`);
+          await clickNextPageButton(retryNextButton);
           
           // Wait for navigation
           debug(`[NAV-RETRY] ⏳ Waiting for navigation (retry ${navigationRetryCount})...`);
@@ -1715,6 +2096,15 @@ async function continueAutoExtractionLoop(autoExtractState) {
   // Loop completed successfully - show completion overlay
   debug(`[AUTO-EXTRACT] 🎉 AutoExtract completed! Total pages processed: ${autoExtractState.totalProcessed}`);
   
+  // Prepare stats summary
+  const totalUpdated = autoExtractState.totalUpdated || 0;
+  const totalCreated = autoExtractState.totalCreated || 0;
+  const totalNormalCreated = autoExtractState.totalProcessed - totalUpdated - totalCreated;
+  
+  if (totalUpdated > 0 || totalCreated > 0) {
+    debug(`[AUTO-EXTRACT] 📊 Stats: ${totalNormalCreated + totalCreated} created (${totalCreated} with 🆕), ${totalUpdated} updated`);
+  }
+  
   // Show summary of any failed pages
   if (autoExtractState.failedPages && autoExtractState.failedPages.length > 0) {
     debug(`⚠️ ${autoExtractState.failedPages.length} page(s) failed during AutoExtract:`);
@@ -1731,9 +2121,25 @@ async function continueAutoExtractionLoop(autoExtractState) {
       debug(`💾 Failed pages saved to storage for manual retry`);
     }
     
+    // Build stats summary for alert
+    let statsLine = `✅ Successfully processed: ${autoExtractState.totalProcessed} pages`;
+    if (totalUpdated > 0 || totalCreated > 0) {
+      const allCreated = totalNormalCreated + totalCreated;
+      const parts = [];
+      if (allCreated > 0) {
+        if (totalCreated > 0) {
+          parts.push(`${allCreated} created (${totalCreated} with 🆕)`);
+        } else {
+          parts.push(`${allCreated} created`);
+        }
+      }
+      if (totalUpdated > 0) parts.push(`${totalUpdated} updated`);
+      statsLine += ` (${parts.join(', ')})`;
+    }
+    
     // Show warning to user
     const failedPagesMessage = `⚠️ AutoExtract completed with warnings!\n\n` +
-      `✅ Successfully processed: ${autoExtractState.totalProcessed} pages\n` +
+      `${statsLine}\n` +
       `❌ Failed/Skipped: ${autoExtractState.failedPages.length} pages\n` +
       `🚦 Rate limit hits: ${autoExtractState.rateLimitHits}\n\n` +
       `Failed pages list:\n` +
@@ -1749,10 +2155,23 @@ async function continueAutoExtractionLoop(autoExtractState) {
       7000
     );
   } else {
-    showToast(
-      `✅ AutoExtract complete! Processed ${autoExtractState.totalProcessed} page(s)`,
-      5000
-    );
+    // Build success message
+    let successMsg = `✅ AutoExtract complete! Processed ${autoExtractState.totalProcessed} page(s)`;
+    if (totalUpdated > 0 || totalCreated > 0) {
+      const allCreated = totalNormalCreated + totalCreated;
+      const parts = [];
+      if (allCreated > 0) {
+        if (totalCreated > 0) {
+          parts.push(`${allCreated} created (${totalCreated} with 🆕)`);
+        } else {
+          parts.push(`${allCreated} created`);
+        }
+      }
+      if (totalUpdated > 0) parts.push(`${totalUpdated} updated`);
+      successMsg += ` (${parts.join(', ')})`;
+    }
+    
+    showToast(successMsg, 5000);
   }
   
   overlayModule.done({

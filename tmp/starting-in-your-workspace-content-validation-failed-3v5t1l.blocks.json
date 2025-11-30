@@ -1,0 +1,158 @@
+[
+  {
+    "object": "block",
+    "type": "paragraph",
+    "paragraph": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Use workspace to find and resolve internal or external requester issues."
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "object": "block",
+    "type": "paragraph",
+    "paragraph": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "The following video shows an example of how to resolve an incident using workspace."
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "object": "block",
+    "type": "video",
+    "video": {
+      "type": "external",
+      "external": {
+        "url": "https://www.youtube.com/embed/b04PwKqxD_o"
+      }
+    }
+  },
+  {
+    "object": "block",
+    "type": "numbered_list_item",
+    "numbered_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Find an issue to work on."
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "object": "block",
+    "type": "numbered_list_item",
+    "numbered_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Work on the issue to find a solution."
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "object": "block",
+    "type": "numbered_list_item",
+    "numbered_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Communicate the resolution to the requester."
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "object": "block",
+    "type": "heading_2",
+    "heading_2": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Next"
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "object": "block",
+    "type": "paragraph",
+    "paragraph": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Get started using workspace by working through some tutorials ."
+          }
+        }
+      ]
+    }
+  }
+]

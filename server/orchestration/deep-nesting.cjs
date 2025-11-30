@@ -81,6 +81,7 @@ async function findParentListItemByMarker(rootBlockId, marker) {
   log(`🔍 BFS START: Searching for marker ${token} starting from ${rootBlockId}`);
   log(`🔍 BFS: Full marker value: "${marker}"`);
   log(`🔍 BFS: Token format: "(${token})"`);
+  log(`🔍 [MARKER-SEARCH] Starting BFS for marker: sn2n:${marker}`);
 
   async function listChildren(blockId, cursor, retries = 3) {
     for (let attempt = 1; attempt <= retries; attempt++) {
@@ -130,7 +131,8 @@ async function findParentListItemByMarker(rootBlockId, marker) {
           if (
             child.type === "numbered_list_item" ||
             child.type === "bulleted_list_item" ||
-            child.type === "callout"
+            child.type === "callout" ||
+            child.type === "heading_3"
           ) {
             // First, check the block's own rich_text for the token
             try {
@@ -144,6 +146,7 @@ async function findParentListItemByMarker(rootBlockId, marker) {
               log(`🔍 BFS: Checking ${child.type} ${child.id}, text="${ownPlain.substring(0, 100)}"`);
               if (ownPlain.includes(token)) {
                 log(`✅ BFS: FOUND marker ${token} in ${child.type} ${child.id}`);
+                log(`🔍 [RELATED-CONTENT] Found heading_3 toggle parent for marker ${token}`);
                 return { parentId: child.id, paragraphId: null };
               }
             } catch (e) {
@@ -201,6 +204,8 @@ async function findParentListItemByMarker(rootBlockId, marker) {
     } while (cursor);
   }
 
+  log(`❌ [MARKER-SEARCH] Marker NOT FOUND after searching ${visited.size} blocks: sn2n:${marker}`);
+  log(`❌ [MARKER-SEARCH] Searched blocks: ${Array.from(visited).join(', ')}`);
   return null;
 }
 
@@ -233,9 +238,26 @@ async function orchestrateDeepNesting(pageId, markerMap) {
     log(`  🔖 Marker "${m}": ${blocks.length} block(s), global_index=${firstBlockGlobalIndex}, local_index=${firstBlockLocalIndex}`);
   });
   
-  for (const marker of markerKeys) {
+    for (const marker of markerKeys) {
     let blocksToAppend = markerMap[marker] || [];
     if (blocksToAppend.length === 0) continue;
+    
+    // [IMAGE-DEBUG] Log if this marker has image blocks
+    const imageCount = blocksToAppend.filter(b => b && b.type === 'image').length;
+    if (imageCount > 0) {
+      log(`🖼️ [IMAGE-DEBUG] Marker "${marker}" has ${imageCount} image block(s) out of ${blocksToAppend.length} total`);
+    }
+    
+    // DEBUG: Log if this marker has table blocks
+    const tableCount = blocksToAppend.filter(b => b && b.type === 'table').length;
+    if (tableCount > 0) {
+      log(`📊 [TABLE-DEBUG] Marker "${marker}" has ${tableCount} table block(s) out of ${blocksToAppend.length} total`);
+      blocksToAppend.filter(b => b.type === 'table').forEach((table, idx) => {
+        const tableWidth = table.table?.table_width || 'unknown';
+        const tableRows = table.table?.children?.length || 0;
+        log(`📊 [TABLE-DEBUG]   Table ${idx+1}: ${tableWidth} cols x ${tableRows} rows`);
+      });
+    }
     
     try {
       const parentInfo = await findParentListItemByMarker(pageId, marker);
@@ -246,6 +268,13 @@ async function orchestrateDeepNesting(pageId, markerMap) {
         log(
           `⚠️ Orchestrator: parent not found for marker sn2n:${marker}. Appending to page root instead.`
         );
+        if (imageCount > 0) {
+          log(`🖼️ [IMAGE-DEBUG] Parent not found! ${imageCount} image(s) will be appended to page root as fallback`);
+        }
+        if (tableCount > 0) {
+          log(`📊 [TABLE-DEBUG] Parent not found! ${tableCount} table(s) will be appended to page root as FALLBACK`);
+          log(`📊 [TABLE-DEBUG] ⚠️ THIS IS THE BUG! Table should be nested, not at root level!`);
+        }
         // Clean orphaned markers (preserve all markers in the map) and ensure no private keys
         blocksToAppend = cleanOrphanedMarkersFromBlocks(blocksToAppend, markerKeys);
         deepStripPrivateKeys(blocksToAppend);
@@ -257,6 +286,26 @@ async function orchestrateDeepNesting(pageId, markerMap) {
       log(
         `✅ Orchestrator: Found parent ${parentId} for marker sn2n:${marker}. Will append ${blocksToAppend.length} block(s).`
       );
+      
+      // [ORDER-DEBUG] Log orchestration content movement
+      log(`\n[ORDER-DEBUG] ========================================`);
+      log(`[ORDER-DEBUG] ORCHESTRATION: Moving content to parent`);
+      log(`[ORDER-DEBUG] Marker: ${marker}`);
+      log(`[ORDER-DEBUG] Parent block ID: ${parentId}`);
+      log(`[ORDER-DEBUG] Number of blocks being moved: ${blocksToAppend.length}`);
+      log(`[ORDER-DEBUG] This content was originally at page root and is being nested`);
+      log(`[ORDER-DEBUG] This MAY cause legitimate order changes in validation`);
+      
+      if (imageCount > 0) {
+        log(`🖼️ [IMAGE-DEBUG] Parent found! Will append ${imageCount} image(s) to parent ${parentId}`);
+        log(`[ORDER-DEBUG] ${imageCount} image(s) being moved from page root to nested position`);
+      }
+      
+      if (tableCount > 0) {
+        log(`📊 [TABLE-DEBUG] Parent found! Will append ${tableCount} table(s) to parent ${parentId}`);
+        log(`📊 [TABLE-DEBUG] ✅ Appending to correct parent: ${parentId}`);
+        log(`[ORDER-DEBUG] ${tableCount} table(s) being moved from page root to nested position`);
+      }
       
       // Log marker details for debugging
       log(`🔖 Orchestrator: Marker details - marker="${marker}" (original format, may include element ID)`);
@@ -273,16 +322,18 @@ async function orchestrateDeepNesting(pageId, markerMap) {
             } else if (blockType === 'table' && block[blockType].children) {
               contentPreview = `[table: ${block[blockType].table_width} cols x ${block[blockType].children.length} rows]`;
             } else if (blockType === 'image') {
-              contentPreview = '[image]';
+              const imgUrl = block[blockType].external?.url || block[blockType].file?.url || '[no URL]';
+              contentPreview = `[image: ${imgUrl.substring(0, 80)}]`;
             }
           }
         } catch (e) {
           contentPreview = '[unable to extract]';
         }
         log(`  📦 Block ${idx + 1}: type=${block.type}, content="${contentPreview}${contentPreview.length >= 100 ? '...' : ''}"`);
+        log(`[ORDER-DEBUG]   Content snippet: "${contentPreview.substring(0, 60)}..."`);
       });
       
-      // Before appending, perform an append-time dedupe check for table blocks
+      log(`[ORDER-DEBUG] ========================================\n`);      // Before appending, perform an append-time dedupe check for table blocks
       // to avoid duplicating tables that may already exist under the parent.
       try {
         // helper: compute a lightweight signature for table blocks
@@ -428,6 +479,11 @@ async function orchestrateDeepNesting(pageId, markerMap) {
         } blocks for marker sn2n:${marker}`
       );
       
+      // DEBUG: Log successful table append
+      if (tableCount > 0) {
+        log(`📊 [TABLE-DEBUG] ✅ Successfully appended ${tableCount} table(s) to parent ${parentId}`);
+      }
+      
       // Attempt to clean up the inline marker from the paragraph we used to locate the parent
       if (paragraphId) {
         try {
@@ -442,13 +498,42 @@ async function orchestrateDeepNesting(pageId, markerMap) {
           const joinedNew = newRt.map((r) => r.text?.content || "").join(" ");
           if (joinedOld !== joinedNew) {
             const safeNewRt = sanitizeRichTextArray(newRt);
-            await notion.blocks.update({
-              block_id: paragraphId,
-              paragraph: { rich_text: safeNewRt },
-            });
-            log(
-              `✅ Orchestrator: removed marker from paragraph ${paragraphId}`
-            );
+            
+            // Retry logic for conflict errors
+            let updateSuccess = false;
+            let conflictRetries = 0;
+            const maxConflictRetries = 3;
+            
+            let rateLimitRetries = 0;
+            const maxRateLimitRetries = 8; // FIX v11.0.6: Increased from 5 to 8 for better rate limit recovery
+            while (!updateSuccess && (conflictRetries <= maxConflictRetries || rateLimitRetries <= maxRateLimitRetries)) {
+              try {
+                await notion.blocks.update({
+                  block_id: paragraphId,
+                  paragraph: { rich_text: safeNewRt },
+                });
+                updateSuccess = true;
+                log(
+                  `✅ Orchestrator: removed marker from paragraph ${paragraphId}`
+                );
+              } catch (updateError) {
+                if (updateError.status === 429 && rateLimitRetries < maxRateLimitRetries) {
+                  rateLimitRetries++;
+                  // FIX v11.0.6: Extended exponential backoff (15s base, max 120s)
+                  // Delays: 15s, 22.5s, 33.75s, 50.6s, 75.9s, 113.8s, 120s, 120s
+                  const delay = Math.min(15000 * Math.pow(1.5, rateLimitRetries - 1), 120000);
+                  log(`⏳ 🚦 Orchestrator: rate limit on paragraph ${paragraphId}, retry ${rateLimitRetries}/${maxRateLimitRetries} after ${Math.round(delay / 1000)}s`);
+                  await new Promise(resolve => setTimeout(resolve, delay));
+                } else if (updateError.code === 'conflict_error' && conflictRetries < maxConflictRetries) {
+                  conflictRetries++;
+                  const delay = 500 * conflictRetries;
+                  log(`🔄 Orchestrator: conflict on paragraph ${paragraphId}, retry ${conflictRetries}/${maxConflictRetries} after ${delay}ms`);
+                  await new Promise(resolve => setTimeout(resolve, delay));
+                } else {
+                  throw updateError; // Re-throw for outer catch
+                }
+              }
+            }
           }
         } catch (e) {
           log(
@@ -466,7 +551,9 @@ async function orchestrateDeepNesting(pageId, markerMap) {
         let delay = 1000;
         let success = false;
         
-        while (retries > 0 && !success) {
+        let rateLimitRetries = 0;
+        const maxRateLimitRetries = 8; // FIX v11.0.6: Increased from 5 to 8 for better rate limit recovery
+        while ((retries > 0 || rateLimitRetries <= maxRateLimitRetries) && !success) {
           try {
             const block = await notion.blocks.retrieve({ block_id: parentId });
             const blockType = block.type;
@@ -493,9 +580,19 @@ async function orchestrateDeepNesting(pageId, markerMap) {
           } catch (e) {
             retries--;
             if (retries > 0) {
-              log(`⚠️ Orchestrator: marker removal failed (${retries} retries left), waiting ${delay}ms: ${e && e.message}`);
-              await new Promise(resolve => setTimeout(resolve, delay));
-              delay *= 2; // Exponential backoff
+              // Use shorter delay for conflict errors (they resolve quickly)
+              const actualDelay = e.code === 'conflict_error' ? 500 : delay;
+              log(`⚠️ Orchestrator: marker removal failed${e.code === 'conflict_error' ? ' (conflict)' : ''} (${retries} retries left), waiting ${actualDelay}ms: ${e && e.message}`);
+              await new Promise(resolve => setTimeout(resolve, actualDelay));
+              delay *= 2; // Exponential backoff for non-conflict errors
+            } else if (e && e.status === 429 && rateLimitRetries < maxRateLimitRetries) {
+              rateLimitRetries++;
+              // FIX v11.0.6: Extended exponential backoff (15s base, max 120s)
+              const rlDelay = Math.min(15000 * Math.pow(1.5, rateLimitRetries - 1), 120000);
+              log(`⏳ 🚦 Orchestrator: rate limit on block ${parentId}, retry ${rateLimitRetries}/${maxRateLimitRetries} after ${Math.round(rlDelay / 1000)}s`);
+              await new Promise(resolve => setTimeout(resolve, rlDelay));
+              // give one more normal retry after rate limit backoff
+              retries = Math.max(retries, 1);
             } else {
               log(
                 "⚠️ Orchestrator: failed to remove marker from block after all retries:",
@@ -547,6 +644,21 @@ async function orchestrateDeepNesting(pageId, markerMap) {
   } catch (e) {
     log("⚠️ Orchestrator: sweeper failed:", e && e.message);
   }
+  
+  // Run a second aggressive sweep to catch any remaining markers (belt and suspenders)
+  try {
+    log(`🔍 [MARKER-CLEANUP] Running final aggressive marker sweep on page ${pageId}`);
+    const secondSweep = await sweepAndRemoveMarkersFromPage(pageId);
+    if (secondSweep && secondSweep.updated) {
+      log(
+        `🔍 [MARKER-CLEANUP] Second sweep updated ${secondSweep.updated} additional blocks`
+      );
+    } else {
+      log(`🔍 [MARKER-CLEANUP] Second sweep found no remaining markers`);
+    }
+  } catch (e) {
+    log("⚠️ [MARKER-CLEANUP] Second sweep failed:", e && e.message);
+  }
 
   return { appended: totalAppended };
 }
@@ -563,11 +675,26 @@ async function sweepAndRemoveMarkersFromPage(rootPageId) {
   const tokenPrefix = "(sn2n:";
 
   async function listChildren(blockId, cursor) {
-    return await notion.blocks.children.list({
-      block_id: blockId,
-      page_size: 100,
-      start_cursor: cursor,
-    });
+    // Add minimal retry for transient errors
+    const maxRetries = 3;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await notion.blocks.children.list({
+          block_id: blockId,
+          page_size: 100,
+          start_cursor: cursor,
+        });
+      } catch (e) {
+        const retryable = e && (e.status === 429 || /ECONNRESET|ETIMEDOUT|timeout|socket hang up/i.test(e.message || ''));
+        if (retryable && attempt < maxRetries) {
+          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+          log(`⏳ Sweeper: retrying listChildren for ${blockId} attempt ${attempt}/${maxRetries} after ${delay}ms`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        throw e;
+      }
+    }
   }
 
   const queue = [rootPageId];
@@ -588,8 +715,89 @@ async function sweepAndRemoveMarkersFromPage(rootPageId) {
         try {
           // Check for rich_text on the block's typed payload
           const t = child.type;
-          // Support multiple block types that have rich_text
-          const payload = child[t] || child.paragraph || child.callout || child.to_do || child.toggle || {};
+          // Support ALL block types that can have rich_text
+          const payload = child[t] || 
+                          child.paragraph || 
+                          child.callout || 
+                          child.bulleted_list_item || 
+                          child.numbered_list_item ||
+                          child.to_do || 
+                          child.toggle || 
+                          child.quote ||
+                          child.heading_1 ||
+                          child.heading_2 ||
+                          child.heading_3 ||
+                          {};
+
+          // Special handling: table_row markers inside cells
+          if (t === 'table_row' && child.table_row && Array.isArray(child.table_row.cells)) {
+            try {
+              const cells = child.table_row.cells;
+              let changed = false;
+              const markerRegex = /\(sn2n:[^)]+\)/gi;
+              const newCells = cells.map(cell => {
+                if (!Array.isArray(cell)) return cell;
+                const cellPlain = cell.map(rt => rt?.text?.content || '').join('');
+                if (!markerRegex.test(cellPlain)) return cell;
+                let cleaned = cell;
+                const matches = cellPlain.match(markerRegex) || [];
+                for (const m of matches) {
+                  const markerName = (m || '').replace(/^\(|\)$/g, '').split(':')[1] || null;
+                  if (markerName) {
+                    cleaned = removeMarkerFromRichTextArray(cleaned, markerName);
+                  } else {
+                    // Fallback literal removal
+                    cleaned = cleaned.map(rt => {
+                      if (!rt || !rt.text || typeof rt.text.content !== 'string') return rt;
+                      return { ...rt, text: { ...rt.text, content: rt.text.content.replace(m, '') } };
+                    });
+                  }
+                }
+                // Aggressive cleanup of any remaining tokens
+                cleaned = cleaned.map(rt => {
+                  if (!rt || !rt.text || typeof rt.text.content !== 'string') return rt;
+                  return { ...rt, text: { ...rt.text, content: rt.text.content.replace(/\(sn2n:[a-z0-9\-_]+\)/gi, '') } };
+                }).filter(rt => rt && rt.text && typeof rt.text.content === 'string' && rt.text.content.trim().length > 0);
+                if (JSON.stringify(cleaned) !== JSON.stringify(cell)) changed = true;
+                return cleaned;
+              });
+
+              if (changed) {
+                // Retry with backoff for conflicts and rate limits
+                let ok = false;
+                let conflictRetries = 0, rateLimitRetries = 0;
+                const maxConflictRetries = 3, maxRateLimitRetries = 5;
+                while (!ok && (conflictRetries <= maxConflictRetries || rateLimitRetries <= maxRateLimitRetries)) {
+                  try {
+                    await notion.blocks.update({
+                      block_id: child.id,
+                      table_row: { cells: newCells }
+                    });
+                    updated++;
+                    ok = true;
+                    log(`🔧 Sweeper: removed marker(s) from table_row ${child.id}`);
+                  } catch (e) {
+                    if (e.code === 'conflict_error' && conflictRetries < maxConflictRetries) {
+                      conflictRetries++;
+                      const d = 500 * conflictRetries;
+                      log(`🔄 Sweeper: conflict updating table_row ${child.id}, retry ${conflictRetries}/${maxConflictRetries} after ${d}ms`);
+                      await new Promise(r => setTimeout(r, d));
+                    } else if (e.status === 429 && rateLimitRetries < maxRateLimitRetries) {
+                      rateLimitRetries++;
+                      const d = Math.min(1000 * Math.pow(2, rateLimitRetries - 1), 5000);
+                      log(`⏳ Sweeper: rate limit updating table_row ${child.id}, retry ${rateLimitRetries}/${maxRateLimitRetries} after ${d}ms`);
+                      await new Promise(r => setTimeout(r, d));
+                    } else {
+                      log(`⚠️ Sweeper: failed to update table_row ${child.id}: ${e && e.message}`);
+                      break;
+                    }
+                  }
+                }
+              }
+            } catch (e) {
+              log(`⚠️ Sweeper: error processing table_row ${child.id}: ${e && e.message}`);
+            }
+          }
           const rich = Array.isArray(payload.rich_text)
             ? payload.rich_text
             : [];
@@ -617,6 +825,18 @@ async function sweepAndRemoveMarkersFromPage(rootPageId) {
                 });
               }
             }
+            
+            // Additional aggressive cleanup: remove any remaining marker patterns directly
+            // This catches markers that may have been missed by the above logic
+            newRich = newRich.map((rt) => {
+              if (!rt || !rt.text || typeof rt.text.content !== "string") return rt;
+              // Remove all (sn2n:xxxx) patterns
+              const cleaned = rt.text.content.replace(/\(sn2n:[a-z0-9\-_]+\)/gi, '');
+              return { ...rt, text: { ...rt.text, content: cleaned } };
+            }).filter(rt => {
+              // Remove empty text segments after marker removal
+              return rt && rt.text && rt.text.content && rt.text.content.trim().length > 0;
+            });
 
             const joinedOld = rich.map((r) => r.text?.content || "").join(" ");
             const joinedNew = newRich
@@ -627,18 +847,42 @@ async function sweepAndRemoveMarkersFromPage(rootPageId) {
               const safeNewRt = Array.isArray(newRich) ? newRich : [];
               const updateBody = {};
               updateBody[child.type] = { rich_text: safeNewRt };
-              try {
-                await notion.blocks.update({
-                  block_id: child.id,
-                  [child.type]: { rich_text: safeNewRt },
-                });
-                updated++;
-                log(`🔧 Sweeper: removed marker(s) from block ${child.id}`);
-              } catch (e) {
-                log(
-                  `⚠️ Sweeper: failed to update block ${child.id}:`,
-                  e && e.message
-                );
+              
+              // Retry logic for conflict errors
+              let updateSuccess = false;
+              let conflictRetries = 0;
+              const maxConflictRetries = 3;
+              
+              let rateLimitRetries = 0;
+              const maxRateLimitRetries = 5;
+              while (!updateSuccess && (conflictRetries <= maxConflictRetries || rateLimitRetries <= maxRateLimitRetries)) {
+                try {
+                  await notion.blocks.update({
+                    block_id: child.id,
+                    [child.type]: { rich_text: safeNewRt },
+                  });
+                  updated++;
+                  updateSuccess = true;
+                  log(`🔧 Sweeper: removed marker(s) from block ${child.id}`);
+                } catch (e) {
+                  if (e.status === 429 && rateLimitRetries < maxRateLimitRetries) {
+                    rateLimitRetries++;
+                    const delay = Math.min(1000 * Math.pow(2, rateLimitRetries - 1), 5000);
+                    log(`⏳ Sweeper: rate limit on block ${child.id}, retry ${rateLimitRetries}/${maxRateLimitRetries} after ${delay}ms`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                  } else if (e.code === 'conflict_error' && conflictRetries < maxConflictRetries) {
+                    conflictRetries++;
+                    const delay = 500 * conflictRetries;
+                    log(`🔄 Sweeper: conflict on block ${child.id}, retry ${conflictRetries}/${maxConflictRetries} after ${delay}ms`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                  } else {
+                    log(
+                      `⚠️ Sweeper: failed to update block ${child.id}:`,
+                      e && e.message
+                    );
+                    break;
+                  }
+                }
               }
             }
           }

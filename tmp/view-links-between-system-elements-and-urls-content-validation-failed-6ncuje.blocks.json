@@ -1,0 +1,403 @@
+[
+  {
+    "object": "block",
+    "type": "paragraph",
+    "paragraph": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "You can view the links between your system elements and their URLs to render more specific content within your site."
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "object": "block",
+    "type": "callout",
+    "callout": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Before you begin\nRole required: content_admin or admin"
+          }
+        }
+      ],
+      "icon": {
+        "type": "emoji",
+        "emoji": "📍"
+      },
+      "color": "default"
+    }
+  },
+  {
+    "object": "block",
+    "type": "paragraph",
+    "paragraph": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "About this task"
+          },
+          "annotations": {
+            "bold": true,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "object": "block",
+    "type": "paragraph",
+    "paragraph": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "See the Navigate to a record or module using a URL page for an overview of URL syntax in the ServiceNow platform."
+          }
+        }
+      ]
+    }
+  },
+  {
+    "object": "block",
+    "type": "paragraph",
+    "paragraph": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "The Incidents list offers a quick example of viewing a form within its own tab. This viewing method illustrates how to append the URL string to render more specific content within your site."
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "object": "block",
+    "type": "paragraph",
+    "paragraph": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Procedure"
+          },
+          "annotations": {
+            "bold": true,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "object": "block",
+    "type": "numbered_list_item",
+    "numbered_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Navigate to Incident > All ."
+          }
+        }
+      ]
+    }
+  },
+  {
+    "object": "block",
+    "type": "numbered_list_item",
+    "numbered_list_item": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Right-click in a blank area within the content frame and select Open Frame in New Window or Open Frame in New Tab . The URL returned looks similar to this example."
+          }
+        },
+        {
+          "type": "text",
+          "text": {
+            "content": " (sn2n:mijdgu5c-f29g3l)"
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          }
+        }
+      ],
+      "children": [
+        {
+          "object": "block",
+          "type": "bulleted_list_item",
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "type": "text",
+                "text": {
+                  "content": "incident_list.do ? is the call to the list with no parameters passed into it. Explore context menu options and list filtering variations to see how the URL string is appended with each action."
+                }
+              }
+            ]
+          }
+        },
+        {
+          "object": "block",
+          "type": "bulleted_list_item",
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "type": "text",
+                "text": {
+                  "content": "incident_list.do ? sysparm_query =& sysparm_view =ess is an example of how the view is passed in the URL string."
+                }
+              }
+            ]
+          }
+        },
+        {
+          "object": "block",
+          "type": "bulleted_list_item",
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "type": "text",
+                "text": {
+                  "content": "incident_list.do ? sysparm_query =GROUPBYactive& sysparm_view = is how the URL looks when the group by option is chosen from the context menu."
+                }
+              }
+            ]
+          }
+        },
+        {
+          "object": "block",
+          "type": "bulleted_list_item",
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "type": "text",
+                "text": {
+                  "content": "incident_list.do ? sysparm_query =category%3Dsoftware is the result of applying a category is software filter to the list."
+                }
+              }
+            ]
+          }
+        },
+        {
+          "object": "block",
+          "type": "bulleted_list_item",
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "type": "text",
+                "text": {
+                  "content": "incident_list.do ? is the call to the list with no parameters passed into it. Explore context menu options and list filtering variations to see how the URL string is appended with each action."
+                }
+              }
+            ]
+          }
+        },
+        {
+          "object": "block",
+          "type": "bulleted_list_item",
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "type": "text",
+                "text": {
+                  "content": "incident_list.do ? sysparm_query =& sysparm_view =ess is an example of how the view is passed in the URL string."
+                }
+              }
+            ]
+          }
+        },
+        {
+          "object": "block",
+          "type": "bulleted_list_item",
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "type": "text",
+                "text": {
+                  "content": "incident_list.do ? sysparm_query =GROUPBYactive& sysparm_view = is how the URL looks when the group by option is chosen from the context menu."
+                }
+              }
+            ]
+          }
+        },
+        {
+          "object": "block",
+          "type": "bulleted_list_item",
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "type": "text",
+                "text": {
+                  "content": "incident_list.do ? sysparm_query =category%3Dsoftware is the result of applying a category is software filter to the list."
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  {
+    "object": "block",
+    "type": "paragraph",
+    "paragraph": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "< instance_name >/ incident_list.do ? sysparm_userpref_module =b55b4ab0c0a80009007a9c0f03fb4da9"
+          }
+        }
+      ]
+    },
+    "_sn2n_marker": "mijdgu5c-f29g3l"
+  },
+  {
+    "object": "block",
+    "type": "paragraph",
+    "paragraph": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Explore all the options available within the right-click menu. Click through to the Incident form itself incident.do to see what the URL string does when parameters are passed into it."
+          }
+        }
+      ]
+    },
+    "_sn2n_marker": "mijdgu5c-f29g3l"
+  },
+  {
+    "object": "block",
+    "type": "paragraph",
+    "paragraph": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Element link examples",
+            "link": {
+              "url": "https://www.servicenow.com/docs/bundle/yokohama-platform-user-interface/page/administer/content-management/concept/c_Examples.html"
+            }
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "object": "block",
+    "type": "paragraph",
+    "paragraph": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "View examples that show how to create a site pointing to various system data in several different data tables."
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "object": "block",
+    "type": "paragraph",
+    "paragraph": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Page source view",
+            "link": {
+              "url": "https://www.servicenow.com/docs/bundle/yokohama-platform-user-interface/page/administer/content-management/reference/r_PageSourceView.html"
+            }
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "object": "block",
+    "type": "paragraph",
+    "paragraph": {
+      "rich_text": [
+        {
+          "type": "text",
+          "text": {
+            "content": "Use the tools available in your browser to view the frame source page and understand what URL address bars pass between system frame sets."
+          },
+          "annotations": {
+            "bold": false,
+            "italic": false,
+            "strikethrough": false,
+            "underline": false,
+            "code": false,
+            "color": "default"
+          }
+        }
+      ]
+    }
+  }
+]

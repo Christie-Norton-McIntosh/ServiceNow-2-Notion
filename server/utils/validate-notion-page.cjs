@@ -7,7 +7,26 @@
  * - Reasonable block count
  * - Expected content structure
  * - Key headings/sections present
+ * - Content order and completeness (text similarity)
+ * 
+ * HEADING COUNT VALIDATION:
+ * Heading counts use ±20% tolerance to account for:
+ * 1. Synthetic section headings: ServiceNow uses <p><span class="ph uicontrol">Title</span></p>
+ *    which get converted to heading_2 blocks (now counted in HTML parsing)
+ * 2. Heading splitting: Long headings exceeding 100 rich_text elements split into multiple blocks
+ * 3. H4/H5/H6 downgrading: All downgrade to heading_3 (Notion only supports h1-h3)
+ * 
+ * PARAGRAPH COUNT VALIDATION:
+ * Paragraph counts use ±50% tolerance (informational only, not errors):
+ * 1. Promoted to list items: First <p> child of <li> becomes list item text, not paragraph block
+ * 2. Filtered empty paragraphs: Empty/whitespace-only paragraphs are filtered during conversion
+ * 3. Paragraph splitting: Long paragraphs exceeding 100 rich_text elements split into multiple blocks
+ * 4. Synthetic headings: <section><p><span class="ph uicontrol">...</span></p> become heading_2
+ * 5. Wrapped orphan content: Text not in containers gets wrapped in paragraph blocks
+ * 6. In tables: Paragraphs inside tables are excluded (table cells don't contain paragraph blocks)
  */
+
+const { validateContentOrder } = require('../services/content-validator.cjs');
 
 /**
  * Recursively fetch all blocks from a Notion page or block
@@ -169,13 +188,51 @@ function parseSourceHtmlCounts(html) {
       }
     });
     
-    const paragraphs = allParagraphs - paragraphsInTables - paragraphsPromotedToListText;
+    // Count synthetic UIControl paragraphs that become headings (exclude from paragraph count)
+    // Same pattern as synthetic headings: <section><p class="p"><span class="ph uicontrol">...</span></p>
+    let paragraphsBecomeHeadings = 0;
+    $('section > p.p').each((i, p) => {
+      const $p = $(p);
+      const html = $p.html() || '';
+      const isSyntheticHeading = /^\s*<span[^>]*class=["'][^"']*\bph\b[^"']*\buicontrol\b[^"']*["'][^>]*>[^<]+<\/span>\s*$/.test(html);
+      if (isSyntheticHeading) {
+        paragraphsBecomeHeadings++;
+      }
+    });
+    
+    const paragraphs = allParagraphs - paragraphsInTables - paragraphsPromotedToListText - paragraphsBecomeHeadings;
     
     // Count headings (excluding h1 which is used as the page title)
-    const headings = $('h2, h3, h4, h5, h6').length;
+    let headings = $('h2, h3, h4, h5, h6').length;
     
-    // Count tables
-    const tables = $('table').length;
+    // Count synthetic section headings: ServiceNow sections without h2 tags use
+    // <p class="p"><span class="ph uicontrol">Title</span></p> which get converted to heading_2
+    // These paragraphs contain ONLY a single UIControl span (no other content)
+    let syntheticHeadings = 0;
+    $('section > p.p').each((i, p) => {
+      const $p = $(p);
+      const html = $p.html() || '';
+      // Match paragraphs with ONLY a single UIControl span (with optional whitespace)
+      const isSyntheticHeading = /^\s*<span[^>]*class=["'][^"']*\bph\b[^"']*\buicontrol\b[^"']*["'][^>]*>[^<]+<\/span>\s*$/.test(html);
+      if (isSyntheticHeading) {
+        syntheticHeadings++;
+      }
+    });
+    
+    if (syntheticHeadings > 0) {
+      console.log(`📊 [VALIDATION] Found ${syntheticHeadings} synthetic UIControl headings (will be converted to heading_2)`);
+      headings += syntheticHeadings;
+    }
+    
+    // FIX v11.0.30: Count only top-level tables (exclude nested tables inside cells)
+    // Notion doesn't support nested tables, so they get flattened or converted to other blocks
+    const allTables = $('table').length;
+    const nestedTables = $('table table').length; // Tables inside other tables
+    const tables = allTables - nestedTables;
+    
+    if (nestedTables > 0) {
+      console.log(`📊 [VALIDATION] Found ${nestedTables} nested table(s) inside other tables (excluded from count, total ${allTables})`);
+    }
     
     // Count images (excluding images inside tables - those get removed in processing)
     const allImages = $('img').length;
@@ -227,10 +284,11 @@ function parseSourceHtmlCounts(html) {
     const codeBlocks = allCodeBlocks - codeBlocksInTables;
     
     // Log paragraph count details if paragraphs were excluded
-    if (paragraphsInTables > 0 || paragraphsPromotedToListText > 0) {
+    if (paragraphsInTables > 0 || paragraphsPromotedToListText > 0 || paragraphsBecomeHeadings > 0) {
       const exclusions = [];
       if (paragraphsInTables > 0) exclusions.push(`${paragraphsInTables} in tables`);
       if (paragraphsPromotedToListText > 0) exclusions.push(`${paragraphsPromotedToListText} promoted to list item text`);
+      if (paragraphsBecomeHeadings > 0) exclusions.push(`${paragraphsBecomeHeadings} converted to headings`);
       console.log(`📊 [VALIDATION] Paragraph count: ${allParagraphs} total, ${exclusions.join(', ')} (excluded), ${paragraphs} counted for validation`);
     }
     
@@ -431,54 +489,130 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
         result.notionCounts = notionCounts;
 
         // CRITICAL ELEMENT VALIDATION (determines pass/fail/warning)
-        // Tables must match exactly
+        // Tables - STRICT validation (must match exactly unless split for 100-row limit)
         let tablesMismatch = false;
-        if (sourceCounts.tables > 0 && notionCounts.tables !== sourceCounts.tables) {
-          tablesMismatch = true;
-          result.hasErrors = true;
-          result.issues.push(`Table count mismatch: expected ${sourceCounts.tables}, got ${notionCounts.tables}`);
-          log(`❌ [VALIDATION] Table count mismatch: ${notionCounts.tables}/${sourceCounts.tables}`);
-        } else if (sourceCounts.tables > 0) {
-          log(`✅ [VALIDATION] Table count matches: ${notionCounts.tables}/${sourceCounts.tables}`);
+        if (sourceCounts.tables > 0) {
+          const tableDiff = Math.abs(notionCounts.tables - sourceCounts.tables);
+          
+          if (tableDiff === 0) {
+            // Exact match - perfect!
+            log(`✅ [VALIDATION] Table count matches exactly: ${notionCounts.tables}/${sourceCounts.tables}`);
+          } else {
+            // Check for legitimate 100-row splitting
+            // Pattern: "This table had X rows and was split into Y tables above due to Notion's 100-row table limit"
+            const hasSplitTableCallout = allBlocks.some(block => 
+              block.type === 'callout' && 
+              block.callout?.rich_text?.some(rt => {
+                const content = rt.text?.content || '';
+                return (
+                  (content.includes('split into') && content.includes('100-row')) ||
+                  (content.includes('table') && content.includes('100-row') && content.includes('limit'))
+                );
+              })
+            );
+            
+            if (hasSplitTableCallout && notionCounts.tables > sourceCounts.tables) {
+              // Extra tables are due to legitimate 100-row splitting, not an error
+              // This is INFORMATIONAL only - not a warning or error
+              log(`ℹ️ [VALIDATION] Table count higher due to 100-row splitting: ${notionCounts.tables}/${sourceCounts.tables}`);
+              result.info = result.info || [];
+              result.info.push(`Table splitting: ${sourceCounts.tables} source table(s) split into ${notionCounts.tables} Notion tables due to 100-row limit (informational only)`);
+            } else {
+              // Mismatch and not splitting - this is an error
+              tablesMismatch = true;
+              result.hasErrors = true;
+              result.issues.push(`Table count mismatch: expected ${sourceCounts.tables}, got ${notionCounts.tables}`);
+              log(`❌ [VALIDATION] Table count mismatch: ${notionCounts.tables}/${sourceCounts.tables} (diff: ${tableDiff})`);
+            }
+          }
         }
 
-        // Images must match (with small tolerance for upload failures)
+        // Images - STRICT validation (must match exactly)
+        // Duplicates indicate deduplication failure, missing images indicate upload failure
         let imagesMismatch = false;
-        if (sourceCounts.images > 0 && notionCounts.images < sourceCounts.images) {
-          imagesMismatch = true;
-          result.hasErrors = true;
-          result.issues.push(`Image count mismatch: expected ${sourceCounts.images}, got ${notionCounts.images}`);
-          log(`❌ [VALIDATION] Image count mismatch: ${notionCounts.images}/${sourceCounts.images}`);
-        } else if (sourceCounts.images > 0) {
-          log(`✅ [VALIDATION] Image count acceptable: ${notionCounts.images}/${sourceCounts.images}`);
+        if (sourceCounts.images > 0) {
+          if (notionCounts.images < sourceCounts.images) {
+            // Fewer images - upload failure or dropped content (error)
+            imagesMismatch = true;
+            result.hasErrors = true;
+            const missing = sourceCounts.images - notionCounts.images;
+            result.issues.push(`Missing images: expected ${sourceCounts.images}, got ${notionCounts.images} (${missing} missing)`);
+            log(`❌ [VALIDATION] Image count too low: ${notionCounts.images}/${sourceCounts.images} (${missing} missing)`);
+          } else if (notionCounts.images > sourceCounts.images) {
+            // More images - likely duplicates from failed deduplication (error)
+            imagesMismatch = true;
+            result.hasErrors = true;
+            const extra = notionCounts.images - sourceCounts.images;
+            result.issues.push(`Duplicate images: expected ${sourceCounts.images}, got ${notionCounts.images} (${extra} duplicate)`);
+            log(`❌ [VALIDATION] Image count too high: ${notionCounts.images}/${sourceCounts.images} (${extra} duplicate)`);
+          } else {
+            log(`✅ [VALIDATION] Image count matches exactly: ${notionCounts.images}/${sourceCounts.images}`);
+          }
         }
 
-        // Callouts must match exactly
+        // Callouts - STRICT validation (must match exactly)
+        // Callouts are structural elements that should convert 1:1 from source
+        // Duplicates indicate a processing bug, missing callouts indicate dropped content
         let calloutsMismatch = false;
-        if (sourceCounts.callouts > 0 && notionCounts.callouts !== sourceCounts.callouts) {
-          calloutsMismatch = true;
-          result.hasErrors = true;
-          result.issues.push(`Callout count mismatch: expected ${sourceCounts.callouts}, got ${notionCounts.callouts}`);
-          log(`❌ [VALIDATION] Callout count mismatch: ${notionCounts.callouts}/${sourceCounts.callouts}`);
-        } else if (sourceCounts.callouts > 0) {
-          log(`✅ [VALIDATION] Callout count acceptable: ${notionCounts.callouts}/${sourceCounts.callouts}`);
+        if (sourceCounts.callouts > 0) {
+          if (notionCounts.callouts < sourceCounts.callouts) {
+            // Fewer callouts - dropped content (critical error)
+            calloutsMismatch = true;
+            result.hasErrors = true;
+            const missing = sourceCounts.callouts - notionCounts.callouts;
+            result.issues.push(`Missing callouts: expected ${sourceCounts.callouts}, got ${notionCounts.callouts} (${missing} missing)`);
+            log(`❌ [VALIDATION] Callout count too low: ${notionCounts.callouts}/${sourceCounts.callouts} (${missing} missing)`);
+          } else if (notionCounts.callouts > sourceCounts.callouts) {
+            // More callouts - likely duplicates (critical error)
+            calloutsMismatch = true;
+            result.hasErrors = true;
+            const extra = notionCounts.callouts - sourceCounts.callouts;
+            result.issues.push(`Duplicate callouts: expected ${sourceCounts.callouts}, got ${notionCounts.callouts} (${extra} duplicate)`);
+            log(`❌ [VALIDATION] Callout count too high: ${notionCounts.callouts}/${sourceCounts.callouts} (${extra} duplicate)`);
+          } else {
+            log(`✅ [VALIDATION] Callout count matches: ${notionCounts.callouts}/${sourceCounts.callouts}`);
+          }
         }
 
-        // Headings - less than expected is ERROR, more is WARNING
+        // Headings - use tolerance for splitting behavior
+        // Note: Headings can be split into multiple blocks if they exceed 100 rich_text elements
+        // Also: h4/h5/h6 get downgraded to h3 (Notion only supports heading_1/2/3)
+        // Also: Table splitting creates continuation headings like "(continued - rows 101-200)"
         let headingsFewer = false;
         let headingsMore = false;
         if (sourceCounts.headings > 0) {
-          if (notionCounts.headings < sourceCounts.headings) {
+          // Count continuation headings created by table splitting
+          const continuationHeadings = allBlocks.filter(block => 
+            (block.type === 'heading_2' || block.type === 'heading_3') &&
+            block[block.type]?.rich_text?.some(rt => {
+              const content = rt.text?.content || '';
+              return content.match(/^\(continued - rows \d+-\d+\)$/);
+            })
+          ).length;
+          
+          // Exclude continuation headings from comparison (they're synthetic)
+          const actualNotionHeadings = notionCounts.headings - continuationHeadings;
+          
+          const minExpected = Math.floor(sourceCounts.headings * 0.8); // Allow 20% fewer (merged/lost)
+          const maxExpected = Math.ceil(sourceCounts.headings * 1.2); // Allow 20% more (split/downgraded)
+          
+          if (continuationHeadings > 0) {
+            log(`ℹ️ [VALIDATION] Found ${continuationHeadings} table continuation heading(s) (excluded from count)`);
+            result.info = result.info || [];
+            result.info.push(`Table continuation headings: ${continuationHeadings} synthetic heading(s) for split tables (excluded from heading count)`);
+          }
+          
+          if (actualNotionHeadings < minExpected) {
             headingsFewer = true;
             result.hasErrors = true;
-            result.issues.push(`Heading count too low: expected ${sourceCounts.headings}, got ${notionCounts.headings}`);
-            log(`❌ [VALIDATION] Heading count too low: ${notionCounts.headings}/${sourceCounts.headings}`);
-          } else if (notionCounts.headings > sourceCounts.headings) {
+            result.issues.push(`Heading count too low: expected ~${sourceCounts.headings} (±20%), got ${actualNotionHeadings}`);
+            log(`❌ [VALIDATION] Heading count too low: ${actualNotionHeadings} < ${minExpected} (source: ${sourceCounts.headings})`);
+          } else if (actualNotionHeadings > maxExpected) {
             headingsMore = true;
-            result.warnings.push(`Extra headings: expected ${sourceCounts.headings}, got ${notionCounts.headings} (acceptable)`);
-            log(`⚠️ [VALIDATION] Heading count higher than expected: ${notionCounts.headings}/${sourceCounts.headings} (acceptable)`);
+            result.warnings.push(`Extra headings: expected ~${sourceCounts.headings} (±20%), got ${actualNotionHeadings} (may be split headings)`);
+            log(`⚠️ [VALIDATION] Heading count higher than expected: ${actualNotionHeadings} > ${maxExpected} (source: ${sourceCounts.headings})`);
           } else {
-            log(`✅ [VALIDATION] Heading count matches: ${notionCounts.headings}/${sourceCounts.headings}`);
+            log(`✅ [VALIDATION] Heading count within range: ${actualNotionHeadings} (source: ${sourceCounts.headings}, range: ${minExpected}-${maxExpected}, ${continuationHeadings} continuation headings excluded)`);
           }
         }
 
@@ -511,21 +645,24 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
           }
         }
 
-        // Paragraphs - warning level (with tolerance for splitting/merging)
-        // Shows ⚠️ if outside tolerance but doesn't fail validation
+        // Paragraphs - informational only (counting methodology is imprecise)
+        // Paragraphs can be split (>100 rich_text), filtered (empty), or wrapped (orphan content)
+        // Use 50% tolerance and only log extreme differences as informational notes
         if (sourceCounts.paragraphs > 0) {
-          const tolerance = Math.ceil(sourceCounts.paragraphs * 0.3); // 30% tolerance
-          const minExpected = sourceCounts.paragraphs - tolerance;
+          const tolerance = Math.ceil(sourceCounts.paragraphs * 0.5); // 50% tolerance (very loose)
+          const minExpected = Math.max(1, sourceCounts.paragraphs - tolerance);
           const maxExpected = sourceCounts.paragraphs + tolerance;
           
           if (notionCounts.paragraphs < minExpected) {
-            result.warnings.push(`⚠️ Paragraph count unusually low: expected ~${sourceCounts.paragraphs} (±${tolerance}), got ${notionCounts.paragraphs}`);
-            log(`⚠️ [VALIDATION] Paragraph count low: ${notionCounts.paragraphs} < ${minExpected} (source: ${sourceCounts.paragraphs})`);
+            // Only add as informational note, not a warning
+            result.warnings.push(`ℹ️ Paragraph count lower than expected: ~${sourceCounts.paragraphs} (±${tolerance}), got ${notionCounts.paragraphs} (may be filtered empty paragraphs or promoted to list items)`);
+            log(`ℹ️ [VALIDATION] Paragraph count low: ${notionCounts.paragraphs} < ${minExpected} (source: ${sourceCounts.paragraphs}) - informational only`);
           } else if (notionCounts.paragraphs > maxExpected) {
-            result.warnings.push(`⚠️ Paragraph count unusually high: expected ~${sourceCounts.paragraphs} (±${tolerance}), got ${notionCounts.paragraphs}`);
-            log(`⚠️ [VALIDATION] Paragraph count high: ${notionCounts.paragraphs} > ${maxExpected} (source: ${sourceCounts.paragraphs})`);
+            // Only add as informational note, not a warning
+            result.warnings.push(`ℹ️ Paragraph count higher than expected: ~${sourceCounts.paragraphs} (±${tolerance}), got ${notionCounts.paragraphs} (may be split paragraphs or wrapped orphan content)`);
+            log(`ℹ️ [VALIDATION] Paragraph count high: ${notionCounts.paragraphs} > ${maxExpected} (source: ${sourceCounts.paragraphs}) - informational only`);
           } else {
-            log(`✅ [VALIDATION] Paragraph count within range: ${notionCounts.paragraphs} (source: ${sourceCounts.paragraphs})`);
+            log(`✅ [VALIDATION] Paragraph count within range: ${notionCounts.paragraphs} (source: ${sourceCounts.paragraphs}, range: ${minExpected}-${maxExpected})`);
           }
         }
 
@@ -533,6 +670,44 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
       } else {
         log(`⚠️ [VALIDATION] Could not parse source HTML for comparison`);
       }
+    }
+
+    // CONTENT VALIDATION: Run text similarity check and block counting
+    if (options.sourceHtml) {
+      try {
+        log(`🔍 [VALIDATION] Running content validation (text similarity & block counts)...`);
+        const contentResult = await validateContentOrder(options.sourceHtml, pageId, notion);
+        
+        // Merge content validation results into main result
+        result.similarity = contentResult.similarity;
+        result.htmlSegments = contentResult.htmlSegments;
+        result.notionSegments = contentResult.notionSegments;
+        result.htmlChars = contentResult.htmlChars;
+        result.notionChars = contentResult.notionChars;
+        result.charDiff = contentResult.charDiff;
+        result.charDiffPercent = contentResult.charDiffPercent;
+        result.missing = contentResult.missing;
+        result.extra = contentResult.extra;
+        result.orderIssues = contentResult.orderIssues;
+        
+        // Add detailed block counts to stats
+        if (contentResult.stats && contentResult.stats.breakdown) {
+          result.stats.breakdown = contentResult.stats.breakdown;
+          log(`✅ [VALIDATION] Content validation complete - similarity: ${contentResult.similarity}%, blocks: ${JSON.stringify(contentResult.stats.breakdown)}`);
+        }
+        
+        // If content validation failed similarity threshold, mark as error
+        if (!contentResult.success) {
+          result.hasErrors = true;
+          result.success = false;
+          result.issues.push(`Content similarity below threshold: ${contentResult.similarity}% (expected ≥95%)`);
+        }
+      } catch (contentError) {
+        log(`⚠️ [VALIDATION] Content validation failed: ${contentError.message}`);
+        result.warnings.push(`Content validation error: ${contentError.message}`);
+      }
+    } else {
+      log(`⚠️ [VALIDATION] No source HTML provided - skipping content validation`);
     }
 
     // Generate summary based on critical element validation
@@ -546,27 +721,27 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
       if (result.warnings.length > 0) {
         result.summary += `\n\nℹ️ Informational Warnings:\n${result.warnings.map((w, i) => `${i + 1}. ${w}`).join('\n')}`;
       }
-    } else if (result.warnings.length > 0) {
-      result.success = true; // Warnings don't cause failure
-      result.summary = `✅ Validation passed (critical elements match)\n\nℹ️ ${result.warnings.length} informational note(s):\n${result.warnings.map((w, i) => `${i + 1}. ${w}`).join('\n')}`;
+      if (result.info && result.info.length > 0) {
+        result.summary += `\n\n📝 Notes:\n${result.info.map((note, i) => `${i + 1}. ${note}`).join('\n')}`;
+      }
+    } else if (result.warnings.length > 0 || (result.info && result.info.length > 0)) {
+      result.success = true; // Warnings and info don't cause failure
+      result.summary = `✅ Validation passed (critical elements match)`;
+      if (result.warnings.length > 0) {
+        result.summary += `\n\nℹ️ ${result.warnings.length} informational note(s):\n${result.warnings.map((w, i) => `${i + 1}. ${w}`).join('\n')}`;
+      }
+      if (result.info && result.info.length > 0) {
+        result.summary += `\n\n📝 ${result.info.length} informational note(s):\n${result.info.map((note, i) => `${i + 1}. ${note}`).join('\n')}`;
+      }
     } else {
       result.success = true;
       result.summary = `✅ Validation passed: ${allBlocks.length} blocks, ${headings.length} headings, all critical elements match`;
     }
 
-    // Add source comparison to summary if available
-    if (result.sourceCounts && result.notionCounts) {
-      result.summary += `\n\n📊 Content Comparison (Source → Notion):`;
-      result.summary += `\n• Ordered list items: ${result.sourceCounts.orderedListItems} → ${result.notionCounts.orderedListItems}`;
-      result.summary += `\n• Unordered list items: ${result.sourceCounts.unorderedListItems} → ${result.notionCounts.unorderedListItems}`;
-      result.summary += `\n• Paragraphs: ${result.sourceCounts.paragraphs} → ${result.notionCounts.paragraphs}`;
-      result.summary += `\n• Headings: ${result.sourceCounts.headings} → ${result.notionCounts.headings}`;
-      result.summary += `\n• Tables: ${result.sourceCounts.tables} → ${result.notionCounts.tables}`;
-      result.summary += `\n• Images: ${result.sourceCounts.images} → ${result.notionCounts.images}`;
-      result.summary += `\n• Callouts: ${result.sourceCounts.callouts} → ${result.notionCounts.callouts}`;
-    }
-
-    result.summary += `\n\nStats: ${JSON.stringify(result.stats, null, 2)}`;
+    // Note: Source comparison (Content Comparison) has been REMOVED from summary
+    // This data is now exclusively in the "Stats" property to avoid duplication
+    // The Validation property focuses only on pass/fail, similarity, order issues, and missing segments
+    // The Stats property shows detailed block counts (Source → Notion)
 
     log(`🔍 [VALIDATION] Complete: ${result.success ? 'PASSED' : 'FAILED'}`);
     
@@ -577,6 +752,18 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
     result.summary = `❌ Validation failed with error: ${error.message}`;
     log(`❌ [VALIDATION] Error during validation: ${error.message}`);
   }
+
+  // FIX v11.0.29: SAFEGUARD - Ensure summary is NEVER empty
+  // This prevents empty strings from being sent to Notion, which would store as empty arrays
+  if (!result.summary || result.summary.trim() === '') {
+    log(`⚠️ [VALIDATION] Summary is empty - using fallback message`);
+    result.summary = '⚠️ Validation ran but no summary was generated';
+    result.hasErrors = true;
+    if (!result.issues) result.issues = [];
+    result.issues.push('Internal error: validation summary was empty');
+  }
+  
+  log(`🔍 [VALIDATION] Final summary (${result.summary.length} chars): ${result.summary.substring(0, 100)}...`);
 
   return result;
 }

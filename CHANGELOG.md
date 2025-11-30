@@ -1,5 +1,142 @@
 # CHANGELOG — ServiceNow-2-Notion
 
+## Unreleased
+Date: 2025-11-28
+
+### Summary
+
+**Safe dedupe default**: Changed the default Jaccard threshold for post-processing deduplication to exact-match (1.0) so production runs only remove exact token-set duplicates by default. This is a conservative, low-risk rollout step; the threshold remains configurable via the `SN2N_DEDUPE_JACCARD` environment variable.
+
+### Rationale
+
+Validation runs showed dedupe candidates are overwhelmingly exact matches. Defaulting to exact-match prevents accidental removal of paraphrased or semantically similar content while preserving an opt-in path to lower thresholds for tuned rollouts.
+
+### Files Modified
+
+- `server/services/servicenow.cjs` — changed default SN2N_DEDUPE_JACCARD fallback to '1'
+
+
+## Version: 11.0.6
+Date: 2025-11-10
+
+### Summary
+
+**Debugging Enhancement**: Added comprehensive logging to diagnose image orchestration failures where markers are visible during extraction but images aren't placed.
+
+### Issue
+For some pages (e.g., "Add a document to a contract"), child images with markers are not being placed at their marker locations. Markers appear during extraction but are removed without appending the images.
+
+### Enhanced Logging
+
+Added detailed logging at key orchestration points:
+
+1. **Image Block Detection**: Logs when markers contain image blocks
+2. **Parent Search Results**: Tracks whether parent is found or not for image markers
+3. **Image URL Logging**: Shows image URLs in append logs
+4. **BFS Search Tracking**: Logs marker search start and failure with visited blocks list
+
+### Debug Keywords
+- `[IMAGE-DEBUG]` - Image orchestration tracking
+- `[MARKER-SEARCH]` - BFS marker search results
+
+### Usage
+```bash
+SN2N_VERBOSE=1 npm start
+```
+
+Look for log patterns to diagnose:
+- Are images being marked and collected?
+- Is the marker being found during orchestration?
+- Where do images end up (parent vs page root)?
+
+See `docs/image-marker-debugging-v11.0.6.md` for complete debugging guide.
+
+**Files Modified**:
+- `server/orchestration/deep-nesting.cjs`: Enhanced logging for image orchestration
+- `docs/image-marker-debugging-v11.0.6.md`: Debugging guide
+
+---
+
+## Version: 11.0.4
+Date: 2025-11-10
+
+### Summary
+
+**Critical Fix**: Context-aware deduplication prevents removal of intentionally repeated images and tables in procedural content.
+
+### Problem
+
+Two validation failures revealed that post-orchestration deduplication was too aggressive:
+1. **Images**: Same icon appearing in different procedural steps was deduplicated (expected 2, got 1)
+2. **Tables**: Identical tables in different procedural steps were deduplicated (expected 3, got 2)
+
+### Solution
+
+Modified post-orchestration deduplication to **preserve images and tables that are children of list items** (procedural steps). These often legitimately repeat:
+- Icons guide users through multiple steps
+- Tables with identical structure appear in different procedural contexts
+
+### Changes
+
+- **Context-Aware Deduplication** (`server/routes/w2n.cjs`):
+  - Detects parent block type (list item vs other)
+  - Skips deduplication for images and tables inside list items
+  - Preserves deduplication for callouts (true duplicates)
+  - Logs preserved blocks for debugging
+
+### Validation Results
+
+```
+Total files tested: 2
+✅ Passed: 2 (100.0%)
+❌ Failing: 0 (0.0%)
+```
+
+Both previously failing pages now pass validation.
+
+### Technical Details
+
+**Before**: All images/tables deduplicated by URL/content globally  
+**After**: Images/tables in list items exempted from deduplication  
+**Rationale**: Procedural content intentionally repeats visual guidance across steps
+
+**Files Modified**:
+- `server/routes/w2n.cjs`: Added context detection and skip logic
+- `docs/context-aware-deduplication-fix.md`: Full documentation
+
+---
+
+## Version: 11.0.3
+Date: 2025-11-10
+
+### Summary
+
+**UI Enhancement**: Added localStorage persistence for UI panel position to prevent blocking navigation buttons during AutoExtract operations.
+
+### Changes
+
+#### UI Panel Position Persistence
+- **Problem**: Panel always appeared at top-right corner (20px, 20px) after page reload, potentially covering ServiceNow navigation buttons
+- **Solution**: Position now persists across page reloads using localStorage
+- **Features**:
+  - Automatic save when dragging ends
+  - Automatic restore on page load with validation
+  - Off-screen position detection and cleanup
+  - New reset button (↗️) to restore default position
+  - Success toast notification on reset
+- **Benefits**: 
+  - Users can position panel away from navigation buttons
+  - Improves AutoExtract reliability
+  - Position persists throughout multi-page operations
+- **Technical**: Uses `localStorage` key `w2n-panel-position` with JSON value `{ left, top }`
+- **Validation**: Ensures restored position is on-screen (8px margin from all edges)
+
+**Files Modified**:
+- `src/ui/main-panel.js`: Added position save/restore logic, reset button
+- `docs/ui-panel-persistence.md`: Full documentation
+
+---
+
 ## Version: 11.0.0
 Date: 2025-11-09
 
@@ -76,9 +213,10 @@ Date: 2025-11-09
 ### Documentation
 
 - **RATE_LIMIT_PROTECTION.md**: Comprehensive rate limit guide with troubleshooting
-- **RELEASE_NOTES_11.0.0.md**: Full feature list and migration guide
+- **Release Notes**: v11.0.0 feature list and migration guide (archived to `archived/cleanup-2025-11-23/`)
 - **Backup System**: `backups/v10.0.38-20251109-202651/` with BACKUP_INFO.md
 - **Updated Copilot Instructions**: Latest patterns and project structure
+- **Archived**: Test scripts, analysis tools, and temporary documentation moved to `archived/cleanup-2025-11-23/`
 
 ### Bug Fixes
 

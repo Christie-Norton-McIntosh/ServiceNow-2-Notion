@@ -40,3 +40,7 @@ jobs:
           echo "Port 3004 is open"
       - name: Run smoke tests (dryRun)
         run: npm run test:smoke
+      - name: Run server-side regression & validation tests
+        run: |
+          # Run the server-side test suite which includes server/tests/test-*.cjs
+          npm run test:all:server

@@ -1,0 +1,27 @@
+--- revalidate-updated-pages.sh.orig
++++ revalidate-updated-pages.sh
+@@ -183,13 +183,13 @@
+   cleared_total=0
+   failed_total=0
+   total_total=0
+ 
+-  chunk_size=25
++  chunk_size=5
+   idx=0
+   chunk_num=1
+   
+   while [ $idx -lt ${#PAGE_IDS_TO_REFRESH[@]} ]; do
+     chunk=( "${PAGE_IDS_TO_REFRESH[@]:$idx:$chunk_size}" )
+     chunk_len=${#chunk[@]}
+ 
+-    echo -e "${BLUE}[$chunk_num]${NC} Processing chunk of $chunk_len pages (IDs $((idx+1))-$((idx+chunk_len)))..."
++    echo -e "${BLUE}[$chunk_num]${NC} Processing chunk of $chunk_len pages (IDs $((idx+1))-$((idx+chunk_len)))... (90s timeout)"
+@@ -214,7 +214,7 @@
+     # POST chunk with longer timeout for large batches
+     # Capture both stdout and stderr separately to diagnose failures
+     err_file="/tmp/sn2n-curl-err-$$"
+-    resp=$(curl -s -S -m 30 -w "\n%{http_code}" -X POST "http://localhost:3004/api/validate" \
++    resp=$(curl -s -S -m 90 -w "\n%{http_code}" -X POST "http://localhost:3004/api/validate" \
+       -H "Content-Type: application/json" \
+       -d @/tmp/sn2n-prop-refresh.json 2>"$err_file" || echo -e "\n000")
+     http_code=$(echo "$resp" | tail -1)
