@@ -40,6 +40,7 @@ import {
 // API Modules
 // Universal Workflow removed; no import required.
 import {
+  apiCall,
   checkProxyHealth,
   createNotionPage,
   pingProxy,
@@ -413,6 +414,99 @@ class ServiceNowToNotionApp {
       showErrorPanel("Failed to save to Notion: " + error.message);
     } finally {
       this.isProcessing = false;
+    }
+  }
+
+  /**
+   * Handle update existing page button click
+   */
+  async handleUpdateExistingPage() {
+    if (this.isProcessing) {
+      debug("⚠️ Already processing, ignoring click");
+      return;
+    }
+
+    this.isProcessing = true;
+
+    try {
+      // Prompt for page ID
+      const pageId = prompt("Enter the Notion Page ID to update (32 characters, with or without hyphens):");
+      if (!pageId || pageId.trim() === "") {
+        overlayModule.close();
+        this.isProcessing = false;
+        return;
+      }
+
+      // Validate page ID format (32 hex chars with optional hyphens)
+      const cleanPageId = pageId.replace(/-/g, '');
+      if (!/^[a-f0-9]{32}$/i.test(cleanPageId)) {
+        alert("Invalid Page ID format. Must be 32 hexadecimal characters (with or without hyphens).");
+        overlayModule.close();
+        this.isProcessing = false;
+        return;
+      }
+
+      // Show progress overlay
+      overlayModule.start("Starting extraction...");
+
+      // Extract data from current page
+      overlayModule.setMessage("Extracting page metadata...");
+      const extractedData = await this.extractCurrentPageData();
+      this.currentExtractedData = extractedData;
+
+      overlayModule.setMessage("Updating Notion page...");
+
+      // Call PATCH endpoint
+      await this.updateExistingPage(cleanPageId, extractedData);
+    } catch (error) {
+      debug("❌ Update existing page failed:", error);
+      try {
+        overlayModule.error({
+          message: `Failed to update Notion page: ${error.message}`,
+        });
+      } catch (e) {
+        try {
+          overlayModule.close && overlayModule.close();
+        } catch (err) {}
+      }
+      showErrorPanel("Failed to update Notion page: " + error.message);
+    } finally {
+      this.isProcessing = false;
+    }
+  }
+
+  /**
+   * Update existing Notion page via PATCH endpoint
+   */
+  async updateExistingPage(pageId, extractedData) {
+    debug(`📝 Updating existing page ${pageId}...`);
+
+    try {
+      const patchData = {
+        title: extractedData.title,
+        contentHtml: extractedData.contentHtml || extractedData.content,
+        url: extractedData.url
+      };
+
+      const result = await apiCall("PATCH", `/api/W2N/${pageId}`, patchData);
+
+      if (result && result.success) {
+        debug(`✅ Page updated successfully`);
+        const pageUrl = result.data?.pageUrl || result.pageUrl || `https://www.notion.so/${pageId.replace(/-/g, '')}`;
+        
+        overlayModule.done({
+          success: true,
+          pageUrl: pageUrl,
+          autoCloseMs: 5000
+        });
+
+        return result;
+      }
+
+      throw new Error(result?.error || "Failed to update page");
+    } catch (error) {
+      debug(`❌ Failed to update page: ${error.message}`);
+      throw error;
     }
   }
 

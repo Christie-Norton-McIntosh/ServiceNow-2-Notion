@@ -315,12 +315,10 @@ function convertRichTextBlock(input, options = {}) {
   fs.appendFileSync('/Users/norton-mcintosh/GitHub/ServiceNow-2-Notion/debug-richtext.log', 
     `AFTER CODE/SAMP TAGS: "${html.substring(0, 200)}"\n\n`);
   
-  // Handle span with uicontrol class as bold + blue
-  html = html.replace(/<span[^>]*class=["'][^"']*\buicontrol\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
-    return `__BOLD_BLUE_START__${content}__BOLD_BLUE_END__`;
-  });
-  
-  // Handle spans with technical identifier classes (keyword, parmname, codeph, etc.)
+    // Handle span with uicontrol class as bold + blue
+    html = html.replace(/<span[^>]*class=["'][^"']*\buicontrol\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, (match, content) => {
+      return `__BOLD_BLUE_START__${content}__BOLD_BLUE_END__`;
+    });  // Handle spans with technical identifier classes (keyword, parmname, codeph, etc.)
   // Use shared utility for simplified, consistent detection
   // CRITICAL FIX: Always return the content (not the HTML tags) even if not detected as technical
   // NOTE: Generic "ph" class removed from inline code formatting - only specific technical classes get formatting

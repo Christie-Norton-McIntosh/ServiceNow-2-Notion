@@ -259,12 +259,14 @@ function cleanHtmlText(html) {
   // REMOVED: Don't strip standalone < and > characters - they may be legitimate content like navigation arrows
   // text = text.replace(/</g, " ").replace(/>/g, " ");
 
-  // Clean up whitespace - normalize ALL whitespace (including newlines from HTML formatting) to spaces
+  // Clean up whitespace - normalize spaces/tabs but preserve intentional newlines
+  // FIX v11.0.39: Preserve newlines from list item paragraph breaks (inserted as \n\n markers)
   // Intentional newlines from <br> tags are marked with __BR_NEWLINE__ and will be restored after
   // Block boundaries are marked with __BLOCK_START__ and __BLOCK_END__ and will be restored as newlines
-  // HTML formatting newlines (indentation) should become spaces
-  text = text.replace(/\s+/g, " ");
-  // Trim spaces from start and end
+  // HTML formatting indentation should become spaces, but \n should stay
+  text = text.replace(/[ \t]+/g, " ");  // Collapse spaces/tabs only
+  text = text.replace(/\n{3,}/g, '\n\n');  // Collapse 3+ newlines to double newline
+  // Trim spaces from start and end (but keep newlines)
   text = text.trim();
   
   // Restore block-level element boundaries as newlines
