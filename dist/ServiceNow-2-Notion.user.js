@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.100
+// @version      11.0.101
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.100";
+    window.BUILD_VERSION = "11.0.101";
 (function () {
 
   // Configuration constants and default settings
@@ -2782,8 +2782,13 @@
       const contentHtml = extractedData.content?.combinedHtml || extractedData.contentHtml || extractedData.content;
       
       if (!contentHtml) {
+        debug(`[AUTOEXTRACT-UPDATE] ❌ No content HTML found`);
+        debug(`[AUTOEXTRACT-UPDATE]    extractedData.content:`, extractedData.content);
+        debug(`[AUTOEXTRACT-UPDATE]    extractedData.contentHtml:`, extractedData.contentHtml);
         throw new Error("No content HTML found in extracted data");
       }
+      
+      debug(`[AUTOEXTRACT-UPDATE] ✅ Content HTML extracted: ${contentHtml.length} characters`);
       
       const patchData = {
         title: extractedData.title,
@@ -2791,11 +2796,17 @@
         url: extractedData.url
       };
 
-      debug(`[AUTOEXTRACT-UPDATE] 📦 PATCH payload: title="${patchData.title}", contentHtml=${contentHtml.length} chars, url="${patchData.url}"`);
+      debug(`[AUTOEXTRACT-UPDATE] 📦 PATCH payload prepared:`);
+      debug(`[AUTOEXTRACT-UPDATE]    title: "${patchData.title}"`);
+      debug(`[AUTOEXTRACT-UPDATE]    contentHtml: ${contentHtml.length} chars`);
+      debug(`[AUTOEXTRACT-UPDATE]    url: "${patchData.url}"`);
+      debug(`[AUTOEXTRACT-UPDATE]    pageId: ${pageId}`);
 
       // Call PATCH endpoint and wait for completion
-      debug(`[AUTOEXTRACT-UPDATE] ⏳ Sending PATCH request...`);
+      debug(`[AUTOEXTRACT-UPDATE] ⏳ Sending PATCH request to /api/W2N/${pageId}...`);
       const result = await apiCall("PATCH", `/api/W2N/${pageId}`, patchData);
+      
+      debug(`[AUTOEXTRACT-UPDATE] 📬 Received response from server:`, result);
 
       if (!result || !result.success) {
         throw new Error(result?.error || "PATCH request failed");
