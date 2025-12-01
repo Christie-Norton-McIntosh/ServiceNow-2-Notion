@@ -229,19 +229,11 @@ function cleanHtmlText(html) {
     // Also remove any standalone buttons that might remain (in case div was already removed)
   text = text.replace(/<button\b[^>]*>.*?<\/button>/gis, '');
 
-  // CRITICAL: Replace block-level element boundaries with newline markers to preserve separation
-  // This ensures "Role required: sam_admin</span><div>Note: ..." becomes two separate lines
-  // Must be done BEFORE general tag removal to maintain block boundaries
+  // NOTE: Block-level element boundaries should be handled at the HTML parsing level,
+  // not during text cleaning. cleanHtmlText is used for individual text segments that
+  // have already been extracted from their block context. Adding newlines here breaks
+  // up continuous text that happens to contain inline <div> or other block tags.
   
-  // Strategy: Replace closing tags of block elements, and opening tags when they follow inline content
-  // This prevents excessive newlines while maintaining proper separation
-  
-  // 1. Replace closing tags of block elements (always creates a boundary)
-  text = text.replace(/<\/(div|p|section|article|aside|header|footer|nav|main|blockquote|h[1-6]|li|dd|dt|pre|address)>/gi, '__BLOCK_END__');
-  
-  // 2. Replace opening tags of block elements (creates a boundary before new block)
-  text = text.replace(/<(?:div|p|section|article|aside|header|footer|nav|main|blockquote|h[1-6]|li|dd|dt|pre|address)(?:\s+[^>]*)?>/gi, '__BLOCK_START__');
-
   // NOW remove HTML tags (including any that were entity-encoded)
   // Match actual HTML tags but preserve technical placeholders like <instance-name> or <Tool ID>
   // HTML tags: <tagname>, <tagname attr="value">, </tagname>
@@ -259,20 +251,13 @@ function cleanHtmlText(html) {
   // REMOVED: Don't strip standalone < and > characters - they may be legitimate content like navigation arrows
   // text = text.replace(/</g, " ").replace(/>/g, " ");
 
-  // Clean up whitespace - normalize spaces/tabs but preserve intentional newlines
-  // FIX v11.0.39: Preserve newlines from list item paragraph breaks (inserted as \n\n markers)
-  // Intentional newlines from <br> tags are marked with __BR_NEWLINE__ and will be restored after
-  // Block boundaries are marked with __BLOCK_START__ and __BLOCK_END__ and will be restored as newlines
-  // HTML formatting indentation should become spaces, but \n should stay
-  text = text.replace(/[ \t]+/g, " ");  // Collapse spaces/tabs only
-  text = text.replace(/\n{3,}/g, '\n\n');  // Collapse 3+ newlines to double newline
-  // Trim spaces from start and end (but keep newlines)
+  // Clean up whitespace - collapse ALL whitespace to single spaces
+  // FIX v11.0.96: Collapse ALL whitespace (including newlines from HTML source formatting)
+  // Only intentional breaks (marked with __BR_NEWLINE__) should be preserved
+  // This prevents HTML source formatting (newlines between tags) from appearing in output
+  text = text.replace(/\s+/g, " ");  // Collapse ALL consecutive whitespace to single space
+  // Trim spaces from start and end
   text = text.trim();
-  
-  // Restore block-level element boundaries as newlines
-  // This ensures separate paragraphs, divs, sections, etc. appear on separate lines
-  text = text.replace(/__BLOCK_START__/g, '\n');
-  text = text.replace(/__BLOCK_END__/g, '\n');
   
   // Restore intentional newlines from <br> tags
   text = text.replace(/__BR_NEWLINE__/g, '\n');

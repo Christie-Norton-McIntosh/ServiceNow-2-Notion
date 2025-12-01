@@ -468,6 +468,9 @@ async function extractContentFromHtml(html) {
       console.log('🔍 [parseRichText] Found standalone ">" character before cleanup');
     }
 
+    // CRITICAL: Remove figcaption content entirely - figcaptions should only be used as image captions, not as content text
+    text = text.replace(/<figcaption[^>]*>[\s\S]*?<\/figcaption>/gi, '');
+
   // CRITICAL FIX: Avoid globally stripping ALL <div> tags; instead remove only known
   // UI wrapper divs (which are decorative), and convert other closing </div> tags
   // to newlines so paragraph boundaries are preserved.
@@ -1616,13 +1619,7 @@ async function extractContentFromHtml(html) {
         const $table = $('<div>').html(tableHtml);
         $table.find('figure').each((idx, fig) => {
           const $figure = $(fig);
-          const $caption = $figure.find('figcaption').first();
-          if ($caption.length > 0) {
-            const caption = cleanHtmlText($caption.html());
-            $figure.replaceWith(`<span class="image-placeholder">See "${caption}"</span>`);
-          } else {
-            $figure.replaceWith(`<span class="image-placeholder">See image below</span>`);
-          }
+          $figure.replaceWith(`<span class="image-placeholder">See image below</span>`);
         });
         modifiedTableHtml = $table.html();
         
@@ -2428,58 +2425,64 @@ async function extractContentFromHtml(html) {
       // ServiceNow wrapper divs (div.p, div.sectiondiv) - process children recursively
       // These are semantic wrappers that should be transparent, not converted to paragraphs
       const children = $elem.find('> *').toArray();
-      const childTypes = children.map(c => c.name + ($(c).attr('class') ? `.${$(c).attr('class').split(' ')[0]}` : '')).join(', ');
-      console.log(`🔍 [DIV-P-FIX] Processing <div class="${$elem.attr('class')}"> with ${children.length} children: [${childTypes}]`);
-      
-      if (children.length > 0) {
-        for (const child of children) {
-          const childBlocks = await processElement(child);
-          processedBlocks.push(...childBlocks);
-        }
-      } else {
-        // No child elements - extract text content as paragraph
-        const innerHtml = $elem.html() || '';
-        const cleanedText = cleanHtmlText(innerHtml).trim();
-        
-        if (cleanedText) {
-          // FIX v11.0.39: Skip div.p elements that match table captions
-          const normalizedText = cleanedText.toLowerCase();
-          console.log(`📊 [CAPTION-CHECK-DIVP] Checking div.p: "${cleanedText.substring(0, 60)}..."`);
-          console.log(`📊 [CAPTION-CHECK-DIVP] Set has ${processedTableCaptions.size} caption(s)`);
-          
-          let shouldSkip = false;
-          for (const caption of processedTableCaptions) {
-            if (normalizedText.startsWith(caption) || normalizedText === caption) {
-              console.log(`📊 [CAPTION-CHECK-DIVP] ✓ MATCH! Skipping div.p with caption: "${caption.substring(0, 60)}..."`);
-              shouldSkip = true;
-              break;
-            }
-          }
-          
-          if (shouldSkip) {
-            $elem.remove();
-            return processedBlocks;
-          }
-          
-          const { richText: divRichText, imageBlocks: divImages } = await parseRichText(innerHtml);
-          
-          if (divImages && divImages.length > 0) {
-            processedBlocks.push(...divImages);
-          }
-          
-          if (divRichText.length > 0 && divRichText.some(rt => rt.text.content.trim())) {
-            const richTextChunks = splitRichTextArray(divRichText);
-            for (const chunk of richTextChunks) {
-              processedBlocks.push({
-                object: "block",
-                type: "paragraph",
-                paragraph: {
-                  rich_text: chunk
-                }
-              });
-            }
+
+      // FIX v11.0.41: Handle mixed text and inline elements (like spans) before block elements in div.p
+      // Collect all inline content until we hit a block element, then process block elements separately
+      const allChildNodes = Array.from($elem.get(0).childNodes);
+      let inlineContentHtml = '';
+      let blockElements = [];
+
+      for (const node of allChildNodes) {
+        if (node.nodeType === 3) { // TEXT_NODE
+          // Collect text content
+          inlineContentHtml += node.textContent || node.nodeValue || node.data || '';
+        } else if (node.nodeType === 1) { // ELEMENT_NODE
+          const $child = $(node);
+          const childTag = node.name;
+          const childClass = $child.attr('class') || '';
+
+          // Check if this is a block element that should be processed separately
+          const isBlockElement = ['ul', 'ol', 'table', 'div', 'p', 'blockquote', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(childTag) ||
+                                childClass.includes('table-wrap') ||
+                                (childTag === 'div' && (childClass.includes('p') || childClass.includes('sectiondiv') || childClass.includes('note') || childClass.includes('warning') || childClass.includes('caution') || childClass.includes('important') || childClass.includes('tip') || childClass.includes('info')));
+
+          if (isBlockElement) {
+            // This is a block element - process it separately
+            blockElements.push(node);
+          } else {
+            // This is an inline element (like span.ph) - include its HTML
+            inlineContentHtml += $.html($child);
           }
         }
+      }
+
+      // Process collected inline content as a paragraph
+      const trimmedInlineContent = inlineContentHtml.trim();
+      if (trimmedInlineContent) {
+        const { richText: inlineRichText, imageBlocks: inlineImages } = await parseRichText(trimmedInlineContent);
+
+        if (inlineImages && inlineImages.length > 0) {
+          processedBlocks.push(...inlineImages);
+        }
+
+        if (inlineRichText.length > 0 && inlineRichText.some(rt => rt.text.content.trim())) {
+          const richTextChunks = splitRichTextArray(inlineRichText);
+          for (const chunk of richTextChunks) {
+            processedBlocks.push({
+              object: "block",
+              type: "paragraph",
+              paragraph: {
+                rich_text: chunk
+              }
+            });
+          }
+        }
+      }
+
+      // Process block elements
+      for (const blockElement of blockElements) {
+        const blockBlocks = await processElement(blockElement);
+        processedBlocks.push(...blockBlocks);
       }
       $elem.remove(); // Mark as processed
       
@@ -2498,22 +2501,19 @@ async function extractContentFromHtml(html) {
         
         // Check if list item contains nested block elements (pre, ul, ol, div.note, p, etc.)
         // Note: We search for div.p wrappers which may contain div.note elements
-        // IMPORTANT: div.itemgroup and div.info are NOT block elements - they're just wrappers
-        // We need to look INSIDE them for actual block elements (div.note, pre, ul, etc.)
-        // First, unwrap div.itemgroup and div.info so we can find nested blocks properly
-        // FIX: Use attribute selectors to match elements with these classes (handles multi-class elements like "itemgroup info")
-        $li.find('> div[class*="itemgroup"], > div[class*="info"]').each((i, wrapper) => {
-          const classes = $(wrapper).attr('class') || '';
-          console.log(`🔧 [UNWRAP-FIX] Unwrapping <div class="${classes}"> to expose nested content`);
-          $(wrapper).replaceWith($(wrapper).html());
-        });
+        // IMPORTANT: div.itemgroup and div.info CAN be block elements if they contain content
+        // DON'T unwrap them - let them be processed as paragraphs to preserve line breaks
+        // FIX v11.0.109: Removed unwrapping of div.itemgroup/div.info to preserve paragraph boundaries
+        // Example: <li><span>Select Submit.</span><div class="itemgroup info">For additional details...</div></li>
+        // Should become: "Select Submit." + paragraph break + "For additional details..."
+        // Previously: unwrapping merged them into "Select Submit. For additional details..." (no break)
         
         // FIX ISSUE #3 & #5: Find nested blocks recursively, handling deep nesting
         // Strategy: Start with immediate children, but also look inside wrapper divs
         // that aren't semantic block elements themselves (like div without class, or div.p)
         
-        // Step 1: Find immediate block children
-        let nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.stepxmp, > div.note').toArray();
+        // Step 1: Find immediate block children (v11.0.109: added div.itemgroup and div.info to preserve paragraph breaks)
+        let nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.stepxmp, > div.note, > div.itemgroup, > div.info').toArray();
         
         // Step 2: Also look for blocks nested inside plain wrapper divs (NOT div.p, which is handled in step 1)
         $li.find('> div:not(.note):not(.table-wrap):not(.stepxmp):not(.p)').each((i, wrapper) => {
@@ -3086,26 +3086,19 @@ async function extractContentFromHtml(html) {
       for (let li of listItems) {
         const $li = $(li);
         
-        // First, unwrap div.itemgroup and div.info so we can find nested blocks properly
-        // FIX: Use attribute selectors to match elements with these classes (handles multi-class elements like "itemgroup info")
-        const wrappersToUnwrap = $li.find('> div[class*="itemgroup"], > div[class*="info"]');
-        if (wrappersToUnwrap.length > 0) {
-          wrappersToUnwrap.each((i, wrapper) => {
-            const classes = $(wrapper).attr('class') || '';
-            const hasTable = $(wrapper).find('table').length > 0;
-            const hasTableWrap = $(wrapper).find('div.table-wrap').length > 0;
-            console.log(`🔧 [UNWRAP-FIX-OL] Unwrapping <div class="${classes}"> (tables: ${hasTable ? 'YES' : 'no'}, table-wrap: ${hasTableWrap ? 'YES' : 'no'})`);
-            $(wrapper).replaceWith($(wrapper).html());
-          });
-        }
+        // FIX v11.0.109: DON'T unwrap div.itemgroup and div.info - let them be processed as block elements
+        // This preserves paragraph boundaries between inline content and these divs
+        // Example: <li><span>Select Submit.</span><div class="itemgroup info">For details...</div></li>
+        // Should have line break between "Submit." and "For details..."
+        // (Removed unwrapping logic that merged them into one line)
         
         // Check if list item contains nested block elements (pre, ul, ol, div.note, p, div.itemgroup, etc.)
         // Note: We search for div.p wrappers which may contain div.note elements
         // We ALSO search for div.note directly in case it's a direct child of <li>
         // FIX ISSUE #3 & #5: Also look inside wrapper divs for deeply nested blocks
-        // CRITICAL: Must query AFTER unwrapping to see the newly exposed elements
-        // NOTE: Include '> figure' for direct children after unwrapping; duplicate filter will catch figures inside div.p
-        let nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.stepxmp, > div.note').toArray();
+        // FIX v11.0.109: Added div.itemgroup and div.info to preserve paragraph breaks
+        // NOTE: Include '> figure' for direct children; duplicate filter will catch figures inside div.p
+        let nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.stepxmp, > div.note, > div.itemgroup, > div.info').toArray();
         
         // DUPLICATE FIX: Filter out nested blocks that are INSIDE other nested blocks
         // Example: <div class="p"><figure>...</figure></div> should only process the div, not both
