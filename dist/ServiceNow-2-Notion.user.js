@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.107
+// @version      11.0.108
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.107";
+    window.BUILD_VERSION = "11.0.108";
 (function () {
 
   // Configuration constants and default settings
@@ -3574,7 +3574,7 @@
       // Start the extraction process
       overlayModule.start("Starting multi-page extraction...");
 
-      await runAutoExtractLoop(autoExtractState, app, nextPageSelector);
+      await runAutoExtractLoop(autoExtractState, app, nextPageSelector, config);
 
       // Clean up
       window.removeEventListener('beforeunload', beforeUnloadHandler);
@@ -3733,15 +3733,17 @@
     });
   }
 
-  async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
+  async function runAutoExtractLoop(autoExtractState, app, nextPageSelector, config) {
     console.log("[AUTO-EXTRACT-DEBUG] 🔄🔄🔄 runAutoExtractLoop() ENTERED");
     console.log(`[AUTO-EXTRACT-DEBUG]    - autoExtractState.running: ${autoExtractState.running}`);
     console.log(`[AUTO-EXTRACT-DEBUG]    - autoExtractState.paused: ${autoExtractState.paused}`);
     console.log(`[AUTO-EXTRACT-DEBUG]    - nextPageSelector: ${nextPageSelector}`);
+    console.log(`[AUTO-EXTRACT-DEBUG]    - config.databaseId: ${config?.databaseId || '(missing)'}`);
     debug("[AUTO-EXTRACT-DEBUG] 🔄🔄🔄 runAutoExtractLoop() ENTERED");
     debug(`[AUTO-EXTRACT-DEBUG]    - autoExtractState.running: ${autoExtractState.running}`);
     debug(`[AUTO-EXTRACT-DEBUG]    - autoExtractState.paused: ${autoExtractState.paused}`);
     debug(`[AUTO-EXTRACT-DEBUG]    - nextPageSelector: ${nextPageSelector}`);
+    debug(`[AUTO-EXTRACT-DEBUG]    - config.databaseId: ${config?.databaseId || '(missing)'}`);
     console.log("🔄 Starting AutoExtract loop");
     debug("🔄 Starting AutoExtract loop");
 
