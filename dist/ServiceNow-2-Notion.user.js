@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.99
+// @version      11.0.100
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.99";
+    window.BUILD_VERSION = "11.0.100";
 (function () {
 
   // Configuration constants and default settings
@@ -2793,15 +2793,38 @@
 
       debug(`[AUTOEXTRACT-UPDATE] 📦 PATCH payload: title="${patchData.title}", contentHtml=${contentHtml.length} chars, url="${patchData.url}"`);
 
-      // Call PATCH endpoint
+      // Call PATCH endpoint and wait for completion
+      debug(`[AUTOEXTRACT-UPDATE] ⏳ Sending PATCH request...`);
       const result = await apiCall("PATCH", `/api/W2N/${pageId}`, patchData);
 
-      if (result && result.success) {
-        debug(`[AUTOEXTRACT-UPDATE] ✅ Page updated successfully`);
-        return result;
+      if (!result || !result.success) {
+        throw new Error(result?.error || "PATCH request failed");
       }
 
-      throw new Error(result?.error || "Failed to update page");
+      // Log PATCH completion details
+      debug(`[AUTOEXTRACT-UPDATE] ✅ PATCH completed in ${result.patchTimeSeconds || 'N/A'}s`);
+      debug(`[AUTOEXTRACT-UPDATE]    Blocks deleted: ${result.blocksDeleted || 0}`);
+      debug(`[AUTOEXTRACT-UPDATE]    Blocks added: ${result.blocksAdded || 0}`);
+      
+      // Check validation result if present
+      if (result.validation) {
+        const validation = result.validation;
+        if (validation.hasErrors) {
+          debug(`[AUTOEXTRACT-UPDATE] ⚠️ Validation completed with errors`);
+          debug(`[AUTOEXTRACT-UPDATE]    Issues: ${validation.issues?.length || 0}`);
+          debug(`[AUTOEXTRACT-UPDATE]    Summary: ${validation.summary}`);
+        } else {
+          debug(`[AUTOEXTRACT-UPDATE] ✅ Validation passed`);
+          if (validation.stats) {
+            debug(`[AUTOEXTRACT-UPDATE]    Similarity: ${validation.stats.similarity || 'N/A'}%`);
+          }
+        }
+      } else {
+        debug(`[AUTOEXTRACT-UPDATE] ℹ️ No validation result (validation may be disabled)`);
+      }
+
+      debug(`[AUTOEXTRACT-UPDATE] ✅ Page update and validation complete`);
+      return result;
     } catch (error) {
       debug(`[AUTOEXTRACT-UPDATE] ❌ Failed to update page: ${error.message}`);
       throw error;
@@ -4019,17 +4042,31 @@
                 // Page found, update it
                 debug(`[AUTO-EXTRACT] 📝 Updating existing page ${existingPage.id}...`);
                 overlayModule.setMessage(`Updating page ${currentPageNum}...`);
-                await updateNotionPage(existingPage.id, extractedData);
+                
+                // Wait for update to complete (including validation)
+                const updateResult = await updateNotionPage(existingPage.id, extractedData);
+                
+                // Additional wait after update completes to ensure Notion properties are fully committed
+                debug(`[AUTO-EXTRACT] ⏳ Waiting 2s for Notion to commit all changes...`);
+                overlayModule.setMessage(`Finalizing update for page ${currentPageNum}...`);
+                await new Promise((resolve) => setTimeout(resolve, 2000));
                 
                 captureSuccess = true;
                 autoExtractState.totalProcessed++;
                 autoExtractState.totalUpdated = (autoExtractState.totalUpdated || 0) + 1;
+                
+                // Show validation status in success message
+                let statusEmoji = '✅';
+                if (updateResult?.validation?.hasErrors) {
+                  statusEmoji = '⚠️';
+                }
+                
                 debug(
-                  `✅ Page ${currentPageNum} updated successfully${
+                  `${statusEmoji} Page ${currentPageNum} updated successfully${
                   captureAttempts > 1 ? ` (attempt ${captureAttempts})` : ""
-                }`
+                }${updateResult?.validation ? ` (validation: ${updateResult.validation.hasErrors ? 'has issues' : 'passed'})` : ''}`
                 );
-                showToast(`✅ Updated: ${extractedData.title}`, 2000);
+                showToast(`${statusEmoji} Updated: ${extractedData.title}`, 2000);
               } else {
                 // Page not found, create new with 🆕 prefix
                 debug(`[AUTO-EXTRACT] 🆕 Page "${extractedData.title}" not found, creating new page with 🆕 prefix...`);
