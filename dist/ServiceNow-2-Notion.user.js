@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.104
+// @version      11.0.105
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.104";
+    window.BUILD_VERSION = "11.0.105";
 (function () {
 
   // Configuration constants and default settings
@@ -3987,7 +3987,9 @@
               }
             }
 
+        debug(`[AUTO-EXTRACT-DEBUG] 🚀 Calling app.extractCurrentPageData() for page ${currentPageNum}...`);
         const extractedData = await app.extractCurrentPageData();
+        debug(`[AUTO-EXTRACT-DEBUG] ✅ Extraction completed successfully`);
         
           // DEBUG: Log extracted data structure
           debug(`[AUTO-EXTRACT-DEBUG] 📦 Extracted data for page ${currentPageNum}:`);
@@ -4163,6 +4165,11 @@
               `❌ Capture attempt ${captureAttempts} failed for page ${currentPageNum}:`,
               error
             );
+            debug(`[AUTO-EXTRACT-DEBUG] 🔴 ERROR DETAILS:`);
+            debug(`[AUTO-EXTRACT-DEBUG]    - error.name: ${error.name}`);
+            debug(`[AUTO-EXTRACT-DEBUG]    - error.message: ${error.message}`);
+            debug(`[AUTO-EXTRACT-DEBUG]    - error.stack: ${error.stack?.substring(0, 500)}`);
+            debug(`[AUTO-EXTRACT-DEBUG]    - typeof error: ${typeof error}`);
             
             // Check if stop was requested during error handling
             if (!autoExtractState.running) {
