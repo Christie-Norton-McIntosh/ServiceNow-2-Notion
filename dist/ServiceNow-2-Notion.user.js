@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.102
+// @version      11.0.103
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.102";
+    window.BUILD_VERSION = "11.0.103";
 (function () {
 
   // Configuration constants and default settings
@@ -3989,15 +3989,25 @@
 
         const extractedData = await app.extractCurrentPageData();
 
-        // STEP 1.5: Check for duplicate content
-        const contentToHash = extractedData.content?.combinedHtml || "";
-        const contentHash = simpleHash(contentToHash);
+          // STEP 1.5: Check for duplicate content
+          // NOTE: Only check duplicates in CREATE mode, not UPDATE mode
+          // In UPDATE mode, we want to update the page even if content is the same
+          const contentToHash = extractedData.content?.combinedHtml || "";
+          const contentHash = simpleHash(contentToHash);
 
-        debug(`[CONTENT-HASH] 🔍 Content to hash length: ${contentToHash.length} characters`);
-        debug(`[CONTENT-HASH] 🔍 Calculated hash: ${contentHash}, Previous hash: ${autoExtractState.lastContentHash}`);          if (contentHash === autoExtractState.lastContentHash) {
+          // Check if we're in update mode - will be checked again later but need it here for duplicate logic
+          let updateModeCheckbox2 = document.getElementById('w2n-autoextract-update-mode');
+          const isUpdateMode = updateModeCheckbox2?.checked || false;
+
+          debug(`[CONTENT-HASH] 🔍 Content to hash length: ${contentToHash.length} characters`);
+          debug(`[CONTENT-HASH] 🔍 Calculated hash: ${contentHash}, Previous hash: ${autoExtractState.lastContentHash}`);
+          debug(`[CONTENT-HASH] 🔍 Mode: ${isUpdateMode ? 'UPDATE' : 'CREATE'}`);
+          
+          // Only check for duplicates in CREATE mode
+          if (!isUpdateMode && contentHash === autoExtractState.lastContentHash) {
               autoExtractState.duplicateCount++;
               debug(
-                `[CONTENT-HASH] ⚠️ DUPLICATE CONTENT DETECTED (${autoExtractState.duplicateCount} consecutive)!`
+                `[CONTENT-HASH] ⚠️ DUPLICATE CONTENT DETECTED in CREATE mode (${autoExtractState.duplicateCount} consecutive)!`
               );
               debug(`[CONTENT-HASH] Hash: ${contentHash}, Last Hash: ${autoExtractState.lastContentHash}`);
               
@@ -4010,7 +4020,7 @@
               }
               
               // Skip this duplicate and go straight to navigation (don't create page)
-              debug(`[CONTENT-HASH] ⊘ Skipping duplicate content, will retry navigation without creating page...`);
+              debug(`[CONTENT-HASH] ⊘ Skipping duplicate content in CREATE mode, will retry navigation without creating page...`);
               showToast(
                 `⚠️ Duplicate content #${autoExtractState.duplicateCount}, skipping to navigation...`,
                 3000
@@ -4021,10 +4031,8 @@
               // Content is different, reset duplicate counter
               autoExtractState.duplicateCount = 0;
               autoExtractState.lastContentHash = contentHash;
-              debug(`[CONTENT-HASH] ✅ Content is unique (hash: ${contentHash})`);
-            }
-
-            // Check if stop was requested before creating the page
+              debug(`[CONTENT-HASH] ✅ Content is unique (hash: ${contentHash}) or in UPDATE mode - proceeding`);
+            }          // Check if stop was requested before creating the page
             if (!autoExtractState.running) {
               debug(`[AUTO-EXTRACT] ⏹ AutoExtract stop requested before creating page ${currentPageNum}`);
               showToast(
