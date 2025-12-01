@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.105
+// @version      11.0.106
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.105";
+    window.BUILD_VERSION = "11.0.106";
 (function () {
 
   // Configuration constants and default settings
@@ -3255,12 +3255,15 @@
 
     if (startAutoExtractBtn) {
       startAutoExtractBtn.onclick = async () => {
+        debug(`[AUTO-EXTRACT-DEBUG] 🔵 AutoExtract button onclick handler FIRED`);
         try {
           // Show stop button, hide start button
           startAutoExtractBtn.style.display = "none";
           if (stopAutoExtractBtn) stopAutoExtractBtn.style.display = "block";
 
+          debug(`[AUTO-EXTRACT-DEBUG] 🔵 Calling startAutoExtraction()...`);
           await startAutoExtraction();
+          debug(`[AUTO-EXTRACT-DEBUG] 🔵 startAutoExtraction() returned`);
 
           // After completion, restore buttons
           startAutoExtractBtn.style.display = "block";
@@ -3481,8 +3484,13 @@
   }
 
   async function startAutoExtraction() {
+    debug(`[AUTO-EXTRACT-DEBUG] 🚀🚀🚀 startAutoExtraction() CALLED - AutoExtract button clicked`);
+    
     const config = getConfig();
+    debug(`[AUTO-EXTRACT-DEBUG] 📋 Config retrieved: databaseId=${config.databaseId || '(missing)'}`);
+    
     if (!config.databaseId) {
+      debug(`[AUTO-EXTRACT-DEBUG] ❌ BLOCKED: No database ID configured`);
       alert("Please select a database first.");
       return;
     }
@@ -3720,12 +3728,18 @@
   }
 
   async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
+    debug("[AUTO-EXTRACT-DEBUG] 🔄🔄🔄 runAutoExtractLoop() ENTERED");
+    debug(`[AUTO-EXTRACT-DEBUG]    - autoExtractState.running: ${autoExtractState.running}`);
+    debug(`[AUTO-EXTRACT-DEBUG]    - autoExtractState.paused: ${autoExtractState.paused}`);
+    debug(`[AUTO-EXTRACT-DEBUG]    - nextPageSelector: ${nextPageSelector}`);
     debug("🔄 Starting AutoExtract loop");
 
     // Get button reference for progress updates
     const button = document.getElementById("w2n-start-autoextract");
 
+    debug("[AUTO-EXTRACT-DEBUG] 🔁 Entering while loop...");
     while (autoExtractState.running && !autoExtractState.paused) {
+      debug(`[AUTO-EXTRACT-DEBUG] ➰ While loop iteration started`);
       // Check running state at the very beginning of each iteration
       if (!autoExtractState.running) {
         debug(`[AUTO-EXTRACT] ⏹ AutoExtract stopped at beginning of loop iteration`);
