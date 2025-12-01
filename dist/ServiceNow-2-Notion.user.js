@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.98
+// @version      11.0.99
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.98";
+    window.BUILD_VERSION = "11.0.99";
 (function () {
 
   // Configuration constants and default settings
@@ -2778,11 +2778,20 @@
     
     try {
       // Prepare PATCH payload (similar to POST but with pageId in URL)
+      // Extract the HTML content from the nested structure
+      const contentHtml = extractedData.content?.combinedHtml || extractedData.contentHtml || extractedData.content;
+      
+      if (!contentHtml) {
+        throw new Error("No content HTML found in extracted data");
+      }
+      
       const patchData = {
         title: extractedData.title,
-        contentHtml: extractedData.contentHtml || extractedData.content,
+        contentHtml: contentHtml,
         url: extractedData.url
       };
+
+      debug(`[AUTOEXTRACT-UPDATE] 📦 PATCH payload: title="${patchData.title}", contentHtml=${contentHtml.length} chars, url="${patchData.url}"`);
 
       // Call PATCH endpoint
       const result = await apiCall("PATCH", `/api/W2N/${pageId}`, patchData);
