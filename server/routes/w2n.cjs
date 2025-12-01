@@ -3040,6 +3040,14 @@ router.patch('/W2N/:pageId', async (req, res) => {
       return sendError(res, "MISSING_CONTENT", "contentHtml or content required", null, 400);
     }
     
+    // Validate that html is a string
+    if (typeof html !== 'string') {
+      const actualType = html === null ? 'null' : Array.isArray(html) ? 'array' : typeof html;
+      log(`❌ Invalid content type: expected string, got ${actualType}`);
+      cleanup();
+      return sendError(res, "INVALID_CONTENT_TYPE", `Content must be a string, received ${actualType}`, null, 400);
+    }
+    
     log(`📄 HTML content length: ${html.length} characters`);
     
     // Extract blocks from HTML (same as POST endpoint)

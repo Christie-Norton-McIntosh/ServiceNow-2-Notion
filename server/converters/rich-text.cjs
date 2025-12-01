@@ -177,6 +177,151 @@ function convertRichTextBlock(input, options = {}) {
     console.log(`   Input: "${html.substring(0, 250)}..."`);
   }
 
+  // CRITICAL FIX: Process technical identifiers BEFORE any HTML tag processing
+  // This prevents the regex from matching corrupted marker text
+  // Handle raw technical identifiers in parentheses/brackets as inline code
+  // Must contain at least one dot or underscore to be considered a technical identifier
+  // Remove the brackets/parentheses from the output (treat same as parentheses around code)
+  html = html.replace(/([\(\[])[ \t\n\r]*([a-zA-Z][-a-zA-Z0-9_]*(?:[_.][-a-zA-Z0-9_]+)+)[ \t\n\r]*([\)\]])/g, (match, open, code, close) => `__CODE_START__${code.trim()}__CODE_END__`);
+
+  // Handle "Role required:" followed by comma-separated role names as inline code
+  // Examples: "Role required: admin", "Role required: sn_devops.admin, asset", "Role required: sam"
+  // Roles can contain underscores and dots (e.g., sn_devops.admin)
+  // CRITICAL: Process text in segments split by __BR_NEWLINE__ to avoid matching across line breaks
+  const beforeSplit = html;
+  const segments = html.split(/(__BR_NEWLINE__|__[A-Z_]+__)/);
+  if (beforeSplit.includes('Role required:')) {
+    console.log(`🔍 [ROLE-SPLIT] Split into ${segments.length} segments around markers`);
+    segments.forEach((seg, idx) => {
+      if (seg.includes('Role required:') || seg.includes('admin') || seg.includes('__BR_NEWLINE__')) {
+        console.log(`🔍 [ROLE-SPLIT]   [${idx}] "${seg.substring(0, 80)}"`);
+      }
+    });
+  }
+  html = segments.map((segment, idx) => {
+    // Skip markers - don't process them
+    if (segment.startsWith('__') && segment.endsWith('__')) {
+      return segment;
+    }
+    // Process this segment for role patterns
+    return segment.replace(/\b(Role required:)\s+([a-z_][a-z0-9_.]*(?:\s+or\s+[a-z_][a-z0-9_.]*)*(?:,\s*[a-z_][a-z0-9_.]*)*)/gi, (match, label, roles) => {
+      console.log(`🔍 [ROLE] Matched in segment [${idx}] "Role required:" with roles: "${roles}"`);
+      // Split roles by comma or "or", wrap each in code markers
+      const roleList = roles.split(/(?:,\s*|\s+or\s+)/i).map(role => {
+        const trimmed = role.trim();
+        console.log(`🔍 [ROLE] Wrapping role: "${trimmed}"`);
+        return `__CODE_START__${trimmed}__CODE_END__`;
+      }).join(' or ');
+      const result = `${label} ${roleList}`;
+      console.log(`🔍 [ROLE] Result: "${result}"`);
+      return result;
+    });
+  }).join('');
+
+  // Standalone multi-word identifiers connected by _ or . (no spaces) as inline code
+  // Each segment can start with a letter, can contain letters, numbers, hyphens, and underscores
+  // Examples: com.snc.incident.mim.ml_solution, sys_user_table, sn_devops.admin, package.class.method, com.glide.service-portal
+  // Must have at least 3 segments separated by . or _ and no brackets/parentheses
+  // CRITICAL: Process text in segments split by __BR_NEWLINE__ to avoid matching across line breaks
+  const beforeTechSplit = html;
+  const techSegments = html.split(/(__BR_NEWLINE__|__[A-Z_]+__)/);
+  html = techSegments.map((segment, idx) => {
+    // Skip markers - don't process them
+    if (segment.startsWith('__') && segment.endsWith('__')) {
+      return segment;
+    }
+    // Process this segment for technical identifiers
+    // REQUIREMENT: Must contain at least one number or underscore (not just dots) to be technical
+    return segment.replace(/\b([a-zA-Z][-a-zA-Z0-9_]*(?:[_.][a-zA-Z][-a-zA-Z0-9_]*){2,})\b/g, (match, identifier, offset, string) => {
+    console.log(`🔍 [TECH ID REGEX] Matched: "${match}"`);
+    
+    // Skip if it doesn't contain at least one number or underscore (beyond just dots)
+    // This prevents matching regular English text like "some.regular.words"
+    const hasNumbersOrUnderscores = /[0-9_]/.test(match);
+    if (!hasNumbersOrUnderscores) {
+      console.log(`🚫 [TECH ID] Skipping "${match}" - no numbers/underscores, likely not technical`);
+      return match;
+    }
+    const fileExtensions = ['.txt', '.doc', '.docx', '.pdf', '.xml', '.json', '.html', '.htm', '.css', '.js', '.py', '.java', '.cpp', '.c', '.php', '.rb', '.go', '.rs', '.ts', '.jsx', '.tsx'];
+    if (fileExtensions.some(ext => match.toLowerCase().endsWith(ext))) {
+      console.log(`🚫 [TECH ID] Skipping "${match}" - common file extension`);
+      return match;
+    }
+
+    // Skip very short identifiers (less than 6 characters total, likely not technical)
+    if (match.length < 6) {
+      console.log(`🚫 [TECH ID] Skipping "${match}" - too short for technical identifier`);
+      return match;
+    }
+    const beforeMatch = string.substring(0, offset);
+    const lastCodeStart = beforeMatch.lastIndexOf('__CODE_START__');
+    const lastCodeEnd = beforeMatch.lastIndexOf('__CODE_END__');
+    const lastUrlStart = beforeMatch.lastIndexOf('__URL_START__');
+    const lastUrlEnd = beforeMatch.lastIndexOf('__URL_END__');
+    
+    // If there's a CODE_START after the last CODE_END, we're inside a code block
+    if (lastCodeStart > lastCodeEnd) {
+      if (match.includes('github') || match.includes('api') || match.includes('com')) {
+        console.log(`🚫 [TECH ID - URL DEBUG] Skipping "${match}" at offset ${offset}`);
+        console.log(`   lastCodeStart: ${lastCodeStart}, lastCodeEnd: ${lastCodeEnd}`);
+        console.log(`   Context before (100 chars): "${beforeMatch.substring(Math.max(0, beforeMatch.length - 100))}"`);
+      }
+      return match; // Don't wrap, already in code block
+    }
+    
+    // If there's a URL_START after the last URL_END, we're inside a URL block
+    if (lastUrlStart > lastUrlEnd) {
+      if (match.includes('github') || match.includes('api') || match.includes('com')) {
+        console.log(`🚫 [TECH ID - URL PROTECTION] Skipping "${match}" - inside URL block`);
+        console.log(`   lastUrlStart: ${lastUrlStart}, lastUrlEnd: ${lastUrlEnd}`);
+      }
+      return match; // Don't wrap, part of URL
+    }
+    
+    // Skip if this identifier is IMMEDIATELY part of an active URL
+    // Check if the protocol (http:// or https://) is immediately before this match with no whitespace break
+    // Example: "https://api.github.com/<installation_id>" - <installation_id> is part of this URL (skip)
+    // But: "https://api.github.com/tokens. For enterprise: https://<HOST_URL>" - <HOST_URL> is a NEW URL (don't skip)
+    const contextBefore = string.substring(Math.max(0, offset - 10), offset);
+    // Check if we're immediately after a protocol (less than 10 chars back, no whitespace between)
+    const immediatelyAfterProtocol = /https?:\/\/$/i.test(contextBefore);
+    
+    if (immediatelyAfterProtocol) {
+      console.log(`🚫 [TECH ID] Skipping "${match}" - immediately after URL protocol`);
+      return match; // This is the start of a URL hostname, don't wrap
+    }
+
+    // Skip ServiceNow path segments ending in .do (should remain plain text)
+    if (/\.do$/i.test(match)) {
+      console.log(`🚫 [TECH ID] Skipping "${match}" - ServiceNow .do path segment`);
+      return match;
+    }
+
+    // Skip identifiers that are part of query strings or URL segments (adjacent to delimiters)
+    const beforeChar = offset > 0 ? string[offset - 1] : '';
+    const afterChar = string[offset + match.length];
+    if (beforeChar === '/' || beforeChar === '?') {
+      console.log(`🚫 [TECH ID] Skipping "${match}" - preceded by "${beforeChar}" (URL delimiter)`);
+      return match;
+    }
+    if (afterChar && '?=&'.includes(afterChar)) {
+      console.log(`🚫 [TECH ID] Skipping "${match}" - followed by "${afterChar}" (query delimiter)`);
+      return match;
+    }
+    
+    console.log(`✅ [TECH ID] Wrapping "${match}" as inline code`);
+    return `__CODE_START__${identifier}__CODE_END__`;
+  });
+  }).join('');
+  if (beforeTechSplit !== html) {
+    console.log(`🔧 [AFTER TECH ID] HTML (first 300 chars): "${html.substring(0, 300)}"`);
+  }
+
+  // Convert URL markers to code markers AFTER technical identifier processing
+  // This ensures URLs are wrapped as inline code without their parts being wrapped separately
+  html = html.replace(/__URL_START__/g, '__CODE_START__');
+  html = html.replace(/__URL_END__/g, '__CODE_END__');
+
   // Extract and store links first with indexed placeholders
   const links = [];
   html = html.replace(/<a([^>]*)>([\s\S]*?)<\/a>/gi, (match, attrs, content) => {
@@ -390,136 +535,14 @@ function convertRichTextBlock(input, options = {}) {
     if (!shouldStrip) return match;
     return codes.trim();
   });
-  // Handle raw technical identifiers in parentheses/brackets as inline code
-  // Must contain at least one dot or underscore to be considered a technical identifier
-  // Remove the brackets/parentheses from the output (treat same as parentheses around code)
-  html = html.replace(/([\(\[])[ \t\n\r]*([a-zA-Z][-a-zA-Z0-9_]*(?:[_.][-a-zA-Z0-9_]+)+)[ \t\n\r]*([\)\]])/g, (match, open, code, close) => `__CODE_START__${code.trim()}__CODE_END__`);
-
-  // Handle "Role required:" followed by comma-separated role names as inline code
-  // Examples: "Role required: admin", "Role required: sn_devops.admin, asset", "Role required: sam"
-  // Roles can contain underscores and dots (e.g., sn_devops.admin)
-  // CRITICAL: Process text in segments split by __BR_NEWLINE__ to avoid matching across line breaks
-  const beforeSplit = html;
-  const segments = html.split(/(__BR_NEWLINE__|__[A-Z_]+__)/);
-  if (beforeSplit.includes('Role required:')) {
-    console.log(`🔍 [ROLE-SPLIT] Split into ${segments.length} segments around markers`);
-    segments.forEach((seg, idx) => {
-      if (seg.includes('Role required:') || seg.includes('admin') || seg.includes('__BR_NEWLINE__')) {
-        console.log(`🔍 [ROLE-SPLIT]   [${idx}] "${seg.substring(0, 80)}"`);
-      }
-    });
-  }
-  html = segments.map((segment, idx) => {
-    // Skip markers - don't process them
-    if (segment.startsWith('__') && segment.endsWith('__')) {
-      return segment;
-    }
-    // Process this segment for role patterns
-    return segment.replace(/\b(Role required:)\s+([a-z_][a-z0-9_.]*(?:\s+or\s+[a-z_][a-z0-9_.]*)*(?:,\s*[a-z_][a-z0-9_.]*)*)/gi, (match, label, roles) => {
-      console.log(`🔍 [ROLE] Matched in segment [${idx}] "Role required:" with roles: "${roles}"`);
-      // Split roles by comma or "or", wrap each in code markers
-      const roleList = roles.split(/(?:,\s*|\s+or\s+)/i).map(role => {
-        const trimmed = role.trim();
-        console.log(`🔍 [ROLE] Wrapping role: "${trimmed}"`);
-        return `__CODE_START__${trimmed}__CODE_END__`;
-      }).join(' or ');
-      const result = `${label} ${roleList}`;
-      console.log(`🔍 [ROLE] Result: "${result}"`);
-      return result;
-    });
-  }).join('');
-
-  // Standalone multi-word identifiers connected by _ or . (no spaces) as inline code
-  // Each segment can start with a letter, can contain letters, numbers, hyphens, and underscores
-  // Examples: com.snc.incident.mim.ml_solution, sys_user_table, sn_devops.admin, package.class.method, com.glide.service-portal
-  // Must have at least 2 segments separated by . or _ and no brackets/parentheses
-  // Use a function to check context to avoid matching inside already-wrapped code
-  const beforeTech = html;
-  html = html.replace(/\b([a-zA-Z][-a-zA-Z0-9_]*(?:[_.][a-zA-Z][-a-zA-Z0-9_]*)+)\b/g, (match, identifier, offset, string) => {
-    // Skip if match contains END markers (indicates it spans across formatting boundaries)
-    if (match.includes('_END__') || match.includes('__END')) {
-      console.log(`🚫 [TECH ID] Skipping "${match}" - contains END marker (spans formatting boundary)`);
-      return match;
-    }
-    
-    // Skip internal markers (placeholder, link, code markers, URL markers)
-    if (match.startsWith('__PLACEHOLDER_') || match.startsWith('__LINK_') || match.startsWith('__CODE_') || match.startsWith('__URL_')) {
-      return match;
-    }
-    
-    // Check if we're inside a __CODE_START__...__CODE_END__ or __URL_START__...__URL_END__ block
-    const beforeMatch = string.substring(0, offset);
-    const lastCodeStart = beforeMatch.lastIndexOf('__CODE_START__');
-    const lastCodeEnd = beforeMatch.lastIndexOf('__CODE_END__');
-    const lastUrlStart = beforeMatch.lastIndexOf('__URL_START__');
-    const lastUrlEnd = beforeMatch.lastIndexOf('__URL_END__');
-    
-    // If there's a CODE_START after the last CODE_END, we're inside a code block
-    if (lastCodeStart > lastCodeEnd) {
-      if (match.includes('github') || match.includes('api') || match.includes('com')) {
-        console.log(`🚫 [TECH ID - URL DEBUG] Skipping "${match}" at offset ${offset}`);
-        console.log(`   lastCodeStart: ${lastCodeStart}, lastCodeEnd: ${lastCodeEnd}`);
-        console.log(`   Context before (100 chars): "${beforeMatch.substring(Math.max(0, beforeMatch.length - 100))}"`);
-      }
-      return match; // Don't wrap, already in code block
-    }
-    
-    // If there's a URL_START after the last URL_END, we're inside a URL block
-    if (lastUrlStart > lastUrlEnd) {
-      if (match.includes('github') || match.includes('api') || match.includes('com')) {
-        console.log(`🚫 [TECH ID - URL PROTECTION] Skipping "${match}" - inside URL block`);
-        console.log(`   lastUrlStart: ${lastUrlStart}, lastUrlEnd: ${lastUrlEnd}`);
-      }
-      return match; // Don't wrap, part of URL
-    }
-    
-    // Skip if this identifier is IMMEDIATELY part of an active URL
-    // Check if the protocol (http:// or https://) is immediately before this match with no whitespace break
-    // Example: "https://api.github.com/<installation_id>" - <installation_id> is part of this URL (skip)
-    // But: "https://api.github.com/tokens. For enterprise: https://<HOST_URL>" - <HOST_URL> is a NEW URL (don't skip)
-    const contextBefore = string.substring(Math.max(0, offset - 10), offset);
-    // Check if we're immediately after a protocol (less than 10 chars back, no whitespace between)
-    const immediatelyAfterProtocol = /https?:\/\/$/i.test(contextBefore);
-    
-    if (immediatelyAfterProtocol) {
-      console.log(`🚫 [TECH ID] Skipping "${match}" - immediately after URL protocol`);
-      return match; // This is the start of a URL hostname, don't wrap
-    }
-
-    // Skip ServiceNow path segments ending in .do (should remain plain text)
-    if (/\.do$/i.test(match)) {
-      console.log(`🚫 [TECH ID] Skipping "${match}" - ServiceNow .do path segment`);
-      return match;
-    }
-
-    // Skip identifiers that are part of query strings or URL segments (adjacent to delimiters)
-    const beforeChar = offset > 0 ? string[offset - 1] : '';
-    const afterChar = string[offset + match.length];
-    if (beforeChar === '/' || beforeChar === '?') {
-      console.log(`🚫 [TECH ID] Skipping "${match}" - preceded by "${beforeChar}" (URL delimiter)`);
-      return match;
-    }
-    if (afterChar && '?=&'.includes(afterChar)) {
-      console.log(`🚫 [TECH ID] Skipping "${match}" - followed by "${afterChar}" (query delimiter)`);
-      return match;
-    }
-    
-    console.log(`� [TECH ID] Wrapping "${match}" as inline code`);
-    return `__CODE_START__${identifier}__CODE_END__`;
-  });
-  if (beforeTech !== html) {
-    console.log(`🔧 [AFTER TECH ID] HTML (first 300 chars): "${html.substring(0, 300)}"`);
-  }
-
-  // Convert URL markers to code markers AFTER technical identifier processing
-  // This ensures URLs are wrapped as inline code without their parts being wrapped separately
-  html = html.replace(/__URL_START__/g, '__CODE_START__');
-  html = html.replace(/__URL_END__/g, '__CODE_END__');
 
   // Strip any remaining HTML tags that weren't converted to markers
   // This handles span tags, divs, and other markup that doesn't need special formatting
   // CRITICAL: Only strip KNOWN HTML tags, preserve technical placeholders like <instance-name>
   const beforeStrip = html;
+  
+  // CRITICAL: Remove figcaption content entirely - figcaptions should only be used as image captions, not as content text
+  html = html.replace(/<figcaption[^>]*>[\s\S]*?<\/figcaption>/gi, '');
   
   // FIRST: Check for potential unprotected technical placeholders before stripping
   // BUT: Only check content OUTSIDE of __CODE_START__...__CODE_END__ markers
@@ -589,6 +612,9 @@ function convertRichTextBlock(input, options = {}) {
   // Clean up excessive whitespace from tag removal, BUT preserve newlines
   html = html.replace(/[^\S\n]+/g, ' '); // Replace consecutive non-newline whitespace with single space
   html = html.replace(/ *\n */g, '\n'); // Clean spaces around newlines
+
+  // Convert __BR_NEWLINE__ markers back to actual newlines
+  html = html.replace(/__BR_NEWLINE__/g, '\n');
 
   // Now split by markers and build rich text
   const parts = html.split(/(__BOLD_START__|__BOLD_END__|__BOLD_BLUE_START__|__BOLD_BLUE_END__|__ITALIC_START__|__ITALIC_END__|__CODE_START__|__CODE_END__|__LINK_\d+__|__SOFT_BREAK__)/);
@@ -708,11 +734,13 @@ function convertRichTextBlock(input, options = {}) {
           
           // Add newline as separate element between lines (but not after the last line)
           // This preserves the original newline positions even when empty lines are present
+          // CRITICAL FIX: Newlines should NOT inherit code formatting from the current line
+          // to prevent code formatting from bleeding through to the next line
           if (i < lines.length - 1) {
             richText.push({
               type: "text",
               text: { content: '\n' },
-              annotations: normalizeAnnotations(currentAnnotations),
+              annotations: normalizeAnnotations({}), // Use empty annotations for newlines
             });
           }
         }
@@ -798,8 +826,8 @@ function convertRichTextBlock(input, options = {}) {
             prev.text.content = prevContent + currentContent;
           } else {
             // No spaces - check if we need one
-            // Add space if prev doesn't end with punctuation and current doesn't start with punctuation
-            const needsSpace = !/[.,;:!?)\]}>-]$/.test(prevContent) && !/^[.,;:!?(\[{<-]/.test(currentContent);
+            // Add space if prev doesn't end with punctuation/newline and current doesn't start with punctuation
+            const needsSpace = !/[.,;:!?)\]}>\n-]$/.test(prevContent) && !/^[.,;:!?(\[{<\n-]/.test(currentContent);
             prev.text.content = needsSpace ? prevContent + ' ' + currentContent : prevContent + currentContent;
           }
           mergeCount++;
