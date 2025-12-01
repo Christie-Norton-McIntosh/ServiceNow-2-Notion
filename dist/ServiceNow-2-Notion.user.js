@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.101
+// @version      11.0.102
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.101";
+    window.BUILD_VERSION = "11.0.102";
 (function () {
 
   // Configuration constants and default settings
@@ -4045,17 +4045,35 @@
               debug(
                 `[AUTO-EXTRACT] 🔄 Step 2: Searching for existing page "${extractedData.title}"...`
               );
+              debug(`[AUTO-EXTRACT]    Database ID: ${config.databaseId}`);
               overlayModule.setMessage(`Searching for page "${extractedData.title}"...`);
               
-              const existingPage = await searchNotionPageByTitle(config.databaseId, extractedData.title);
+              let existingPage = null;
+              try {
+                existingPage = await searchNotionPageByTitle(config.databaseId, extractedData.title);
+                debug(`[AUTO-EXTRACT] 🔍 Search result:`, existingPage ? `Found page ${existingPage.id}` : 'No page found');
+              } catch (searchError) {
+                debug(`[AUTO-EXTRACT] ❌ Search failed:`, searchError);
+                throw new Error(`Failed to search for page: ${searchError.message}`);
+              }
               
               if (existingPage) {
                 // Page found, update it
                 debug(`[AUTO-EXTRACT] 📝 Updating existing page ${existingPage.id}...`);
+                debug(`[AUTO-EXTRACT]    Page title: "${extractedData.title}"`);
+                debug(`[AUTO-EXTRACT]    Content length: ${extractedData.content?.combinedHtml?.length || 0} chars`);
                 overlayModule.setMessage(`Updating page ${currentPageNum}...`);
                 
-                // Wait for update to complete (including validation)
-                const updateResult = await updateNotionPage(existingPage.id, extractedData);
+                let updateResult = null;
+                try {
+                  // Wait for update to complete (including validation)
+                  debug(`[AUTO-EXTRACT] 🚀 Calling updateNotionPage()...`);
+                  updateResult = await updateNotionPage(existingPage.id, extractedData);
+                  debug(`[AUTO-EXTRACT] ✅ updateNotionPage() completed successfully`);
+                } catch (updateError) {
+                  debug(`[AUTO-EXTRACT] ❌ updateNotionPage() failed:`, updateError);
+                  throw new Error(`Failed to update page: ${updateError.message}`);
+                }
                 
                 // Additional wait after update completes to ensure Notion properties are fully committed
                 debug(`[AUTO-EXTRACT] ⏳ Waiting 2s for Notion to commit all changes...`);
