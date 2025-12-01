@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.103
+// @version      11.0.104
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.103";
+    window.BUILD_VERSION = "11.0.104";
 (function () {
 
   // Configuration constants and default settings
@@ -3988,6 +3988,14 @@
             }
 
         const extractedData = await app.extractCurrentPageData();
+        
+          // DEBUG: Log extracted data structure
+          debug(`[AUTO-EXTRACT-DEBUG] 📦 Extracted data for page ${currentPageNum}:`);
+          debug(`[AUTO-EXTRACT-DEBUG]    - title: "${extractedData.title || '(missing)'}"`);
+          debug(`[AUTO-EXTRACT-DEBUG]    - contentHtml length: ${extractedData.contentHtml?.length || 0}`);
+          debug(`[AUTO-EXTRACT-DEBUG]    - content.combinedHtml length: ${extractedData.content?.combinedHtml?.length || 0}`);
+          debug(`[AUTO-EXTRACT-DEBUG]    - databaseId: ${extractedData.databaseId || '(missing)'}`);
+          debug(`[AUTO-EXTRACT-DEBUG]    - url: ${extractedData.url || '(missing)'}`);
 
           // STEP 1.5: Check for duplicate content
           // NOTE: Only check duplicates in CREATE mode, not UPDATE mode
@@ -4047,6 +4055,12 @@
             // STEP 2: Create or Update Notion page based on mode
             const updateModeCheckbox = document.getElementById('w2n-autoextract-update-mode');
             const updateMode = updateModeCheckbox?.checked || false;
+            
+            debug(`[AUTO-EXTRACT-DEBUG] 🔀 Mode detection:`);
+            debug(`[AUTO-EXTRACT-DEBUG]    - updateModeCheckbox element: ${updateModeCheckbox ? 'found' : 'NOT FOUND'}`);
+            debug(`[AUTO-EXTRACT-DEBUG]    - updateModeCheckbox.checked: ${updateModeCheckbox?.checked}`);
+            debug(`[AUTO-EXTRACT-DEBUG]    - updateMode final value: ${updateMode}`);
+            debug(`[AUTO-EXTRACT-DEBUG]    - config.databaseId: ${config.databaseId || '(missing)'}`);
 
             if (updateMode) {
               // UPDATE MODE: Search for existing page and update
