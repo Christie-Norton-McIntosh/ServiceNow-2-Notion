@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.106
+// @version      11.0.107
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.106";
+    window.BUILD_VERSION = "11.0.107";
 (function () {
 
   // Configuration constants and default settings
@@ -3255,14 +3255,17 @@
 
     if (startAutoExtractBtn) {
       startAutoExtractBtn.onclick = async () => {
+        console.log(`[AUTO-EXTRACT-DEBUG] 🔵 AutoExtract button onclick handler FIRED`);
         debug(`[AUTO-EXTRACT-DEBUG] 🔵 AutoExtract button onclick handler FIRED`);
         try {
           // Show stop button, hide start button
           startAutoExtractBtn.style.display = "none";
           if (stopAutoExtractBtn) stopAutoExtractBtn.style.display = "block";
 
+          console.log(`[AUTO-EXTRACT-DEBUG] 🔵 Calling startAutoExtraction()...`);
           debug(`[AUTO-EXTRACT-DEBUG] 🔵 Calling startAutoExtraction()...`);
           await startAutoExtraction();
+          console.log(`[AUTO-EXTRACT-DEBUG] 🔵 startAutoExtraction() returned`);
           debug(`[AUTO-EXTRACT-DEBUG] 🔵 startAutoExtraction() returned`);
 
           // After completion, restore buttons
@@ -3484,12 +3487,15 @@
   }
 
   async function startAutoExtraction() {
+    console.log(`[AUTO-EXTRACT-DEBUG] 🚀🚀🚀 startAutoExtraction() CALLED - AutoExtract button clicked`);
     debug(`[AUTO-EXTRACT-DEBUG] 🚀🚀🚀 startAutoExtraction() CALLED - AutoExtract button clicked`);
     
     const config = getConfig();
+    console.log(`[AUTO-EXTRACT-DEBUG] 📋 Config retrieved: databaseId=${config.databaseId || '(missing)'}`);
     debug(`[AUTO-EXTRACT-DEBUG] 📋 Config retrieved: databaseId=${config.databaseId || '(missing)'}`);
     
     if (!config.databaseId) {
+      console.log(`[AUTO-EXTRACT-DEBUG] ❌ BLOCKED: No database ID configured`);
       debug(`[AUTO-EXTRACT-DEBUG] ❌ BLOCKED: No database ID configured`);
       alert("Please select a database first.");
       return;
@@ -3728,17 +3734,24 @@
   }
 
   async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
+    console.log("[AUTO-EXTRACT-DEBUG] 🔄🔄🔄 runAutoExtractLoop() ENTERED");
+    console.log(`[AUTO-EXTRACT-DEBUG]    - autoExtractState.running: ${autoExtractState.running}`);
+    console.log(`[AUTO-EXTRACT-DEBUG]    - autoExtractState.paused: ${autoExtractState.paused}`);
+    console.log(`[AUTO-EXTRACT-DEBUG]    - nextPageSelector: ${nextPageSelector}`);
     debug("[AUTO-EXTRACT-DEBUG] 🔄🔄🔄 runAutoExtractLoop() ENTERED");
     debug(`[AUTO-EXTRACT-DEBUG]    - autoExtractState.running: ${autoExtractState.running}`);
     debug(`[AUTO-EXTRACT-DEBUG]    - autoExtractState.paused: ${autoExtractState.paused}`);
     debug(`[AUTO-EXTRACT-DEBUG]    - nextPageSelector: ${nextPageSelector}`);
+    console.log("🔄 Starting AutoExtract loop");
     debug("🔄 Starting AutoExtract loop");
 
     // Get button reference for progress updates
     const button = document.getElementById("w2n-start-autoextract");
 
+    console.log("[AUTO-EXTRACT-DEBUG] 🔁 Entering while loop...");
     debug("[AUTO-EXTRACT-DEBUG] 🔁 Entering while loop...");
     while (autoExtractState.running && !autoExtractState.paused) {
+      console.log(`[AUTO-EXTRACT-DEBUG] ➰ While loop iteration started`);
       debug(`[AUTO-EXTRACT-DEBUG] ➰ While loop iteration started`);
       // Check running state at the very beginning of each iteration
       if (!autoExtractState.running) {
@@ -4001,8 +4014,10 @@
               }
             }
 
+        console.log(`[AUTO-EXTRACT-DEBUG] 🚀 Calling app.extractCurrentPageData() for page ${currentPageNum}...`);
         debug(`[AUTO-EXTRACT-DEBUG] 🚀 Calling app.extractCurrentPageData() for page ${currentPageNum}...`);
         const extractedData = await app.extractCurrentPageData();
+        console.log(`[AUTO-EXTRACT-DEBUG] ✅ Extraction completed successfully`);
         debug(`[AUTO-EXTRACT-DEBUG] ✅ Extraction completed successfully`);
         
           // DEBUG: Log extracted data structure
@@ -4175,6 +4190,15 @@
             // Brief wait to ensure API call fully completes
             await new Promise((resolve) => setTimeout(resolve, 2000));
           } catch (error) {
+            console.log(
+              `❌ Capture attempt ${captureAttempts} failed for page ${currentPageNum}:`,
+              error
+            );
+            console.log(`[AUTO-EXTRACT-DEBUG] 🔴 ERROR DETAILS:`);
+            console.log(`[AUTO-EXTRACT-DEBUG]    - error.name: ${error.name}`);
+            console.log(`[AUTO-EXTRACT-DEBUG]    - error.message: ${error.message}`);
+            console.log(`[AUTO-EXTRACT-DEBUG]    - error.stack: ${error.stack?.substring(0, 500)}`);
+            console.log(`[AUTO-EXTRACT-DEBUG]    - typeof error: ${typeof error}`);
             debug(
               `❌ Capture attempt ${captureAttempts} failed for page ${currentPageNum}:`,
               error
