@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.109
+// @version      11.0.110
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.109";
+    window.BUILD_VERSION = "11.0.110";
 (function () {
 
   // Configuration constants and default settings
@@ -4748,6 +4748,16 @@
         // Navigate to next page
         const beforeNavUrl = window.location.href;
         const beforeNavPageId = currentPageId;
+        
+        // Save autoExtractState before navigation in case of browser reload
+        debug(`[STATE-MANAGEMENT] 💾 Saving autoExtractState before navigation (page ${currentPageNum + 1})`);
+        const stateToSave = {
+          ...autoExtractState,
+          // Convert Set to Array for JSON serialization
+          processedUrls: Array.from(autoExtractState.processedUrls || []),
+        };
+        const stateJson = JSON.stringify(stateToSave);
+        GM_setValue("w2n_autoExtractState", stateJson);
         
         const nextButton = await findAndClickNextButton(
           nextPageSelector,
