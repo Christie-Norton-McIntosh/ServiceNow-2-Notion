@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.110
+// @version      11.0.111
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.110";
+    window.BUILD_VERSION = "11.0.111";
 (function () {
 
   // Configuration constants and default settings
@@ -2949,6 +2949,16 @@
         </div>
       </div>
 
+      <div id="w2n-content-analysis" style="margin-bottom:16px; padding:12px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:6px; display:none;">
+        <div style="font-size:13px; font-weight:500; margin-bottom:8px; color:#374151;">📊 Content Analysis</div>
+        <div style="display:flex; align-items:center; gap:8px; font-size:12px;">
+          <label style="display:flex; align-items:center; cursor:default;">
+            <input type="checkbox" id="w2n-has-images-indicator" style="margin-right:6px; pointer-events:none;" disabled>
+            <span>🖼️ Images detected</span>
+          </label>
+        </div>
+      </div>
+
       <div style="display:grid; gap:8px; margin-bottom:16px;">
         <button id="w2n-capture-page" style="width:100%; padding:12px; background:#8b5cf6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">📄 Save Current Page</button>
         <button id="w2n-update-page" style="width:100%; padding:12px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">🔄 Update Current Page</button>
@@ -3003,6 +3013,23 @@
       if (spinner) spinner.style.display = "none";
     };
 
+    // Update content analysis indicator with extracted data
+    const updateContentAnalysisIndicator = (extractedData) => {
+      const analysisSection = panel.querySelector("#w2n-content-analysis");
+      const imagesCheckbox = panel.querySelector("#w2n-has-images-indicator");
+      
+      if (!analysisSection || !imagesCheckbox) return;
+      
+      // Show the analysis section
+      analysisSection.style.display = "block";
+      
+      // Update image detection checkbox
+      const hasImages = extractedData?.hasFigureImage || false;
+      imagesCheckbox.checked = hasImages;
+      
+      debug(`[CONTENT-ANALYSIS] Updated indicator: images detected = ${hasImages}`);
+    };
+
     const closeBtn = panel.querySelector("#w2n-close");
     const resetPositionBtn = panel.querySelector("#w2n-reset-position-btn");
     const advancedBtn = panel.querySelector("#w2n-advanced-settings-btn");
@@ -3047,6 +3074,18 @@
           typeof window.ServiceNowToNotion.app === "function"
         ) {
           const app = window.ServiceNowToNotion.app();
+          if (app && typeof app.extractCurrentPageData === "function") {
+            // First extract data to update content analysis indicator
+            try {
+              const extractedData = await app.extractCurrentPageData();
+              updateContentAnalysisIndicator(extractedData);
+            } catch (extractError) {
+              debug("Failed to extract data for analysis:", extractError);
+              // Continue with normal flow even if analysis fails
+            }
+          }
+          
+          // Then proceed with normal save action
           if (app && typeof app.handleMainAction === "function") {
             await app.handleMainAction();
           }
