@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.118
+// @version      11.0.119
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.118";
+    window.BUILD_VERSION = "11.0.119";
 (function () {
 
   // Configuration constants and default settings
@@ -2620,6 +2620,49 @@
     debug(`Property mappings reset for database ${databaseId}`);
   }
 
+  /**
+   * Generate default property mappings based on common ServiceNow fields
+   * Maps common content types to Notion properties that might exist
+   * @param {Object} schema - Database schema with property definitions
+   * @returns {Object} Default property mappings
+   */
+  function generateDefaultPropertyMappings(schema) {
+    const defaultMappings = {};
+    
+    if (!schema || typeof schema !== 'object') {
+      debug('⚠️ No schema provided for default mapping generation');
+      return defaultMappings;
+    }
+
+    // Common ServiceNow metadata fields and their Notion property counterparts
+    const commonMappings = {
+      // ServiceNow field -> Notion property name (case-sensitive)
+      'Title': ['Title', 'Name', 'Page Title', 'Title'],
+      'URL': ['URL', 'Page URL', 'Source URL', 'Link'],
+      'Category': ['Category', 'Type', 'Topic', 'Classification'],
+      'Version': ['Version', 'Release', 'Build', 'Version Number'],
+      'Updated': ['Updated', 'Last Updated', 'Modified Date', 'Date Modified'],
+      'Status': ['Status', 'State', 'Page Status', 'Workflow Status'],
+      'Author': ['Author', 'Created By', 'Owner', 'Author Name'],
+    };
+
+    // Scan database schema for properties matching common field names
+    for (const [contentField, possibleNotionNames] of Object.entries(commonMappings)) {
+      // Check if any of the possible Notion property names exist in the schema
+      for (const notionPropName of possibleNotionNames) {
+        if (schema.hasOwnProperty(notionPropName)) {
+          // Found a match - add to default mappings
+          // Map Notion property -> content field (reverse of display order)
+          defaultMappings[notionPropName] = contentField;
+          debug(`✅ Auto-mapped Notion property "${notionPropName}" -> content field "${contentField}"`);
+          break; // Move to next content field
+        }
+      }
+    }
+
+    return defaultMappings;
+  }
+
   function showPropertyMappingModal() {
     debug("🔗 Opening property mapping modal");
     injectPropertyMappingModal();
@@ -2632,6 +2675,7 @@
 
   var propertyMappingModal = /*#__PURE__*/Object.freeze({
     __proto__: null,
+    generateDefaultPropertyMappings: generateDefaultPropertyMappings,
     injectPropertyMappingModal: injectPropertyMappingModal,
     loadPropertyMappings: loadPropertyMappings,
     populatePropertyMappings: populatePropertyMappings,
@@ -3143,6 +3187,16 @@
                 GM_setValue("notionConfig", config);
               }
 
+              // Generate and save default property mappings based on schema
+              if (dbDetails.properties) {
+                const defaultMappings = generateDefaultPropertyMappings(dbDetails.properties);
+                if (Object.keys(defaultMappings).length > 0) {
+                  savePropertyMappings(cleanDbId, defaultMappings);
+                  debug(`[DATABASE] ✅ Applied ${Object.keys(defaultMappings).length} default property mappings`);
+                  showToast(`✅ Applied ${Object.keys(defaultMappings).length} default mappings`, 2000);
+                }
+              }
+
               // Update UI
               databaseSelect.innerHTML = `<option value="${cleanDbId}">${config.databaseName}</option>`;
               databaseLabel.textContent = formatDatabaseId(cleanDbId);
@@ -3218,6 +3272,20 @@
               // Save to storage
               if (typeof GM_setValue === "function") {
                 GM_setValue("notionConfig", config);
+              }
+
+              // Generate and save default property mappings based on schema
+              try {
+                const dbDetails = await getDatabase(matchingDb.id);
+                if (dbDetails.properties) {
+                  const defaultMappings = generateDefaultPropertyMappings(dbDetails.properties);
+                  if (Object.keys(defaultMappings).length > 0) {
+                    savePropertyMappings(matchingDb.id, defaultMappings);
+                    debug(`[DATABASE] ✅ Applied ${Object.keys(defaultMappings).length} default property mappings`);
+                  }
+                }
+              } catch (e) {
+                debug(`[DATABASE] ⚠️ Could not fetch schema for default mappings: ${e.message}`);
               }
 
               // Update UI
