@@ -177,6 +177,37 @@ function convertRichTextBlock(input, options = {}) {
     console.log(`   Input: "${html.substring(0, 250)}..."`);
   }
 
+  // CRITICAL FIX: Strip HTML tags that could break technical identifier detection
+  // This must happen BEFORE technical identifier regex processing
+  // The regex requires contiguous text, but HTML tags between identifier parts break matching
+  // Example: <span>sn_devops</span>.<span>admin</span> becomes sn_devops.admin after stripping
+  const beforeHtmlStrip = html;
+  
+  // Strip HTML tags that are NOT protected by markers, replacing with minimal whitespace
+  // Split by existing markers to protect already-processed content
+  const htmlStripParts = html.split(/(__BR_NEWLINE__|__[A-Z_]+__)/);
+  html = htmlStripParts.map(part => {
+    // Skip markers - don't process them
+    if (part.startsWith('__') && part.endsWith('__')) {
+      return part;
+    }
+    // Strip HTML tags from unprotected content
+    // CRITICAL: Replace tags with empty string when they appear to be between technical identifier parts
+    // This prevents spaces from breaking regex patterns like "sn_devops.admin"
+    // IMPORTANT: Don't strip <code> and <samp> tags - they are handled separately later
+    return part.replace(/<\/?(?:div|span|p|a|img|br|hr|b|i|u|strong|em|var|pre|ul|ol|li|table|tr|td|th|tbody|thead|tfoot|h[1-6]|font|center|small|big|sub|sup|abbr|cite|del|ins|mark|s|strike|blockquote|q|address|article|aside|footer|header|main|nav|section|details|summary|figure|figcaption|time|video|audio|source|canvas|svg|path|g|rect|circle|line|polyline|polygon)(?:\s+[^>]*)?>/gi, '');
+  }).join('');
+  
+  // Clean up excessive whitespace from tag removal, but preserve intentional spaces
+  // Only collapse multiple consecutive spaces, don't remove single spaces that might be intentional
+  html = html.replace(/[^\S\n]{2,}/g, ' '); // Replace 2+ consecutive non-newline whitespace with single space
+  
+  if (beforeHtmlStrip !== html) {
+    console.log(`🧹 [PRE-TECH-ID HTML STRIP] Stripped HTML tags before technical identifier detection`);
+    console.log(`   Before: "${beforeHtmlStrip.substring(0, 150)}"`);
+    console.log(`   After:  "${html.substring(0, 150)}"`);
+  }
+
   // CRITICAL FIX: Process technical identifiers BEFORE any HTML tag processing
   // This prevents the regex from matching corrupted marker text
   // Handle raw technical identifiers in parentheses/brackets as inline code
