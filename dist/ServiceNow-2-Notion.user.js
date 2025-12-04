@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.112
+// @version      11.0.113
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.112";
+    window.BUILD_VERSION = "11.0.113";
 (function () {
 
   // Configuration constants and default settings
@@ -3147,7 +3147,26 @@
               showToast(`✅ Found database: ${config.databaseName}`, 2000);
               return;
             } catch (e) {
-              debug(`[DATABASE] ⚠️ Failed to get database by ID, trying name search...`, e);
+              const errorMsg = e?.message || e?.toString() || "Unknown error";
+              const isNotAccessible = errorMsg.includes("not found") || errorMsg.includes("not shared") || errorMsg.includes("403") || errorMsg.includes("404");
+              debug(`[DATABASE] ⚠️ Failed to get database by ID (${errorMsg}), trying name search...`);
+              
+              if (isNotAccessible) {
+                // Show a helpful message about sharing the database
+                alert(
+                  `Database "${cleanDbId}" is not accessible.\n\n` +
+                  `Make sure:\n` +
+                  `1. The database exists in your Notion workspace\n` +
+                  `2. You have access to it\n` +
+                  `3. It's shared with your Notion integration\n\n` +
+                  `Try:\n` +
+                  `• Opening the database in Notion and checking permissions\n` +
+                  `• Re-authorizing your Notion integration\n` +
+                  `• Using a database name instead of the ID`
+                );
+                return;
+              }
+              
               searchByName = true;
             }
           }
@@ -3203,13 +3222,26 @@
               );
               showToast(`✅ Found database: ${config.databaseName}`, 2000);
             } else {
-              alert(`Database "${trimmedInput}" not found. Make sure it's shared with your Notion integration.`);
+              // Provide detailed guidance when database is not found
+              const isIdFormat = /^[a-f0-9-]{32,36}$/i.test(trimmedInput);
+              let errorMessage = `Database "${trimmedInput}" not found.`;
+              
+              if (isIdFormat) {
+                errorMessage += `\n\nMake sure:\n1. The database ID is correct\n2. You have access to it\n3. It's shared with your Notion integration`;
+              } else if (databases.length === 0) {
+                errorMessage += `\n\nNo accessible databases found. Make sure at least one database is shared with your Notion integration.`;
+              } else {
+                errorMessage += `\n\nAvailable databases:\n${databases.slice(0, 5).map(db => `• ${db.title || "Untitled"}`).join("\n")}${databases.length > 5 ? `\n... and ${databases.length - 5} more` : ""}`;
+              }
+              
+              alert(errorMessage);
               debug(`[DATABASE] ❌ Database "${trimmedInput}" not found`);
             }
           }
         } catch (e) {
-          debug("Failed to search database:", e);
-          alert("Error searching for database. Check console for details.");
+          const errorMsg = e?.message || e?.toString() || "Unknown error";
+          debug("Failed to search database:", errorMsg);
+          alert(`Error searching for database: ${errorMsg}\n\nCheck console for details.`);
         } finally {
           hideSpinner();
         }
