@@ -252,7 +252,8 @@ function convertRichTextBlock(input, options = {}) {
   // Standalone multi-word identifiers connected by _ or . (no spaces) as inline code
   // Each segment can start with a letter, can contain letters, numbers, hyphens, and underscores
   // Examples: com.snc.incident.mim.ml_solution, sys_user_table, sn_devops.admin, package.class.method, com.glide.service-portal
-  // Must have at least 3 segments separated by . or _ and no brackets/parentheses
+  // FIX v11.0.111: Changed from {2,} to {1,} to match 2-segment identifiers like "inventory_user"
+  // Must have at least 2 segments separated by . or _ and no brackets/parentheses
   // CRITICAL: Process text in segments split by __BR_NEWLINE__ to avoid matching across line breaks
   const beforeTechSplit = html;
   const techSegments = html.split(/(__BR_NEWLINE__|__[A-Z_]+__)/);
@@ -263,7 +264,7 @@ function convertRichTextBlock(input, options = {}) {
     }
     // Process this segment for technical identifiers
     // REQUIREMENT: Must contain at least one number or underscore (not just dots) to be technical
-    return segment.replace(/\b([a-zA-Z][-a-zA-Z0-9_]*(?:[_.][a-zA-Z][-a-zA-Z0-9_]*){2,})\b/g, (match, identifier, offset, string) => {
+    return segment.replace(/\b([a-zA-Z][-a-zA-Z0-9_]*(?:[_.][a-zA-Z][-a-zA-Z0-9_]*){1,})\b/g, (match, identifier, offset, string) => {
     console.log(`🔍 [TECH ID REGEX] Matched: "${match}"`);
     
     // Skip if it doesn't contain at least one number or underscore (beyond just dots)

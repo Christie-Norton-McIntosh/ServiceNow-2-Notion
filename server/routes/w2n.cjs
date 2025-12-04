@@ -44,6 +44,7 @@ const { deduplicateTableBlocks } = require('../converters/table.cjs');
 const { logPlaceholderStripped, logUnprocessedContent, logImageUploadFailed, logCheerioParsingIssue } = require('../utils/verification-log.cjs');
 const { validateNotionPage } = require('../utils/validate-notion-page.cjs');
 const { validateContentOrder, closeOrderLog } = require('../services/content-validator.cjs');
+const { diagnoseAndFixAudit, saveDiagnosisToFile } = require('../utils/audit-auto-remediate.cjs');
 
 /**
  * Validation status tracker for async validation monitoring
@@ -2559,47 +2560,75 @@ ${payload.contentHtml || ''}
       log(`========================================\n`);
       
       try {
-        // FIX v11.0.36: Validation paragraphs already removed in pre-validation cleanup
-        // This section now ONLY does content validation (order checking, similarity)
-        // Stats property will be recalculated after content validation completes
+        // FIX v11.0.113: Replace LCS content validation with AUDIT-based validation
+        // AUDIT provides clearer metrics: absolute text coverage instead of fuzzy similarity
         
-        log(`🔍 Running content validation on cleaned page...`);
+        log(`🔍 Using AUDIT results for content validation...`);
         
         // Brief wait for any final Notion propagation
         await new Promise(resolve => setTimeout(resolve, 1000));
         
-        // Run content validation
-        const contentResult = await validateContentOrder(
-          extractionResult?.fixedHtml || payload.contentHtml,
-          response.id,
-          notion
-        );
+        // Use AUDIT results from extraction (if available)
+        const auditResult = extractionResult?.audit;
         
-        log(`✅ Content validation completed`);
-        log(`   Similarity: ${contentResult.similarity}%`);
-        log(`   Result: ${contentResult.success ? 'PASS' : 'FAIL'}`);
+        if (!auditResult) {
+          log(`⚠️ AUDIT results not available - skipping validation`);
+        } else {
+          log(`✅ AUDIT validation completed`);
+          log(`   Coverage: ${auditResult.coverageStr}`);
+          log(`   Result: ${auditResult.passed ? 'PASS' : 'FAIL'}`);
+        }
         
-        // Build content validation summary
+        // Build AUDIT validation summary
         const timestamp = new Date().toISOString().split('T')[0];
-        let contentSummary = `\n\n[${timestamp}] Content Validation: ${contentResult.success ? '✅ PASS' : '❌ FAIL'}`;
-        contentSummary += `\nSimilarity: ${contentResult.similarity}% (threshold: ≥95%)`;
-        contentSummary += `\nHTML: ${contentResult.htmlSegments} segments (${contentResult.htmlChars} chars)`;
-        contentSummary += `\nNotion: ${contentResult.notionSegments} segments (${contentResult.notionChars} chars)`;
+        let contentSummary = '';
         
-        if (contentResult.charDiff !== 0) {
-          contentSummary += `\nChar Diff: ${contentResult.charDiff >= 0 ? '+' : ''}${contentResult.charDiff} (${contentResult.charDiffPercent >= 0 ? '+' : ''}${contentResult.charDiffPercent}%)`;
+        if (auditResult) {
+          contentSummary = `\n\n[${timestamp}] Content Audit: ${auditResult.passed ? '✅ PASS' : '❌ FAIL'}`;
+          contentSummary += `\nCoverage: ${auditResult.coverageStr} (threshold: 95-105%)`;
+          contentSummary += `\nSource: ${auditResult.nodeCount || 'N/A'} text nodes, ${auditResult.totalLength || 'N/A'} chars`;
+          contentSummary += `\nNotion: ${auditResult.notionBlocks} blocks, ${auditResult.notionTextLength} chars`;
+          contentSummary += `\nBlock/Node Ratio: ${auditResult.blockNodeRatio}x`;
+          
+          if (auditResult.missing > 0) {
+            contentSummary += `\n⚠️ Missing: ${auditResult.missing} chars (${auditResult.missingPercent}%)`;
+          }
+          
+          if (auditResult.extra > 0) {
+            contentSummary += `\n⚠️ Extra: ${auditResult.extra} chars (+${auditResult.extraPercent}%)`;
+          }
+        } else {
+          contentSummary = `\n\n[${timestamp}] Content Audit: ⚠️ SKIPPED (AUDIT not enabled)`;
         }
         
-        if (contentResult.missing && contentResult.missing.length > 0) {
-          contentSummary += `\n⚠️ Missing: ${contentResult.missing.length} segment(s)`;
-        }
+        // Create contentResult object for compatibility with existing code
+        const contentResult = {
+          success: auditResult ? auditResult.passed : true,
+          coverage: auditResult ? auditResult.coverage : null,
+          audit: auditResult
+        };
         
-        if (contentResult.extra && contentResult.extra.length > 0) {
-          contentSummary += `\n⚠️ Extra: ${contentResult.extra.length} segment(s)`;
-        }
-        
-        if (contentResult.orderIssues && contentResult.orderIssues.length > 0) {
-          contentSummary += `\n⚠️ Order Issues: ${contentResult.orderIssues.length} (expected with orchestration/restructuring)`;
+        // FIX v11.0.113: Auto-remediate on AUDIT failure
+        if (!contentResult.success && auditResult) {
+          log(`\n🔧 ========== TRIGGERING AUTO-REMEDIATION ==========`);
+          try {
+            const diagnosis = diagnoseAndFixAudit({
+              html,
+              blocks: plainTextChildren || children,
+              audit: auditResult,
+              pageTitle: payload.title || 'Unknown',
+              log
+            });
+            
+            // Save diagnosis for review
+            const diagnosisFile = saveDiagnosisToFile(diagnosis, response.id);
+            if (diagnosisFile) {
+              log(`💾 Diagnosis saved: ${diagnosisFile}`);
+            }
+          } catch (remErr) {
+            log(`⚠️ Auto-remediation error: ${remErr.message}`);
+          }
+          log(`🔧 =========================================\n`);
         }
         
         // Append content validation to Validation property
@@ -2916,6 +2945,8 @@ router.patch('/W2N/:pageId', async (req, res) => {
     // If dryRun, return extracted blocks without updating
     if (payload.dryRun) {
       log("🧪 Dry run mode - returning extracted blocks without updating page");
+      log(`🧪 DEBUG: extractedBlocks.length = ${extractedBlocks.length}`);
+      log(`🧪 DEBUG: extractedBlocks is array? ${Array.isArray(extractedBlocks)}`);
       
       // Count block types for reporting
       const blockTypes = {};
@@ -2923,14 +2954,21 @@ router.patch('/W2N/:pageId', async (req, res) => {
         blockTypes[block.type] = (blockTypes[block.type] || 0) + 1;
       });
       
-      return sendSuccess(res, {
+      const responsePayload = {
         dryRun: true,
         pageId,
         blocksExtracted: extractedBlocks.length,
         blockTypes,
         children: extractedBlocks,
-        hasVideos
-      });
+        hasVideos,
+        audit: extractionResult.audit || null  // FIX v11.0.113: Include AUDIT data in dry-run response
+      };
+      
+      log(`🧪 DEBUG: responsePayload.children.length = ${responsePayload.children.length}`);
+      log(`🧪 DEBUG: Calling sendSuccess with payload`);
+      
+      cleanup();
+      return sendSuccess(res, responsePayload);
     }
     
     // Strip private keys before deduplication
@@ -3891,96 +3929,87 @@ ${html || ''}
         }
       }
       
-      // Refined PATCH Validation & Stats formatting (v11.0.35+)
+      // FIX v11.0.113: Replace LCS validation with AUDIT-based validation for PATCH
       const patchIndicator = "🔄 PATCH\n\n";
       
-      // Determine validation status based on similarity, order issues, and missing segments
-      const simPercent = (typeof validationResult.similarity === 'number')
-        ? Math.round(validationResult.similarity)
-        : null;
-      const similarityLine = simPercent != null ? `Similarity: ${simPercent}% (threshold: ≥95%)` : null;
-
-      const similarityPass = simPercent != null && simPercent >= 95;
-      const hasOrderIssues = Array.isArray(validationResult.orderIssues) && validationResult.orderIssues.length > 0;
-      const hasMissingSegments = Array.isArray(validationResult.missing) && validationResult.missing.length > 0;
-      const hasMarkerLeaks = validationResult.hasErrors && 
-                             validationResult.issues?.some(issue => 
-                               issue.toLowerCase().includes('marker') || 
-                               issue.toLowerCase().includes('sn2n:')
-                             );
-
-      // Determine status: FAIL if similarity fails OR missing segments exist OR marker leaks detected
-      // WARNING if similarity passes but order issues exist
-      // PASS only if similarity passes and no order or missing issues
+      // Use AUDIT results from extraction (if available)
+      const auditResult = extractionResult?.audit;
+      
       let validationStatus;
       let statusIcon;
-      if (!similarityPass || hasMissingSegments || hasMarkerLeaks) {
-        validationStatus = 'FAIL';
-        statusIcon = '❌';
-      } else if (hasOrderIssues) {
-        validationStatus = 'WARNING';
-        statusIcon = '🔀';
+      let passFail;
+      
+      if (!auditResult) {
+        // No AUDIT data available
+        validationStatus = 'SKIPPED';
+        statusIcon = '⚠️';
+        passFail = 'SKIPPED';
+        log(`⚠️ AUDIT results not available for PATCH validation`);
       } else {
-        validationStatus = 'PASS';
-        statusIcon = '✅';
-      }
-
-      // Use same icon for Stats property
-      const passFail = validationStatus;
-
-      // Order issues section: list ALL issues (not just first 2)
-      let orderSection = '';
-      if (Array.isArray(validationResult.orderIssues) && validationResult.orderIssues.length > 0) {
-        const lines = [`⚠️ Order Issues (${validationResult.orderIssues.length} detected):`];
+        // Determine status based on AUDIT coverage
+        const coveragePassed = auditResult.passed; // 95-105% range
+        const hasMarkerLeaks = validationResult.hasErrors && 
+                               validationResult.issues?.some(issue => 
+                                 issue.toLowerCase().includes('marker') || 
+                                 issue.toLowerCase().includes('sn2n:')
+                               );
         
-        validationResult.orderIssues.forEach((iss, idx) => {
-          lines.push(`${idx + 1}. Inversion detected:`);
-          lines.push(`   A: "${iss.segmentA || 'Unknown'}..."`);
-          lines.push(`   B: "${iss.segmentB || 'Unknown'}..."`);
-          lines.push(`   HTML order: A at ${iss.htmlOrder?.[0] ?? '?'}, B at ${iss.htmlOrder?.[1] ?? '?'}`);
-          lines.push(`   Notion order: A at ${iss.notionOrder?.[0] ?? '?'}, B at ${iss.notionOrder?.[1] ?? '?'}`);
-        });
+        if (!coveragePassed || hasMarkerLeaks) {
+          validationStatus = 'FAIL';
+          statusIcon = '❌';
+          passFail = 'FAIL';
+          
+          // FIX v11.0.113: Auto-remediate on AUDIT failure
+          log(`\n🔧 ========== TRIGGERING AUTO-REMEDIATION ==========`);
+          try {
+            const diagnosis = diagnoseAndFixAudit({
+              html,
+              blocks: extractedBlocks,
+              audit: auditResult,
+              pageTitle: payload.title || 'Unknown',
+              log
+            });
+            
+            // Save diagnosis for review
+            const diagnosisFile = saveDiagnosisToFile(diagnosis, pageId);
+            if (diagnosisFile) {
+              log(`💾 Diagnosis saved: ${diagnosisFile}`);
+            }
+          } catch (remErr) {
+            log(`⚠️ Auto-remediation error: ${remErr.message}`);
+          }
+          log(`🔧 =========================================\n`);
+        } else {
+          validationStatus = 'PASS';
+          statusIcon = '✅';
+          passFail = 'PASS';
+        }
+      }
+      
+      // Build AUDIT-based validation content
+      const validationLines = [`${statusIcon} Content Audit: ${validationStatus}`];
+      
+      if (auditResult) {
+        validationLines.push(`Coverage: ${auditResult.coverageStr} (threshold: 95-105%)`);
+        validationLines.push(`Source: ${auditResult.nodeCount || 'N/A'} text nodes, ${auditResult.totalLength || 'N/A'} chars`);
+        validationLines.push(`Notion: ${auditResult.notionBlocks} blocks, ${auditResult.notionTextLength} chars`);
+        validationLines.push(`Block/Node Ratio: ${auditResult.blockNodeRatio}x`);
         
-        orderSection = lines.join('\n');
-      }
-
-      // Missing segments section: list ALL missing segments (not just first 3)
-      let missingSection = '';
-      if (Array.isArray(validationResult.missing) && validationResult.missing.length > 0) {
-        const lines = [`⚠️ Missing: ${validationResult.missing.length} segment(s)`];
-        lines.push(`(in HTML but not Notion)`);
+        if (auditResult.missing > 0) {
+          validationLines.push(''); // blank line
+          validationLines.push(`⚠️ Missing Content:`);
+          validationLines.push(`${auditResult.missing.toLocaleString()} characters (${auditResult.missingPercent}% of source)`);
+        }
         
-        validationResult.missing.forEach((m, idx) => {
-          const text = m?.text || m?.segment || m || '';
-          const preview = text.length > 80 ? text.substring(0, 80) + '...' : text;
-          lines.push(`${idx + 1}. ${preview}`);
-        });
-        
-        missingSection = lines.join('\n');
+        if (auditResult.extra > 0) {
+          validationLines.push(''); // blank line
+          validationLines.push(`⚠️ Extra Content:`);
+          validationLines.push(`${auditResult.extra.toLocaleString()} additional characters (+${auditResult.extraPercent}%)`);
+        }
+      } else {
+        validationLines.push('AUDIT system not enabled - no coverage data available');
       }
-
-  const validationLines = [`${statusIcon} Text Content Validation: ${validationStatus}`];
-  
-  // Add character count comparison below validation status
-  if (validationResult.htmlChars !== undefined && validationResult.notionChars !== undefined) {
-    const htmlChars = validationResult.htmlChars;
-    const notionChars = validationResult.notionChars;
-    const charDiff = notionChars - htmlChars;
-    // Use ±10 character buffer for "equal" classification
-    const charEmoji = charDiff > 10 ? '📈' : charDiff < -10 ? '📉' : '📊';
-    const charComparison = `Characters: HTML ${htmlChars.toLocaleString()} → Notion ${notionChars.toLocaleString()} (${charDiff > 0 ? '+' : ''}${charDiff.toLocaleString()}) ${charEmoji}`;
-    validationLines.push(charComparison);
-  }
-  
-  // Do not include similarity/content summary lines in Validation per spec
-      if (orderSection) {
-        validationLines.push(''); // blank line before order issues
-        validationLines.push(orderSection);
-      }
-      if (missingSection) {
-        validationLines.push(''); // blank line before missing section
-        validationLines.push(missingSection);
-      }
+      
       const validationContent = patchIndicator + validationLines.join('\n');
 
       propertyUpdates["Validation"] = {

@@ -171,6 +171,56 @@ async function extractContentFromHtml(html) {
   const { log, normalizeAnnotations, isValidImageUrl, downloadAndUploadImage, normalizeUrl, getExtraDebug } = getGlobals();
   const seenMarkers = new Set();
 
+  // Content audit utility: Track all text nodes in source HTML
+  function auditTextNodes(htmlContent) {
+    const cheerio = require('cheerio');
+    const $audit = cheerio.load(htmlContent, { decodeEntities: false });
+    const allTextNodes = [];
+    
+    function collectText(node) {
+      if (!node) return;
+      
+      if (node.type === 'text' && node.data && node.data.trim()) {
+        allTextNodes.push({
+          text: node.data.trim(),
+          length: node.data.trim().length,
+          parent: node.parent?.name || 'unknown',
+          parentClass: $audit(node.parent).attr('class') || 'none'
+        });
+      }
+      
+      if (node.children) {
+        for (const child of node.children) {
+          collectText(child);
+        }
+      }
+    }
+    
+    const root = $audit('body').get(0) || $audit.root().get(0);
+    if (root) collectText(root);
+    
+    return {
+      nodeCount: allTextNodes.length,
+      totalLength: allTextNodes.reduce((sum, n) => sum + n.length, 0),
+      nodes: allTextNodes
+    };
+  }
+
+  // Audit source content if enabled
+  const enableAudit = process.env.SN2N_AUDIT_CONTENT === '1';
+  let sourceAudit = null;
+  
+  console.log(`🔍 ENV CHECK: SN2N_AUDIT_CONTENT = "${process.env.SN2N_AUDIT_CONTENT}" (type: ${typeof process.env.SN2N_AUDIT_CONTENT})`);
+  console.log(`🔍 ENV CHECK: enableAudit = ${enableAudit}`);
+  
+  if (enableAudit) {
+    console.log(`\n📊 ========== CONTENT AUDIT START ==========`);
+    sourceAudit = auditTextNodes(html);
+    console.log(`📊 [AUDIT] Source HTML has ${sourceAudit.nodeCount} text nodes`);
+    console.log(`📊 [AUDIT] Total source text length: ${sourceAudit.totalLength} characters`);
+    console.log(`📊 [AUDIT] Average node length: ${(sourceAudit.totalLength / sourceAudit.nodeCount).toFixed(1)} chars`);
+  }
+
   function createMarker(elementId = null) {
     const marker = generateMarker(elementId);
     seenMarkers.add(marker);
@@ -272,10 +322,6 @@ async function extractContentFromHtml(html) {
   html = html.replace(/<div[^>]*class="[^\"]*miniTOC[^\"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
   html = html.replace(/<div[^>]*class="[^\"]*zDocsSideBoxes[^\"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
 
-  // DIAGNOSTIC: Check HTML length AFTER initial cleanup
-  const sectionsAfterCleanup = (html.match(/<section[^>]*id="[^"]*"/g) || []).length;
-  console.log(`🔥🔥🔥 AFTER INITIAL CLEANUP: HTML length: ${html.length} chars, sections: ${sectionsAfterCleanup}`);
-
   // Block array for collecting converted Notion blocks
   const blocks = [];
   
@@ -300,7 +346,9 @@ async function extractContentFromHtml(html) {
     console.log(`📊 [TABLE-TITLE-REMOVAL] Starting removal process for ${processedTableCaptions.size} captions`);
     
     // Check multiple element types that might contain table titles
-    const elementsToCheck = ['p', 'div', 'span', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
+    // NOTE: 'span' excluded - inline elements should not be evaluated as table title containers
+    // Spans are semantic formatting within block elements, not standalone content blocks
+    const elementsToCheck = ['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
     
     for (const element of elementsToCheck) {
       html = html.replace(new RegExp(`<${element}[^>]*>([\\s\\S]*?)</${element}>`, 'gi'), (match, content) => {
@@ -502,6 +550,9 @@ async function extractContentFromHtml(html) {
     // Run in a loop to handle nested spans (innermost to outermost)
     let lastText;
     let iterations = 0;
+    const phSpanRegex = /<span[^>]*class=["'][^"']*\bph\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi;
+    const matchesBeforeStrip = (text.match(phSpanRegex) || []).length;
+    console.log(`🔍 [ph span strip] BEFORE: Found ${matchesBeforeStrip} ph spans in text`);
     do {
       lastText = text;
       text = text.replace(/<span[^>]*class=["'][^"']*\bph\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/gi, '$1');
@@ -511,6 +562,7 @@ async function extractContentFromHtml(html) {
       }
     } while (text !== lastText && text.includes('<span') && iterations < 10);
     
+    console.log(`🔍 [ph span strip] AFTER ${iterations} iteration(s): ph span stripping complete`);
     if (text.includes('com.snc.incident.ml')) {
       console.log(`🔍 [ph span strip] AFTER ${iterations} iteration(s), text with com.snc.incident.ml:`);
       const snippet = text.substring(text.indexOf('com.snc.incident.ml') - 50, text.indexOf('com.snc.incident.ml') + 100);
@@ -1308,14 +1360,26 @@ async function extractContentFromHtml(html) {
     };
   }
 
+  // Order tracking for debug mode
+  const enableOrderTracking = process.env.SN2N_DEBUG_ORDER === '1';
+  let orderSequence = 0;
+
   // Process elements in document order by walking the DOM tree
   async function processElement(element) {
     const $elem = $(element);
     const tagName = element.name;
     const processedBlocks = [];
     
-  const elemClass = $elem.attr('class') || 'none';
-  if (getExtraDebug && getExtraDebug()) log(`🔍 Processing element: <${tagName}>, class="${elemClass}"`);
+    const elemClass = $elem.attr('class') || 'none';
+    const elemId = $elem.attr('id') || 'no-id';
+    
+    // Order tracking: Log entry
+    if (enableOrderTracking) {
+      orderSequence++;
+      console.log(`[ORDER-${orderSequence}] ▶️ START: <${tagName}${elemClass !== 'none' ? ` class="${elemClass}"` : ''}${elemId !== 'no-id' ? ` id="${elemId}"` : ''}>`);
+    }
+    
+    if (getExtraDebug && getExtraDebug()) log(`🔍 Processing element: <${tagName}>, class="${elemClass}"`);
     
     // SKIP UI CHROME ELEMENTS (dropdown menus, export buttons, filter divs, etc.)
     // Check this FIRST before any other processing
@@ -4008,6 +4072,23 @@ async function extractContentFromHtml(html) {
       
       let innerHtml = $elem.html() || '';
       
+      // DEBUG: Log if this is the first paragraph with potential ph spans
+      if (innerHtml.includes('Incident Management') || innerHtml.includes('specific solutions')) {
+        const elem = $elem.get(0);
+        const tagName = elem?.name || 'UNKNOWN';
+        const className = $elem.attr('class') || 'NO-CLASS';
+        console.log(`🔍 [PARAGRAPH-DEBUG] Element: <${tagName} class="${className}">`);
+        if (elem && elem.children) {
+          console.log(`🔍 [PARAGRAPH-DEBUG] elem.children count: ${elem.children.length}`);
+          for (let i = 0; i < Math.min(elem.children.length, 5); i++) {
+            const child = elem.children[i];
+            console.log(`🔍 [PARAGRAPH-DEBUG] Child ${i}: type=${child.type}, name=${child.name}, data=${child.data?.substring?.(0, 50) || 'N/A'}`);
+          }
+        }
+        console.log(`🔍 [PARAGRAPH-DEBUG] innerHtml after $elem.html(): ${innerHtml.substring(0, 150)}`);
+        console.log(`🔍 [PARAGRAPH-DEBUG] Has <span class="ph">: ${/<span[^>]*class=["'][^"']*\bph\b[^"']*["'][^>]*>/i.test(innerHtml)}`);
+      }
+      
       // Strip SVG icon elements (decorative only, no content value)
       innerHtml = innerHtml.replace(/<svg[\s\S]*?<\/svg>/gi, '');
       
@@ -4015,6 +4096,9 @@ async function extractContentFromHtml(html) {
       // These can appear when ServiceNow HTML contains note divs as literal text
       innerHtml = innerHtml.replace(/<div\s+class=["'][^"']*note[^"']*["'][^>]*>[\s\S]*?<\/div>/gi, ' ');
       
+      // CRITICAL FIX v11.0.112: Don't call cleanHtmlText() on innerHtml yet!
+      // cleanHtmlText() strips ALL HTML tags including <span class="ph"> which contain content we need to preserve
+      // Instead, generate cleanedText for validation/logging only, but use original innerHtml for parseRichText
       const cleanedText = cleanHtmlText(innerHtml).trim();
       
       // Skip table captions that start with "Table X." - these are redundant with table headings
@@ -5268,31 +5352,41 @@ async function extractContentFromHtml(html) {
               
               if (uiControlMatch) {
                 const headingText = uiControlMatch[1].trim();
-                console.log(`🔍 ✨ SECTION HEADING FIX: Converting UIControl paragraph to heading_2: "${headingText}"`);
                 
-                // Create a heading_2 block for this text
-                processedBlocks.push({
-                  object: "block",
-                  type: "heading_2",
-                  heading_2: {
-                    rich_text: [{
-                      type: "text",
-                      text: { content: headingText },
-                      annotations: {
-                        bold: true,
-                        italic: false,
-                        strikethrough: false,
-                        underline: false,
-                        code: false,
-                        color: "blue"
-                      }
-                    }]
-                  }
-                });
+                // Priority 2: Preserve structure mode - keep UIControl as paragraph instead of heading
+                const preserveStructure = process.env.SN2N_PRESERVE_STRUCTURE === '1';
                 
-                // Remove this child from the list so it's not processed again
-                children.shift();
-                console.log(`🔍 Remaining children after heading extraction: ${children.length}`);
+                if (preserveStructure) {
+                  console.log(`🔍 ✨ PRESERVE STRUCTURE: Keeping UIControl as paragraph: "${headingText}"`);
+                  // Keep as paragraph with UIControl styling - will be processed normally
+                  // Don't shift children array, let it be processed in normal flow
+                } else {
+                  console.log(`🔍 ✨ SECTION HEADING FIX: Converting UIControl paragraph to heading_2: "${headingText}"`);
+                  
+                  // Create a heading_2 block for this text
+                  processedBlocks.push({
+                    object: "block",
+                    type: "heading_2",
+                    heading_2: {
+                      rich_text: [{
+                        type: "text",
+                        text: { content: headingText },
+                        annotations: {
+                          bold: true,
+                          italic: false,
+                          strikethrough: false,
+                          underline: false,
+                          code: false,
+                          color: "blue"
+                        }
+                      }]
+                    }
+                  });
+                  
+                  // Remove this child from the list so it's not processed again
+                  children.shift();
+                  console.log(`🔍 Remaining children after heading extraction: ${children.length}`);
+                }
               }
             }
           }
@@ -5325,15 +5419,91 @@ async function extractContentFromHtml(html) {
       }
     }
 
+    // Order tracking: Log completion
+    if (enableOrderTracking) {
+      const blockTypes = processedBlocks.map(b => b.type).join(', ');
+      console.log(`[ORDER-${orderSequence}] ✅ END: Produced ${processedBlocks.length} block(s)${processedBlocks.length > 0 ? ': ' + blockTypes : ''}`);
+    }
+
     return processedBlocks;
+  }
+
+  // Strict document order walker (Priority 1 improvement)
+  // Ensures exact DOM traversal order to eliminate ordering inversions
+  function walkDOMInStrictOrder($root, options = {}) {
+    const { 
+      includeTypes = ['section', 'article', 'p', 'div', 'nav', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'table', 'pre', 'figure', 'dl'],
+      skipTypes = [],
+      maxDepth = 10
+    } = options;
+    
+    const orderedElements = [];
+    const visited = new Set();
+    
+    function walk(node, depth = 0) {
+      if (!node || depth > maxDepth || visited.has(node)) return;
+      visited.add(node);
+      
+      const tagName = node.name?.toLowerCase();
+      
+      // Collect node if it's a content-bearing element
+      if (tagName && includeTypes.includes(tagName) && !skipTypes.includes(tagName)) {
+        orderedElements.push(node);
+      }
+      
+      // Walk children in EXACT document order
+      const childNodes = Array.from(node.childNodes || node.children || []);
+      for (const child of childNodes) {
+        if (child.nodeType === 1) { // Element node only
+          walk(child, depth + 1);
+        }
+      }
+    }
+    
+    const rootNode = $root.get ? $root.get(0) : $root;
+    if (rootNode) walk(rootNode);
+    
+    return orderedElements;
   }
 
   // Process top-level elements in document order
   // Find all content elements - try specific content wrappers first, then body
   let contentElements = [];
+  const useStrictOrder = process.env.SN2N_STRICT_ORDER === '1';
   
-  if ($('.zDocsTopicPageBody').length > 0) {
-    // ServiceNow zDocsTopicPageBody - process all children (includes article AND contentPlaceholder with Related Content)
+  if (useStrictOrder) {
+    console.log(`\n🎯 ========== STRICT ORDER MODE ENABLED ==========`);
+    console.log(`🎯 Using depth-first DOM traversal for exact source order`);
+    
+    if ($('.zDocsTopicPageBody').length > 0) {
+      const $root = $('.zDocsTopicPageBody');
+      contentElements = walkDOMInStrictOrder($root, {
+        includeTypes: ['section', 'article', 'div', 'nav'],
+        maxDepth: 5
+      });
+      console.log(`🎯 Strict order: Collected ${contentElements.length} top-level elements from .zDocsTopicPageBody`);
+    } else if ($('body').length > 0) {
+      const $root = $('body');
+      contentElements = walkDOMInStrictOrder($root, {
+        includeTypes: ['section', 'article', 'div', 'nav'],
+        maxDepth: 5
+      });
+      console.log(`🎯 Strict order: Collected ${contentElements.length} top-level elements from body`);
+    }
+    
+    if (enableOrderTracking) {
+      console.log(`🎯 [STRICT-ORDER] Element sequence:`);
+      contentElements.forEach((el, idx) => {
+        const $el = $(el);
+        const tagName = el.name;
+        const elClass = $el.attr('class') || 'none';
+        const elId = $el.attr('id') || 'no-id';
+        console.log(`🎯   [${idx + 1}] <${tagName}${elClass !== 'none' ? ` class="${elClass}"` : ''}${elId !== 'no-id' ? ` id="${elId}"` : ''}>`);
+      });
+    }
+    console.log(`🎯 ===============================================\n`);
+  } else if ($('.zDocsTopicPageBody').length > 0) {
+    // Original selector-based collection (legacy mode)
     const topLevelChildren = $('.zDocsTopicPageBody').find('> *').toArray();
     console.log(`🔍 Processing from .zDocsTopicPageBody, found ${topLevelChildren.length} top-level children`);
     console.log(`🔍 Top-level children: ${topLevelChildren.map(c => `<${c.name} class="${$(c).attr('class') || ''}">`).join(', ')}`);
@@ -5515,8 +5685,8 @@ async function extractContentFromHtml(html) {
       // Add orphaned articles to the contentElements array
       contentElements.push(...orphanedNested1);
     }
-  } else if ($('body').length > 0) {
-    // Full HTML document with body tag
+  } else if ($('body').length > 0 && !useStrictOrder) {
+    // Full HTML document with body tag (legacy mode)
     contentElements = $('body').find('> *').toArray();
     console.log(`🔍 Processing from <body>, found ${contentElements.length} children`);
   } else if ($('.dita, .refbody, article, main, [role="main"]').length > 0) {
@@ -5531,8 +5701,8 @@ async function extractContentFromHtml(html) {
       contentElements = $('.dita, .refbody, article, main, [role="main"]').first().find('> *').toArray();
       console.log(`🔍 Processing from content wrapper, found ${contentElements.length} children`);
     }
-  } else {
-    // HTML fragment - get all top-level elements
+  } else if (!useStrictOrder) {
+    // HTML fragment - get all top-level elements (legacy mode)
     contentElements = $.root().find('> *').toArray().filter(el => el.type === 'tag');
     console.log(`🔍 Processing from root, found ${contentElements.length} top-level elements`);
     
@@ -5745,6 +5915,104 @@ async function extractContentFromHtml(html) {
   // No post-processing needed - proper nesting structure handles list numbering restart
   console.log(`✅ Extraction complete: ${blocks.length} blocks`);
 
+  // Content audit completion: Calculate coverage
+  if (enableAudit && sourceAudit) {
+    // Extract all text from Notion blocks
+    function extractAllTextFromBlock(block) {
+      let text = '';
+      
+      function extractFromRichText(richTextArray) {
+        if (!Array.isArray(richTextArray)) return '';
+        return richTextArray.map(rt => rt?.text?.content || '').join('');
+      }
+      
+      // Extract from all block types
+      if (block.paragraph?.rich_text) text += extractFromRichText(block.paragraph.rich_text);
+      if (block.heading_1?.rich_text) text += extractFromRichText(block.heading_1.rich_text);
+      if (block.heading_2?.rich_text) text += extractFromRichText(block.heading_2.rich_text);
+      if (block.heading_3?.rich_text) text += extractFromRichText(block.heading_3.rich_text);
+      if (block.callout?.rich_text) text += extractFromRichText(block.callout.rich_text);
+      if (block.bulleted_list_item?.rich_text) text += extractFromRichText(block.bulleted_list_item.rich_text);
+      if (block.numbered_list_item?.rich_text) text += extractFromRichText(block.numbered_list_item.rich_text);
+      if (block.quote?.rich_text) text += extractFromRichText(block.quote.rich_text);
+      if (block.toggle?.rich_text) text += extractFromRichText(block.toggle.rich_text);
+      
+      // Table cells
+      if (block.table_row?.cells) {
+        for (const cell of block.table_row.cells) {
+          text += extractFromRichText(cell);
+        }
+      }
+      
+      // Recursively extract from children
+      if (block.children && Array.isArray(block.children)) {
+        for (const child of block.children) {
+          text += extractAllTextFromBlock(child);
+        }
+      }
+      
+      // Extract from list items with children
+      if (block.bulleted_list_item?.children) {
+        for (const child of block.bulleted_list_item.children) {
+          text += extractAllTextFromBlock(child);
+        }
+      }
+      if (block.numbered_list_item?.children) {
+        for (const child of block.numbered_list_item.children) {
+          text += extractAllTextFromBlock(child);
+        }
+      }
+      
+      return text;
+    }
+    
+    const notionTextLength = blocks.reduce((sum, block) => {
+      return sum + extractAllTextFromBlock(block).length;
+    }, 0);
+    
+    const coverage = sourceAudit.totalLength > 0 
+      ? (notionTextLength / sourceAudit.totalLength * 100).toFixed(1)
+      : 100;
+    
+    const coverageFloat = parseFloat(coverage);
+    const missing = coverageFloat < 100 ? sourceAudit.totalLength - notionTextLength : 0;
+    const extra = coverageFloat > 100 ? notionTextLength - sourceAudit.totalLength : 0;
+    const auditPassed = coverageFloat >= 95 && coverageFloat <= 105;
+    
+    // Store audit results for return
+    sourceAudit.result = {
+      coverage: coverageFloat,
+      coverageStr: `${coverage}%`,
+      nodeCount: sourceAudit.nodeCount,
+      totalLength: sourceAudit.totalLength,
+      notionBlocks: blocks.length,
+      notionTextLength,
+      blockNodeRatio: parseFloat((blocks.length / sourceAudit.nodeCount).toFixed(2)),
+      passed: auditPassed,
+      missing,
+      extra,
+      missingPercent: coverageFloat < 100 ? (100 - coverageFloat).toFixed(1) : 0,
+      extraPercent: coverageFloat > 100 ? (coverageFloat - 100).toFixed(1) : 0
+    };
+    
+    console.log(`\n📊 ========== CONTENT AUDIT COMPLETE ==========`);
+    console.log(`📊 [AUDIT] Notion blocks: ${blocks.length}`);
+    console.log(`📊 [AUDIT] Notion text length: ${notionTextLength} characters`);
+    console.log(`📊 [AUDIT] Content coverage: ${coverage}%`);
+    console.log(`📊 [AUDIT] Block/node ratio: ${(blocks.length / sourceAudit.nodeCount).toFixed(2)}x`);
+    
+    if (coverageFloat < 95) {
+      console.warn(`⚠️ [AUDIT] Low coverage! Missing ${missing} characters (${(100 - coverageFloat).toFixed(1)}%)`);
+      console.warn(`⚠️ [AUDIT] Review extraction logic for content loss`);
+    } else if (coverageFloat > 105) {
+      console.warn(`⚠️ [AUDIT] Extra content! ${extra} additional characters (+${(coverageFloat - 100).toFixed(1)}%)`);
+      console.warn(`⚠️ [AUDIT] May indicate duplicate content extraction`);
+    } else {
+      console.log(`✅ [AUDIT] Coverage within acceptable range (95-105%)`);
+    }
+    console.log(`📊 ==========================================\n`);
+  }
+
   // Validation-only: emit combined paragraph placeholders for marker-preserved groups
   // This helps the validator match HTML segments that were split into deferred
   // children and top-level marker blocks. These paragraphs are only emitted when
@@ -5936,7 +6204,12 @@ async function extractContentFromHtml(html) {
     console.log(`⚠️ Failed running final dedupe diagnostics emitter: ${e && e.message}`);
   }
 
-  return { blocks, hasVideos: hasDetectedVideos, fixedHtml: htmlForValidation };
+  return { 
+    blocks, 
+    hasVideos: hasDetectedVideos, 
+    fixedHtml: htmlForValidation,
+    audit: sourceAudit ? sourceAudit.result : null
+  };
 }
 
 /**
