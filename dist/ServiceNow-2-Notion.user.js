@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.114
+// @version      11.0.115
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.114";
+    window.BUILD_VERSION = "11.0.115";
 (function () {
 
   // Configuration constants and default settings
@@ -3115,6 +3115,10 @@
               cleanDbId = urlMatch[0].replace(/-/g, '');
               searchByName = false;
               debug(`[DATABASE] ✅ Extracted database ID from URL: ${cleanDbId}`);
+            } else {
+              // URL detected but no valid ID found
+              alert(`Could not extract a valid database ID from the URL.\n\nMake sure the URL is a valid Notion database sharing link.`);
+              return;
             }
           }
           // Check if input looks like a database ID (32 hex chars with optional hyphens)
@@ -3149,20 +3153,23 @@
             } catch (e) {
               const errorMsg = e?.message || e?.toString() || "Unknown error";
               const isNotAccessible = errorMsg.includes("not found") || errorMsg.includes("not shared") || errorMsg.includes("403") || errorMsg.includes("404");
-              debug(`[DATABASE] ⚠️ Failed to get database by ID (${errorMsg}), trying name search...`);
+              debug(`[DATABASE] ⚠️ Failed to get database by ID: ${cleanDbId} (${errorMsg})`);
               
               if (isNotAccessible) {
                 // Show a helpful message about sharing the database
                 alert(
-                  `Database "${cleanDbId}" is not accessible.\n\n` +
+                  `Database ID: ${cleanDbId}\n\n` +
+                  `This database is not accessible to your Notion integration.\n\n` +
                   `Make sure:\n` +
                   `1. The database exists in your Notion workspace\n` +
                   `2. You have access to it\n` +
                   `3. It's shared with your Notion integration\n\n` +
-                  `Try:\n` +
-                  `• Opening the database in Notion and checking permissions\n` +
-                  `• Re-authorizing your Notion integration\n` +
-                  `• Using a database name instead of the ID`
+                  `How to share a database:\n` +
+                  `1. Open the database in Notion\n` +
+                  `2. Click "Share" button (top right)\n` +
+                  `3. Find your integration/bot in the access list\n` +
+                  `4. If not there, add it using "Invite" button\n` +
+                  `5. Try again here`
                 );
                 return;
               }
