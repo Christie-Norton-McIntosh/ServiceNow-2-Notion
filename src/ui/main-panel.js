@@ -413,6 +413,10 @@ export function setupMainPanel(panel) {
             cleanDbId = urlMatch[0].replace(/-/g, '');
             searchByName = false;
             debug(`[DATABASE] ✅ Extracted database ID from URL: ${cleanDbId}`);
+          } else {
+            // URL detected but no valid ID found
+            alert(`Could not extract a valid database ID from the URL.\n\nMake sure the URL is a valid Notion database sharing link.`);
+            return;
           }
         }
         // Check if input looks like a database ID (32 hex chars with optional hyphens)
@@ -445,7 +449,29 @@ export function setupMainPanel(panel) {
             showToast(`✅ Found database: ${config.databaseName}`, 2000);
             return;
           } catch (e) {
-            debug(`[DATABASE] ⚠️ Failed to get database by ID, trying name search...`, e);
+            const errorMsg = e?.message || e?.toString() || "Unknown error";
+            const isNotAccessible = errorMsg.includes("not found") || errorMsg.includes("not shared") || errorMsg.includes("403") || errorMsg.includes("404");
+            debug(`[DATABASE] ⚠️ Failed to get database by ID: ${cleanDbId} (${errorMsg})`);
+            
+            if (isNotAccessible) {
+              // Show a helpful message about sharing the database
+              alert(
+                `Database ID: ${cleanDbId}\n\n` +
+                `This database is not accessible to your Notion integration.\n\n` +
+                `Make sure:\n` +
+                `1. The database exists in your Notion workspace\n` +
+                `2. You have access to it\n` +
+                `3. It's shared with your Notion integration\n\n` +
+                `How to share a database:\n` +
+                `1. Open the database in Notion\n` +
+                `2. Click "Share" button (top right)\n` +
+                `3. Find your integration/bot in the access list\n` +
+                `4. If not there, add it using "Invite" button\n` +
+                `5. Try again here`
+              );
+              return;
+            }
+            
             searchByName = true;
           }
         }
@@ -501,13 +527,26 @@ export function setupMainPanel(panel) {
             );
             showToast(`✅ Found database: ${config.databaseName}`, 2000);
           } else {
-            alert(`Database "${trimmedInput}" not found. Make sure it's shared with your Notion integration.`);
+            // Provide detailed guidance when database is not found
+            const isIdFormat = /^[a-f0-9-]{32,36}$/i.test(trimmedInput);
+            let errorMessage = `Database "${trimmedInput}" not found.`;
+            
+            if (isIdFormat) {
+              errorMessage += `\n\nMake sure:\n1. The database ID is correct\n2. You have access to it\n3. It's shared with your Notion integration`;
+            } else if (databases.length === 0) {
+              errorMessage += `\n\nNo accessible databases found. Make sure at least one database is shared with your Notion integration.`;
+            } else {
+              errorMessage += `\n\nAvailable databases:\n${databases.slice(0, 5).map(db => `• ${db.title || "Untitled"}`).join("\n")}${databases.length > 5 ? `\n... and ${databases.length - 5} more` : ""}`;
+            }
+            
+            alert(errorMessage);
             debug(`[DATABASE] ❌ Database "${trimmedInput}" not found`);
           }
         }
       } catch (e) {
-        debug("Failed to search database:", e);
-        alert("Error searching for database. Check console for details.");
+        const errorMsg = e?.message || e?.toString() || "Unknown error";
+        debug("Failed to search database:", errorMsg);
+        alert(`Error searching for database: ${errorMsg}\n\nCheck console for details.`);
       } finally {
         hideSpinner();
       }
