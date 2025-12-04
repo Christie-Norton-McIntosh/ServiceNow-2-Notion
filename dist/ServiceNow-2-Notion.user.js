@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.120
+// @version      11.0.121
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.120";
+    window.BUILD_VERSION = "11.0.121";
 (function () {
 
   // Configuration constants and default settings
@@ -2634,29 +2634,34 @@
       return defaultMappings;
     }
 
-    // Common ServiceNow metadata fields and their Notion property counterparts
-    const commonMappings = {
-      // ServiceNow field -> Notion property name (case-sensitive)
-      'Title': ['Title', 'Name', 'Page Title'],
-      'URL': ['URL', 'Page URL', 'Source URL', 'Link', 'Current Release URL'],
-      'Category': ['Category', 'Type', 'Topic', 'Classification'],
-      'Version': ['Version', 'Release', 'Build', 'Version Number'],
-      'Updated': ['Updated', 'Last Updated', 'Modified Date', 'Date Modified', 'Updated Date'],
-      'Status': ['Status', 'State', 'Page Status', 'Workflow Status'],
-      'Author': ['Author', 'Created By', 'Owner', 'Author Name'],
-      'Breadcrumb': ['Breadcrumb', 'Navigation', 'Path', 'Hierarchy'],
-      'Section': ['Section', 'Topic', 'Area'],
+    // Map extracted content field names to possible Notion property names
+    // Format: contentField -> [possible Notion property names]
+    const contentFieldMappings = {
+      // Extracted field name -> Possible Notion property names (case-sensitive)
+      'title': ['Title', 'Name', 'Page Title'],
+      'url': ['URL', 'Page URL', 'Source URL', 'Link'],
+      'category': ['Category', 'Type', 'Topic', 'Classification'],
+      'version': ['Version', 'Release', 'Build', 'Version Number'],
+      'updated': ['Updated', 'Last Updated', 'Modified Date', 'Date Modified', 'Updated Date'],
+      'status': ['Status', 'State', 'Page Status', 'Workflow Status'],
+      'author': ['Author', 'Created By', 'Owner', 'Author Name'],
+      'breadcrumb': ['Breadcrumb', 'Navigation', 'Path', 'Hierarchy'],
+      'section': ['Section', 'Topic', 'Area'],
+      'source': ['Source', 'Content Source', 'Origin', 'Platform'],
+      'currentReleaseUrl': ['Current Release URL', 'Latest URL', 'Permanent Link'],
+      'hasVideos': ['Has Videos', 'Video', 'Videos', 'Contains Videos'],
+      'hasImages': ['Has Images', 'Image', 'Images', 'Contains Images'],
     };
 
-    // Scan database schema for properties matching common field names
-    for (const [contentField, possibleNotionNames] of Object.entries(commonMappings)) {
+    // Scan database schema for properties matching extracted content fields
+    for (const [contentField, possibleNotionNames] of Object.entries(contentFieldMappings)) {
       // Check if any of the possible Notion property names exist in the schema
       for (const notionPropName of possibleNotionNames) {
         if (schema.hasOwnProperty(notionPropName)) {
           // Found a match - add to default mappings
-          // Map Notion property -> content field (reverse of display order)
+          // Format: Notion property name -> content field name
           defaultMappings[notionPropName] = contentField;
-          debug(`✅ Auto-mapped Notion property "${notionPropName}" -> content field "${contentField}"`);
+          debug(`✅ Auto-mapped: Notion property "${notionPropName}" -> content field "${contentField}"`);
           break; // Move to next content field
         }
       }
