@@ -28,6 +28,10 @@
     "test:fixtures": "node tests/test-fixture-batch.cjs",
     "harvest:fixtures": "node scripts/harvest-validation-fixtures.cjs",
     "harvest:fixtures:dry": "node scripts/harvest-validation-fixtures.cjs --dry-run",
+    "patterns": "node tools/manage-patterns.cjs",
+    "patterns:stats": "node tools/manage-patterns.cjs --stats",
+    "patterns:clean": "node tools/manage-patterns.cjs --clean",
+    "patterns:gen-tests": "node tools/manage-patterns.cjs --gen-tests",
     "release:patch": "node scripts/release.js patch",
     "release:minor": "node scripts/release.js minor",
     "release:major": "node scripts/release.js major"

@@ -167,13 +167,31 @@ async function convertTableBlock(tableHtml, options = {}) {
     const titleMatch = captionContent.match(/<span[^>]*class="[^"]*title[^"]*"[^>]*>([\s\S]*?)<\/span>/i);
     const captionText = titleMatch ? cleanHtmlText(titleMatch[1]) : cleanHtmlText(captionContent);
     if (captionText && captionText.trim()) {
-      blocks.push({
-        object: "block",
-        type: "heading_3",
-        heading_3: {
-          rich_text: [{ type: "text", text: { content: captionText } }],
-        },
-      });
+      // Priority 2: Preserve structure mode - keep caption as paragraph instead of heading
+      const preserveStructure = process.env.SN2N_PRESERVE_STRUCTURE === '1';
+      
+      if (preserveStructure) {
+        blocks.push({
+          object: "block",
+          type: "paragraph",
+          paragraph: {
+            rich_text: [{ 
+              type: "text", 
+              text: { content: captionText },
+              annotations: { bold: true } // Make caption bold to distinguish it
+            }],
+          },
+        });
+      } else {
+        // Default: Convert to heading_3 (current behavior)
+        blocks.push({
+          object: "block",
+          type: "heading_3",
+          heading_3: {
+            rich_text: [{ type: "text", text: { content: captionText } }],
+          },
+        });
+      }
     }
   }
 
@@ -649,22 +667,26 @@ async function convertTableBlock(tableHtml, options = {}) {
     // Check if cell has paragraph tags
     const paragraphMatches = processedHtml.match(/<p[^>]*>[\s\S]*?<\/p>/gi);
     
-    if (paragraphMatches && paragraphMatches.length > 1) {
+    // FIX v11.0.111: Check for leading text BEFORE checking paragraph count
+    // This handles cases like: "inventory_user<p>category_manager</p><p>contract_manager</p>"
+    // where there's text before the first <p> tag
+    const textBeforeP = /^([^<]+)<p/i.exec(processedHtml);
+    
+    if (textBeforeP && paragraphMatches && paragraphMatches.length >= 1) {
+      // Mixed content: text followed by one or more <p> tags
+      // Add newline before each <p> tag to separate from preceding content
+      textContent = processedHtml
+        .replace(/<p[^>]*>/gi, '__BR_NEWLINE__')  // Add newline before each <p>
+        .replace(/<\/p>/gi, '');  // Remove closing </p> tags
+    } else if (paragraphMatches && paragraphMatches.length > 1) {
       // Multiple paragraphs - split on </p> and add newlines between them
       // This preserves the HTML inside each <p> tag
       textContent = processedHtml
         .replace(/<\/p>\s*<p[^>]*>/gi, '</p>__BR_NEWLINE__<p>')  // Mark newlines with placeholder
         .replace(/<\/?p[^>]*>/gi, '');  // Remove <p> tags but keep content
     } else if (paragraphMatches && paragraphMatches.length === 1) {
-      // Single paragraph - check if there's text before it (mixed content)
-      const textBeforeP = /^([^<]+)<p/i.exec(processedHtml);
-      if (textBeforeP) {
-        // Mixed content: text followed by <p>
-        textContent = processedHtml.replace(/<p[^>]*>/gi, '__BR_NEWLINE__').replace(/<\/p>/gi, '');
-      } else {
-        // Just a single <p> wrapper
-        textContent = processedHtml.replace(/<\/?p[^>]*>/gi, '');
-      }
+      // Single paragraph without leading text
+      textContent = processedHtml.replace(/<\/?p[^>]*>/gi, '');
     } else {
       // No paragraph tags
       textContent = processedHtml;

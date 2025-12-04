@@ -108,8 +108,32 @@ This project transforms a large monolithic userscript (18,438 lines across 4 fil
 - **Table Image Extraction** (v9.1.0+): Automatically extracts images from table cells and places them as separate blocks with placeholder text in cells (see [docs/table-image-extraction.md](docs/table-image-extraction.md))
 - **Local Proxy Server**: Node.js server handles HTML-to-Notion conversion with full Cheerio DOM manipulation
 - **Modular Architecture**: Clean ES6 modules bundled with Rollup for easy maintenance
+- **🧠 Pattern Learning System** (v11.0.113+): Automatic capture of failing HTML patterns with auto-remediation, creating a self-learning feedback loop for continuous improvement
 
-## � Installation
+## 🧠 Smart Learning & Auto-Remediation (v11.0.113+)
+
+The system now includes an intelligent pattern learning system that captures failing extraction patterns:
+
+- **Auto-Remediation**: When AUDIT validation fails, automatically diagnoses the problem
+- **Pattern Capture**: Stores failing HTML patterns as test fixtures for future comparison
+- **Organized by Type**: Patterns stored by gap type (missing lists, missing tables, etc.)
+- **Self-Learning**: Each failure becomes a test case for validating improvements
+- **Management Tools**: View, analyze, and manage captured patterns with CLI tools
+
+```bash
+# View all captured patterns
+node tools/manage-patterns.cjs
+
+# Show statistics
+node tools/manage-patterns.cjs --stats
+
+# Clean old patterns (keep last 5)
+node tools/manage-patterns.cjs --clean
+```
+
+See [docs/PATTERN-LEARNING.md](docs/PATTERN-LEARNING.md) for detailed documentation.
+
+## 📦 Installation
 
 ### Install from GitHub (Recommended - Auto-updates)
 
