@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.119
+// @version      11.0.120
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.119";
+    window.BUILD_VERSION = "11.0.120";
 (function () {
 
   // Configuration constants and default settings
@@ -2637,13 +2637,15 @@
     // Common ServiceNow metadata fields and their Notion property counterparts
     const commonMappings = {
       // ServiceNow field -> Notion property name (case-sensitive)
-      'Title': ['Title', 'Name', 'Page Title', 'Title'],
-      'URL': ['URL', 'Page URL', 'Source URL', 'Link'],
+      'Title': ['Title', 'Name', 'Page Title'],
+      'URL': ['URL', 'Page URL', 'Source URL', 'Link', 'Current Release URL'],
       'Category': ['Category', 'Type', 'Topic', 'Classification'],
       'Version': ['Version', 'Release', 'Build', 'Version Number'],
-      'Updated': ['Updated', 'Last Updated', 'Modified Date', 'Date Modified'],
+      'Updated': ['Updated', 'Last Updated', 'Modified Date', 'Date Modified', 'Updated Date'],
       'Status': ['Status', 'State', 'Page Status', 'Workflow Status'],
       'Author': ['Author', 'Created By', 'Owner', 'Author Name'],
+      'Breadcrumb': ['Breadcrumb', 'Navigation', 'Path', 'Hierarchy'],
+      'Section': ['Section', 'Topic', 'Area'],
     };
 
     // Scan database schema for properties matching common field names
