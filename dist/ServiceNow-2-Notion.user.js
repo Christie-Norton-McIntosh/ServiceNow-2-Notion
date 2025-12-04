@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.121
+// @version      11.0.122
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.121";
+    window.BUILD_VERSION = "11.0.122";
 (function () {
 
   // Configuration constants and default settings
@@ -2111,7 +2111,7 @@
     const properties = {};
     const dbProperties = database.properties || {};
 
-    // Apply each mapping
+    // Apply user-configured mappings
     Object.entries(mappings).forEach(([notionProperty, sourceField]) => {
       if (!sourceField || !dbProperties[notionProperty]) return;
 
@@ -2130,7 +2130,26 @@
       }
     });
 
-    debug(`✅ Applied ${Object.keys(properties).length} property mappings`);
+    // Auto-map hardcoded properties (Page URL, Content Source, Current Release URL)
+    // These are automatically extracted and should always be included if the properties exist
+    const autoMappings = {
+      'Page URL': window.location.href,
+      'Content Source': 'ServiceNow Technical Documentation',
+      'Current Release URL': extractedData.CurrentReleaseURL || window.location.href,
+    };
+
+    Object.entries(autoMappings).forEach(([notionProperty, value]) => {
+      if (dbProperties[notionProperty] && value) {
+        const propConfig = dbProperties[notionProperty];
+        const mappedValue = mapValueToNotionProperty(value, propConfig);
+        if (mappedValue !== null) {
+          properties[notionProperty] = mappedValue;
+          debug(`✅ Auto-mapped: "${notionProperty}" = "${value}"`);
+        }
+      }
+    });
+
+    debug(`✅ Applied ${Object.keys(properties).length} property mappings (user + auto)`);
     return properties;
   }
 
@@ -2484,16 +2503,6 @@
         description: "The main title of the captured page",
       },
       {
-        key: "url",
-        label: "Page URL",
-        description: "The URL of the captured page",
-      },
-      {
-        key: "source",
-        label: "Content Source",
-        description: 'The source platform (e.g., "ServiceNow")',
-      },
-      {
         key: "category",
         label: "Category",
         description: "ServiceNow category or classification",
@@ -2512,11 +2521,6 @@
         key: "updated",
         label: "Updated Date",
         description: "Last updated date",
-      },
-      {
-        key: "CurrentReleaseURL",
-        label: "Current Release URL",
-        description: "The latest version URL or permanent link to the content",
       },
       {
         key: "breadcrumb",
@@ -2636,10 +2640,11 @@
 
     // Map extracted content field names to possible Notion property names
     // Format: contentField -> [possible Notion property names]
+    // Note: Page URL, Content Source, and Current Release URL are automatically handled
+    // and should not be included in manual property mappings
     const contentFieldMappings = {
       // Extracted field name -> Possible Notion property names (case-sensitive)
       'title': ['Title', 'Name', 'Page Title'],
-      'url': ['URL', 'Page URL', 'Source URL', 'Link'],
       'category': ['Category', 'Type', 'Topic', 'Classification'],
       'version': ['Version', 'Release', 'Build', 'Version Number'],
       'updated': ['Updated', 'Last Updated', 'Modified Date', 'Date Modified', 'Updated Date'],
@@ -2647,8 +2652,6 @@
       'author': ['Author', 'Created By', 'Owner', 'Author Name'],
       'breadcrumb': ['Breadcrumb', 'Navigation', 'Path', 'Hierarchy'],
       'section': ['Section', 'Topic', 'Area'],
-      'source': ['Source', 'Content Source', 'Origin', 'Platform'],
-      'currentReleaseUrl': ['Current Release URL', 'Latest URL', 'Permanent Link'],
       'hasVideos': ['Has Videos', 'Video', 'Videos', 'Contains Videos'],
       'hasImages': ['Has Images', 'Image', 'Images', 'Contains Images'],
     };
