@@ -2076,6 +2076,16 @@ async function continueAutoExtractionLoop(autoExtractState) {
       const beforeNavUrl = window.location.href;
       const beforeNavPageId = currentPageId;
       
+      // Save autoExtractState before navigation in case of browser reload
+      debug(`[STATE-MANAGEMENT] 💾 Saving autoExtractState before navigation (page ${currentPageNum + 1})`);
+      const stateToSave = {
+        ...autoExtractState,
+        // Convert Set to Array for JSON serialization
+        processedUrls: Array.from(autoExtractState.processedUrls || []),
+      };
+      const stateJson = JSON.stringify(stateToSave);
+      GM_setValue("w2n_autoExtractState", stateJson);
+      
       const nextButton = await findAndClickNextButton(
         nextPageSelector,
         autoExtractState,

@@ -204,195 +204,15 @@ router.post('/W2N', async (req, res) => {
 
     // Allow a dry-run mode for testing conversions without creating a Notion page
   if (payload.dryRun) {
-      log("🔍 DryRun mode enabled - converting content to blocks without creating page");
-      let children = [];
-      let hasVideos = false;
-      let extractionWarnings = [];
-      if (payload.contentHtml) {
-        log("🔄 (dryRun) Converting HTML content to Notion blocks");
-  const result = await htmlToNotionBlocks(payload.contentHtml);
-  children = result.blocks;
-        hasVideos = result.hasVideos;
-        extractionWarnings = result.warnings || [];
-        log(`✅ (dryRun) Converted HTML to ${children.length} Notion blocks`);
-        if (hasVideos) {
-          log(`🎥 (dryRun) Video content detected`);
-        }
-        if (extractionWarnings.length > 0) {
-          log(`⚠️ (dryRun) ${extractionWarnings.length} warnings collected during extraction`);
-        }
-      } else if (payload.content) {
-        log("🔄 (dryRun) Converting plain text content to Notion blocks");
-        const result = await htmlToNotionBlocks(payload.content);
-        children = result.blocks;
-        hasVideos = result.hasVideos;
-        extractionWarnings = result.warnings || [];
-        log(`✅ (dryRun) Converted content to ${children.length} Notion blocks`);
-      }
-      // DRYRUN ENHANCEMENT: Simulate marker-based orchestration so structure matches real page
-      try {
-        const { collectAndStripMarkers, removeCollectedBlocks } = getGlobals();
-        if (typeof collectAndStripMarkers === 'function' && typeof removeCollectedBlocks === 'function') {
-          log('🔖 (dryRun) Collecting marker-tagged blocks for simulated orchestration');
-          const markerMap = collectAndStripMarkers(children, {});
-          const removed = removeCollectedBlocks(children);
-          if (removed > 0) log(`🔖 (dryRun) Removed ${removed} collected block(s) from top-level`);
-
-          // Helper: strip marker tokens from rich_text
-          const stripMarkerTokens = (rich) => {
-            if (!Array.isArray(rich)) return rich;
-            const cleaned = [];
-            const tokenRegex = /\(sn2n:[^)]+\)/g;
-            for (const rt of rich) {
-              const t = (rt && rt.text && typeof rt.text.content === 'string') ? rt.text.content : '';
-              const newText = t.replace(tokenRegex, '').replace(/\s{2,}/g, ' ').trim();
-              const clone = { ...(rt || {}) };
-              if (clone.text && typeof clone.text === 'object') {
-                clone.text = { ...clone.text, content: newText };
-              }
-              // Recompute plain_text for consistency
-              clone.plain_text = newText;
-              // Skip empty text nodes without link
-              if (newText.length === 0 && !clone.text?.link) continue;
-              cleaned.push(clone);
-            }
-            return cleaned;
-          };
-
-          // Attach collected blocks to parents containing the corresponding marker token
-          const attachToParents = (arr) => {
-            if (!Array.isArray(arr)) return;
-            for (const blk of arr) {
-              if (!blk || typeof blk !== 'object') continue;
-              const type = blk.type;
-              const typed = type && blk[type] ? blk[type] : null;
-              const rich = typed && Array.isArray(typed.rich_text) ? typed.rich_text : [];
-              // Find any marker tokens in rich_text
-              const concat = rich.map(r => r?.text?.content || '').join('');
-              const matches = concat.match(/\(sn2n:([a-z0-9_\-]+)\)/gi) || [];
-              if (matches.length > 0) {
-                for (const token of matches) {
-                  const marker = token.slice(6, -1); // remove "(sn2n:" and ")"
-                  const blocksToAppend = markerMap[marker] || [];
-                  if (blocksToAppend.length > 0) {
-                    // Ensure children array exists for supported types
-                    const supportedParents = ['numbered_list_item', 'bulleted_list_item', 'callout', 'toggle', 'to_do', 'paragraph'];
-                    if (type && supportedParents.includes(type)) {
-                      if (!blk[type].children) blk[type].children = [];
-                      blk[type].children.push(...blocksToAppend);
-                      // Mark as attached so we don't attach again
-                      markerMap[marker] = [];
-                    }
-                  }
-                }
-                if (typed) {
-                  typed.rich_text = stripMarkerTokens(rich);
-                }
-              }
-              // Recurse into children
-              if (typed && Array.isArray(typed.children)) attachToParents(typed.children);
-              if (Array.isArray(blk.children)) attachToParents(blk.children);
-            }
-          };
-          attachToParents(children);
-          log('🔖 (dryRun) Marker attachment simulation complete');
-        }
-      } catch (e) {
-        log(`⚠️ (dryRun) Marker simulation failed: ${e && e.message ? e.message : e}`);
-      }
-
-      // FIX v11.0.7: Final callout deduplication for dry run mode
-      // Apply same deduplication logic as non-dry-run mode to ensure consistent results
-      try {
-        const calloutIndices = [];
-        children.forEach((block, idx) => {
-          if (block.type === 'callout') calloutIndices.push(idx);
-        });
-        
-        if (calloutIndices.length > 1) {
-          log(`🔍 [DRYRUN-CALLOUT-DEDUPE] Found ${calloutIndices.length} callouts at indices: [${calloutIndices.join(', ')}]`);
-          
-          const seenCalloutTexts = new Map();
-          const indicesToRemove = [];
-          
-          calloutIndices.forEach((idx) => {
-            const callout = children[idx];
-            
-            // Extract and normalize text content
-            const fullText = (callout.callout?.rich_text || [])
-              .map(rt => rt.text?.content || '')
-              .join('')
-              .replace(/\(sn2n:[a-z0-9\-]+\)/gi, '') // Strip markers
-              .replace(/\s+/g, ' ')  // Normalize whitespace
-              .trim();
-            
-            // Check if this is a "Note:" or "Before you begin" callout
-            const isNoteCallout = /^Note:/i.test(fullText);
-            const isBeforeYouBeginCallout = /^Before you begin/i.test(fullText);
-            const isExemptCallout = isNoteCallout || isBeforeYouBeginCallout;
-            
-            // Use first 200 chars as signature (handles minor variations)
-            const signature = fullText.substring(0, 200).toLowerCase();
-            
-            if (seenCalloutTexts.has(signature)) {
-              const entry = seenCalloutTexts.get(signature);
-              const firstIdx = entry.firstIdx;
-              const distance = idx - firstIdx;
-              
-              // For exempt callouts (Note:, Before you begin), only dedupe if ADJACENT (distance <= 1)
-              // For other callouts, dedupe within proximity window (distance <= 5)
-              const shouldRemove = isExemptCallout ? (distance <= 1) : (distance <= 5);
-              
-              if (shouldRemove) {
-                const calloutType = isNoteCallout ? 'Note:' : (isBeforeYouBeginCallout ? 'Before you begin' : 'regular');
-                log(`🚫 [DRYRUN-CALLOUT-DEDUPE] Removing ${calloutType} duplicate at index ${idx} (distance ${distance} from ${firstIdx}): "${fullText.substring(0, 60)}..."`);
-                indicesToRemove.push(idx);
-              } else {
-                log(`✅ [DRYRUN-CALLOUT-DEDUPE] Keeping exempt callout at index ${idx} (distance ${distance} from ${firstIdx} exceeds adjacency): "${fullText.substring(0, 60)}..."`);
-                // Update to track this as a new "first" occurrence for future comparisons
-                seenCalloutTexts.set(signature, {firstIdx: idx, count: entry.count + 1});
-              }
-            } else {
-              // First occurrence - keep it
-              seenCalloutTexts.set(signature, {firstIdx: idx, count: 1});
-            }
-          });
-          
-          if (indicesToRemove.length > 0) {
-            const toRemove = new Set(indicesToRemove);
-            const beforeCount = children.length;
-            children = children.filter((_, idx) => !toRemove.has(idx));
-            const afterCount = children.length;
-            log(`✅ [DRYRUN-CALLOUT-DEDUPE] Removed ${indicesToRemove.length} duplicate callout(s), blocks: ${beforeCount} → ${afterCount}`);
-          }
-        }
-      } catch (dedupeError) {
-        log(`❌ [DRYRUN-CALLOUT-DEDUPE] Error during callout deduplication: ${dedupeError.message}`);
-      }
-
-      // VALIDATION ENHANCEMENT v11.0.40: Create plain-text copy for validation without affecting formatted output
-      let plainTextChildren = null;
-      try {
-        // Use servicenowService which was imported at the top of this file
-        if (typeof servicenowService.createPlainTextBlocksForValidation === 'function') {
-          plainTextChildren = servicenowService.createPlainTextBlocksForValidation(children);
-          log(`📝 [DRYRUN-VALIDATION] Created plain-text copy with ${plainTextChildren.length} blocks for validation`);
-        } else {
-          log(`⚠️ [DRYRUN-VALIDATION] createPlainTextBlocksForValidation not available in servicenowService`);
-        }
-      } catch (plainTextError) {
-        log(`⚠️ [DRYRUN-VALIDATION] Failed to create plain-text copy: ${plainTextError.message}`);
-      }
-
-      log(`📤 [DRYRUN] About to return response with ${children ? children.length : 'NULL'} children blocks`);
-      return sendSuccess(res, { 
-        dryRun: true, 
-        children, 
-        plainTextChildren, // Plain-text version for validation (coalesced rich_text)
-        hasVideos, 
-        warnings: extractionWarnings 
-      });
-    }
+    // Dry-run mode is only supported for PATCH, not POST. For POST, skip dry-run logic.
+    return sendError(
+      res,
+      "DRYRUN_NOT_SUPPORTED",
+      "Dry-run mode is not supported for POST. Use PATCH for dry-run validation.",
+      null,
+      400
+    );
+  }
 
     if (!payload.databaseId) {
       return sendError(
@@ -434,8 +254,15 @@ router.post('/W2N', async (req, res) => {
       log("🔍 Received properties from userscript:");
       log(JSON.stringify(payload.properties, null, 2));
       
-      // Merge with existing properties (userscript already did the mapping)
-      Object.assign(properties, payload.properties);
+      // Merge with existing properties, but preserve server-set URL property
+      // Userscript property mappings should not override the explicit URL from payload.url
+      const userProperties = { ...payload.properties };
+      if (properties["URL"] && userProperties["URL"]) {
+        log("⚠️ Userscript property mappings include URL property - preserving server-set URL");
+        delete userProperties["URL"];
+      }
+      
+      Object.assign(properties, userProperties);
       log("🔍 Properties after merge:");
       log(JSON.stringify(properties, null, 2));
     } else {
@@ -1921,18 +1748,22 @@ router.post('/W2N', async (req, res) => {
           
           log(`✅ Validation function completed`);
           
-          // FIX v11.0.35: Retry validation once if initial attempt fails
+          // FIX v11.0.36: Retry validation up to 2 times with escalating waits (5s, 10s)
           // Handles edge cases where Notion takes >15s to settle (rare but happens)
           // Only retries if validation has actual errors (not just warnings)
-          if (validationResult && !validationResult.success && validationResult.hasErrors) {
-            log(`\n⚠️ Initial validation failed - attempting retry after additional wait...`);
-            log(`   Original issues: ${validationResult.issues?.join(', ') || 'unknown'}`);
+          const maxValidationRetries = 2;
+          let retryAttempt = 0;
+          
+          while (retryAttempt < maxValidationRetries && validationResult && !validationResult.success && validationResult.hasErrors) {
+            retryAttempt++;
+            const retryWait = retryAttempt * 5000; // 5s, 10s
             
-            const retryWait = 5000; // Additional 5s wait
-            log(`⏳ Waiting ${retryWait}ms for Notion eventual consistency retry...`);
+            log(`\n⚠️ Validation attempt ${retryAttempt} failed - retrying after ${retryWait}ms...`);
+            log(`   Issues: ${validationResult.issues?.join(', ') || 'unknown'}`);
+            
             await new Promise(resolve => setTimeout(resolve, retryWait));
             
-            log(`🔄 Retrying validation...`);
+            log(`🔄 Retrying validation (attempt ${retryAttempt + 1}/${maxValidationRetries + 1})...`);
             const retryResult = await validateNotionPage(
               notion,
               response.id,
@@ -1945,13 +1776,18 @@ router.post('/W2N', async (req, res) => {
             );
             
             if (retryResult.success) {
-              log(`✅ Validation succeeded on retry - Notion eventual consistency resolved`);
+              log(`✅ Validation succeeded on retry ${retryAttempt} - Notion eventual consistency resolved`);
               validationResult = retryResult;
+              break;
             } else {
-              log(`⚠️ Validation still failing after retry - issues persist`);
-              // Keep original validationResult with retry note
-              if (!validationResult.warnings) validationResult.warnings = [];
-              validationResult.warnings.push('Validation retried after +5s wait but still failed');
+              log(`⚠️ Validation still failing after retry ${retryAttempt}`);
+              validationResult = retryResult;
+              
+              if (retryAttempt === maxValidationRetries) {
+                // All retries exhausted
+                if (!validationResult.warnings) validationResult.warnings = [];
+                validationResult.warnings.push(`Validation retried ${maxValidationRetries} times but still failed`);
+              }
             }
           }
         }
@@ -2259,6 +2095,12 @@ router.post('/W2N', async (req, res) => {
               rich_text: [ { type: 'text', text: { content: statsContent } } ]
             };
             log(`📊 Setting Stats property with refined comparison breakdown`);
+            
+            // Set Image checkbox if page contains images
+            if (sourceCounts.images > 0) {
+              propertyUpdates["Image"] = { checkbox: true };
+              log(`🖼️ Setting Image checkbox (${sourceCounts.images} image${sourceCounts.images === 1 ? '' : 's'} detected)`);
+            }
             
             // Update the page properties
             await notion.pages.update({
@@ -3005,6 +2847,7 @@ router.patch('/W2N/:pageId', async (req, res) => {
   let patchStartTime = Date.now();
   let operationPhase = 'initializing';
   let heartbeatInterval = null;
+  let pageTitle = 'Unknown'; // Initialize for error handling
   
   const cleanup = () => {
     if (heartbeatInterval) {
@@ -3021,7 +2864,7 @@ router.patch('/W2N/:pageId', async (req, res) => {
 
   try {
     const payload = req.body;
-    const pageTitle = payload.title || 'Untitled';
+    pageTitle = payload.title || 'Untitled';
     log(`📝 Processing PATCH request for: ${pageTitle}`);
     
     // Heartbeat already started above; patchStartTime/operationPhase initialized
@@ -3666,13 +3509,33 @@ router.patch('/W2N/:pageId', async (req, res) => {
     }
     
     // STEP 4: Update page properties if provided
-    if (payload.properties) {
+    if (payload.properties || payload.url) {
       log(`📝 STEP 4: Updating page properties`);
+      
+      const properties = {};
+      
+      // Set URL if provided (same as POST endpoint)
+      if (payload.url) {
+        properties["URL"] = {
+          url: payload.url,
+        };
+      }
+      
+      // Apply property mappings from payload (from userscript) using Notion service
+      if (payload.properties) {
+        log("🔍 Received properties from userscript:");
+        log(JSON.stringify(payload.properties, null, 2));
+        
+        // Merge with existing properties (userscript already did the mapping)
+        Object.assign(properties, payload.properties);
+        log("🔍 Properties after merge:");
+        log(JSON.stringify(properties, null, 2));
+      }
       
       try {
         await notion.pages.update({
           page_id: pageId,
-          properties: payload.properties
+          properties: properties
         });
         log(`✅ Properties updated`);
       } catch (propError) {
@@ -3687,13 +3550,26 @@ router.patch('/W2N/:pageId', async (req, res) => {
     // FIX v11.0.24: Always create a validation result, even if validation is disabled
     // This ensures properties are updated consistently with POST behavior
     if (!shouldValidate) {
+      // Calculate character counts even when validation is disabled
+      const htmlChars = (extractionResult.fixedHtml || html).replace(/<[^>]*>/g, '').length;
+      const notionChars = extractedBlocks.reduce((total, block) => {
+        if (block.type === 'paragraph' || block.type === 'heading_1' || block.type === 'heading_2' || block.type === 'heading_3') {
+          const richText = block[block.type]?.rich_text || [];
+          return total + richText.reduce((blockTotal, text) => blockTotal + (text.plain_text || '').length, 0);
+        }
+        return total;
+      }, 0);
+      
       validationResult = {
         success: true,
         hasErrors: false,
         issues: [],
         warnings: [],
         stats: null,
-        summary: `ℹ️ Validation not enabled (set SN2N_VALIDATE_OUTPUT=1 to enable)`
+        summary: `ℹ️ Validation not enabled (set SN2N_VALIDATE_OUTPUT=1 to enable)`,
+        htmlChars,
+        notionChars,
+        charDiff: notionChars - htmlChars
       };
       log(`ℹ️ Validation skipped - will set properties to indicate validation not run`);
     }
@@ -3872,18 +3748,22 @@ router.patch('/W2N/:pageId', async (req, res) => {
             log(`⚠️ Validation warnings detected`);
           }
           
-          // FIX v11.0.35: Retry validation once if initial attempt fails (same as POST)
+          // FIX v11.0.36: Retry validation up to 2 times with escalating waits (5s, 10s)
           // Handles edge cases where Notion takes >15s to settle after PATCH
           // Only retries if validation has actual errors (not just warnings)
-          if (validationResult && !validationResult.success && validationResult.hasErrors) {
-            log(`\n⚠️ Initial PATCH validation failed - attempting retry after additional wait...`);
-            log(`   Original issues: ${validationResult.issues?.join(', ') || 'unknown'}`);
+          const maxValidationRetries = 2;
+          let retryAttempt = 0;
+          
+          while (retryAttempt < maxValidationRetries && validationResult && !validationResult.success && validationResult.hasErrors) {
+            retryAttempt++;
+            const retryWait = retryAttempt * 5000; // 5s, 10s
             
-            const retryWait = 5000; // Additional 5s wait
-            log(`⏳ Waiting ${retryWait}ms for Notion eventual consistency retry...`);
+            log(`\n⚠️ PATCH validation attempt ${retryAttempt} failed - retrying after ${retryWait}ms...`);
+            log(`   Issues: ${validationResult.issues?.join(', ') || 'unknown'}`);
+            
             await new Promise(resolve => setTimeout(resolve, retryWait));
             
-            log(`🔄 Retrying PATCH validation...`);
+            log(`🔄 Retrying PATCH validation (attempt ${retryAttempt + 1}/${maxValidationRetries + 1})...`);
             const retryResult = await validateNotionPage(notion, pageId, {
               sourceHtml: extractionResult.fixedHtml || html,
               expectedTitle: pageTitle,
@@ -3891,13 +3771,18 @@ router.patch('/W2N/:pageId', async (req, res) => {
             });
             
             if (retryResult.success) {
-              log(`✅ PATCH validation succeeded on retry - Notion eventual consistency resolved`);
+              log(`✅ PATCH validation succeeded on retry ${retryAttempt} - Notion eventual consistency resolved`);
               validationResult = retryResult;
+              break;
             } else {
-              log(`⚠️ PATCH validation still failing after retry - issues persist`);
-              // Keep original validationResult with retry note
-              if (!validationResult.warnings) validationResult.warnings = [];
-              validationResult.warnings.push('PATCH validation retried after +5s wait but still failed');
+              log(`⚠️ PATCH validation still failing after retry ${retryAttempt}`);
+              validationResult = retryResult;
+              
+              if (retryAttempt === maxValidationRetries) {
+                // All retries exhausted
+                if (!validationResult.warnings) validationResult.warnings = [];
+                validationResult.warnings.push(`PATCH validation retried ${maxValidationRetries} times but still failed`);
+              }
             }
           }
         } catch (valError) {
@@ -4075,6 +3960,18 @@ ${html || ''}
       }
 
   const validationLines = [`${statusIcon} Text Content Validation: ${validationStatus}`];
+  
+  // Add character count comparison below validation status
+  if (validationResult.htmlChars !== undefined && validationResult.notionChars !== undefined) {
+    const htmlChars = validationResult.htmlChars;
+    const notionChars = validationResult.notionChars;
+    const charDiff = notionChars - htmlChars;
+    // Use ±10 character buffer for "equal" classification
+    const charEmoji = charDiff > 10 ? '📈' : charDiff < -10 ? '📉' : '📊';
+    const charComparison = `Characters: HTML ${htmlChars.toLocaleString()} → Notion ${notionChars.toLocaleString()} (${charDiff > 0 ? '+' : ''}${charDiff.toLocaleString()}) ${charEmoji}`;
+    validationLines.push(charComparison);
+  }
+  
   // Do not include similarity/content summary lines in Validation per spec
       if (orderSection) {
         validationLines.push(''); // blank line before order issues
@@ -4151,6 +4048,12 @@ ${html || ''}
         rich_text: [ { type: 'text', text: { content: statsContent } } ]
       };
       log(`📊 Setting Stats property with refined comparison breakdown (PATCH)`);
+      
+      // Set Image checkbox if page contains images
+      if (sourceCounts.images > 0) {
+        propertyUpdates["Image"] = { checkbox: true };
+        log(`🖼️ Setting Image checkbox (${sourceCounts.images} image${sourceCounts.images === 1 ? '' : 's'} detected in PATCH)`);
+      }
       
       // Update the page properties
       await notion.pages.update({

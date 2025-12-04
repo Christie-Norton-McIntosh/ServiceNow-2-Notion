@@ -199,11 +199,23 @@ async function convertTableBlock(tableHtml, options = {}) {
     
     // Process each figure
     for (const figureHtml of figures) {
-      // Extract img src from within figure
+      // Extract img src and dimensions from within figure
       const imgMatch = /<img[^>]*src=["']([^"']*)["'][^>]*>/i.exec(figureHtml);
       if (imgMatch) {
         let src = imgMatch[1];
         const originalSrc = src; // Track original URL to match against HTML
+        
+        // Check image dimensions to filter out small icons
+        const widthMatch = /width=["']?(\d+)/i.exec(imgMatch[0]);
+        const heightMatch = /height=["']?(\d+)/i.exec(imgMatch[0]);
+        const width = widthMatch ? parseInt(widthMatch[1]) : 0;
+        const height = heightMatch ? parseInt(heightMatch[1]) : 0;
+        const isIcon = (width > 0 && width < 64) || (height > 0 && height < 64);
+        
+        if (isIcon) {
+          console.log(`🚫 [TABLE] Skipping small icon image (${width}x${height}): ${src.substring(0, 50)}`);
+          continue; // Skip icons in tables
+        }
         
         // Extract figcaption text
         const captionMatch = /<figcaption[^>]*>([\s\S]*?)<\/figcaption>/i.exec(figureHtml);

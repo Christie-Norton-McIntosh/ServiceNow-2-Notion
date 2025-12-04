@@ -293,6 +293,60 @@ async function extractContentFromHtml(html) {
   });
   console.log(`📊 [CAPTION-PRESCAN] Pre-scanned ${processedTableCaptions.size} table caption(s)`);
 
+  // FIX: Remove standalone table titles that appear as plain text before tables
+  // These often appear as paragraphs containing only the table title text
+  // Remove paragraphs/divs that contain only table title text (to prevent duplication with caption headings)
+  if (processedTableCaptions.size > 0) {
+    console.log(`📊 [TABLE-TITLE-REMOVAL] Starting removal process for ${processedTableCaptions.size} captions`);
+    
+    // Check multiple element types that might contain table titles
+    const elementsToCheck = ['p', 'div', 'span', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
+    
+    for (const element of elementsToCheck) {
+      html = html.replace(new RegExp(`<${element}[^>]*>([\\s\\S]*?)</${element}>`, 'gi'), (match, content) => {
+        const cleaned = cleanHtmlText(content).trim();
+        console.log(`📊 [TABLE-TITLE-CHECK] Checking ${element}: "${cleaned.substring(0, 100)}..."`);
+        
+        // More flexible check for table title-like content
+        if (cleaned.length > 5 && cleaned.length < 300 && 
+            !cleaned.includes('\n\n') && // Allow single line breaks but not paragraphs
+            !cleaned.match(/<[^>]+>/) && // No HTML tags
+            !cleaned.match(/^(•|-|\d+\.|\*|\+)/) && // No list markers
+            !cleaned.match(/\b(https?|ftp):\/\//) && // No URLs
+            !cleaned.match(/\b\d{1,2}:\d{2}/)) { // No time formats
+          
+          // Check if this matches any processed table caption
+          const normalized = cleaned.toLowerCase();
+          for (const caption of processedTableCaptions) {
+            // More flexible matching - check for substantial overlap
+            const captionWords = caption.split(/\s+/).filter(word => word.length > 2);
+            const contentWords = normalized.split(/\s+/).filter(word => word.length > 2);
+            
+            // Check if most significant words overlap
+            const overlap = captionWords.filter(word => contentWords.includes(word)).length;
+            const minOverlap = Math.min(captionWords.length, contentWords.length) * 0.7; // 70% overlap
+            
+            if (overlap >= minOverlap && overlap >= 2) {
+              console.log(`📊 [TABLE-TITLE-REMOVAL] ✓ MATCH! Removing duplicate ${element}: "${cleaned}" (matches: "${caption}")`);
+              return ''; // Remove this element entirely
+            }
+            
+            // Also check for exact substring matches
+            if (normalized.includes(caption) || caption.includes(normalized)) {
+              console.log(`📊 [TABLE-TITLE-REMOVAL] ✓ SUBSTRING MATCH! Removing duplicate ${element}: "${cleaned}" (matches: "${caption}")`);
+              return ''; // Remove this element entirely
+            }
+          }
+        }
+        
+        console.log(`📊 [TABLE-TITLE-CHECK] ✗ Keeping ${element}: "${cleaned.substring(0, 50)}..."`);
+        return match; // Keep the element
+      });
+    }
+    
+    console.log(`📊 [TABLE-TITLE-REMOVAL] Completed removal process`);
+  }
+
 
   // Helper: join an array of Notion rich_text elements into a single string while
   // preserving a space when adjacent fragments would otherwise collapse words.
@@ -1504,32 +1558,6 @@ async function extractContentFromHtml(html) {
           }
           
           processedBlocks.push(calloutBlock);
-
-          // Validation-only helper: when running under SN2N_VALIDATE_OUTPUT, also
-          // emit the callout's text lines as separate paragraph blocks so the
-          // validator can match HTML segments that expect separate phrases.
-          // These blocks are only added for validation/dry-run and are gated
-          // behind the env flag to avoid changing production output.
-          try {
-            if (process && process.env && process.env.SN2N_VALIDATE_OUTPUT) {
-              const calloutText = joinRichTextContents(calloutRichText);
-              const parts = calloutText.split(/\n+/).map(p => p.trim()).filter(Boolean);
-              if (parts.length > 0) {
-                for (const part of parts) {
-                  processedBlocks.push({
-                    object: 'block',
-                    type: 'paragraph',
-                    paragraph: { rich_text: [{ type: 'text', text: { content: part } }] },
-                    // mark so it's clear these were added for validation only
-                    _sn2n_validation_only: true
-                  });
-                }
-              }
-            }
-          } catch (e) {
-            // Non-fatal - validation helper must not break conversion
-            console.log('🔍 [CALLOUT-VALIDATION] helper error', e && e.message);
-          }
           
           // FIXED v11.0.0: Don't add child blocks as siblings - they're already in callout.children
           // The orchestrator will find them via collectAndStripMarkers and handle them
@@ -2170,6 +2198,16 @@ async function extractContentFromHtml(html) {
         const src = $img.attr('src');
         const alt = $img.attr('alt') || '';
         
+        // Check image dimensions to filter out small icons
+        const width = parseInt($img.attr('width')) || 0;
+        const height = parseInt($img.attr('height')) || 0;
+        const isIcon = (width > 0 && width < 64) || (height > 0 && height < 64);
+        
+        if (isIcon) {
+          console.log(`🚫 Skipping small icon image (${width}x${height}): ${src ? String(src).substring(0, 50) : 'no src'}`);
+          return processedBlocks; // Skip icons
+        }
+        
         // Debug figcaption content
         if ($figcaption.length > 0) {
           const rawCaption = $figcaption.html() || '';
@@ -2180,7 +2218,7 @@ async function extractContentFromHtml(html) {
         
   const captionText = $figcaption.length > 0 ? cleanHtmlText($figcaption.html() || '') : alt;
 
-  console.log('🔍 Figure: img src="' + (src ? String(src).substring(0,50) : '') + '", caption="' + (captionText ? String(captionText).substring(0,50) : '') + '"');
+  console.log('🔍 Figure: img src="' + (src ? String(src).substring(0,50) : '') + '", caption="' + (captionText ? String(captionText).substring(0,50) : '') + '" (size: ' + (width || '?') + 'x' + (height || '?') + ')');
 
         if (src && isValidImageUrl(src)) {
           // FIX v11.0.36: Pass captionText to image block so figcaptions appear as image captions in Notion
@@ -2286,7 +2324,18 @@ async function extractContentFromHtml(html) {
       
       const src = $elem.attr('src');
       const alt = $elem.attr('alt') || '';
-      console.log(`🖼️ Processing standalone <img>: src="${src ? src.substring(0, 80) : 'none'}", alt="${alt}"`);
+      
+      // Check image dimensions to filter out small icons
+      const width = parseInt($elem.attr('width')) || 0;
+      const height = parseInt($elem.attr('height')) || 0;
+      const isIcon = (width > 0 && width < 64) || (height > 0 && height < 64);
+      
+      console.log(`🖼️ Processing standalone <img>: src="${src ? src.substring(0, 80) : 'none'}", alt="${alt}", size=${width}x${height}${isIcon ? ' (ICON - SKIPPING)' : ''}`);
+      
+      if (isIcon) {
+        console.log(`🚫 Skipping small icon image (${width}x${height})`);
+        return []; // Skip icons
+      }
       
       if (src && isValidImageUrl(src)) {
         console.log(`✅ Image URL is valid, creating image block...`);
@@ -2516,7 +2565,14 @@ async function extractContentFromHtml(html) {
         let nestedBlocks = $li.find('> pre, > ul, > ol, > figure, > table, > div.table-wrap, > p, > div.p, > div.stepxmp, > div.note, > div.itemgroup, > div.info').toArray();
         
         // Step 2: Also look for blocks nested inside plain wrapper divs (NOT div.p, which is handled in step 1)
+        // FIX v11.0.111: Skip div.itemgroup and div.info that are already in nestedBlocks
         $li.find('> div:not(.note):not(.table-wrap):not(.stepxmp):not(.p)').each((i, wrapper) => {
+          // Skip if this wrapper is already in nestedBlocks (it will process its own children)
+          if (nestedBlocks.includes(wrapper)) {
+            console.log(`🔍 [WRAPPER-SKIP-UL] Skipping wrapper already in nestedBlocks: <${wrapper.name} class="${$(wrapper).attr('class')}">`);
+            return; // continue to next wrapper
+          }
+          
           // Find blocks inside this wrapper
           const innerBlocks = $(wrapper).find('> table, > div.table-wrap, > div.note, > pre, > ul, > ol, > figure').toArray();
           if (innerBlocks.length > 0) {
@@ -2527,7 +2583,22 @@ async function extractContentFromHtml(html) {
         
         // FIX: Also look for div.note elements nested deeper (inside text content)
         // These are callouts that appear inside list item text
-        const deepNotes = $li.find('div.note').toArray().filter(note => !nestedBlocks.includes(note));
+        // CRITICAL v11.0.111: Exclude notes that are inside div.itemgroup or div.info
+        // that are already in nestedBlocks - otherwise they get processed twice
+        const deepNotes = $li.find('div.note').toArray().filter(note => {
+          // Skip if already in nestedBlocks
+          if (nestedBlocks.includes(note)) return false;
+          
+          // Skip if this note is inside a div.itemgroup or div.info that's already in nestedBlocks
+          const $note = $(note);
+          const parentItemgroup = $note.closest('div.itemgroup, div.info').get(0);
+          if (parentItemgroup && nestedBlocks.includes(parentItemgroup)) {
+            console.log(`🔍 [CALLOUT-DEDUPE] Skipping div.note inside div.itemgroup/info (will be processed with parent)`);
+            return false;
+          }
+          
+          return true;
+        });
         if (deepNotes.length > 0) {
           console.log(`🔍 [CALLOUT-FIX] Found ${deepNotes.length} deep-nested div.note elements in list item`);
           deepNotes.forEach(note => {
@@ -2828,15 +2899,15 @@ async function extractContentFromHtml(html) {
                   console.log(`🔍 Added ${allChildren.length} nested blocks as children of list item`);
                 }
                 
-                processedBlocks.push(listItemBlock);
-                
-                // Add marked blocks as TOP-LEVEL blocks (NOT as children) so collectAndStripMarkers can find them
-                // Adding them as children would place them at depth 3, violating Notion's 2-level limit
-                // They will be collected into markerMap and orchestrated after page creation
+                // Add marked blocks (tables, titles, etc.) as children of the list item
+                // The enforceNestingDepthLimit function will handle any depth violations
                 if (markedBlocks.length > 0) {
-                  console.log(`🔍 Adding ${markedBlocks.length} marked blocks as top-level blocks (NOT children) for collection & orchestration`);
-                  processedBlocks.push(...markedBlocks);
+                  const existingChildren = listItemBlock.bulleted_list_item.children || [];
+                  listItemBlock.bulleted_list_item.children = [...existingChildren, ...markedBlocks];
+                  console.log(`🔍 Added ${markedBlocks.length} marked blocks (tables/titles) as children of list item`);
                 }
+                
+                processedBlocks.push(listItemBlock);
               }
               
               // IMPORTANT: Blocks with existing markers (_sn2n_marker) from nested processing
@@ -2922,7 +2993,7 @@ async function extractContentFromHtml(html) {
               processedBlocks.push(listItemBlock);
             } else {
               // No paragraph to promote, create empty list item with children
-              const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'paragraph', 'to_do', 'toggle', 'image'];
+              const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'paragraph', 'to_do', 'toggle', 'image', 'table', 'heading_3'];
               const validChildren = [];
               const markedBlocks = [];
               
@@ -3137,7 +3208,15 @@ async function extractContentFromHtml(html) {
         }
         
         // Also look for blocks nested inside plain wrapper divs or div.p
+        // FIX v11.0.111: Skip div.itemgroup and div.info that are already in nestedBlocks
+        // They will process their own children (including div.note) when processElement is called
         $li.find('> div:not(.note):not(.table-wrap):not(.stepxmp), > div.p, > div.itemgroup, > div.info').each((i, wrapper) => {
+          // Skip if this wrapper is already in nestedBlocks (it will process its own children)
+          if (nestedBlocks.includes(wrapper)) {
+            console.log(`🔍 [WRAPPER-SKIP-OL] Skipping wrapper already in nestedBlocks: <${wrapper.name} class="${$(wrapper).attr('class')}">`);
+            return; // continue to next wrapper
+          }
+          
           // Find blocks inside this wrapper
           // NOTE: Removed '> figure' and '> div.table-wrap' - these should only be processed when their parent div.p is processed
           const innerBlocks = $(wrapper).find('> table, > div.note, > pre, > ul, > ol').toArray();
@@ -3146,6 +3225,31 @@ async function extractContentFromHtml(html) {
             nestedBlocks.push(...innerBlocks);
           }
         });
+        
+        // FIX v11.0.111: Also look for div.note elements nested deeper (inside text content)
+        // CRITICAL: Exclude notes that are inside div.itemgroup or div.info already in nestedBlocks
+        const deepNotes = $li.find('div.note').toArray().filter(note => {
+          // Skip if already in nestedBlocks
+          if (nestedBlocks.includes(note)) return false;
+          
+          // Skip if this note is inside a div.itemgroup or div.info that's already in nestedBlocks
+          const $note = $(note);
+          const parentItemgroup = $note.closest('div.itemgroup, div.info').get(0);
+          if (parentItemgroup && nestedBlocks.includes(parentItemgroup)) {
+            console.log(`🔍 [CALLOUT-DEDUPE-OL] Skipping div.note inside div.itemgroup/info (will be processed with parent)`);
+            return false;
+          }
+          
+          return true;
+        });
+        if (deepNotes.length > 0) {
+          console.log(`🔍 [CALLOUT-FIX-OL] Found ${deepNotes.length} deep-nested div.note elements in numbered list item`);
+          deepNotes.forEach(note => {
+            const noteClass = $(note).attr('class') || '';
+            console.log(`🔍 [CALLOUT-FIX-OL] Deep note class="${noteClass}"`);
+          });
+          nestedBlocks.push(...deepNotes);
+        }
         
         if (nestedBlocks.length > 0) {
           console.log(`🔍 Ordered list item contains ${nestedBlocks.length} nested block elements`);
@@ -3429,15 +3533,15 @@ async function extractContentFromHtml(html) {
                   console.log(`🔍 Added ${allChildren.length} nested blocks as children of ordered list item`);
                 }
                 
-                processedBlocks.push(listItemBlock);
-                
-                // Add marked blocks as TOP-LEVEL blocks (NOT as children) so collectAndStripMarkers can find them
-                // Adding them as children would place them at depth 3, violating Notion's 2-level limit
-                // They will be collected into markerMap and orchestrated after page creation
+                // Add marked blocks (tables, titles, etc.) as children of the list item
+                // The enforceNestingDepthLimit function will handle any depth violations
                 if (markedBlocks.length > 0) {
-                  console.log(`🔍 Adding ${markedBlocks.length} marked blocks as top-level blocks (NOT children) for collection & orchestration`);
-                  processedBlocks.push(...markedBlocks);
+                  const existingChildren = listItemBlock.numbered_list_item.children || [];
+                  listItemBlock.numbered_list_item.children = [...existingChildren, ...markedBlocks];
+                  console.log(`🔍 Added ${markedBlocks.length} marked blocks (tables/titles) as children of ordered list item`);
                 }
+                
+                processedBlocks.push(listItemBlock);
               }
               
               // Add blocks from nested children that already have markers (from nested list processing)
@@ -3541,7 +3645,7 @@ async function extractContentFromHtml(html) {
               processedBlocks.push(listItemBlock);
             } else {
               // No paragraph to promote, create empty list item with children
-              const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'paragraph', 'to_do', 'toggle', 'image'];
+              const supportedAsChildren = ['bulleted_list_item', 'numbered_list_item', 'paragraph', 'to_do', 'toggle', 'image', 'table', 'heading_3'];
               const validChildren = [];
               const markedBlocks = [];
               

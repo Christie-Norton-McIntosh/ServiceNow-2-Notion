@@ -197,20 +197,36 @@ for html_file in "$SRC_DIR"/*.html; do
 
   echo "  Page ID: $page_id" | tee -a "$LOG_FILE"
 
+  # Extract URL from HTML metadata
+  page_url=$(grep -m1 "URL:" "$html_file" | sed -E 's/.*URL: ([^[:space:]]+).*/\1/' | tr -d '\r' || echo "")
+  if [[ -z "$page_url" ]]; then
+    echo "  ⚠️  No URL found in file metadata — using default" | tee -a "$LOG_FILE"
+    page_url="https://docs.servicenow.com"
+  fi
+  echo "  URL: $page_url" | tee -a "$LOG_FILE"
+
   # Read HTML content
   content=$(cat "$html_file")
   title="${filename%.html}"
 
-  # STEP 1: Dry-run validation
+  # STEP 1: Dry-run validation (use PATCH for existing pages, POST for new)
   echo "  1️⃣  Validating..." | tee -a "$LOG_FILE"
   validate_start_epoch=$(date +%s)
   validate_start_human=$(date +"%Y-%m-%d %H:%M:%S")
   echo "  🕒 Validation start: $validate_start_human (epoch $validate_start_epoch)" | tee -a "$LOG_FILE"
   
-  dry_response=$(curl -s -m 60 -w "\n%{http_code}" -X POST "$API_URL" \
-    -H "Content-Type: application/json" \
-    -d "{\"title\":\"test\",\"databaseId\":\"178f8dc43e2780d09be1c568a04d7bf3\",\"content\":$(echo "$content" | jq -Rs .),\"url\":\"https://test.com\",\"dryRun\":true}" \
-    2>&1)
+  if [[ -n "$page_id" && "$page_id" != "null" ]]; then
+    # Existing page: use PATCH with dryRun
+    dry_response=$(curl -s -m 60 -w "\n%{http_code}" -X PATCH "$API_URL/$page_id" \
+      -H "Content-Type: application/json" \
+      -d "{\"title\":\"$title\",\"contentHtml\":$(echo "$content" | jq -Rs .),\"url\":\"$page_url\",\"dryRun\":true}" \
+      2>&1)
+  else
+    # New page: use POST without dryRun (dryRun not supported for POST)
+    echo "  ℹ️  New page (no Page ID) — skipping validation, proceeding to creation" | tee -a "$LOG_FILE"
+    dry_http_code="200"
+    dry_body="{}"
+  fi
 
   dry_http_code=$(echo "$dry_response" | tail -n1)
   dry_body=$(echo "$dry_response" | sed '$d')
@@ -226,14 +242,21 @@ for html_file in "$SRC_DIR"/*.html; do
     if [[ "${VALIDATION_RETRY:-0}" == "1" ]]; then
       echo "  ↻ Retry validation (VALIDATION_RETRY=1)" | tee -a "$LOG_FILE"
       sleep 2
-      retry_response=$(curl -s -m 60 -w "\n%{http_code}" -X POST "$API_URL" \
-        -H "Content-Type: application/json" \
-        -d "{\"title\":\"test\",\"databaseId\":\"178f8dc43e2780d09be1c568a04d7bf3\",\"content\":$(echo "$content" | jq -Rs .),\"url\":\"https://test.com\",\"dryRun\":true}" 2>&1)
+      if [[ -n "$page_id" && "$page_id" != "null" ]]; then
+        # Existing page: use PATCH with dryRun
+        retry_response=$(curl -s -m 60 -w "\n%{http_code}" -X PATCH "$API_URL/$page_id" \
+          -H "Content-Type: application/json" \
+          -d "{\"title\":\"$title\",\"contentHtml\":$(echo "$content" | jq -Rs .),\"url\":\"$page_url\",\"dryRun\":true}" 2>&1)
+      else
+        # New page: cannot retry validation
+        retry_http_code="400"
+        retry_body="{}"
+      fi
       retry_http_code=$(echo "$retry_response" | tail -n1)
       retry_body=$(echo "$retry_response" | sed '$d')
       echo "    ↳ Retry HTTP: $retry_http_code" | tee -a "$LOG_FILE"
       if [[ "$retry_http_code" == "200" ]]; then
-        retry_has_errors=$(echo "$retry_body" | jq -r '.validationResult.hasErrors // false')
+        retry_has_errors=$(echo "$retry_body" | jq -r '.validationResult.hasErrors // false' 2>/dev/null || echo 'false')
         if [[ "$retry_has_errors" == "false" ]]; then
           echo "    ✅ Retry validation passed; continuing to PATCH" | tee -a "$LOG_FILE"
           dry_http_code=200
@@ -248,27 +271,34 @@ for html_file in "$SRC_DIR"/*.html; do
   fi
   fi
 
-  has_errors=$(echo "$dry_body" | jq -r '.validationResult.hasErrors // false')
+  has_errors=$(echo "$dry_body" | jq -r '.validationResult.hasErrors // false' 2>/dev/null || echo 'false')
   
   if [[ "$has_errors" != "false" ]]; then
     echo "  ❌ Validation failed" | tee -a "$LOG_FILE"
-    error_count=$(echo "$dry_body" | jq -r '.validationResult.errors | length')
+    error_count=$(echo "$dry_body" | jq -r '.validationResult.errors | length' 2>/dev/null || echo 0)
     echo "     Errors: $error_count" | tee -a "$LOG_FILE"
-    first_error=$(echo "$dry_body" | jq -r '.validationResult.errors[0].message // "Unknown"')
+    first_error=$(echo "$dry_body" | jq -r '.validationResult.errors[0].message // "Unknown"' 2>/dev/null || echo 'Unknown')
     echo "     First: $first_error" | tee -a "$LOG_FILE"
     echo "$dry_body" > "$FAILED_VALIDATION_DIR/${filename%.html}-validation.json" || true
     # Optional retry
     if [[ "${VALIDATION_RETRY:-0}" == "1" ]]; then
       echo "  ↻ Retry validation (VALIDATION_RETRY=1)" | tee -a "$LOG_FILE"
       sleep 2
-      retry_response=$(curl -s -m 60 -w "\n%{http_code}" -X POST "$API_URL" \
-        -H "Content-Type: application/json" \
-        -d "{\"title\":\"test\",\"databaseId\":\"178f8dc43e2780d09be1c568a04d7bf3\",\"content\":$(echo "$content" | jq -Rs .),\"url\":\"https://test.com\",\"dryRun\":true}" 2>&1)
+      if [[ -n "$page_id" && "$page_id" != "null" ]]; then
+        # Existing page: use PATCH with dryRun
+        retry_response=$(curl -s -m 60 -w "\n%{http_code}" -X PATCH "$API_URL/$page_id" \
+          -H "Content-Type: application/json" \
+          -d "{\"title\":\"$title\",\"contentHtml\":$(echo "$content" | jq -Rs .),\"url\":\"$page_url\",\"dryRun\":true}" 2>&1)
+      else
+        # New page: cannot retry validation
+        retry_http_code="400"
+        retry_body="{}"
+      fi
       retry_http_code=$(echo "$retry_response" | tail -n1)
       retry_body=$(echo "$retry_response" | sed '$d')
       echo "    ↳ Retry HTTP: $retry_http_code" | tee -a "$LOG_FILE"
       if [[ "$retry_http_code" == "200" ]]; then
-        retry_has_errors=$(echo "$retry_body" | jq -r '.validationResult.hasErrors // false')
+        retry_has_errors=$(echo "$retry_body" | jq -r '.validationResult.hasErrors // false' 2>/dev/null || echo 'false')
         if [[ "$retry_has_errors" == "false" ]]; then
           echo "    ✅ Retry validation passed; continuing to PATCH" | tee -a "$LOG_FILE"
           dry_body="$retry_body"
@@ -293,22 +323,48 @@ for html_file in "$SRC_DIR"/*.html; do
   # STEP 2: Execute PATCH with adaptive timeout based on complexity
   echo "  2️⃣  PATCHing page..." | tee -a "$LOG_FILE"
   
+  # Get file size for timeout calculation (fallback heuristic)
+  file_size_kb=$(du -k "$html_file" | cut -f1)
+  
   # Estimate complexity from dry-run response
   block_count=$(echo "$dry_body" | jq -r '.data.children | length' 2>/dev/null || echo 0)
   table_count=$(echo "$dry_body" | jq -r '[.data.children[] | select(.type == "table")] | length' 2>/dev/null || echo 0)
   
-  echo "  📊 Complexity: $block_count blocks, $table_count tables" | tee -a "$LOG_FILE"
+  echo "  📊 Complexity: $block_count blocks, $table_count tables, ${file_size_kb}KB file" | tee -a "$LOG_FILE"
   
-  # Adaptive timeout selection
+  # Adaptive timeout selection (dual-criteria: block/table count AND file size)
+  # Use the higher timeout from either criteria to ensure sufficient time
+  timeout_by_content=180
+  timeout_by_filesize=180
+  
+  # Content-based timeout
   if [[ $block_count -gt 500 || $table_count -gt 50 ]]; then
-    manual_timeout=480  # 8 minutes for very complex pages (80+ tables)
-    echo "  ⚡ Using extended timeout: ${manual_timeout}s (high complexity)" | tee -a "$LOG_FILE"
+    timeout_by_content=480  # 8 minutes for very complex pages
   elif [[ $block_count -gt 300 || $table_count -gt 30 ]]; then
-    manual_timeout=300  # 5 minutes for complex pages (30-80 tables)
-    echo "  ⚡ Using extended timeout: ${manual_timeout}s (medium complexity)" | tee -a "$LOG_FILE"
+    timeout_by_content=300  # 5 minutes for complex pages
   else
-    manual_timeout=180  # 3 minutes for normal pages
-    echo "  ⚡ Using standard timeout: ${manual_timeout}s" | tee -a "$LOG_FILE"
+    timeout_by_content=180  # 3 minutes for normal pages
+  fi
+  
+  # File size-based timeout (additional safety net)
+  if [[ $file_size_kb -gt 100 ]]; then
+    timeout_by_filesize=300  # 5 minutes for large files (>100KB)
+  elif [[ $file_size_kb -gt 50 ]]; then
+    timeout_by_filesize=240  # 4 minutes for medium files (>50KB)
+  else
+    timeout_by_filesize=180  # 3 minutes for small files
+  fi
+  
+  # Use the maximum timeout from both criteria
+  if [[ $timeout_by_content -gt $timeout_by_filesize ]]; then
+    manual_timeout=$timeout_by_content
+    echo "  ⚡ Using timeout: ${manual_timeout}s (content-based: high complexity)" | tee -a "$LOG_FILE"
+  elif [[ $timeout_by_filesize -gt $timeout_by_content ]]; then
+    manual_timeout=$timeout_by_filesize
+    echo "  ⚡ Using timeout: ${manual_timeout}s (file size-based: ${file_size_kb}KB)" | tee -a "$LOG_FILE"
+  else
+    manual_timeout=$timeout_by_content
+    echo "  ⚡ Using timeout: ${manual_timeout}s (standard)" | tee -a "$LOG_FILE"
   fi
   
   patch_start_epoch=$(date +%s)
@@ -320,7 +376,7 @@ for html_file in "$SRC_DIR"/*.html; do
   
   curl -s -m "$manual_timeout" -w "\n%{http_code}" -X PATCH "$API_URL/$page_id" \
     -H "Content-Type: application/json" \
-    -d "{\"title\":\"$title\",\"contentHtml\":$(echo "$content" | jq -Rs .),\"url\":\"https://docs.servicenow.com\"}" \
+    -d "{\"title\":\"$title\",\"contentHtml\":$(echo "$content" | jq -Rs .),\"url\":\"$page_url\"}" \
     > "$temp_response" 2>&1 &
   
   curl_pid=$!
@@ -364,8 +420,8 @@ for html_file in "$SRC_DIR"/*.html; do
       
       if [[ "$patch_http_code" == "200" ]]; then
         # Verify validation passed
-        validation_result=$(echo "$patch_body" | jq -r '.validationResult // {}')
-        has_errors=$(echo "$validation_result" | jq -r '.hasErrors // false')
+        validation_result=$(echo "$patch_body" | jq -r '.validationResult // {}' 2>/dev/null || echo '{}')
+        has_errors=$(echo "$validation_result" | jq -r '.hasErrors // false' 2>/dev/null || echo 'false')
         
         if [[ "$has_errors" != "false" ]]; then
           echo "  ❌ PATCH completed but validation failed" | tee -a "$LOG_FILE"
@@ -453,13 +509,13 @@ for html_file in "$SRC_DIR"/*.html; do
               retry_temp="/tmp/patch-retry-response-$$-$total-attempt-$generic_attempt.txt"
               curl -s -m "$manual_timeout" -w "\n%{http_code}" -X PATCH "$API_URL/$page_id" \
                 -H "Content-Type: application/json" \
-                -d "{\"title\":\"$title\",\"contentHtml\":$(echo "$content" | jq -Rs .),\"url\":\"https://docs.servicenow.com\"}" > "$retry_temp" 2>&1
+                -d "{\"title\":\"$title\",\"contentHtml\":$(echo "$content" | jq -Rs .),\"url\":\"$page_url\"}" > "$retry_temp" 2>&1
               retry_http_code=$(tail -n1 "$retry_temp")
               retry_body=$(sed '$d' "$retry_temp")
               rm -f "$retry_temp"
               echo "        ↳ Retry HTTP: $retry_http_code" | tee -a "$LOG_FILE"
               if [[ "$retry_http_code" == "200" ]]; then
-                retry_has_errors=$(echo "$retry_body" | jq -r '.validationResult.hasErrors // false')
+                retry_has_errors=$(echo "$retry_body" | jq -r '.validationResult.hasErrors // false' 2>/dev/null || echo 'false')
                 if [[ "$retry_has_errors" == "false" ]]; then
                   echo "        ✅ Retry succeeded (attempt $generic_attempt)." | tee -a "$LOG_FILE"
                   mv "$html_file" "$DST_DIR/"
