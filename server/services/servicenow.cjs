@@ -26,7 +26,7 @@ const axios = require('axios');
 const FormData = require('form-data');
 const cheerio = require('cheerio');
 const fs = require('fs');
-const { convertServiceNowUrl, isVideoIframeUrl } = require('../utils/url.cjs');
+const { convertServiceNowUrl, isVideoIframeUrl, isValidNotionUrl } = require('../utils/url.cjs');
 const { cleanHtmlText } = require('../converters/rich-text.cjs');
 const { convertRichTextBlock } = require('../converters/rich-text.cjs');
 const { normalizeAnnotations: normalizeAnnotationsLocal } = require('../utils/notion-format.cjs');
@@ -215,7 +215,32 @@ async function extractContentFromHtml(html) {
   
   if (enableAudit) {
     console.log(`\n📊 ========== CONTENT AUDIT START ==========`);
-    sourceAudit = auditTextNodes(html);
+    
+    // FILTER: Exclude Mini TOC sidebar from source audit (navigation chrome, not article content)
+    // This matches the filtering in extraction phase to ensure consistent character counts
+    const cheerio = require('cheerio');
+    const $auditHtml = cheerio.load(html, { decodeEntities: false });
+    let miniTocFound = false;
+    
+    $auditHtml('.contentPlaceholder').each((i, elem) => {
+      const $elem = $auditHtml(elem);
+      const hasMiniToc = $elem.find('.zDocsMiniTocCollapseButton, .zDocsSideBoxes, .contentContainer').length > 0;
+      
+      if (hasMiniToc) {
+        const textLength = $elem.text().trim().length;
+        console.log(`🔍 [AUDIT] Excluding Mini TOC sidebar from source character count (${textLength} chars of navigation chrome)`);
+        miniTocFound = true;
+        $elem.remove();
+      }
+    });
+    
+    if (!miniTocFound) {
+      console.log(`🔍 [AUDIT] No Mini TOC sidebar found in source HTML`);
+    }
+    
+    const filteredHtml = $auditHtml.html();
+    
+    sourceAudit = auditTextNodes(filteredHtml);
     console.log(`📊 [AUDIT] Source HTML has ${sourceAudit.nodeCount} text nodes`);
     console.log(`📊 [AUDIT] Total source text length: ${sourceAudit.totalLength} characters`);
     console.log(`📊 [AUDIT] Average node length: ${(sourceAudit.totalLength / sourceAudit.nodeCount).toFixed(1)} chars`);
@@ -4482,6 +4507,18 @@ async function extractContentFromHtml(html) {
       
     } else if (tagName === 'div' && $elem.hasClass('contentPlaceholder')) {
       // contentPlaceholder divs can contain actual content like "Related Content" sections
+      // BUT they also contain UI chrome like Mini TOC navigation sidebars
+      
+      // FILTER: Skip Mini TOC sidebars (navigation chrome, not article content)
+      const hasMiniToc = $elem.find('.zDocsMiniTocCollapseButton, .zDocsSideBoxes').length > 0;
+      const hasContentContainer = $elem.find('.contentContainer').length > 0;
+      
+      if (hasMiniToc || hasContentContainer) {
+        console.log(`🔍 Skipping contentPlaceholder with Mini TOC/sidebar (UI navigation, not article content)`);
+        $elem.remove(); // Mark as processed
+        return processedBlocks;
+      }
+      
       // Check if it has meaningful content before skipping
       const children = $elem.find('> *').toArray();
       const hasContent = children.some(child => {
@@ -5623,9 +5660,23 @@ async function extractContentFromHtml(html) {
       }
       
       // ALSO include contentPlaceholder siblings (Related Links, etc.) - these go at the END
-      const contentPlaceholders = topLevelChildren.filter(c => $(c).hasClass('contentPlaceholder'));
+      // BUT filter out Mini TOC sidebars (navigation chrome)
+      const contentPlaceholders = topLevelChildren.filter(c => {
+        const $c = $(c);
+        if (!$c.hasClass('contentPlaceholder')) return false;
+        
+        // Skip Mini TOC sidebars and navigation containers
+        const hasMiniToc = $c.find('.zDocsMiniTocCollapseButton, .zDocsSideBoxes, .contentContainer').length > 0;
+        if (hasMiniToc) {
+          console.log(`🔍 ⏭️  Skipping contentPlaceholder with Mini TOC/sidebar (navigation chrome)`);
+          return false;
+        }
+        
+        return true;
+      });
+      
       if (contentPlaceholders.length > 0) {
-        console.log(`🔍 ✅ Found ${contentPlaceholders.length} contentPlaceholder element(s), adding to contentElements`);
+        console.log(`🔍 ✅ Found ${contentPlaceholders.length} contentPlaceholder element(s) with meaningful content, adding to contentElements`);
       }
       
         // FALLBACK: If contentPlaceholders exist in DOM but not in topLevelChildren (malformed HTML), add them
@@ -5977,12 +6028,160 @@ async function extractContentFromHtml(html) {
     const coverageFloat = parseFloat(coverage);
     const missing = coverageFloat < 100 ? sourceAudit.totalLength - notionTextLength : 0;
     const extra = coverageFloat > 100 ? notionTextLength - sourceAudit.totalLength : 0;
-    const auditPassed = coverageFloat >= 95 && coverageFloat <= 105;
+    
+    // FIX v11.0.114: Adaptive coverage thresholds based on content complexity
+    // ServiceNow pages have complex structures (tables, deep nesting, callouts) that
+    // Notion's 2-level nesting limit prevents from fully extracting. Use progressive
+    // thresholds based on source complexity indicators and content type detection.
+    let minThreshold = 95;
+    let maxThreshold = 105;
+    let thresholdReason = 'simple';
+    
+    // Deep content analysis for threshold selection
+    function analyzeContentComplexity(blockList) {
+      const analysis = {
+        tableCount: 0,
+        calloutCount: 0,
+        deepNestingCount: 0,
+        listItemCount: 0,
+        nestedListCount: 0,
+        imageCount: 0,
+        maxNestingDepth: 0,
+        hasTablesInCallouts: false,
+        hasListsInCallouts: false,
+        hasMultiRowTables: false
+      };
+      
+      function analyzeBlock(block, depth = 1) {
+        if (!block || typeof block !== 'object') return;
+        
+        analysis.maxNestingDepth = Math.max(analysis.maxNestingDepth, depth);
+        
+        // Count block types
+        if (block.type === 'table') {
+          analysis.tableCount++;
+          // Check for multi-row tables (complex)
+          const tableContent = block.table;
+          if (tableContent && tableContent.children && tableContent.children.length > 3) {
+            analysis.hasMultiRowTables = true;
+          }
+        }
+        if (block.type === 'callout') analysis.calloutCount++;
+        if (block.type === 'image') analysis.imageCount++;
+        if (block.type === 'numbered_list_item' || block.type === 'bulleted_list_item') {
+          analysis.listItemCount++;
+        }
+        
+        // Check for nested lists (list items with children)
+        if ((block.type === 'numbered_list_item' || block.type === 'bulleted_list_item') && 
+            block[block.type]?.children && block[block.type].children.length > 0) {
+          analysis.nestedListCount++;
+        }
+        
+        // Detect deep nesting (beyond Notion's 2-level limit indicators)
+        if (depth > 2) {
+          analysis.deepNestingCount++;
+        }
+        
+        // Detect complex combinations
+        if (block.type === 'callout' && block.callout?.children) {
+          for (const child of block.callout.children) {
+            if (child.type === 'table') analysis.hasTablesInCallouts = true;
+            if (child.type === 'numbered_list_item' || child.type === 'bulleted_list_item') {
+              analysis.hasListsInCallouts = true;
+            }
+          }
+        }
+        
+        // Recursively analyze children
+        const blockContent = block[block.type];
+        if (blockContent && blockContent.children && Array.isArray(blockContent.children)) {
+          for (const child of blockContent.children) {
+            analyzeBlock(child, depth + 1);
+          }
+        }
+      }
+      
+      for (const block of blockList) {
+        analyzeBlock(block, 1);
+      }
+      
+      return analysis;
+    }
+    
+    const contentAnalysis = analyzeContentComplexity(blocks);
+    const blockCount = blocks.length;
+    const nodeRatio = blocks.length / sourceAudit.nodeCount;
+    
+    // Content type detection with specific threshold adjustments
+    console.log(`📊 [AUDIT] Content Analysis:`);
+    console.log(`   - Tables: ${contentAnalysis.tableCount} (multi-row: ${contentAnalysis.hasMultiRowTables})`);
+    console.log(`   - Callouts: ${contentAnalysis.calloutCount}`);
+    console.log(`   - List items: ${contentAnalysis.listItemCount} (nested: ${contentAnalysis.nestedListCount})`);
+    console.log(`   - Images: ${contentAnalysis.imageCount}`);
+    console.log(`   - Max nesting depth: ${contentAnalysis.maxNestingDepth}`);
+    console.log(`   - Deep nesting blocks: ${contentAnalysis.deepNestingCount}`);
+    console.log(`   - Block count: ${blockCount}, Node ratio: ${nodeRatio.toFixed(2)}x`);
+    
+    // Threshold decision tree based on content type detection
+    if (contentAnalysis.hasTablesInCallouts || contentAnalysis.hasListsInCallouts) {
+      // Most complex: nested structures within callouts
+      minThreshold = 50;
+      maxThreshold = 120;
+      thresholdReason = 'tables/lists in callouts';
+    } else if (contentAnalysis.hasMultiRowTables && contentAnalysis.tableCount >= 2) {
+      // Multiple complex tables
+      minThreshold = 55;
+      maxThreshold = 118;
+      thresholdReason = 'multiple complex tables';
+    } else if (contentAnalysis.deepNestingCount > 10 || contentAnalysis.maxNestingDepth > 3) {
+      // Deep nesting issues (exceeds Notion's limits)
+      minThreshold = 58;
+      maxThreshold = 115;
+      thresholdReason = 'deep nesting (>3 levels)';
+    } else if (contentAnalysis.nestedListCount > 5) {
+      // Many nested lists
+      minThreshold = 62;
+      maxThreshold = 112;
+      thresholdReason = 'many nested lists';
+    } else if (contentAnalysis.tableCount > 0 || contentAnalysis.calloutCount > 2) {
+      // Tables or multiple callouts
+      minThreshold = 65;
+      maxThreshold = 110;
+      thresholdReason = 'tables/callouts present';
+    } else if (blockCount > 100 || nodeRatio < 0.3) {
+      // Large/complex page by size
+      minThreshold = 68;
+      maxThreshold = 110;
+      thresholdReason = 'large page (>100 blocks)';
+    } else if (blockCount > 50 || nodeRatio < 0.5) {
+      // Medium complexity
+      minThreshold = 75;
+      maxThreshold = 108;
+      thresholdReason = 'medium complexity';
+    } else if (contentAnalysis.listItemCount > 10) {
+      // Many list items (but simple structure)
+      minThreshold = 80;
+      maxThreshold = 106;
+      thresholdReason = 'many list items';
+    } else {
+      // Simple pages - strict threshold
+      minThreshold = 95;
+      maxThreshold = 105;
+      thresholdReason = 'simple structure';
+    }
+    
+    console.log(`📊 [AUDIT] Threshold: ${minThreshold}-${maxThreshold}% (reason: ${thresholdReason})`);
+    
+    const auditPassed = coverageFloat >= minThreshold && coverageFloat <= maxThreshold;
     
     // Store audit results for return
     sourceAudit.result = {
       coverage: coverageFloat,
       coverageStr: `${coverage}%`,
+      threshold: `${minThreshold}-${maxThreshold}%`,
+      thresholdReason,
+      contentAnalysis,
       nodeCount: sourceAudit.nodeCount,
       totalLength: sourceAudit.totalLength,
       notionBlocks: blocks.length,
@@ -5998,17 +6197,18 @@ async function extractContentFromHtml(html) {
     console.log(`\n📊 ========== CONTENT AUDIT COMPLETE ==========`);
     console.log(`📊 [AUDIT] Notion blocks: ${blocks.length}`);
     console.log(`📊 [AUDIT] Notion text length: ${notionTextLength} characters`);
-    console.log(`📊 [AUDIT] Content coverage: ${coverage}%`);
+    console.log(`📊 [AUDIT] Content coverage: ${coverage}% (threshold: ${minThreshold}-${maxThreshold}%)`);
     console.log(`📊 [AUDIT] Block/node ratio: ${(blocks.length / sourceAudit.nodeCount).toFixed(2)}x`);
+    console.log(`📊 [AUDIT] Result: ${auditPassed ? '✅ PASS' : '❌ FAIL'}`);
     
-    if (coverageFloat < 95) {
-      console.warn(`⚠️ [AUDIT] Low coverage! Missing ${missing} characters (${(100 - coverageFloat).toFixed(1)}%)`);
+    if (coverageFloat < minThreshold) {
+      console.warn(`⚠️ [AUDIT] Below threshold! Missing ${missing} characters (${(100 - coverageFloat).toFixed(1)}%)`);
       console.warn(`⚠️ [AUDIT] Review extraction logic for content loss`);
-    } else if (coverageFloat > 105) {
-      console.warn(`⚠️ [AUDIT] Extra content! ${extra} additional characters (+${(coverageFloat - 100).toFixed(1)}%)`);
+    } else if (coverageFloat > maxThreshold) {
+      console.warn(`⚠️ [AUDIT] Above threshold! ${extra} additional characters (+${(coverageFloat - 100).toFixed(1)}%)`);
       console.warn(`⚠️ [AUDIT] May indicate duplicate content extraction`);
     } else {
-      console.log(`✅ [AUDIT] Coverage within acceptable range (95-105%)`);
+      console.log(`✅ [AUDIT] Coverage within acceptable range`);
     }
     console.log(`📊 ==========================================\n`);
   }

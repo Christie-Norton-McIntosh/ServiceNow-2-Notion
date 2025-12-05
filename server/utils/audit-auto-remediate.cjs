@@ -253,10 +253,26 @@ function analyzeExtractedBlocks(blocks, log) {
     blocks.forEach((block, i) => {
       analysis.blockTypes[block.type] = (analysis.blockTypes[block.type] || 0) + 1;
 
-      // Count characters
-      if (block.rich_text) {
-        block.rich_text.forEach(rt => {
-          analysis.totalChars += (rt.text || '').length;
+      // Count characters - FIX: Access rich_text via block[block.type], not block.rich_text
+      // Blocks have structure: { type: "paragraph", paragraph: { rich_text: [...] } }
+      const blockContent = block[block.type];
+      if (blockContent && blockContent.rich_text) {
+        blockContent.rich_text.forEach((rt, rtIndex) => {
+          // FIX: rt.text.content is the primary field we set during extraction
+          // plain_text is computed by Notion API, so prioritize text.content
+          const textContent = rt.text?.content || rt.plain_text || '';
+          
+          // DEBUG: Log first few rich_text elements to see structure
+          if (i < 3 && rtIndex < 2) {
+            console.log(`[AUDIT-DEBUG] Block[${i}] ${block.type}, rt[${rtIndex}]:`, {
+              hasTextContent: !!rt.text?.content,
+              hasPlainText: !!rt.plain_text,
+              textLength: textContent.length,
+              preview: textContent.substring(0, 50)
+            });
+          }
+          
+          analysis.totalChars += textContent.length;
           
           // Track annotations
           if (rt.annotations) {
@@ -271,7 +287,8 @@ function analyzeExtractedBlocks(blocks, log) {
       }
 
       // Check for empty blocks
-      const text = (block.rich_text || []).map(rt => rt.text).join('').trim();
+      const richText = blockContent?.rich_text || [];
+      const text = richText.map(rt => rt.text?.content || rt.plain_text || '').join('').trim();
       if (!text) {
         analysis.emptyBlocks.push({
           index: i,

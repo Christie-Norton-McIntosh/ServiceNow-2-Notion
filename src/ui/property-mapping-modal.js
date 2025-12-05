@@ -227,16 +227,6 @@ export function populatePropertyMappings(properties, mappings) {
       description: "The main title of the captured page",
     },
     {
-      key: "url",
-      label: "Page URL",
-      description: "The URL of the captured page",
-    },
-    {
-      key: "source",
-      label: "Content Source",
-      description: 'The source platform (e.g., "ServiceNow")',
-    },
-    {
       key: "category",
       label: "Category",
       description: "ServiceNow category or classification",
@@ -255,11 +245,6 @@ export function populatePropertyMappings(properties, mappings) {
       key: "updated",
       label: "Updated Date",
       description: "Last updated date",
-    },
-    {
-      key: "CurrentReleaseURL",
-      label: "Current Release URL",
-      description: "The latest version URL or permanent link to the content",
     },
     {
       key: "breadcrumb",
@@ -361,6 +346,55 @@ export function resetPropertyMappings(databaseId) {
     GM_setValue(key, "{}");
   }
   debug(`Property mappings reset for database ${databaseId}`);
+}
+
+/**
+ * Generate default property mappings based on common ServiceNow fields
+ * Maps common content types to Notion properties that might exist
+ * @param {Object} schema - Database schema with property definitions
+ * @returns {Object} Default property mappings
+ */
+export function generateDefaultPropertyMappings(schema) {
+  const defaultMappings = {};
+  
+  if (!schema || typeof schema !== 'object') {
+    debug('⚠️ No schema provided for default mapping generation');
+    return defaultMappings;
+  }
+
+  // Map extracted content field names to possible Notion property names
+  // Format: contentField -> [possible Notion property names]
+  // Note: Page URL, Content Source, and Current Release URL are automatically handled
+  // and should not be included in manual property mappings
+  const contentFieldMappings = {
+    // Extracted field name -> Possible Notion property names (case-sensitive)
+    'title': ['Title', 'Name', 'Page Title'],
+    'category': ['Category', 'Type', 'Topic', 'Classification'],
+    'version': ['Version', 'Release', 'Build', 'Version Number'],
+    'updated': ['Updated', 'Last Updated', 'Modified Date', 'Date Modified', 'Updated Date'],
+    'status': ['Status', 'State', 'Page Status', 'Workflow Status'],
+    'author': ['Author', 'Created By', 'Owner', 'Author Name'],
+    'breadcrumb': ['Breadcrumb', 'Navigation', 'Path', 'Hierarchy'],
+    'section': ['Section', 'Topic', 'Area'],
+    'hasVideos': ['Has Videos', 'Video', 'Videos', 'Contains Videos'],
+    'hasImages': ['Has Images', 'Image', 'Images', 'Contains Images'],
+  };
+
+  // Scan database schema for properties matching extracted content fields
+  for (const [contentField, possibleNotionNames] of Object.entries(contentFieldMappings)) {
+    // Check if any of the possible Notion property names exist in the schema
+    for (const notionPropName of possibleNotionNames) {
+      if (schema.hasOwnProperty(notionPropName)) {
+        // Found a match - add to default mappings
+        // Format: Notion property name -> content field name
+        defaultMappings[notionPropName] = contentField;
+        debug(`✅ Auto-mapped: Notion property "${notionPropName}" -> content field "${contentField}"`);
+        break; // Move to next content field
+      }
+    }
+  }
+
+  return defaultMappings;
 }
 
 export function showPropertyMappingModal() {
