@@ -58,11 +58,13 @@ fi
 
 if [[ $health_ok -ne 1 ]]; then
   echo "[SERVER] Not responding — starting server..." | tee -a "$LOG_FILE"
+  SERVER_LOG="$ROOT_DIR/server/logs/server-terminal-$(date +%Y%m%d-%H%M%S).log"
   (
     cd "$ROOT_DIR/server" && \
-    SN2N_VERBOSE=1 SN2N_VALIDATE_OUTPUT=1 SN2N_CONTENT_VALIDATION=1 SN2N_ORPHAN_LIST_REPAIR=1 node sn2n-proxy.cjs
+    SN2N_VERBOSE=1 SN2N_VALIDATE_OUTPUT=1 SN2N_CONTENT_VALIDATION=1 SN2N_ORPHAN_LIST_REPAIR=1 SN2N_AUDIT_CONTENT=1 node sn2n-proxy.cjs 2>&1 | tee -a "$SERVER_LOG"
   ) &
   SERVER_PID=$!
+  echo "[SERVER] Server output logging to: $SERVER_LOG" | tee -a "$LOG_FILE"
   echo "[SERVER] Launch PID: $SERVER_PID" | tee -a "$LOG_FILE"
   server_ready=0
   for i in $(seq 1 30); do
@@ -90,11 +92,13 @@ else
     echo "[SERVER] Validation flags not enabled (SN2N_VALIDATE_OUTPUT=$validate_output_enabled, SN2N_CONTENT_VALIDATION=$content_validation_enabled) — restarting with newest validation" | tee -a "$LOG_FILE"
     pkill -f sn2n-proxy.cjs 2>/dev/null || killall node 2>/dev/null || true
     sleep 2
+    SERVER_LOG="$ROOT_DIR/server/logs/server-terminal-$(date +%Y%m%d-%H%M%S).log"
     (
       cd "$ROOT_DIR/server" && \
-      SN2N_VERBOSE=1 SN2N_VALIDATE_OUTPUT=1 SN2N_CONTENT_VALIDATION=1 SN2N_ORPHAN_LIST_REPAIR=1 node sn2n-proxy.cjs
+      SN2N_VERBOSE=1 SN2N_VALIDATE_OUTPUT=1 SN2N_CONTENT_VALIDATION=1 SN2N_ORPHAN_LIST_REPAIR=1 SN2N_AUDIT_CONTENT=1 node sn2n-proxy.cjs 2>&1 | tee -a "$SERVER_LOG"
     ) &
     SERVER_PID=$!
+    echo "[SERVER] Server output logging to: $SERVER_LOG" | tee -a "$LOG_FILE"
     echo "[SERVER] Relaunch PID: $SERVER_PID" | tee -a "$LOG_FILE"
     for i in $(seq 1 30); do
       if curl -sf -m2 "$HEALTH_URL_PRIMARY" >/dev/null 2>&1 || curl -sf -m2 "$HEALTH_URL_ALT" >/dev/null 2>&1; then
@@ -271,18 +275,16 @@ for html_file in "$SRC_DIR"/*.html; do
   fi
   fi
 
-  has_errors=$(echo "$dry_body" | jq -r '.validationResult.hasErrors // false' 2>/dev/null || echo 'false')
+  # Dry-run just checks if blocks can be extracted (doesn't perform validation)
+  blocks_extracted=$(echo "$dry_body" | jq -r '.blocksExtracted // 0' 2>/dev/null || echo '0')
   
-  if [[ "$has_errors" != "false" ]]; then
-    echo "  ❌ Validation failed" | tee -a "$LOG_FILE"
-    error_count=$(echo "$dry_body" | jq -r '.validationResult.errors | length' 2>/dev/null || echo 0)
-    echo "     Errors: $error_count" | tee -a "$LOG_FILE"
-    first_error=$(echo "$dry_body" | jq -r '.validationResult.errors[0].message // "Unknown"' 2>/dev/null || echo 'Unknown')
-    echo "     First: $first_error" | tee -a "$LOG_FILE"
-    echo "$dry_body" > "$FAILED_VALIDATION_DIR/${filename%.html}-validation.json" || true
+  if [[ "$blocks_extracted" == "0" ]]; then
+    echo "  ❌ Dry-run extraction failed (0 blocks extracted)" | tee -a "$LOG_FILE"
+    echo "     This indicates the HTML content could not be converted to Notion blocks" | tee -a "$LOG_FILE"
+    echo "$dry_body" > "$FAILED_VALIDATION_DIR/${filename%.html}-dryrun-failed.json" || true
     # Optional retry
     if [[ "${VALIDATION_RETRY:-0}" == "1" ]]; then
-      echo "  ↻ Retry validation (VALIDATION_RETRY=1)" | tee -a "$LOG_FILE"
+      echo "  ↻ Retry dry-run (VALIDATION_RETRY=1)" | tee -a "$LOG_FILE"
       sleep 2
       if [[ -n "$page_id" && "$page_id" != "null" ]]; then
         # Existing page: use PATCH with dryRun
@@ -290,7 +292,7 @@ for html_file in "$SRC_DIR"/*.html; do
           -H "Content-Type: application/json" \
           -d "{\"title\":\"$title\",\"contentHtml\":$(echo "$content" | jq -Rs .),\"url\":\"$page_url\",\"dryRun\":true}" 2>&1)
       else
-        # New page: cannot retry validation
+        # New page: cannot retry
         retry_http_code="400"
         retry_body="{}"
       fi
@@ -298,23 +300,23 @@ for html_file in "$SRC_DIR"/*.html; do
       retry_body=$(echo "$retry_response" | sed '$d')
       echo "    ↳ Retry HTTP: $retry_http_code" | tee -a "$LOG_FILE"
       if [[ "$retry_http_code" == "200" ]]; then
-        retry_has_errors=$(echo "$retry_body" | jq -r '.validationResult.hasErrors // false' 2>/dev/null || echo 'false')
-        if [[ "$retry_has_errors" == "false" ]]; then
-          echo "    ✅ Retry validation passed; continuing to PATCH" | tee -a "$LOG_FILE"
+        retry_blocks=$(echo "$retry_body" | jq -r '.blocksExtracted // 0' 2>/dev/null || echo '0')
+        if [[ "$retry_blocks" != "0" ]]; then
+          echo "    ✅ Retry succeeded - extracted $retry_blocks blocks; continuing to PATCH" | tee -a "$LOG_FILE"
           dry_body="$retry_body"
-          has_errors=false
+          blocks_extracted="$retry_blocks"
         else
-          echo "    ❌ Retry still failing" | tee -a "$LOG_FILE"
+          echo "    ❌ Retry still failing (0 blocks extracted)" | tee -a "$LOG_FILE"
         fi
       fi
     fi
-    if [[ "$has_errors" != "false" ]]; then
+    if [[ "$blocks_extracted" == "0" ]]; then
     failed_validation=$((failed_validation+1))
     continue
     fi
   fi
 
-  echo "  ✅ Validation passed" | tee -a "$LOG_FILE"
+  echo "  ✅ Dry-run passed (extracted $blocks_extracted blocks)" | tee -a "$LOG_FILE"
   validate_end_epoch=$(date +%s)
   validate_duration=$((validate_end_epoch - validate_start_epoch))
   validate_end_human=$(date +"%Y-%m-%d %H:%M:%S")
@@ -419,8 +421,8 @@ for html_file in "$SRC_DIR"/*.html; do
       patch_body=$(sed '$d' "$temp_response")
       
       if [[ "$patch_http_code" == "200" ]]; then
-        # Verify validation passed
-        validation_result=$(echo "$patch_body" | jq -r '.validationResult // {}' 2>/dev/null || echo '{}')
+        # Verify validation passed (response structure: { success: true, validation: { hasErrors: false, ... } })
+        validation_result=$(echo "$patch_body" | jq -r '.validation // {}' 2>/dev/null || echo '{}')
         has_errors=$(echo "$validation_result" | jq -r '.hasErrors // false' 2>/dev/null || echo 'false')
         
         if [[ "$has_errors" != "false" ]]; then

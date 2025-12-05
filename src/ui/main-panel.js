@@ -1,7 +1,7 @@
 // Main floating panel (ported from original createUI())
 
 import { debug, getConfig } from "../config.js";
-import { showPropertyMappingModal } from "./property-mapping-modal.js";
+import { showPropertyMappingModal, generateDefaultPropertyMappings, savePropertyMappings } from "./property-mapping-modal.js";
 import { injectAdvancedSettingsModal } from "./advanced-settings-modal.js";
 import { injectIconCoverModal } from "./icon-cover-modal.js";
 import { getAllDatabases, getDatabase } from "../api/database-api.js";
@@ -441,6 +441,16 @@ export function setupMainPanel(panel) {
               GM_setValue("notionConfig", config);
             }
 
+            // Generate and save default property mappings based on schema
+            if (dbDetails.properties) {
+              const defaultMappings = generateDefaultPropertyMappings(dbDetails.properties);
+              if (Object.keys(defaultMappings).length > 0) {
+                savePropertyMappings(cleanDbId, defaultMappings);
+                debug(`[DATABASE] ✅ Applied ${Object.keys(defaultMappings).length} default property mappings`);
+                showToast(`✅ Applied ${Object.keys(defaultMappings).length} default mappings`, 2000);
+              }
+            }
+
             // Update UI
             databaseSelect.innerHTML = `<option value="${cleanDbId}">${config.databaseName}</option>`;
             databaseLabel.textContent = formatDatabaseId(cleanDbId);
@@ -516,6 +526,20 @@ export function setupMainPanel(panel) {
             // Save to storage
             if (typeof GM_setValue === "function") {
               GM_setValue("notionConfig", config);
+            }
+
+            // Generate and save default property mappings based on schema
+            try {
+              const dbDetails = await getDatabase(matchingDb.id);
+              if (dbDetails.properties) {
+                const defaultMappings = generateDefaultPropertyMappings(dbDetails.properties);
+                if (Object.keys(defaultMappings).length > 0) {
+                  savePropertyMappings(matchingDb.id, defaultMappings);
+                  debug(`[DATABASE] ✅ Applied ${Object.keys(defaultMappings).length} default property mappings`);
+                }
+              }
+            } catch (e) {
+              debug(`[DATABASE] ⚠️ Could not fetch schema for default mappings: ${e.message}`);
             }
 
             // Update UI

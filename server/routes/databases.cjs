@@ -221,18 +221,23 @@ router.get('/databases/:id', async (req, res) => {
       schema[name] = entry;
     }
 
+    // Extract title as plain text string (Notion returns title as rich text array)
+    const titleText = Array.isArray(dbInfo.title)
+      ? dbInfo.title.map((t) => t.plain_text || "").join("")
+      : (typeof dbInfo.title === 'string' ? dbInfo.title : null);
+
     if (!global._sn2n_db_schema_cache) global._sn2n_db_schema_cache = new Map();
     global._sn2n_db_schema_cache.set(dbId, {
       ts: Date.now(),
       schema,
-      title: dbInfo.title || null,
+      title: titleText || null,
       properties: dbInfo.properties || {},
       url: dbInfo.url || null,
     });
 
     return sendSuccess(res, {
       id: dbId,
-      title: dbInfo.title || null,
+      title: titleText || null,
       properties: dbInfo.properties || {},
       url: dbInfo.url || null,
       schema,

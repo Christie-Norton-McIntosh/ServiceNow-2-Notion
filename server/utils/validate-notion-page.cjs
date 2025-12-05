@@ -26,8 +26,6 @@
  * 6. In tables: Paragraphs inside tables are excluded (table cells don't contain paragraph blocks)
  */
 
-const { validateContentOrder } = require('../services/content-validator.cjs');
-
 /**
  * Recursively fetch all blocks from a Notion page or block
  * @param {Object} notion - Notion client instance
@@ -396,13 +394,6 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
       }
     }
 
-    result.stats = {
-      totalBlocks: allBlocks.length,
-      blockTypes,
-      headingCount: headings.length,
-      fetchTimeMs: fetchTime
-    };
-
     // VALIDATION 1: Check for marker leaks (CRITICAL)
     if (markerLeaks.length > 0) {
       result.hasErrors = true;
@@ -685,43 +676,7 @@ async function validateNotionPage(notion, pageId, options = {}, log = console.lo
       }
     }
 
-    // CONTENT VALIDATION: Run text similarity check and block counting
-    if (options.sourceHtml) {
-      try {
-        log(`🔍 [VALIDATION] Running content validation (text similarity & block counts)...`);
-        const contentResult = await validateContentOrder(options.sourceHtml, pageId, notion);
-        
-        // Merge content validation results into main result
-        result.similarity = contentResult.similarity;
-        result.htmlSegments = contentResult.htmlSegments;
-        result.notionSegments = contentResult.notionSegments;
-        result.htmlChars = contentResult.htmlChars;
-        result.notionChars = contentResult.notionChars;
-        result.charDiff = contentResult.charDiff;
-        result.charDiffPercent = contentResult.charDiffPercent;
-        result.missing = contentResult.missing;
-        result.extra = contentResult.extra;
-        result.orderIssues = contentResult.orderIssues;
-        
-        // Add detailed block counts to stats
-        if (contentResult.stats && contentResult.stats.breakdown) {
-          result.stats.breakdown = contentResult.stats.breakdown;
-          log(`✅ [VALIDATION] Content validation complete - similarity: ${contentResult.similarity}%, blocks: ${JSON.stringify(contentResult.stats.breakdown)}`);
-        }
-        
-        // If content validation failed similarity threshold, mark as error
-        if (!contentResult.success) {
-          result.hasErrors = true;
-          result.success = false;
-          result.issues.push(`Content similarity below threshold: ${contentResult.similarity}% (expected ≥95%)`);
-        }
-      } catch (contentError) {
-        log(`⚠️ [VALIDATION] Content validation failed: ${contentError.message}`);
-        result.warnings.push(`Content validation error: ${contentError.message}`);
-      }
-    } else {
-      log(`⚠️ [VALIDATION] No source HTML provided - skipping content validation`);
-    }
+    // Note: Old LCS-based content validation removed in v11.0.35 (replaced by AUDIT validation)
 
     // Generate summary based on critical element validation
     if (result.hasErrors) {
