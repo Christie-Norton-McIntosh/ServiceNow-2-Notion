@@ -206,17 +206,19 @@ async function extractContentFromHtml(html) {
     };
   }
 
-  // Audit source content if enabled
-  const enableAudit = process.env.SN2N_AUDIT_CONTENT === '1';
+  // Audit source content if enabled (either explicitly or for validation)
+  const enableAudit = process.env.SN2N_AUDIT_CONTENT === '1' || process.env.SN2N_VALIDATE_OUTPUT === '1';
   let sourceAudit = null;
   
-  console.log(`🔍 ENV CHECK: SN2N_AUDIT_CONTENT = "${process.env.SN2N_AUDIT_CONTENT}" (type: ${typeof process.env.SN2N_AUDIT_CONTENT})`);
-  console.log(`🔍 ENV CHECK: enableAudit = ${enableAudit}`);
+  console.log(`🔍 ENV CHECK: SN2N_AUDIT_CONTENT = "${process.env.SN2N_AUDIT_CONTENT}"`);
+  console.log(`🔍 ENV CHECK: SN2N_VALIDATE_OUTPUT = "${process.env.SN2N_VALIDATE_OUTPUT}"`);
+  console.log(`🔍 ENV CHECK: enableAudit = ${enableAudit} (enabled by AUDIT_CONTENT or VALIDATE_OUTPUT)`);
   
   if (enableAudit) {
     console.log(`\n📊 ========== CONTENT AUDIT START ==========`);
     
     // FILTER: Exclude Mini TOC sidebar from source audit (navigation chrome, not article content)
+    // Related Content sections are now filtered out during main HTML processing
     // This matches the filtering in extraction phase to ensure consistent character counts
     const cheerio = require('cheerio');
     const $auditHtml = cheerio.load(html, { decodeEntities: false });
@@ -5660,7 +5662,7 @@ async function extractContentFromHtml(html) {
       }
       
       // ALSO include contentPlaceholder siblings (Related Links, etc.) - these go at the END
-      // BUT filter out Mini TOC sidebars (navigation chrome)
+      // BUT filter out Mini TOC sidebars (navigation chrome) AND Related Content sections
       const contentPlaceholders = topLevelChildren.filter(c => {
         const $c = $(c);
         if (!$c.hasClass('contentPlaceholder')) return false;
@@ -5669,6 +5671,14 @@ async function extractContentFromHtml(html) {
         const hasMiniToc = $c.find('.zDocsMiniTocCollapseButton, .zDocsSideBoxes, .contentContainer').length > 0;
         if (hasMiniToc) {
           console.log(`🔍 ⏭️  Skipping contentPlaceholder with Mini TOC/sidebar (navigation chrome)`);
+          return false;
+        }
+        
+        // Skip Related Content sections (not part of main article content)
+        const hasRelatedContent = $c.text().trim().toLowerCase().includes('related content') ||
+                                  $c.find('h1, h2, h3, h4, h5, h6').text().trim().toLowerCase().includes('related content');
+        if (hasRelatedContent) {
+          console.log(`🔍 ⏭️  Skipping contentPlaceholder with Related Content section (not article content)`);
           return false;
         }
         
@@ -5995,9 +6005,16 @@ async function extractContentFromHtml(html) {
         }
       }
       
-      // Recursively extract from children
+      // Recursively extract from children (for nested blocks)
       if (block.children && Array.isArray(block.children)) {
         for (const child of block.children) {
+          text += extractAllTextFromBlock(child);
+        }
+      }
+      
+      // Extract from table children (table_row blocks)
+      if (block.table?.children && Array.isArray(block.table.children)) {
+        for (const child of block.table.children) {
           text += extractAllTextFromBlock(child);
         }
       }
@@ -6211,6 +6228,553 @@ async function extractContentFromHtml(html) {
       console.log(`✅ [AUDIT] Coverage within acceptable range`);
     }
     console.log(`📊 ==========================================\n`);
+  }
+
+  // Enhanced text comparison for detailed audit reporting
+  if (enableAudit && sourceAudit && sourceAudit.result) {
+    function getDetailedTextComparison(html, blocks) {
+      const cheerio = require('cheerio');
+
+      // Create filtered HTML (same filtering as audit)
+      const $auditHtml = cheerio.load(html, { decodeEntities: false });
+      $auditHtml('.contentPlaceholder').each((i, elem) => {
+        const $elem = $auditHtml(elem);
+        const hasMiniToc = $elem.find('.zDocsMiniTocCollapseButton, .zDocsSideBoxes, .contentContainer').length > 0;
+        if (hasMiniToc) {
+          $elem.remove();
+        }
+      });
+      const filteredHtml = $auditHtml.html();
+
+      // Helper: detect formatting-only segments we should ignore (e.g., "Figure 1.")
+      function isFormattingOnly(text, seg) {
+        if (!text || !text.trim()) return true; // empty
+        const t = text.trim();
+        // common figure patterns: "Figure 1" "Figure 1." "Fig. 1"
+        if (/^fig(?:ure)?\s*\d+\.?$/i.test(t)) return true;
+        if (/^fig\.?\s*\d+\:?$/i.test(t)) return true;
+        // lone numbers with punctuation used as enumerators "1." often appear in headings - ignore small numeric enumerators
+        if (/^\d+\.$/.test(t) && t.length <= 4) return true;
+        try {
+          const el = (seg && seg.element) || '';
+          const cls = (seg && seg.class) || '';
+          if (/figure|figcaption|caption|toc|legend/i.test(cls)) return true;
+          if (/fig|figure|caption/i.test(el)) return true;
+        } catch (e) {
+          // ignore
+        }
+        return false;
+      }
+
+      // Extract detailed text segments from HTML with context
+      function extractHtmlTextSegments(htmlContent) {
+        const $ = cheerio.load(htmlContent, { decodeEntities: false });
+        const segments = [];
+
+        // Remove non-content elements (same as main HTML processing filtering)
+        $('script, style, noscript, svg, iframe').remove();
+        $('.contentPlaceholder').each((i, elem) => {
+          const $elem = $(elem);
+          
+          // Skip Mini TOC sidebars and navigation containers
+          const hasMiniToc = $elem.find('.zDocsMiniTocCollapseButton, .zDocsSideBoxes, .contentContainer').length > 0;
+          if (hasMiniToc) {
+            $elem.remove();
+            return;
+          }
+          
+          // Skip Related Content sections (not part of main article content)
+          const hasRelatedContent = $elem.text().trim().toLowerCase().includes('related content') ||
+                                    $elem.find('h1, h2, h3, h4, h5, h6').text().trim().toLowerCase().includes('related content');
+          if (hasRelatedContent) {
+            $elem.remove();
+          }
+        });
+
+        function collectSegments($elem, context = '') {
+          $elem.contents().each((_, node) => {
+            if (node.type === 'text') {
+              let text = $(node).text().trim();
+              // Strip diagnostic parenthetical annotations like "(342 chars, div > div > p)"
+              text = text.replace(/\(\s*\d+\s*chars\s*,\s*[^)]+\)/gi, '').trim();
+              const segMeta = {
+                element: node.parent?.name || 'text',
+                class: $(node.parent).attr('class') || ''
+              };
+              if (text.length > 0 && !isFormattingOnly(text, segMeta)) {
+                segments.push({
+                  text: text,
+                  context: context,
+                  element: segMeta.element,
+                  class: segMeta.class,
+                  length: text.length
+                });
+              }
+            } else if (node.type === 'tag') {
+              const $node = $(node);
+              const tagName = node.name;
+              const nodeClass = $node.attr('class') || '';
+              let newContext = context;
+
+              // Add context for structural elements
+              if (['p', 'div', 'span', 'li', 'td', 'th'].includes(tagName)) {
+                newContext = context + (context ? ' > ' : '') + tagName;
+              }
+
+              // (Fix #2) Detect and collapse menucascade menu paths before recursing
+              if (nodeClass.includes('menucascade')) {
+                // Extract all .ph.uicontrol spans and abbr separators, combine them
+                const parts = [];
+                const $children = $node.find('.ph.uicontrol, abbr, .ph');
+                $children.each((_, child) => {
+                  const $child = $(child);
+                  const txt = $child.text().trim();
+                  if (txt && txt.length > 0) {
+                    // Skip standalone punctuation (like ">")
+                    if (!/^[>\\|]+$/.test(txt)) {
+                      parts.push(txt);
+                    } else {
+                      // Include punctuation that connects menu items
+                      if (parts.length > 0) {
+                        parts[parts.length - 1] += ' ' + txt;
+                      }
+                    }
+                  }
+                });
+                if (parts.length > 0) {
+                  const combinedMenu = parts.join(' ').replace(/\s+/g, ' ').trim();
+                  const segMeta = { element: 'menucascade', class: nodeClass };
+                  if (!isFormattingOnly(combinedMenu, segMeta)) {
+                    segments.push({
+                      text: combinedMenu,
+                      context: newContext,
+                      element: 'menucascade',
+                      class: nodeClass,
+                      length: combinedMenu.length
+                    });
+                  }
+                }
+                // Skip recursion into this node; we've already processed it
+                return;
+              }
+
+              // (Fix #2) Skip standalone abbr nodes with only punctuation (1-3 chars of non-word chars)
+              // These are usually separators like ">" that belong to parent text or menu paths
+              if (tagName === 'abbr') {
+                const abbr_text = $node.text().trim();
+                if (/^[^\w\s]{1,3}$/.test(abbr_text)) {
+                  // Skip this node; don't create a segment for it
+                  return;
+                }
+              }
+
+              // Recurse into children
+              collectSegments($node, newContext);
+            }
+          });
+        }
+
+        collectSegments($('body').length ? $('body') : $.root());
+        return segments;
+      }
+
+      // Strip machine-only marker tokens from Notion text (Fix #1)
+      function stripSn2nMarkers(text) {
+        return (text || '')
+          .replace(/\(sn2n:[^\)]+\)/gi, '')  // parenthetical markers like (sn2n:xxx)
+          .replace(/\bsn2n:[A-Za-z0-9\-]+\b/gi, '')  // inline tokens like sn2n:xxx
+          .replace(/\s{2,}/g, ' ')  // collapse multiple spaces
+          .trim();
+      }
+
+      // Extract detailed text segments from Notion blocks
+      function extractNotionTextSegments(blocks) {
+        const segments = [];
+
+        function extractFromBlock(block, context = '') {
+          const blockType = block.type;
+          const data = block[blockType];
+
+          if (!data) return;
+
+          // Extract from rich_text
+          if (Array.isArray(data.rich_text)) {
+            let text = data.rich_text.map(rt => rt.plain_text || rt.text?.content || '').join('').trim();
+            // Strip marker tokens first (Fix #1)
+            text = stripSn2nMarkers(text);
+            // Strip diagnostic parenthetical annotations
+            text = text.replace(/\(\s*\d+\s*chars\s*,\s*[^)]+\)/gi, '').trim();
+            const segMeta = { element: blockType, class: '' };
+            // Reuse formatting filter: skip formatting-only segments
+            if (text.length > 0 && !isFormattingOnly(text, segMeta)) {
+              segments.push({
+                text: text,
+                context: context + (context ? ' > ' : '') + blockType,
+                blockType: blockType,
+                length: text.length
+              });
+            }
+          }
+
+          // Extract from table cells
+          if (blockType === 'table_row' && Array.isArray(data.cells)) {
+            data.cells.forEach((cell, cellIndex) => {
+              if (Array.isArray(cell)) {
+                const cellText = cell.map(rt => rt.plain_text || rt.text?.content || '').join('').trim();
+                if (cellText.length > 0) {
+                  segments.push({
+                    text: cellText,
+                    context: context + ' > table_row > cell_' + cellIndex,
+                    blockType: 'table_cell',
+                    length: cellText.length
+                  });
+                }
+              }
+            });
+          }
+
+          // Recurse into children
+          if (data.children && Array.isArray(data.children)) {
+            for (const child of data.children) {
+              extractFromBlock(child, context + (context ? ' > ' : '') + blockType);
+            }
+          }
+        }
+
+        blocks.forEach(block => extractFromBlock(block));
+        return segments;
+      }
+
+      // Normalize text for comparison
+      function normalizeText(text) {
+        // Remove diagnostic parenthetical annotations that may follow segments,
+        // e.g. "(342 chars, div > div > div > p)" before normalizing.
+        const stripped = (text || '').replace(/\(\s*\d+\s*chars\s*,\s*[^)]+\)/gi, '');
+        return stripped
+          .toLowerCase()
+          .normalize('NFKD')
+          .replace(/[\u0300-\u036f]/g, '') // Remove diacritics
+          .replace(/[^\w\s]/g, ' ') // Replace punctuation with space
+          .replace(/\s+/g, ' ') // Collapse whitespace
+          .trim();
+      }
+
+      // Get segments from both sources
+      const htmlSegments = extractHtmlTextSegments(filteredHtml);
+      const notionSegments = extractNotionTextSegments(blocks);
+
+      // Create normalized versions for comparison
+      const htmlNormalized = htmlSegments.map(s => ({ ...s, normalized: normalizeText(s.text) }));
+      const notionNormalized = notionSegments.map(s => ({ ...s, normalized: normalizeText(s.text) }));
+
+      // Find missing segments (in HTML but not in Notion)
+      const notionNormalizedSet = new Set(notionNormalized.map(s => s.normalized));
+      const missingSegmentsFull = htmlNormalized.filter(s => !notionNormalizedSet.has(s.normalized));
+
+      // Find extra segments (in Notion but not in HTML)
+      const htmlNormalizedSet = new Set(htmlNormalized.map(s => s.normalized));
+      const extraSegmentsFull = notionNormalized.filter(s => !htmlNormalizedSet.has(s.normalized));
+
+      // For reporting we will slice later; operate on full lists for matching/filtering to avoid missing group matches
+
+      // Advanced matching: Find groups of segments that collectively match
+      function findGroupMatches(missing, extra) {
+        const matches = [];
+
+        // Helper: Levenshtein distance
+        function levenshtein(a, b) {
+          if (a === b) return 0;
+          const al = a.length; const bl = b.length;
+          if (al === 0) return bl;
+          if (bl === 0) return al;
+          const v0 = new Array(bl + 1).fill(0);
+          const v1 = new Array(bl + 1).fill(0);
+          for (let j = 0; j <= bl; j++) v0[j] = j;
+          for (let i = 0; i < al; i++) {
+            v1[0] = i + 1;
+            const ai = a.charAt(i);
+            for (let j = 0; j < bl; j++) {
+              const cost = ai === b.charAt(j) ? 0 : 1;
+              v1[j + 1] = Math.min(v1[j] + 1, v0[j + 1] + 1, v0[j] + cost);
+            }
+            for (let j = 0; j <= bl; j++) v0[j] = v1[j];
+          }
+          return v1[bl];
+        }
+
+        function levenshteinRatio(a, b) {
+          const d = levenshtein(a, b);
+          const maxLen = Math.max(a.length, b.length) || 1;
+          return 1 - d / maxLen;
+        }
+
+        function tokenOverlap(a, b) {
+          const sa = new Set(a.split(' ').filter(Boolean));
+          const sb = new Set(b.split(' ').filter(Boolean));
+          const inter = [...sa].filter(x => sb.has(x)).length;
+          const union = new Set([...sa, ...sb]).size || 1;
+          return inter / union;
+        }
+
+        // Configuration for fuzzy matching (allow overrides via env vars)
+        const MAX_GROUP = parseInt(process.env.SN2N_GROUP_MAX || process.env.SN2N_MAX_GROUP || '6', 10) || 6; // conservative group size
+        const LEV_RATIO = parseFloat(process.env.SN2N_LEV_RATIO || '0.90') || 0.90; // levenshtein ratio threshold
+        const TOKEN_OVERLAP = parseFloat(process.env.SN2N_TOKEN_OVERLAP || '0.80') || 0.80; // token overlap threshold
+
+        // Exact matching first (consecutive groups)
+        for (let i = 0; i < extra.length; i++) {
+          const extraSeg = extra[i];
+          const extraText = extraSeg.normalized;
+          for (let start = 0; start < missing.length; start++) {
+            for (let count = 2; count <= Math.min(4, missing.length - start); count++) {
+              const group = missing.slice(start, start + count);
+              const combinedText = group.map(s => s.normalized).join(' ').replace(/\s+/g, ' ').trim();
+              if (combinedText === extraText) {
+                matches.push({ type: 'missing_to_extra', extraSegment: extraSeg, missingGroup: group, combinedLength: combinedText.length });
+                start += count - 1; // advance
+                break;
+              }
+            }
+          }
+        }
+
+        for (let i = 0; i < missing.length; i++) {
+          const missingSeg = missing[i];
+          const missingText = missingSeg.normalized;
+          for (let start = 0; start < extra.length; start++) {
+            for (let count = 2; count <= Math.min(4, extra.length - start); count++) {
+              const group = extra.slice(start, start + count);
+              const combinedText = group.map(s => s.normalized).join(' ').replace(/\s+/g, ' ').trim();
+              if (combinedText === missingText) {
+                matches.push({ type: 'extra_to_missing', missingSegment: missingSeg, extraGroup: group, combinedLength: combinedText.length });
+                start += count - 1;
+                break;
+              }
+            }
+          }
+        }
+
+        // Fuzzy matching pass: try larger groups up to MAX_GROUP and use similarity tests
+        // Build quick lookup to skip segments already matched exactly
+        const matchedExtra = new Set(matches.filter(m => m.extraSegment).map(m => m.extraSegment.normalized));
+        const matchedMissing = new Set(matches.flatMap(m => (m.missingGroup || []).map(s => s.normalized)).concat(matches.filter(m => m.missingSegment).map(m => m.missingSegment.normalized)));
+
+        // missing -> extra fuzzy
+        for (let i = 0; i < extra.length; i++) {
+          const extraSeg = extra[i];
+          const extraText = extraSeg.normalized;
+          if (matchedExtra.has(extraText)) continue;
+          for (let start = 0; start < missing.length; start++) {
+            for (let count = 2; count <= Math.min(MAX_GROUP, missing.length - start); count++) {
+              const group = missing.slice(start, start + count);
+              const combinedText = group.map(s => s.normalized).join(' ').replace(/\s+/g, ' ').trim();
+              // length proximity quick-filter
+              const lenRatio = combinedText.length / (extraText.length || 1);
+              if (lenRatio < 0.75 || lenRatio > 1.25) continue;
+              // similarity checks
+              const lev = levenshteinRatio(combinedText, extraText);
+              const tok = tokenOverlap(combinedText, extraText);
+              if (lev >= LEV_RATIO || tok >= TOKEN_OVERLAP) {
+                matches.push({ type: 'fuzzy_missing_to_extra', extraSegment: extraSeg, missingGroup: group, combinedLength: combinedText.length, confidence: Math.max(lev, tok) });
+                matchedExtra.add(extraText);
+                group.forEach(s => matchedMissing.add(s.normalized));
+                start += count - 1;
+                break;
+              }
+            }
+          }
+        }
+
+        // extra -> missing fuzzy
+        for (let i = 0; i < missing.length; i++) {
+          const missingSeg = missing[i];
+          const missingText = missingSeg.normalized;
+          if (matchedMissing.has(missingText)) continue;
+          for (let start = 0; start < extra.length; start++) {
+            for (let count = 2; count <= Math.min(MAX_GROUP, extra.length - start); count++) {
+              const group = extra.slice(start, start + count);
+              const combinedText = group.map(s => s.normalized).join(' ').replace(/\s+/g, ' ').trim();
+              const lenRatio = combinedText.length / (missingText.length || 1);
+              if (lenRatio < 0.75 || lenRatio > 1.25) continue;
+              const lev = levenshteinRatio(combinedText, missingText);
+              const tok = tokenOverlap(combinedText, missingText);
+              if (lev >= LEV_RATIO || tok >= TOKEN_OVERLAP) {
+                matches.push({ type: 'fuzzy_extra_to_missing', missingSegment: missingSeg, extraGroup: group, combinedLength: combinedText.length, confidence: Math.max(lev, tok) });
+                matchedMissing.add(missingText);
+                group.forEach(s => matchedExtra.add(s.normalized));
+                start += count - 1;
+                break;
+              }
+            }
+          }
+        }
+
+        // Additional single-segment fuzzy pass: match remaining single missing <-> single extra
+        try {
+          const remainingMissing = missing.filter(s => s && !matchedMissing.has(s.normalized));
+          const remainingExtra = extra.filter(s => s && !matchedExtra.has(s.normalized));
+          for (const mSeg of remainingMissing) {
+            for (const eSeg of remainingExtra) {
+              if (!mSeg || !eSeg) continue;
+              const missingText = mSeg.normalized;
+              const extraText = eSeg.normalized;
+              // quick length filter
+              const lenRatio = missingText.length / (extraText.length || 1);
+              if (lenRatio < 0.6 || lenRatio > 1.4) continue;
+              const lev = levenshteinRatio(missingText, extraText);
+              const tok = tokenOverlap(missingText, extraText);
+              if (lev >= LEV_RATIO || tok >= TOKEN_OVERLAP) {
+                matches.push({ type: 'fuzzy_single_missing_to_extra', missingSegment: mSeg, extraSegment: eSeg, confidence: Math.max(lev, tok) });
+                matchedMissing.add(missingText);
+                matchedExtra.add(extraText);
+                // remove from remainingExtra to avoid duplicate matches
+                // (we can't mutate the array we're iterating easily; use sets above)
+                break;
+              }
+            }
+          }
+        } catch (err) {
+          // non-fatal: single-segment fuzzy pass should not break matching
+          console.warn('[SN2N] single-segment fuzzy pass error', err && err.stack || err);
+        }
+
+        return matches;
+      }
+
+      // Run group matching on the full lists so we don't miss matches due to prior slicing
+      const groupMatches = findGroupMatches(missingSegmentsFull, extraSegmentsFull);
+
+      // Remove any missing/extra segments that were matched by groupMatches (operate on full lists)
+      try {
+        const removeMissing = new Set();
+        const removeExtra = new Set();
+        for (const m of groupMatches) {
+          if (!m || !m.type) continue;
+          if (m.type === 'missing_to_extra') {
+            if (Array.isArray(m.missingGroup)) {
+              m.missingGroup.forEach(s => { if (s && s.normalized) removeMissing.add(s.normalized); });
+            }
+            if (m.extraSegment && m.extraSegment.normalized) removeExtra.add(m.extraSegment.normalized);
+          } else if (m.type === 'extra_to_missing') {
+            if (Array.isArray(m.extraGroup)) {
+              m.extraGroup.forEach(s => { if (s && s.normalized) removeExtra.add(s.normalized); });
+            }
+            if (m.missingSegment && m.missingSegment.normalized) removeMissing.add(m.missingSegment.normalized);
+          }
+        }
+
+        const filteredMissingFull = missingSegmentsFull.filter(s => !(s && removeMissing.has(s.normalized)));
+        const filteredExtraFull = extraSegmentsFull.filter(s => !(s && removeExtra.has(s.normalized)));
+
+        // For reporting, limit to first 10 entries
+        const filteredMissing = filteredMissingFull.slice(0, 10);
+        const filteredExtra = filteredExtraFull.slice(0, 10);
+
+        return {
+          htmlSegmentCount: htmlSegments.length,
+          notionSegmentCount: notionSegments.length,
+          missingSegments: filteredMissing,
+          extraSegments: filteredExtra,
+          groupMatches,
+          totalMissingChars: filteredMissingFull.reduce((sum, s) => sum + (s.length || 0), 0),
+          totalExtraChars: filteredExtraFull.reduce((sum, s) => sum + (s.length || 0), 0)
+        };
+      } catch (err) {
+        // If anything goes wrong, fall back to original sliced lists
+        const fallbackMissing = missingSegmentsFull.slice(0, 10);
+        const fallbackExtra = extraSegmentsFull.slice(0, 10);
+        return {
+          htmlSegmentCount: htmlSegments.length,
+          notionSegmentCount: notionSegments.length,
+          missingSegments: fallbackMissing,
+          extraSegments: fallbackExtra,
+          groupMatches,
+          totalMissingChars: fallbackMissing.reduce((sum, s) => sum + (s.length || 0), 0),
+          totalExtraChars: fallbackExtra.reduce((sum, s) => sum + (s.length || 0), 0)
+        };
+      }
+    }
+
+    // Add detailed comparison to audit results
+    const detailedComparison = getDetailedTextComparison(html, blocks);
+    sourceAudit.result.detailedComparison = detailedComparison;
+
+    // Conditional inclusion of fuzzy group matches into coverage calculation
+    // If fuzzy matches have confidence >= SN2N_FUZZY_CONF_THRESHOLD, treat the matched missing chars as covered.
+    try {
+      const fuzzyThreshold = parseFloat(process.env.SN2N_FUZZY_CONF_THRESHOLD || '0.95') || 0.95;
+      let fuzzyMatchedChars = 0;
+      if (Array.isArray(detailedComparison.groupMatches)) {
+        for (const m of detailedComparison.groupMatches) {
+          if (!m) continue;
+          // Only consider fuzzy match types that include a confidence value
+          if (typeof m.confidence === 'number' && m.confidence >= fuzzyThreshold) {
+            if (m.type === 'fuzzy_missing_to_extra' || m.type === 'missing_to_extra' || m.type === 'fuzzy_single_missing_to_extra') {
+              if (Array.isArray(m.missingGroup) && m.missingGroup.length > 0) {
+                fuzzyMatchedChars += m.missingGroup.reduce((s, seg) => s + (seg.length || 0), 0);
+              } else if (m.missingSegment && m.missingSegment.length) {
+                fuzzyMatchedChars += m.missingSegment.length;
+              }
+            }
+            // For fuzzy_extra_to_missing we could also count, but that indicates extra grouped to missing; skip for now
+          }
+        }
+      }
+
+      // Compute adjusted coverage using fuzzyMatchedChars as additional covered characters
+      const currentNotionTextLength = sourceAudit.result && sourceAudit.result.notionTextLength ? sourceAudit.result.notionTextLength : 0;
+      const adjustedNotionTextLength = currentNotionTextLength + fuzzyMatchedChars;
+      const adjustedCoverage = sourceAudit.totalLength > 0 ? parseFloat((adjustedNotionTextLength / sourceAudit.totalLength * 100).toFixed(1)) : 100;
+
+      // Attach fuzzy-adjusted metrics to audit result for visibility
+      sourceAudit.result.fuzzyConfidenceThreshold = fuzzyThreshold;
+      sourceAudit.result.fuzzyMatchedChars = fuzzyMatchedChars;
+      sourceAudit.result.adjustedCoverage = adjustedCoverage;
+      sourceAudit.result.adjustedCoverageStr = `${adjustedCoverage}%`;
+      sourceAudit.result.adjustedPassed = (() => {
+        const min = parseFloat((sourceAudit.result.threshold || '95-105').split('-')[0]) || 95;
+        const max = parseFloat((sourceAudit.result.threshold || '95-105').split('-')[1]) || 105;
+        return adjustedCoverage >= min && adjustedCoverage <= max;
+      })();
+    } catch (err) {
+      console.warn('[SN2N] fuzzy-adjusted coverage calculation failed', err && err.stack || err);
+    }
+
+    // Log detailed findings if there are issues
+    if (detailedComparison.missingSegments.length > 0 || detailedComparison.extraSegments.length > 0) {
+      console.log(`🔍 [AUDIT] Detailed Text Comparison:`);
+      console.log(`   HTML segments: ${detailedComparison.htmlSegmentCount}, Notion segments: ${detailedComparison.notionSegmentCount}`);
+
+      if (detailedComparison.missingSegments.length > 0) {
+        console.log(`   ⚠️ Missing segments (${detailedComparison.missingSegments.length}):`);
+        detailedComparison.missingSegments.forEach((seg, idx) => {
+          console.log(`      ${idx + 1}. "${seg.text.substring(0, 60)}${seg.text.length > 60 ? '...' : ''}" (${seg.length} chars, ${seg.context})`);
+        });
+      }
+
+      if (detailedComparison.extraSegments.length > 0) {
+        console.log(`   ⚠️ Extra segments (${detailedComparison.extraSegments.length}):`);
+        detailedComparison.extraSegments.forEach((seg, idx) => {
+          console.log(`      ${idx + 1}. "${seg.text.substring(0, 60)}${seg.text.length > 60 ? '...' : ''}" (${seg.length} chars, ${seg.context})`);
+        });
+      }
+
+      // Log any group matches discovered (multiple segments that collectively match a single segment)
+      if (Array.isArray(detailedComparison.groupMatches) && detailedComparison.groupMatches.length > 0) {
+        console.log(`   🔗 Group matches (${detailedComparison.groupMatches.length}):`);
+        detailedComparison.groupMatches.forEach((m, idx) => {
+          if (m.type === 'missing_to_extra') {
+            const missingTexts = m.missingGroup.map(s => s.text.replace(/\s+/g, ' ').trim()).join(' | ');
+            console.log(`      ${idx + 1}. HTML segments -> Notion extra: combined(${m.combinedLength}) "${missingTexts.substring(0,120)}${missingTexts.length>120?'...':''}"  => "${m.extraSegment.text.substring(0,120)}${m.extraSegment.text.length>120?'...':''}"`);
+          } else if (m.type === 'extra_to_missing') {
+            const extraTexts = m.extraGroup.map(s => s.text.replace(/\s+/g, ' ').trim()).join(' | ');
+            console.log(`      ${idx + 1}. Notion segments -> HTML missing: combined(${m.combinedLength}) "${extraTexts.substring(0,120)}${extraTexts.length>120?'...':''}"  => "${m.missingSegment.text.substring(0,120)}${m.missingSegment.text.length>120?'...':''}"`);
+          } else {
+            console.log(`      ${idx + 1}. Unknown match type: ${JSON.stringify(m)}`);
+          }
+        });
+      }
+    }
   }
 
   // Validation-only: emit combined paragraph placeholders for marker-preserved groups

@@ -111,8 +111,8 @@ payload = {
 Path('/tmp/sn2n-validate.json').write_text(json.dumps(payload), encoding='utf-8')
 PY
   
-  # Execute dry-run POST request
-  resp=$(curl -s -w "\n%{http_code}" -X POST "$API_URL" \
+  # Execute dry-run PATCH request to existing page
+  resp=$(curl -s -w "\n%{http_code}" -X PATCH "$API_URL/$page_id" \
     -H "Content-Type: application/json" \
     -d @/tmp/sn2n-validate.json 2>&1 || echo -e "\n000")
   
