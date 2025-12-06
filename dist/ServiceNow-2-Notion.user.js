@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.153
+// @version      11.0.154
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.153";
+    window.BUILD_VERSION = "11.0.154";
 (function () {
 
   // Configuration constants and default settings
@@ -2288,6 +2288,16 @@
     }
   }
 
+  var databaseApi = /*#__PURE__*/Object.freeze({
+    __proto__: null,
+    applyPropertyMappings: applyPropertyMappings,
+    clearDatabaseCache: clearDatabaseCache,
+    getAllDatabases: getAllDatabases,
+    getDatabase: getDatabase,
+    getPropertyMappings: getPropertyMappings,
+    refreshDatabase: refreshDatabase
+  });
+
   // Property Mapping Modal - Dynamic property mapping system
 
 
@@ -2856,16 +2866,28 @@
       
       debug(`[AUTOEXTRACT-UPDATE] ✅ Content HTML extracted: ${contentHtml.length} characters`);
       
+      // Get database and mappings (same as POST/manual PATCH)
+      const { getConfig, getDatabase, getPropertyMappings, applyPropertyMappings } = await Promise.resolve().then(function () { return databaseApi; });
+      const config = await getConfig();
+      const database = await getDatabase(config.databaseId);
+      const mappings = await getPropertyMappings(config.databaseId);
+      
+      // Apply property mappings (includes CurrentReleaseURL)
+      const properties = applyPropertyMappings(extractedData, database, mappings);
+      debug(`[AUTOEXTRACT-UPDATE] ✅ Applied ${Object.keys(properties).length} property mappings`);
+      
       const patchData = {
         title: extractedData.title,
         contentHtml: contentHtml,
-        url: extractedData.url
+        url: extractedData.url,
+        properties: properties, // Include property mappings for AutoExtract PATCH
       };
 
       debug(`[AUTOEXTRACT-UPDATE] 📦 PATCH payload prepared:`);
       debug(`[AUTOEXTRACT-UPDATE]    title: "${patchData.title}"`);
       debug(`[AUTOEXTRACT-UPDATE]    contentHtml: ${contentHtml.length} chars`);
       debug(`[AUTOEXTRACT-UPDATE]    url: "${patchData.url}"`);
+      debug(`[AUTOEXTRACT-UPDATE]    properties: ${Object.keys(properties).join(', ')}`);
       debug(`[AUTOEXTRACT-UPDATE]    pageId: ${pageId}`);
 
       // Call PATCH endpoint and wait for completion
