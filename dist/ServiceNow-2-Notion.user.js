@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.151
+// @version      11.0.152
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.151";
+    window.BUILD_VERSION = "11.0.152";
 (function () {
 
   // Configuration constants and default settings
@@ -2138,6 +2138,11 @@
       'CurrentReleaseURL': extractedData.CurrentReleaseURL || window.location.href,
     };
 
+    // Debug: Log what CurrentReleaseURL value we have
+    debug(`🔍 [CurrentReleaseURL DEBUG] extractedData.CurrentReleaseURL = ${extractedData.CurrentReleaseURL}`);
+    debug(`🔍 [CurrentReleaseURL DEBUG] Database has "CurrentReleaseURL" property: ${!!dbProperties['CurrentReleaseURL']}`);
+    debug(`🔍 [CurrentReleaseURL DEBUG] Available database properties: ${Object.keys(dbProperties).join(', ')}`);
+
     Object.entries(autoMappings).forEach(([notionProperty, value]) => {
       if (dbProperties[notionProperty] && value) {
         const propConfig = dbProperties[notionProperty];
@@ -2145,6 +2150,13 @@
         if (mappedValue !== null) {
           properties[notionProperty] = mappedValue;
           debug(`✅ Auto-mapped: "${notionProperty}" = "${value}"`);
+        }
+      } else {
+        // Debug: Log why auto-mapping failed
+        if (!dbProperties[notionProperty]) {
+          debug(`⚠️ [AUTO-MAP] Property "${notionProperty}" not found in database`);
+        } else if (!value) {
+          debug(`⚠️ [AUTO-MAP] Property "${notionProperty}" has no value`);
         }
       }
     });
