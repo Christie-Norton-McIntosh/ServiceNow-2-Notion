@@ -221,19 +221,19 @@ for html_file in "$SRC_DIR"/*.html; do
   
   if [[ -n "$page_id" && "$page_id" != "null" ]]; then
     # Existing page: use PATCH with dryRun
-    dry_response=$(curl -s -m 60 -w "\n%{http_code}" -X PATCH "$API_URL/$page_id" \
+    dry_temp=$(mktemp)
+    dry_http_code=$(curl -s -m 60 -w "%{http_code}" -X PATCH "$API_URL/$page_id" \
       -H "Content-Type: application/json" \
       -d "{\"title\":\"$title\",\"contentHtml\":$(echo "$content" | jq -Rs .),\"url\":\"$page_url\",\"dryRun\":true}" \
-      2>&1)
+      -o "$dry_temp" 2>/dev/null)
+    dry_body=$(cat "$dry_temp")
+    rm -f "$dry_temp"
   else
     # New page: use POST without dryRun (dryRun not supported for POST)
     echo "  ℹ️  New page (no Page ID) — skipping validation, proceeding to creation" | tee -a "$LOG_FILE"
     dry_http_code="200"
     dry_body="{}"
   fi
-
-  dry_http_code=$(echo "$dry_response" | tail -n1)
-  dry_body=$(echo "$dry_response" | sed '$d')
 
   if [[ "$dry_http_code" != "200" ]]; then
     echo "  ❌ Validation HTTP error: $dry_http_code" | tee -a "$LOG_FILE"
@@ -248,20 +248,22 @@ for html_file in "$SRC_DIR"/*.html; do
       sleep 2
       if [[ -n "$page_id" && "$page_id" != "null" ]]; then
         # Existing page: use PATCH with dryRun
-        retry_response=$(curl -s -m 60 -w "\n%{http_code}" -X PATCH "$API_URL/$page_id" \
+        retry_temp=$(mktemp)
+        retry_http_code=$(curl -s -m 60 -w "%{http_code}" -X PATCH "$API_URL/$page_id" \
           -H "Content-Type: application/json" \
-          -d "{\"title\":\"$title\",\"contentHtml\":$(echo "$content" | jq -Rs .),\"url\":\"$page_url\",\"dryRun\":true}" 2>&1)
+          -d "{\"title\":\"$title\",\"contentHtml\":$(echo "$content" | jq -Rs .),\"url\":\"$page_url\",\"dryRun\":true}" \
+          -o "$retry_temp" 2>/dev/null)
+        retry_body=$(cat "$retry_temp")
+        rm -f "$retry_temp"
       else
         # New page: cannot retry validation
         retry_http_code="400"
         retry_body="{}"
       fi
-      retry_http_code=$(echo "$retry_response" | tail -n1)
-      retry_body=$(echo "$retry_response" | sed '$d')
       echo "    ↳ Retry HTTP: $retry_http_code" | tee -a "$LOG_FILE"
       if [[ "$retry_http_code" == "200" ]]; then
-        retry_has_errors=$(echo "$retry_body" | jq -r '.validationResult.hasErrors // false' 2>/dev/null || echo 'false')
-        if [[ "$retry_has_errors" == "false" ]]; then
+        retry_audit_passed=$(echo "$retry_body" | jq -r '.data.audit.passed // false' 2>/dev/null || echo 'false')
+        if [[ "$retry_audit_passed" == "true" ]]; then
           echo "    ✅ Retry validation passed; continuing to PATCH" | tee -a "$LOG_FILE"
           dry_http_code=200
           dry_body="$retry_body"
@@ -276,7 +278,7 @@ for html_file in "$SRC_DIR"/*.html; do
   fi
 
   # Dry-run just checks if blocks can be extracted (doesn't perform validation)
-  blocks_extracted=$(echo "$dry_body" | jq -r '.blocksExtracted // 0' 2>/dev/null || echo '0')
+  blocks_extracted=$(echo "$dry_body" | jq -r '.data.blocksExtracted // .blocksExtracted // 0' 2>/dev/null || echo '0')
   
   if [[ "$blocks_extracted" == "0" ]]; then
     echo "  ❌ Dry-run extraction failed (0 blocks extracted)" | tee -a "$LOG_FILE"
@@ -517,8 +519,8 @@ for html_file in "$SRC_DIR"/*.html; do
               rm -f "$retry_temp"
               echo "        ↳ Retry HTTP: $retry_http_code" | tee -a "$LOG_FILE"
               if [[ "$retry_http_code" == "200" ]]; then
-                retry_has_errors=$(echo "$retry_body" | jq -r '.validationResult.hasErrors // false' 2>/dev/null || echo 'false')
-                if [[ "$retry_has_errors" == "false" ]]; then
+                retry_audit_passed=$(echo "$retry_body" | jq -r '.data.audit.passed // false' 2>/dev/null || echo 'false')
+                if [[ "$retry_audit_passed" == "true" ]]; then
                   echo "        ✅ Retry succeeded (attempt $generic_attempt)." | tee -a "$LOG_FILE"
                   mv "$html_file" "$DST_DIR/"
                   echo "        📦 Moved to updated-pages/ (success after retry)" | tee -a "$LOG_FILE"

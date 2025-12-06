@@ -1980,6 +1980,12 @@ router.post('/W2N', async (req, res) => {
               if (auditResult.extra > 0) {
                 validationLines.push(`⚠️ Extra: ${auditResult.extra.toLocaleString()} chars (+${auditResult.extraPercent}%)`);
               }
+
+              // Add segment counts to Audit property
+              if (auditResult.detailedComparison) {
+                const dc = auditResult.detailedComparison;
+                validationLines.push(`HTML segments: ${dc.htmlSegmentCount}, Notion segments: ${dc.notionSegmentCount}`);
+              }
             } else {
               validationLines.push(`[${timestamp}] Content Audit: ⚠️ SKIPPED`);
               validationLines.push('AUDIT system not enabled - no coverage data available');
@@ -1992,9 +1998,101 @@ router.post('/W2N', async (req, res) => {
             log(`   Content preview: ${auditContent.substring(0, 200)}...`);
             log(`   Has AUDIT result: ${!!auditResult}`);
 
+            // Truncate to fit Notion's 2000 character limit for rich text properties
+            let truncatedAuditContent = auditContent;
+            if (auditContent.length > 2000) {
+              truncatedAuditContent = auditContent.substring(0, 1997) + '...';
+              log(`⚠️ [PROPERTY-TRUNCATE] Audit property truncated to 2000 chars (was ${auditContent.length})`);
+            }
+
             propertyUpdates["Audit"] = {
-              rich_text: [ { type: 'text', text: { content: auditContent } } ]
+              rich_text: [ { type: 'text', text: { content: truncatedAuditContent } } ]
             };
+
+            // Create separate properties for detailed text comparison
+            // Helper: produce a compact context tag for a segment, e.g. ' [p]' or ' [tc]'
+            function compactContextTag(seg) {
+              if (!seg) return '';
+              try {
+                if (seg.blockType) {
+                  const m = {
+                    paragraph: 'p',
+                    callout: 'co',
+                    heading_1: 'h1',
+                    heading_2: 'h2',
+                    heading_3: 'h3',
+                    table_cell: 'tc',
+                    table_row: 'tr',
+                    bulleted_list_item: 'li',
+                    numbered_list_item: 'li',
+                    image: 'img'
+                  };
+                  const key = m[seg.blockType] || (seg.blockType || '').substring(0,3);
+                  return ` [${key}]`;
+                }
+                if (seg.element) {
+                  const el = (seg.element || '').toLowerCase();
+                  const m2 = { p: 'p', li: 'li', td: 'tc', th: 'tc', span: 'sp', div: 'div' };
+                  const key = m2[el] || el.substring(0,3);
+                  return ` [${key}]`;
+                }
+                if (seg.context) {
+                  const parts = (seg.context || '').split('>').map(s => s.trim()).filter(Boolean);
+                  if (parts.length) {
+                    const last = parts[parts.length - 1];
+                    const short = last.replace(/[^a-z0-9]/gi, '').substring(0,3) || last.substring(0,3);
+                    return ` [${short}]`;
+                  }
+                }
+              } catch (e) {
+                // ignore
+              }
+              return '';
+            }
+
+            if (auditResult && auditResult.detailedComparison) {
+              const dc = auditResult.detailedComparison;
+
+              // MissingText property - list all missing segments
+              if (dc.missingSegments.length > 0) {
+                const missingLines = [`⚠️ Missing segments (${dc.missingSegments.length}):`];
+                dc.missingSegments.forEach((seg, idx) => {
+                  // Include the segment text with a compact context tag (e.g. [p], [tc])
+                    missingLines.push(`   ${idx + 1}. "${seg.text}"${compactContextTag(seg)}`);
+                });
+                let missingContent = missingLines.join('\n');
+
+                // Truncate to fit Notion's 2000 character limit for rich text properties
+                if (missingContent.length > 2000) {
+                  missingContent = missingContent.substring(0, 1997) + '...';
+                  log(`⚠️ [PROPERTY-TRUNCATE] MissingText truncated to 2000 chars (was ${missingLines.join('\n').length})`);
+                }
+
+                propertyUpdates["MissingText"] = {
+                  rich_text: [ { type: 'text', text: { content: missingContent } } ]
+                };
+              }
+
+              // ExtraText property - list all extra segments
+              if (dc.extraSegments.length > 0) {
+                const extraLines = [`⚠️ Extra segments (${dc.extraSegments.length}):`];
+                dc.extraSegments.forEach((seg, idx) => {
+                  // Include the segment text with a compact context tag (e.g. [p], [tc])
+                    extraLines.push(`   ${idx + 1}. "${seg.text}"${compactContextTag(seg)}`);
+                });
+                let extraContent = extraLines.join('\n');
+
+                // Truncate to fit Notion's 2000 character limit for rich text properties
+                if (extraContent.length > 2000) {
+                  extraContent = extraContent.substring(0, 1997) + '...';
+                  log(`⚠️ [PROPERTY-TRUNCATE] ExtraText truncated to 2000 chars (was ${extraLines.join('\n').length})`);
+                }
+
+                propertyUpdates["ExtraText"] = {
+                  rich_text: [ { type: 'text', text: { content: extraContent } } ]
+                };
+              }
+            }
 
             // Stats breakdown formatting (first line reflects table/image/callout count match, not validation status)
             const stats = validationResult.stats || {};
@@ -2131,8 +2229,15 @@ router.post('/W2N', async (req, res) => {
             ];
             const statsContent = statsLines.join('\n');
 
+            // Truncate to fit Notion's 2000 character limit for rich text properties
+            let truncatedStatsContent = statsContent;
+            if (statsContent.length > 2000) {
+              truncatedStatsContent = statsContent.substring(0, 1997) + '...';
+              log(`⚠️ [PROPERTY-TRUNCATE] ContentComparison property truncated to 2000 chars (was ${statsContent.length})`);
+            }
+
             propertyUpdates["ContentComparison"] = {
-              rich_text: [ { type: 'text', text: { content: statsContent } } ]
+              rich_text: [ { type: 'text', text: { content: truncatedStatsContent } } ]
             };
             log(`📊 Setting ContentComparison property with refined comparison breakdown`);
             
@@ -2140,6 +2245,48 @@ router.post('/W2N', async (req, res) => {
             if (sourceCounts.images > 0) {
               propertyUpdates["Image"] = { checkbox: true };
               log(`🖼️ Setting Image checkbox (${sourceCounts.images} image${sourceCounts.images === 1 ? '' : 's'} detected)`);
+            }
+            
+            // FIX v11.0.115: Check which property names exist in database (backward compatibility for Validation→Audit, Stats→ContentComparison rename)
+            let auditPropertyName = "Audit";
+            let statsPropertyName = "ContentComparison";
+            
+            try {
+              const dbInfo = await notion.databases.retrieve({ database_id: payload.databaseId });
+              const dbProps = Object.keys(dbInfo.properties);
+              
+              // Check if old property names exist in database and new ones don't
+              const hasOldAudit = dbProps.includes("Validation");
+              const hasNewAudit = dbProps.includes("Audit");
+              const hasOldStats = dbProps.includes("Stats");
+              const hasNewStats = dbProps.includes("ContentComparison");
+              
+              if (hasOldAudit && !hasNewAudit) {
+                auditPropertyName = "Validation";
+                log(`🔄 [POST] Using legacy property name: "Validation" (new name "Audit" not found in database)`);
+              }
+              
+              if (hasOldStats && !hasNewStats) {
+                statsPropertyName = "Stats";
+                log(`🔄 [POST] Using legacy property name: "Stats" (new name "ContentComparison" not found in database)`);
+              }
+              
+              // Rename property keys if using legacy names
+              if (auditPropertyName === "Validation" && propertyUpdates["Audit"]) {
+                propertyUpdates["Validation"] = propertyUpdates["Audit"];
+                delete propertyUpdates["Audit"];
+              }
+              
+              if (statsPropertyName === "Stats" && propertyUpdates["ContentComparison"]) {
+                propertyUpdates["Stats"] = propertyUpdates["ContentComparison"];
+                delete propertyUpdates["ContentComparison"];
+              }
+              
+              log(`📝 [POST] Property names resolved: Audit="${auditPropertyName}", Stats="${statsPropertyName}"`);
+              
+            } catch (propCheckError) {
+              log(`⚠️ [POST] Could not check database properties (using new names): ${propCheckError.message}`);
+              // Continue with new property names
             }
             
             // Update the page properties
@@ -2151,7 +2298,7 @@ router.post('/W2N', async (req, res) => {
             
             propertyUpdateSuccess = true;
             log(`✅ [POST-PROPERTY-UPDATE] Validation properties updated successfully${propRetry > 0 ? ` (after ${propRetry} ${propRetry === 1 ? 'retry' : 'retries'})` : ''}`);
-            log(`   Properties set: Audit (${auditContent.length} chars), ContentComparison, Error, Image (if applicable)`);
+            log(`   Properties set: ${auditPropertyName} (${auditContent.length} chars), ${statsPropertyName}, Error, Image (if applicable)`);
             
             // Auto-save pages with order issues for investigation
             if (Array.isArray(validationResult.orderIssues) && validationResult.orderIssues.length > 0) {
@@ -2637,6 +2784,12 @@ ${payload.contentHtml || ''}
           
           if (auditResult.extra > 0) {
             contentSummary += `\n⚠️ Extra: ${auditResult.extra} chars (+${auditResult.extraPercent}%)`;
+          }
+
+          // Add segment counts to content summary (detailed comparison now goes to separate properties)
+          if (auditResult.detailedComparison) {
+            const dc = auditResult.detailedComparison;
+            contentSummary += `\nHTML segments: ${dc.htmlSegmentCount}, Notion segments: ${dc.notionSegmentCount}`;
           }
         } else {
           contentSummary = `\n\n[${timestamp}] Content Audit: ⚠️ SKIPPED (AUDIT not enabled)`;
@@ -4061,8 +4214,15 @@ ${html || ''}
       console.log(`   FULL CONTENT:\n${auditContent}`);
       console.log('🚨🚨🚨🚨🚨 END AUDIT PROPERTY 🚨🚨🚨🚨🚨\n');
 
+      // Truncate to fit Notion's 2000 character limit for rich text properties
+      let truncatedAuditContent = auditContent;
+      if (auditContent.length > 2000) {
+        truncatedAuditContent = auditContent.substring(0, 1997) + '...';
+        console.log(`⚠️ [PATCH-PROPERTY-TRUNCATE] Audit property truncated to 2000 chars (was ${auditContent.length})`);
+      }
+
       propertyUpdates["Audit"] = {
-        rich_text: [ { type: 'text', text: { content: auditContent } } ]
+        rich_text: [ { type: 'text', text: { content: truncatedAuditContent } } ]
       };
 
   // (Removed deprecated Status property logic; counts handled in Stats header)
@@ -4188,17 +4348,67 @@ ${html || ''}
         `• Callouts: ${sourceCounts.callouts} → ${notionCounts.callouts}`,
       ];
       const statsContent = statsLines.join('\n');
+      
+      // Truncate to fit Notion's 2000 character limit for rich text properties
+      let truncatedStatsContent = statsContent;
+      if (statsContent.length > 2000) {
+        truncatedStatsContent = statsContent.substring(0, 1997) + '...';
+        log(`⚠️ [PATCH-PROPERTY-TRUNCATE] ContentComparison property truncated to 2000 chars (was ${statsContent.length})`);
+      }
+      
       propertyUpdates["ContentComparison"] = {
-        rich_text: [ { type: 'text', text: { content: statsContent } } ]
+        rich_text: [ { type: 'text', text: { content: truncatedStatsContent } } ]
       };
       log(`📊 Setting ContentComparison property with refined comparison breakdown (PATCH)`);
-      log(`   Stats content length: ${statsContent.length} chars`);
-      log(`   Stats content preview: ${statsContent.substring(0, 100)}...`);
+      log(`   Stats content length: ${truncatedStatsContent.length} chars`);
+      log(`   Stats content preview: ${truncatedStatsContent.substring(0, 100)}...`);
       
       // Set Image checkbox if page contains images
       if (sourceCounts.images > 0) {
         propertyUpdates["Image"] = { checkbox: true };
         log(`🖼️ Setting Image checkbox (${sourceCounts.images} image${sourceCounts.images === 1 ? '' : 's'} detected in PATCH)`);
+      }
+      
+      // FIX v11.0.115: Check which property names exist (backward compatibility for Validation→Audit, Stats→ContentComparison rename)
+      let auditPropertyName = "Audit";
+      let statsPropertyName = "ContentComparison";
+      
+      try {
+        const pageInfo = await notion.pages.retrieve({ page_id: pageId });
+        const existingProps = Object.keys(pageInfo.properties);
+        
+        // Check if old property names exist and new ones don't
+        const hasOldAudit = existingProps.includes("Validation");
+        const hasNewAudit = existingProps.includes("Audit");
+        const hasOldStats = existingProps.includes("Stats");
+        const hasNewStats = existingProps.includes("ContentComparison");
+        
+        if (hasOldAudit && !hasNewAudit) {
+          auditPropertyName = "Validation";
+          log(`🔄 Using legacy property name: "Validation" (new name "Audit" not found)`);
+        }
+        
+        if (hasOldStats && !hasNewStats) {
+          statsPropertyName = "Stats";
+          log(`🔄 Using legacy property name: "Stats" (new name "ContentComparison" not found)`);
+        }
+        
+        // Rename property keys if using legacy names
+        if (auditPropertyName === "Validation" && propertyUpdates["Audit"]) {
+          propertyUpdates["Validation"] = propertyUpdates["Audit"];
+          delete propertyUpdates["Audit"];
+        }
+        
+        if (statsPropertyName === "Stats" && propertyUpdates["ContentComparison"]) {
+          propertyUpdates["Stats"] = propertyUpdates["ContentComparison"];
+          delete propertyUpdates["ContentComparison"];
+        }
+        
+        log(`📝 Property names resolved: Audit="${auditPropertyName}", Stats="${statsPropertyName}"`);
+        
+      } catch (propCheckError) {
+        log(`⚠️ Could not check existing properties (using new names): ${propCheckError.message}`);
+        // Continue with new property names
       }
       
       // Update the page properties
@@ -4210,7 +4420,7 @@ ${html || ''}
         properties: propertyUpdates
       });
       
-      log(`✅ Validation properties updated with PATCH indicator`);
+      log(`✅ Validation properties updated with PATCH indicator (used "${auditPropertyName}" and "${statsPropertyName}")`);
       
       // Auto-save pages with order issues for investigation (PATCH)
       if (Array.isArray(validationResult.orderIssues) && validationResult.orderIssues.length > 0) {
@@ -4273,12 +4483,16 @@ ${html || ''}
     }
     
     // FIX v11.0.31: FINAL CATCH-ALL for PATCH - Verify Audit property was actually set
+    // FIX v11.0.115: Check both "Audit" and "Validation" property names (backward compatibility)
     try {
       log(`🔍 [FINAL-CHECK-PATCH] Verifying Audit property was set...`);
       await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for Notion consistency
       
       const finalPageCheck = await notion.pages.retrieve({ page_id: pageId });
-      const finalAuditProp = finalPageCheck.properties.Audit;
+      
+      // Check both new and old property names
+      const finalAuditProp = finalPageCheck.properties.Audit || finalPageCheck.properties.Validation;
+      const propertyNameUsed = finalPageCheck.properties.Audit ? "Audit" : (finalPageCheck.properties.Validation ? "Validation" : "unknown");
       
       const isFinallyBlank = !finalAuditProp || 
                              !finalAuditProp.rich_text || 
@@ -4289,7 +4503,7 @@ ${html || ''}
                                finalAuditProp.rich_text[0].text.content.trim() === ''));
       
       if (isFinallyBlank) {
-        log(`❌ [FINAL-CHECK-PATCH] CRITICAL: Audit property is BLANK after PATCH!`);
+        log(`❌ [FINAL-CHECK-PATCH] CRITICAL: ${propertyNameUsed} property is BLANK after PATCH!`);
         log(`   Auto-saving page for re-extraction...`);
         
         try {
@@ -4337,7 +4551,7 @@ ${html || ''}
           log(`❌ [FINAL-CHECK-PATCH] Failed to auto-save: ${saveError.message}`);
         }
       } else {
-        log(`✅ [FINAL-CHECK-PATCH] Audit property confirmed present`);
+        log(`✅ [FINAL-CHECK-PATCH] ${propertyNameUsed} property confirmed present`);
       }
     } catch (finalCheckError) {
       log(`⚠️ [FINAL-CHECK-PATCH] Failed to verify audit property (non-fatal): ${finalCheckError.message}`);
