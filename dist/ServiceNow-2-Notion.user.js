@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.149
+// @version      11.0.150
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.149";
+    window.BUILD_VERSION = "11.0.150";
 (function () {
 
   // Configuration constants and default settings
@@ -2130,12 +2130,12 @@
       }
     });
 
-    // Auto-map hardcoded properties (Page URL, Content Source, Current Release URL)
+    // Auto-map hardcoded properties (Page URL, Content Source, CurrentReleaseURL)
     // These are automatically extracted and should always be included if the properties exist
     const autoMappings = {
       'Page URL': window.location.href,
       'Content Source': 'ServiceNow Technical Documentation',
-      'Current Release URL': extractedData.CurrentReleaseURL || window.location.href,
+      'CurrentReleaseURL': extractedData.CurrentReleaseURL || window.location.href,
     };
 
     Object.entries(autoMappings).forEach(([notionProperty, value]) => {
@@ -2640,7 +2640,7 @@
 
     // Map extracted content field names to possible Notion property names
     // Format: contentField -> [possible Notion property names]
-    // Note: Page URL, Content Source, and Current Release URL are automatically handled
+    // Note: Page URL, Content Source, and CurrentReleaseURL are automatically handled
     // and should not be included in manual property mappings
     const contentFieldMappings = {
       // Extracted field name -> Possible Notion property names (case-sensitive)
