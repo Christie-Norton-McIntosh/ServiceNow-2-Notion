@@ -4,7 +4,7 @@ import { debug, getConfig } from "../config.js";
 import { showPropertyMappingModal, generateDefaultPropertyMappings, savePropertyMappings } from "./property-mapping-modal.js";
 import { injectAdvancedSettingsModal } from "./advanced-settings-modal.js";
 import { injectIconCoverModal } from "./icon-cover-modal.js";
-import { getAllDatabases, getDatabase } from "../api/database-api.js";
+import { getAllDatabases, getDatabase, getPropertyMappings, applyPropertyMappings } from "../api/database-api.js";
 import { queryDatabase, apiCall } from "../api/proxy-api.js";
 import { overlayModule } from "./overlay-progress.js";
 import { showToast } from "./utils.js";
@@ -88,16 +88,27 @@ async function updateNotionPage(pageId, extractedData) {
     
     debug(`[AUTOEXTRACT-UPDATE] ✅ Content HTML extracted: ${contentHtml.length} characters`);
     
+    // Get database and mappings (same as POST/manual PATCH)
+    const config = await getConfig();
+    const database = await getDatabase(config.databaseId);
+    const mappings = await getPropertyMappings(config.databaseId);
+    
+    // Apply property mappings (includes CurrentReleaseURL)
+    const properties = applyPropertyMappings(extractedData, database, mappings);
+    debug(`[AUTOEXTRACT-UPDATE] ✅ Applied ${Object.keys(properties).length} property mappings`);
+    
     const patchData = {
       title: extractedData.title,
       contentHtml: contentHtml,
-      url: extractedData.url
+      url: extractedData.url,
+      properties: properties, // Include property mappings for AutoExtract PATCH
     };
 
     debug(`[AUTOEXTRACT-UPDATE] 📦 PATCH payload prepared:`);
     debug(`[AUTOEXTRACT-UPDATE]    title: "${patchData.title}"`);
     debug(`[AUTOEXTRACT-UPDATE]    contentHtml: ${contentHtml.length} chars`);
     debug(`[AUTOEXTRACT-UPDATE]    url: "${patchData.url}"`);
+    debug(`[AUTOEXTRACT-UPDATE]    properties: ${Object.keys(properties).join(', ')}`);
     debug(`[AUTOEXTRACT-UPDATE]    pageId: ${pageId}`);
 
     // Call PATCH endpoint and wait for completion

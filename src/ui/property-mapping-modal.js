@@ -364,7 +364,7 @@ export function generateDefaultPropertyMappings(schema) {
 
   // Map extracted content field names to possible Notion property names
   // Format: contentField -> [possible Notion property names]
-  // Note: Page URL, Content Source, and Current Release URL are automatically handled
+  // Note: Page URL, Content Source, and CurrentReleaseURL are automatically handled
   // and should not be included in manual property mappings
   const contentFieldMappings = {
     // Extracted field name -> Possible Notion property names (case-sensitive)

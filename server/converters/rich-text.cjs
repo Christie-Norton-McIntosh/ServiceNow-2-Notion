@@ -183,7 +183,17 @@ function convertRichTextBlock(input, options = {}) {
   // Example: <span>sn_devops</span>.<span>admin</span> becomes sn_devops.admin after stripping
   const beforeHtmlStrip = html;
   
-  // Strip HTML tags that are NOT protected by markers, replacing with minimal whitespace
+  // FIX v11.0.117: Preserve abbreviation content FIRST (before stripping tags)
+  // <abbr> elements contain visual separators in menu cascades like <abbr> > </abbr>
+  // Convert <abbr>CONTENT</abbr> to just CONTENT so separators don't disappear
+  const beforeAbbrPreserve = html;
+  html = html.replace(/<abbr[^>]*>([^<]*)<\/abbr>/gi, '$1');
+  if (beforeAbbrPreserve !== html) {
+    console.log(`✅ [ABBR-PRESERVE] Preserved <abbr> content (menu cascade separators)`);
+    console.log(`   Before: "${beforeAbbrPreserve.substring(0, 150)}"`);
+    console.log(`   After:  "${html.substring(0, 150)}"`);
+  }
+  
   // Split by existing markers to protect already-processed content
   const htmlStripParts = html.split(/(__BR_NEWLINE__|__[A-Z_]+__)/);
   html = htmlStripParts.map(part => {
@@ -195,7 +205,7 @@ function convertRichTextBlock(input, options = {}) {
     // CRITICAL: Replace tags with empty string when they appear to be between technical identifier parts
     // This prevents spaces from breaking regex patterns like "sn_devops.admin"
     // IMPORTANT: Don't strip <code> and <samp> tags - they are handled separately later
-    return part.replace(/<\/?(?:div|span|p|a|img|br|hr|b|i|u|strong|em|var|pre|ul|ol|li|table|tr|td|th|tbody|thead|tfoot|h[1-6]|font|center|small|big|sub|sup|abbr|cite|del|ins|mark|s|strike|blockquote|q|address|article|aside|footer|header|main|nav|section|details|summary|figure|figcaption|time|video|audio|source|canvas|svg|path|g|rect|circle|line|polyline|polygon)(?:\s+[^>]*)?>/gi, '');
+    return part.replace(/<\/?(?:div|span|p|a|img|br|hr|b|i|u|strong|em|var|pre|ul|ol|li|table|tr|td|th|tbody|thead|tfoot|h[1-6]|font|center|small|big|sub|sup|cite|del|ins|mark|s|strike|blockquote|q|address|article|aside|footer|header|main|nav|section|details|summary|figure|figcaption|time|video|audio|source|canvas|svg|path|g|rect|circle|line|polyline|polygon)(?:\s+[^>]*)?>/gi, '');
   }).join('');
   
   // Clean up excessive whitespace from tag removal, but preserve intentional spaces

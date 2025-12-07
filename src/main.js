@@ -521,10 +521,27 @@ class ServiceNowToNotionApp {
         throw new Error("No content found in extractedData");
       }
       
+      // Get database and mappings (same as POST operation)
+      const config = await getConfig();
+      overlayModule.setMessage("Fetching database schema...");
+      const database = await getDatabase(config.databaseId);
+      
+      overlayModule.setMessage("Loading property mappings...");
+      const mappings = await getPropertyMappings(config.databaseId);
+
+      // Apply mappings to extracted data (same as POST operation)
+      overlayModule.setMessage("Mapping properties to Notion format...");
+      const properties = applyPropertyMappings(
+        extractedData,
+        database,
+        mappings
+      );
+      
       const patchData = {
         title: extractedData.title,
         contentHtml: htmlContent,
-        url: extractedData.url
+        url: extractedData.url,
+        properties: properties, // Include property mappings for PATCH (same as POST)
       };
 
       const result = await apiCall("PATCH", `/api/W2N/${pageId}`, patchData);

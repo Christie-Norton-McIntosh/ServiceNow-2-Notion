@@ -31,9 +31,9 @@ const fs = require('fs');
 const path = require('path');
 const cheerio = require('cheerio');
 
-// FORCE RELOAD TIMESTAMP: 2025-10-24T04:53:00.000Z  
+// FORCE RELOAD TIMESTAMP: 2025-12-07T00:20:00.000Z - v11.0.158 MENU CASCADE FIX
 console.log('🔥🔥🔥 W2N.CJS MODULE LOADED AT:', new Date().toISOString());
-console.log('🔥🔥🔥 MODULE VERSION: 04:53:00 - TIMESTAMP FORCE RELOAD WITH REGEX FIX');
+console.log('🔥🔥🔥 MODULE VERSION: v11.0.158 - MENU CASCADE PREPROCESSING BEFORE AUDIT');
 
 // Import services
 const notionService = require('../services/notion.cjs');
@@ -4048,7 +4048,13 @@ router.patch('/W2N/:pageId', async (req, res) => {
       validationResult.issues.push('Internal error: validation summary was empty');
     }
     
-    try {
+      // FIX v11.0.116 BUG: Declare propertyUpdateSuccess/Error outside try block so catch block can access them
+      let propertyUpdateSuccess = false;
+      let propertyUpdateError = null;
+      // FIX v11.0.116.1: Declare maxPropertyRetries outside try block for audit recalculation
+      const maxPropertyRetries = 5;
+      // FIX v11.0.116.2: Declare allNotionBlocks outside try block for audit recalculation
+      let allNotionBlocks = [];    try {
       const propertyUpdates = {};
       
       // Set Error checkbox based on validation result
@@ -4225,6 +4231,79 @@ ${html || ''}
         rich_text: [ { type: 'text', text: { content: truncatedAuditContent } } ]
       };
 
+      // MissingText and ExtraText properties (same logic as POST)
+      function compactContextTag(seg) {
+        try {
+          if (seg.context) {
+            const parts = (seg.context || '').split('>').map(s => s.trim()).filter(Boolean);
+            if (parts.length) {
+              const last = parts[parts.length - 1];
+              const short = last.replace(/[^a-z0-9]/gi, '').substring(0,3) || last.substring(0,3);
+              return ` [${short}]`;
+            }
+          }
+        } catch (e) {
+          // ignore
+        }
+        return '';
+      }
+
+      if (auditResult && auditResult.detailedComparison) {
+        const dc = auditResult.detailedComparison;
+
+        // MissingText property - list all missing segments
+        if (dc.missingSegments.length > 0) {
+          const missingLines = [`⚠️ Missing segments (${dc.missingSegments.length}):`];
+          dc.missingSegments.forEach((seg, idx) => {
+            // Include the segment text with a compact context tag (e.g. [p], [tc])
+              missingLines.push(`   ${idx + 1}. "${seg.text}"${compactContextTag(seg)}`);
+          });
+          let missingContent = missingLines.join('\n');
+
+          // Truncate to fit Notion's 2000 character limit for rich text properties
+          if (missingContent.length > 2000) {
+            missingContent = missingContent.substring(0, 1997) + '...';
+            log(`⚠️ [PATCH-PROPERTY-TRUNCATE] MissingText truncated to 2000 chars (was ${missingLines.join('\n').length})`);
+          }
+
+          propertyUpdates["MissingText"] = {
+            rich_text: [ { type: 'text', text: { content: missingContent } } ]
+          };
+        } else {
+          // FIX v11.0.116.4: Always set MissingText property, even when no missing segments
+          // This ensures old values are cleared when content changes
+          propertyUpdates["MissingText"] = {
+            rich_text: [ { type: 'text', text: { content: '✅ No missing content' } } ]
+          };
+        }
+
+        // ExtraText property - list all extra segments
+        if (dc.extraSegments.length > 0) {
+          const extraLines = [`⚠️ Extra segments (${dc.extraSegments.length}):`];
+          dc.extraSegments.forEach((seg, idx) => {
+            // Include the segment text with a compact context tag (e.g. [p], [tc])
+              extraLines.push(`   ${idx + 1}. "${seg.text}"${compactContextTag(seg)}`);
+          });
+          let extraContent = extraLines.join('\n');
+
+          // Truncate to fit Notion's 2000 character limit for rich text properties
+          if (extraContent.length > 2000) {
+            extraContent = extraContent.substring(0, 1997) + '...';
+            log(`⚠️ [PATCH-PROPERTY-TRUNCATE] ExtraText truncated to 2000 chars (was ${extraLines.join('\n').length})`);
+          }
+
+          propertyUpdates["ExtraText"] = {
+            rich_text: [ { type: 'text', text: { content: extraContent } } ]
+          };
+        } else {
+          // FIX v11.0.116.4: Always set ExtraText property, even when no extra segments
+          // This ensures old values are cleared when content changes
+          propertyUpdates["ExtraText"] = {
+            rich_text: [ { type: 'text', text: { content: '✅ No extra content' } } ]
+          };
+        }
+      }
+
   // (Removed deprecated Status property logic; counts handled in Stats header)
 
       // Stats property refined breakdown (first line reflects table/image/callout count match, not validation status)
@@ -4276,7 +4355,7 @@ ${html || ''}
       };
       
       try {
-        const allNotionBlocks = [];
+        allNotionBlocks = [];
         let cursor = undefined;
         
         do {
@@ -4327,6 +4406,145 @@ ${html || ''}
       } catch (countError) {
         log(`⚠️ Failed to fetch Notion blocks for Stats: ${countError.message}`);
         // Leave notionCounts at 0 - will show all mismatches
+      }
+      
+      // FIX v11.0.116.1: Recalculate audit metrics based on actual Notion page content
+      // The original auditResult uses text length from blocks that were supposed to be uploaded,
+      // but the actual page content may differ due to deletion failures, eventual consistency, or deep nesting.
+      // Recalculate using the same fetched block data used for ContentComparison.
+      if (auditResult && allNotionBlocks) {
+        try {
+          // Extract actual text from all Notion blocks (same logic as servicenow.cjs)
+          function extractAllTextFromBlock(block) {
+            if (!block || typeof block !== 'object') return '';
+            
+            let text = '';
+            
+            // Extract from rich text fields
+            function extractFromRichText(richTextArray) {
+              if (!Array.isArray(richTextArray)) return '';
+              return richTextArray.map(rt => rt.plain_text || '').join('');
+            }
+            
+            // Extract based on block type
+            if (block.type === 'paragraph' && block.paragraph?.rich_text) {
+              text += extractFromRichText(block.paragraph.rich_text);
+            } else if (block.type.startsWith('heading_') && block[block.type]?.rich_text) {
+              text += extractFromRichText(block[block.type].rich_text);
+            } else if (block.type === 'bulleted_list_item' && block.bulleted_list_item?.rich_text) {
+              text += extractFromRichText(block.bulleted_list_item.rich_text);
+            } else if (block.type === 'numbered_list_item' && block.numbered_list_item?.rich_text) {
+              text += extractFromRichText(block.numbered_list_item.rich_text);
+            } else if (block.type === 'callout' && block.callout?.rich_text) {
+              text += extractFromRichText(block.callout.rich_text);
+            } else if (block.type === 'quote' && block.quote?.rich_text) {
+              text += extractFromRichText(block.quote.rich_text);
+            } else if (block.type === 'code' && block.code?.rich_text) {
+              text += extractFromRichText(block.code.rich_text);
+            } else if (block.type === 'to_do' && block.to_do?.rich_text) {
+              text += extractFromRichText(block.to_do.rich_text);
+            }
+            
+            // Extract from table cells
+            if (block.type === 'table_row' && block.table_row?.cells) {
+              for (const cell of block.table_row.cells) {
+                text += extractFromRichText(cell);
+              }
+            }
+            
+            // Recursively extract from children (for nested blocks)
+            if (block.children && Array.isArray(block.children)) {
+              for (const child of block.children) {
+                text += extractAllTextFromBlock(child);
+              }
+            }
+            
+            // Extract from table children (table_row blocks)
+            if (block.table?.children && Array.isArray(block.table.children)) {
+              for (const child of block.table.children) {
+                text += extractAllTextFromBlock(child);
+              }
+            }
+            
+            // Extract from list items with children
+            if (block.bulleted_list_item?.children) {
+              for (const child of block.bulleted_list_item.children) {
+                text += extractAllTextFromBlock(child);
+              }
+            }
+            if (block.numbered_list_item?.children) {
+              for (const child of block.numbered_list_item.children) {
+                text += extractAllTextFromBlock(child);
+              }
+            }
+            
+            return text;
+          }
+          
+          const actualNotionTextLength = allNotionBlocks.reduce((sum, block) => {
+            return sum + extractAllTextFromBlock(block).length;
+          }, 0);
+          
+          // Update auditResult with actual page content metrics
+          const originalNotionTextLength = auditResult.notionTextLength;
+          auditResult.notionTextLength = actualNotionTextLength;
+          auditResult.notionBlocks = allNotionBlocks.length;
+          
+          // Recalculate coverage and missing/extra based on actual content
+          const coverageFloat = auditResult.totalLength > 0 
+            ? (actualNotionTextLength / auditResult.totalLength * 100) 
+            : 100;
+          auditResult.coverage = coverageFloat.toFixed(1);
+          auditResult.coverageStr = `${auditResult.coverage}%`;
+          auditResult.missing = coverageFloat < 100 ? auditResult.totalLength - actualNotionTextLength : 0;
+          auditResult.extra = coverageFloat > 100 ? actualNotionTextLength - auditResult.totalLength : 0;
+          auditResult.missingPercent = auditResult.totalLength > 0 ? ((auditResult.missing / auditResult.totalLength) * 100).toFixed(1) : '0.0';
+          auditResult.extraPercent = auditResult.totalLength > 0 ? ((auditResult.extra / auditResult.totalLength) * 100).toFixed(1) : '0.0';
+          
+          // Update pass/fail status
+          const minThreshold = auditResult.threshold ? parseFloat(auditResult.threshold.split('-')[0]) : 95;
+          const maxThreshold = auditResult.threshold ? parseFloat(auditResult.threshold.split('-')[1]) : 105;
+          auditResult.passed = coverageFloat >= minThreshold && coverageFloat <= maxThreshold;
+          
+          log(`🔧 [AUDIT-RECALCULATION] Updated audit metrics with actual Notion content:`);
+          log(`   Original notionTextLength: ${originalNotionTextLength} chars`);
+          log(`   Actual notionTextLength: ${actualNotionTextLength} chars`);
+          log(`   Updated coverage: ${auditResult.coverageStr} (was based on ${originalNotionTextLength})`);
+          log(`   Updated missing: ${auditResult.missing} chars (${auditResult.missingPercent}%)`);
+          
+          // FIX v11.0.116.3: Update detailedComparison to reflect recalculated metrics
+          // The detailedComparison object contains the missing/extra segments used for MissingText/ExtraText properties
+          // We need to update it to reflect the actual page content, not the pre-upload blocks
+          if (auditResult.detailedComparison) {
+            const dc = auditResult.detailedComparison;
+            
+            // Clear existing segments and create placeholders based on recalculated metrics
+            dc.missingSegments = [];
+            dc.extraSegments = [];
+            
+            // If there are missing characters, add a summary segment
+            if (auditResult.missing > 0) {
+              dc.missingSegments.push({
+                text: `Content missing from Notion page (${auditResult.missing} characters, ${auditResult.missingPercent}%)`,
+                context: 'recalculated'
+              });
+            }
+            
+            // If there are extra characters, add a summary segment  
+            if (auditResult.extra > 0) {
+              dc.extraSegments.push({
+                text: `Extra content in Notion page (${auditResult.extra} characters, ${auditResult.extraPercent}%)`,
+                context: 'recalculated'
+              });
+            }
+            
+            log(`🔧 [AUDIT-RECALCULATION] Updated detailed comparison: ${dc.missingSegments.length} missing, ${dc.extraSegments.length} extra segments`);
+          }
+          
+        } catch (recalcError) {
+          log(`⚠️ [AUDIT-RECALCULATION] Failed to recalculate audit metrics: ${recalcError.message}`);
+          // Continue with original auditResult
+        }
       }
       
       // Use calculated source and Notion counts
@@ -4411,16 +4629,94 @@ ${html || ''}
         // Continue with new property names
       }
       
-      // Update the page properties
-      log(`📝 Updating page with properties: ${Object.keys(propertyUpdates).join(', ')}`);
-      log(`   propertyUpdates keys: ${JSON.stringify(Object.keys(propertyUpdates))}`);
+      // FIX v11.0.116: Add property update retry logic to PATCH (matching POST endpoint)
+      // POST has 5 retries with exponential backoff, PATCH had ZERO retries (silent failures)
       
-      await notion.pages.update({
-        page_id: pageId,
-        properties: propertyUpdates
-      });
-      
-      log(`✅ Validation properties updated with PATCH indicator (used "${auditPropertyName}" and "${statsPropertyName}")`);
+      for (let propRetry = 0; propRetry <= maxPropertyRetries && !propertyUpdateSuccess; propRetry++) {
+        try {
+          // Update the page properties with retries
+          log(`📝 [PATCH-PROPERTY-RETRY] Attempt ${propRetry + 1}/${maxPropertyRetries + 1}: Updating page with properties: ${Object.keys(propertyUpdates).join(', ')}`);
+          log(`   propertyUpdates keys: ${JSON.stringify(Object.keys(propertyUpdates))}`);
+          log(`   propertyUpdates content preview: ${JSON.stringify(propertyUpdates).substring(0, 500)}...`);
+          
+          const updateResult = await notion.pages.update({
+            page_id: pageId,
+            properties: propertyUpdates
+          });
+          
+          log(`   Notion API response: ${JSON.stringify(updateResult).substring(0, 200)}...`);
+          
+          propertyUpdateSuccess = true;
+          log(`✅ [PATCH-PROPERTY-RETRY] Validation properties updated successfully${propRetry > 0 ? ` (after ${propRetry} retry)` : ''} (used "${auditPropertyName}" and "${statsPropertyName}")`);
+          
+        } catch (propUpdateError) {
+          propertyUpdateError = propUpdateError;
+          
+          const isLastRetry = propRetry >= maxPropertyRetries;
+          const waitTime = Math.min(Math.pow(2, propRetry), 32) * 1000; // 1s, 2s, 4s, 8s, 16s, 32s
+          
+          if (isLastRetry) {
+            // All retries exhausted
+            log(`\n${'='.repeat(80)}`);
+            log(`❌ [PATCH-PROPERTY-RETRY] CRITICAL: Property update failed after ${maxPropertyRetries + 1} attempts`);
+            log(`   Error: ${propUpdateError.message}`);
+            log(`   Page ID: ${pageId}`);
+            log(`   Page Title: ${pageTitle}`);
+            log(`   Note: Content WAS updated (${extractedBlocks.length} blocks), but properties NOT set`);
+            log(`   Auto-saving to pages-to-update for re-extraction...`);
+            log(`${'='.repeat(80)}\n`);
+            
+            // Auto-save page for re-extraction
+            try {
+              const fixturesDir = path.join(__dirname, '../../patch/pages/pages-to-update');
+              if (!fs.existsSync(fixturesDir)) {
+                fs.mkdirSync(fixturesDir, { recursive: true });
+              }
+              
+              const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
+              const sanitizedTitle = (pageTitle || 'untitled')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '')
+                .substring(0, 60);
+              const filename = `${sanitizedTitle}-property-update-failed-${timestamp}.html`;
+              const filepath = path.join(fixturesDir, filename);
+              
+              const htmlContent = `<!--
+Auto-saved: Property update failed after ${maxPropertyRetries + 1} retry attempts
+Page ID: ${pageId}
+Page Title: ${pageTitle}
+PATCH Time: ${new Date().toISOString()}
+Content Updated: YES (${extractedBlocks.length} blocks uploaded successfully)
+Properties Updated: NO (property update API failed after ${maxPropertyRetries + 1} retries)
+
+Error Details:
+${propUpdateError.message}
+
+Last Error:
+${propUpdateError.stack ? propUpdateError.stack.substring(0, 500) : 'N/A'}
+
+Action Required: Retry PATCH operation - content is correct but properties need to be set
+-->
+
+${html || ''}
+`;
+              
+              fs.writeFileSync(filepath, htmlContent, 'utf-8');
+              log(`✅ [PATCH-PROPERTY-RETRY] Auto-saved: ${filename}`);
+            } catch (saveError) {
+              log(`❌ [PATCH-PROPERTY-RETRY] Failed to auto-save: ${saveError.message}`);
+            }
+            
+            break; // Exit retry loop
+          } else {
+            // Retry with exponential backoff
+            log(`⚠️ [PATCH-PROPERTY-RETRY] Attempt ${propRetry + 1} failed, will retry after ${waitTime}ms`);
+            log(`   Error: ${propUpdateError.message}`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+          }
+        }
+      }
       
       // Auto-save pages with order issues for investigation (PATCH)
       if (Array.isArray(validationResult.orderIssues) && validationResult.orderIssues.length > 0) {
@@ -4478,8 +4774,9 @@ ${html || ''}
       }
       
     } catch (propError) {
-      log(`⚠️ Failed to update validation properties: ${propError.message}`);
+      log(`⚠️ Failed to build validation properties: ${propError.message}`);
       // Don't throw - page was updated successfully, just property update failed
+      propertyUpdateSuccess = false;
     }
     
     // FIX v11.0.31: FINAL CATCH-ALL for PATCH - Verify Audit property was actually set
@@ -4559,6 +4856,26 @@ ${html || ''}
     
     // Success response
     cleanup(); // Stop heartbeat
+    
+    // FIX v11.0.116: Don't return "success" if property update failed
+    // This ensures batch script detects the failure and re-queues the page
+    if (!propertyUpdateSuccess) {
+      log(`\n${'='.repeat(80)}`);
+      log(`❌ [PATCH-PROPERTY-RETRY] Cannot return success - property update failed`);
+      log(`   Page content WAS updated successfully (${extractedBlocks.length} blocks)`);
+      log(`   But validation properties could NOT be set after ${maxPropertyRetries + 1} attempts`);
+      log(`   Error: ${propertyUpdateError?.message || 'Unknown error'}`);
+      log(`   Page has been auto-saved to pages-to-update for re-extraction`);
+      log(`${'='.repeat(80)}\n`);
+      
+      cleanup();
+      return sendError(res, "PROPERTY_UPDATE_FAILED",
+        `Page content updated (${extractedBlocks.length} blocks) but validation properties could not be set after ${maxPropertyRetries + 1} attempts`,
+        { pageId, pageTitle, blocksAdded: extractedBlocks.length, error: propertyUpdateError?.message },
+        500
+      );
+    }
+    
     const totalPatchTime = ((Date.now() - patchStartTime) / 1000).toFixed(1);
     
     const result = {

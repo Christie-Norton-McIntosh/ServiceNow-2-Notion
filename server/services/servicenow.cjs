@@ -130,6 +130,82 @@ function enforceNestingDepthLimit(blocks, currentDepth = 0) {
   return { deferredBlocks };
 }
 
+/**
+ * FIX v11.0.117: Preprocess menu cascades to preserve semantic inline paths
+ * 
+ * Menu cascades like <span class="menucascade"><span>File</span><abbr> > </abbr><span>Edit</span></span>
+ * are commonly used in ServiceNow documentation to show navigation paths.
+ * 
+ * Problem: HTML extraction splits these into separate segments (File, >, Edit), but Notion
+ * coalesces them back into single text blocks. This causes segment count mismatch in validation.
+ * 
+ * Solution: Convert menu cascades to plain text before extraction so extraction and Notion
+ * output are semantically aligned (both treat the full path as a single semantic unit).
+ * 
+ * @param {string} html - HTML content to preprocess
+ * @returns {string} HTML with menu cascades converted to plain text
+ */
+function preprocessMenuCascades(html) {
+  if (!html || typeof html !== 'string') {
+    return html;
+  }
+  
+  try {
+    const $ = cheerio.load(html, { preserveWhitespace: true });
+    let preprocessCount = 0;
+    
+    // Find and process all menu cascade elements
+    // Patterns: <menucascade>, <span class="menucascade">, <span class="ph menucascade">, etc.
+    $('[class*="menucascade"], menucascade').each((i, elem) => {
+      const $elem = $(elem);
+      const parts = [];
+      let foundValidCascade = false;
+      
+      // Extract text and separators in order, building the menu path
+      $elem.find('*').each((idx, child) => {
+        const $child = $(child);
+        const tagName = child.name.toLowerCase();
+        const text = $child.text().trim();
+        
+        // Handle abbreviation separators (e.g., <abbr> > </abbr>)
+        if (tagName === 'abbr' && (text === '>' || text === '>>')) {
+          if (parts.length > 0 && !parts[parts.length - 1].endsWith('>')) {
+            parts.push(' > ');
+            foundValidCascade = true;
+          }
+        } 
+        // Handle UI control text (span, div, etc. containing text)
+        else if (text && !$child.find('*').length) {
+          // Leaf node with no children - this is actual text
+          if (text !== '>' && text !== '>>') {
+            parts.push(text);
+            foundValidCascade = true;
+          }
+        }
+      });
+      
+      // If we found a valid cascade pattern, replace the element with plain text
+      if (foundValidCascade && parts.length >= 2) {
+        const menuPath = parts.join('').replace(/\s+>\s+/g, ' > ').trim();
+        if (menuPath.length > 0) {
+          $elem.replaceWith(menuPath);
+          preprocessCount++;
+          console.log(`✅ [MENU-CASCADE] Converted to plain text: "${menuPath}"`);
+        }
+      }
+    });
+    
+    if (preprocessCount > 0) {
+      console.log(`📊 [MENU-CASCADE-PREPROCESS] Processed ${preprocessCount} menu cascade element(s)`);
+    }
+    
+    return $.html();
+  } catch (err) {
+    console.error(`❌ [MENU-CASCADE-PREPROCESS] Exception: ${err.message}`);
+    return html; // Return original on error
+  }
+}
+
 // isVideoIframeUrl, cleanHtmlText, and convertServiceNowUrl now imported from utils modules above
 
 /**
@@ -204,6 +280,23 @@ async function extractContentFromHtml(html) {
       totalLength: allTextNodes.reduce((sum, n) => sum + n.length, 0),
       nodes: allTextNodes
     };
+  }
+
+  // FIX v11.0.158: Preprocess menu cascades BEFORE AUDIT so both use same HTML
+  // Menu cascades like <span class="menucascade"><span>File</span><abbr> > </abbr><span>Edit</span></span>
+  // need to be converted to plain text BEFORE counting source text nodes
+  // Otherwise AUDIT sees the original structure but blocks see the preprocessed text, causing mismatches
+  console.log(`🔧 [MENU-CASCADE] Preprocessing menu cascades before AUDIT...`);
+  try {
+    const menuCascadePreprocessed = preprocessMenuCascades(html);
+    if (menuCascadePreprocessed !== html) {
+      const cascadeCount = (html.match(/<span[^>]*class="[^"]*menucascade[^"]*"/g) || []).length;
+      console.log(`✅ [MENU-CASCADE] Preprocessed ${cascadeCount} menu cascades before AUDIT`);
+      html = menuCascadePreprocessed;
+    }
+  } catch (err) {
+    console.error(`❌ [MENU-CASCADE] Error preprocessing menu cascades: ${err.message}`);
+    // Continue with original HTML if preprocessing fails
   }
 
   // Audit source content if enabled (either explicitly or for validation)
@@ -321,6 +414,10 @@ async function extractContentFromHtml(html) {
   // Remove "On this page" mini table of contents (navigation UI chrome)
   html = html.replace(/<div[^>]*class="[^\"]*miniTOC[^\"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
   html = html.replace(/<div[^>]*class="[^\"]*zDocsSideBoxes[^\"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
+  
+  // NOTE: Menu cascade preprocessing moved earlier (before AUDIT) in v11.0.158
+  // This ensures both AUDIT and extraction use the same preprocessed HTML
+  // See lines 283-295 for the menu cascade preprocessing
   
   // Remove DataTables wrapper divs (generated by JavaScript table libraries)
   // NOTE: Now handled properly in Cheerio (see below) - these regex replacements are DISABLED
