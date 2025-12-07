@@ -161,7 +161,8 @@ function preprocessMenuCascades(html) {
       const parts = [];
       let foundValidCascade = false;
       
-      // Extract text and separators in order, building the menu path
+      // Extract HTML elements and separators in order, building the menu path
+      // FIX v11.0.160: Preserve formatting tags (uicontrol, b, i, etc.) instead of plain text
       $elem.find('*').each((idx, child) => {
         const $child = $(child);
         const tagName = child.name.toLowerCase();
@@ -169,7 +170,8 @@ function preprocessMenuCascades(html) {
         
         // Handle abbreviation separators (e.g., <abbr> > </abbr>)
         if (tagName === 'abbr' && (text === '>' || text === '>>')) {
-          if (parts.length > 0 && !parts[parts.length - 1].endsWith('>')) {
+          // Always add separator if we have at least one menu item already
+          if (parts.length > 0) {
             parts.push(' > ');
             foundValidCascade = true;
           }
@@ -178,19 +180,35 @@ function preprocessMenuCascades(html) {
         else if (text && !$child.find('*').length) {
           // Leaf node with no children - this is actual text
           if (text !== '>' && text !== '>>') {
-            parts.push(text);
+            // Check if child has formatting classes or is a formatting tag
+            const childClass = $child.attr('class') || '';
+            const hasFormattingClass = childClass.includes('uicontrol') || 
+                                      childClass.includes('keyword') || 
+                                      childClass.includes('parmname') || 
+                                      childClass.includes('codeph') ||
+                                      childClass.includes('apiname');
+            const isFormattingTag = ['b', 'strong', 'i', 'em', 'u', 'code', 'kbd', 'samp'].includes(tagName);
+            
+            if (hasFormattingClass || isFormattingTag) {
+              // Preserve the HTML element with its formatting
+              parts.push($.html($child));
+            } else {
+              // Plain text
+              parts.push(text);
+            }
             foundValidCascade = true;
           }
         }
       });
       
-      // If we found a valid cascade pattern, replace the element with plain text
+      // If we found a valid cascade pattern, replace the element with formatted HTML
       if (foundValidCascade && parts.length >= 2) {
-        const menuPath = parts.join('').replace(/\s+>\s+/g, ' > ').trim();
+        // Join parts directly - separators are already included
+        const menuPath = parts.join('').trim();
         if (menuPath.length > 0) {
           $elem.replaceWith(menuPath);
           preprocessCount++;
-          console.log(`✅ [MENU-CASCADE] Converted to plain text: "${menuPath}"`);
+          console.log(`✅ [MENU-CASCADE] Converted with formatting preserved: "${menuPath.replace(/<[^>]+>/g, '')}"`);
         }
       }
     });
@@ -251,6 +269,14 @@ async function extractContentFromHtml(html) {
   function auditTextNodes(htmlContent) {
     const cheerio = require('cheerio');
     const $audit = cheerio.load(htmlContent, { decodeEntities: false });
+    
+    // FIX v11.0.159: Exclude buttons from audit validation
+    $audit('button').remove();
+    $audit('.btn, .button, [role="button"]').remove(); // Also remove common button classes
+    
+    // FIX v11.0.160: Exclude code blocks from audit validation
+    $audit('pre, code').remove(); // Remove <pre> and <code> blocks - not counted in text validation
+    
     const allTextNodes = [];
     
     function collectText(node) {
@@ -316,6 +342,14 @@ async function extractContentFromHtml(html) {
     const cheerio = require('cheerio');
     const $auditHtml = cheerio.load(html, { decodeEntities: false });
     let miniTocFound = false;
+    
+    // FIX v11.0.160: Remove "On this page" sections by class name
+    $auditHtml('.miniTOC, .zDocsSideBoxes').each((i, elem) => {
+      const textLength = $auditHtml(elem).text().trim().length;
+      console.log(`🔍 [AUDIT] Excluding "On this page" section from source character count (${textLength} chars of navigation chrome)`);
+      $auditHtml(elem).remove();
+      miniTocFound = true;
+    });
     
     $auditHtml('.contentPlaceholder').each((i, elem) => {
       const $elem = $auditHtml(elem);
@@ -6079,12 +6113,17 @@ async function extractContentFromHtml(html) {
     function extractAllTextFromBlock(block) {
       let text = '';
       
+      // FIX v11.0.160: Skip code blocks - not counted in text validation
+      if (block.type === 'code') {
+        return '';
+      }
+      
       function extractFromRichText(richTextArray) {
         if (!Array.isArray(richTextArray)) return '';
         return richTextArray.map(rt => rt?.text?.content || '').join('');
       }
       
-      // Extract from all block types
+      // Extract from all block types (except code blocks)
       if (block.paragraph?.rich_text) text += extractFromRichText(block.paragraph.rich_text);
       if (block.heading_1?.rich_text) text += extractFromRichText(block.heading_1.rich_text);
       if (block.heading_2?.rich_text) text += extractFromRichText(block.heading_2.rich_text);
@@ -6334,6 +6373,13 @@ async function extractContentFromHtml(html) {
 
       // Create filtered HTML (same filtering as audit)
       const $auditHtml = cheerio.load(html, { decodeEntities: false });
+      
+      // FIX v11.0.159: Exclude buttons from detailed comparison
+      // FIX v11.0.160: Exclude code blocks from detailed comparison
+      $auditHtml('button').remove();
+      $auditHtml('.btn, .button, [role="button"]').remove();
+      $auditHtml('pre, code').remove(); // Remove code blocks - not counted in text validation
+      
       $auditHtml('.contentPlaceholder').each((i, elem) => {
         const $elem = $auditHtml(elem);
         const hasMiniToc = $elem.find('.zDocsMiniTocCollapseButton, .zDocsSideBoxes, .contentContainer').length > 0;
@@ -6370,6 +6416,12 @@ async function extractContentFromHtml(html) {
 
         // Remove non-content elements (same as main HTML processing filtering)
         $('script, style, noscript, svg, iframe').remove();
+        
+        // FIX v11.0.159: Exclude buttons from detailed comparison
+        // FIX v11.0.160: Exclude code blocks from detailed comparison
+        $('button').remove();
+        $('.btn, .button, [role="button"]').remove();
+        $('pre, code').remove(); // Remove code blocks - not counted in text validation
         $('.contentPlaceholder').each((i, elem) => {
           const $elem = $(elem);
           
@@ -6490,11 +6542,17 @@ async function extractContentFromHtml(html) {
 
         function extractFromBlock(block, context = '') {
           const blockType = block.type;
+          
+          // FIX v11.0.160: Skip code blocks - not counted in text validation
+          if (blockType === 'code') {
+            return;
+          }
+          
           const data = block[blockType];
 
           if (!data) return;
 
-          // Extract from rich_text
+          // Extract from rich_text (except code blocks)
           if (Array.isArray(data.rich_text)) {
             let text = data.rich_text.map(rt => rt.plain_text || rt.text?.content || '').join('').trim();
             // Strip marker tokens first (Fix #1)
@@ -6543,17 +6601,71 @@ async function extractContentFromHtml(html) {
       }
 
       // Normalize text for comparison
+      // Common English stop words that don't carry substantive meaning
+      const STOP_WORDS = new Set([
+        'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from',
+        'has', 'he', 'in', 'is', 'it', 'its', 'of', 'on', 'that', 'the',
+        'to', 'was', 'will', 'with', 'you', 'your', 'can', 'this', 'have',
+        'but', 'or', 'if', 'not', 'so', 'what', 'all', 'when', 'there',
+        'which', 'their', 'said', 'each', 'she', 'do', 'how', 'any', 'these',
+        'both', 'been', 'were', 'very', 'may', 'also', 'more', 'than', 'them'
+      ]);
+
       function normalizeText(text) {
         // Remove diagnostic parenthetical annotations that may follow segments,
         // e.g. "(342 chars, div > div > div > p)" before normalizing.
-        const stripped = (text || '').replace(/\(\s*\d+\s*chars\s*,\s*[^)]+\)/gi, '');
-        return stripped
-          .toLowerCase()
+        let normalized = (text || '').replace(/\(\s*\d+\s*chars\s*,\s*[^)]+\)/gi, '');
+        
+        // Convert to lowercase first
+        normalized = normalized.toLowerCase();
+        
+        // Normalize unicode (NFKD) and remove diacritics
+        normalized = normalized
           .normalize('NFKD')
-          .replace(/[\u0300-\u036f]/g, '') // Remove diacritics
-          .replace(/[^\w\s]/g, ' ') // Replace punctuation with space
-          .replace(/\s+/g, ' ') // Collapse whitespace
-          .trim();
+          .replace(/[\u0300-\u036f]/g, '');
+        
+        // IMPROVED: Preserve important punctuation patterns before general cleanup
+        // 1. Protect version numbers (v1.2.3, 1.2.3, etc.)
+        normalized = normalized.replace(/\b(v?\d+(?:\.\d+)*)\b/g, (match) => {
+          return match.replace(/\./g, '___DOT___');
+        });
+        
+        // 2. Protect hyphenated compounds (well-known, pre-defined, etc.)
+        normalized = normalized.replace(/\b(\w+)-(\w+)\b/g, '$1___HYPHEN___$2');
+        
+        // 3. Protect numbers with units (5mb, 10kb, 3.5gb, etc.)
+        normalized = normalized.replace(/(\d+\.?\d*)\s*(kb|mb|gb|tb|ms|sec|min|hr|px|pt|em|rem|%)/gi, (match) => {
+          return match.replace(/\./g, '___DOT___').replace(/\s+/g, '');
+        });
+        
+        // 4. Protect file extensions (.js, .css, .html, etc.)
+        normalized = normalized.replace(/\.([a-z]{2,4})\b/gi, '___DOT___$1');
+        
+        // Now remove remaining punctuation (but not underscores or protected markers)
+        normalized = normalized.replace(/[^\w\s_]/g, ' ');
+        
+        // Restore protected punctuation with substitutes that preserve semantic grouping
+        normalized = normalized
+          .replace(/___DOT___/g, 'dot')  // v1.2.3 → v1dot2dot3
+          .replace(/___HYPHEN___/g, ''); // well-known → wellknown (keep as single word)
+        
+        // Collapse whitespace
+        normalized = normalized.replace(/\s+/g, ' ').trim();
+        
+        // IMPROVED: Stop word filtering (optional - can be disabled via env var)
+        if (process.env.SN2N_DISABLE_STOPWORDS !== '1') {
+          const words = normalized.split(' ');
+          const filteredWords = words.filter(word => {
+            // Keep all words that are:
+            // - Not stop words, OR
+            // - Part of a number/version (contains digits), OR
+            // - Technical terms (3+ chars with mixed case originally)
+            return !STOP_WORDS.has(word) || /\d/.test(word) || word.length > 8;
+          });
+          normalized = filteredWords.join(' ');
+        }
+        
+        return normalized.trim();
       }
 
       // Get segments from both sources

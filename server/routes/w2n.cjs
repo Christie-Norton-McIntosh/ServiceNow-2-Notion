@@ -2054,7 +2054,9 @@ router.post('/W2N', async (req, res) => {
               const dc = auditResult.detailedComparison;
 
               // MissingText property - list all missing segments
-              if (dc.missingSegments.length > 0) {
+              // FIX v11.0.160: Only report if difference is significant (>5 chars or >0.5%)
+              if (dc.missingSegments.length > 0 && auditResult.missing > 0 && 
+                  (auditResult.missing > 5 || parseFloat(auditResult.missingPercent) > 0.5)) {
                 const missingLines = [`⚠️ Missing segments (${dc.missingSegments.length}):`];
                 dc.missingSegments.forEach((seg, idx) => {
                   // Include the segment text with a compact context tag (e.g. [p], [tc])
@@ -2071,10 +2073,15 @@ router.post('/W2N', async (req, res) => {
                 propertyUpdates["MissingText"] = {
                   rich_text: [ { type: 'text', text: { content: missingContent } } ]
                 };
+              } else if (dc.missingSegments.length > 0 && auditResult.missing > 0) {
+                // Minor difference (≤5 chars or ≤0.5%), don't report specific segments
+                log(`🔧 [POST-AUDIT] Minor missing content (${auditResult.missing} chars) - not listing specific segments`);
               }
 
               // ExtraText property - list all extra segments
-              if (dc.extraSegments.length > 0) {
+              // FIX v11.0.160: Only report if difference is significant (>5 chars or >0.5%)
+              if (dc.extraSegments.length > 0 && auditResult.extra > 0 && 
+                  (auditResult.extra > 5 || parseFloat(auditResult.extraPercent) > 0.5)) {
                 const extraLines = [`⚠️ Extra segments (${dc.extraSegments.length}):`];
                 dc.extraSegments.forEach((seg, idx) => {
                   // Include the segment text with a compact context tag (e.g. [p], [tc])
@@ -2091,6 +2098,9 @@ router.post('/W2N', async (req, res) => {
                 propertyUpdates["ExtraText"] = {
                   rich_text: [ { type: 'text', text: { content: extraContent } } ]
                 };
+              } else if (dc.extraSegments.length > 0 && auditResult.extra > 0) {
+                // Minor difference (≤5 chars or ≤0.5%), don't report specific segments
+                log(`🔧 [POST-AUDIT] Minor extra content (${auditResult.extra} chars) - not listing specific segments`);
               }
             }
 
@@ -2109,6 +2119,7 @@ router.post('/W2N', async (req, res) => {
               tables: 0,
               images: 0,
               callouts: 0,
+              code: 0,
               orderedList: 0,
               unorderedList: 0
             };
@@ -2120,6 +2131,7 @@ router.post('/W2N', async (req, res) => {
                 else if (block.type === 'table') sourceCounts.tables++;
                 else if (block.type === 'image') sourceCounts.images++;
                 else if (block.type === 'callout') sourceCounts.callouts++;
+                else if (block.type === 'code') sourceCounts.code++;
                 else if (block.type === 'numbered_list_item') sourceCounts.orderedList++;
                 else if (block.type === 'bulleted_list_item') sourceCounts.unorderedList++;
                 
@@ -2150,6 +2162,7 @@ router.post('/W2N', async (req, res) => {
               tables: 0,
               images: 0,
               callouts: 0,
+              code: 0,
               orderedList: 0,
               unorderedList: 0
             };
@@ -2178,6 +2191,7 @@ router.post('/W2N', async (req, res) => {
                   else if (block.type === 'table') notionCounts.tables++;
                   else if (block.type === 'image') notionCounts.images++;
                   else if (block.type === 'callout') notionCounts.callouts++;
+                  else if (block.type === 'code') notionCounts.code++;
                   else if (block.type === 'numbered_list_item') notionCounts.orderedList++;
                   else if (block.type === 'bulleted_list_item') notionCounts.unorderedList++;
                   
@@ -2223,6 +2237,7 @@ router.post('/W2N', async (req, res) => {
               `• Unordered list items: ${sourceCounts.unorderedList} → ${notionCounts.unorderedList}`,
               `• Paragraphs: ${sourceCounts.paragraphs} → ${notionCounts.paragraphs}`,
               `• Headings: ${sourceCounts.headings} → ${notionCounts.headings}`,
+              `• Code blocks: ${sourceCounts.code} → ${notionCounts.code}`,
               `• Tables: ${sourceCounts.tables} → ${notionCounts.tables}`,
               `• Images: ${sourceCounts.images} → ${notionCounts.images}`,
               `• Callouts: ${sourceCounts.callouts} → ${notionCounts.callouts}`,
@@ -4318,6 +4333,7 @@ ${html || ''}
         tables: 0,
         images: 0,
         callouts: 0,
+        code: 0,
         orderedList: 0,
         unorderedList: 0
       };
@@ -4329,6 +4345,7 @@ ${html || ''}
           else if (block.type === 'table') sourceCounts.tables++;
           else if (block.type === 'image') sourceCounts.images++;
           else if (block.type === 'callout') sourceCounts.callouts++;
+          else if (block.type === 'code') sourceCounts.code++;
           else if (block.type === 'numbered_list_item') sourceCounts.orderedList++;
           else if (block.type === 'bulleted_list_item') sourceCounts.unorderedList++;
           
@@ -4350,6 +4367,7 @@ ${html || ''}
         tables: 0,
         images: 0,
         callouts: 0,
+        code: 0,
         orderedList: 0,
         unorderedList: 0
       };
@@ -4377,6 +4395,7 @@ ${html || ''}
             else if (block.type === 'table') notionCounts.tables++;
             else if (block.type === 'image') notionCounts.images++;
             else if (block.type === 'callout') notionCounts.callouts++;
+            else if (block.type === 'code') notionCounts.code++;
             else if (block.type === 'numbered_list_item') notionCounts.orderedList++;
             else if (block.type === 'bulleted_list_item') notionCounts.unorderedList++;
             
@@ -4418,6 +4437,11 @@ ${html || ''}
           function extractAllTextFromBlock(block) {
             if (!block || typeof block !== 'object') return '';
             
+            // FIX v11.0.160: Skip code blocks - not counted in text validation
+            if (block.type === 'code') {
+              return '';
+            }
+            
             let text = '';
             
             // Extract from rich text fields
@@ -4426,7 +4450,7 @@ ${html || ''}
               return richTextArray.map(rt => rt.plain_text || '').join('');
             }
             
-            // Extract based on block type
+            // Extract based on block type (except code blocks)
             if (block.type === 'paragraph' && block.paragraph?.rich_text) {
               text += extractFromRichText(block.paragraph.rich_text);
             } else if (block.type.startsWith('heading_') && block[block.type]?.rich_text) {
@@ -4439,8 +4463,6 @@ ${html || ''}
               text += extractFromRichText(block.callout.rich_text);
             } else if (block.type === 'quote' && block.quote?.rich_text) {
               text += extractFromRichText(block.quote.rich_text);
-            } else if (block.type === 'code' && block.code?.rich_text) {
-              text += extractFromRichText(block.code.rich_text);
             } else if (block.type === 'to_do' && block.to_do?.rich_text) {
               text += extractFromRichText(block.to_do.rich_text);
             }
@@ -4512,33 +4534,340 @@ ${html || ''}
           log(`   Updated coverage: ${auditResult.coverageStr} (was based on ${originalNotionTextLength})`);
           log(`   Updated missing: ${auditResult.missing} chars (${auditResult.missingPercent}%)`);
           
-          // FIX v11.0.116.3: Update detailedComparison to reflect recalculated metrics
-          // The detailedComparison object contains the missing/extra segments used for MissingText/ExtraText properties
-          // We need to update it to reflect the actual page content, not the pre-upload blocks
+          // FIX v11.0.159: Recalculate detailed comparison using actual Notion content
+          // Compare the original HTML against the fetched Notion blocks to get real missing/extra segments
+          log(`🔧 [AUDIT-RECALCULATION] Recalculating detailed comparison with actual Notion content...`);
+          
+          try {
+            // Import the function to do detailed comparison
+            const servicenowService = require('../services/servicenow.cjs');
+            
+            // Convert fetched Notion blocks back to a format we can compare
+            // FIX v11.0.159: Exclude buttons from validation
+            // FIX v11.0.160: Exclude code blocks from validation
+            const cheerio = require('cheerio');
+            const $ = cheerio.load(html, { decodeEntities: false });
+            
+            // Remove button elements and code blocks from HTML before extracting text
+            $('button').remove();
+            $('.btn, .button, [role="button"]').remove(); // Also remove common button classes
+            $('pre, code').remove(); // Remove code blocks - not counted in text validation
+            
+            // FIX v11.0.160: Add spaces between block elements to prevent word concatenation
+            // Insert space markers before removing tags
+            $('p, div, li, td, th, h1, h2, h3, h4, h5, h6, br').each((i, elem) => {
+              $(elem).after(' ___SPACE___ ');
+            });
+            
+            const htmlText = $.text()
+              .replace(/___SPACE___/g, ' ')  // Replace space markers with actual spaces
+              .replace(/\s+/g, ' ')          // Collapse multiple spaces
+              .trim();
+            const notionText = allNotionBlocks.map(block => extractAllTextFromBlock(block)).join(' ').trim();
+            
+            log(`🔧 [AUDIT-RECALCULATION] HTML text length (excluding buttons & code): ${htmlText.length}, Notion text length: ${notionText.length}`);
+            log(`🔧 [AUDIT-RECALCULATION] actualNotionTextLength (from auditResult): ${actualNotionTextLength}`);
+            log(`🔧 [AUDIT-RECALCULATION] HTML text preview: ${htmlText.substring(0, 300)}...`);
+            log(`🔧 [AUDIT-RECALCULATION] Notion text preview: ${notionText.substring(0, 300)}...`);
+            
+            // Debug: Show last 100 chars to see the difference
+            log(`🔧 [AUDIT-RECALCULATION] HTML text END: ...${htmlText.substring(htmlText.length - 100)}`);
+            log(`🔧 [AUDIT-RECALCULATION] Notion text END: ...${notionText.substring(notionText.length - 100)}`);
+            
+            // FIX v11.0.160: Update auditResult.totalLength and notionTextLength to match filtered text (without code blocks)
+            // This ensures missing/extra calculations are based on the same content scope
+            const filteredHtmlLength = htmlText.length;
+            const filteredNotionLength = notionText.length;
+            
+            if (auditResult.totalLength !== filteredHtmlLength || auditResult.notionTextLength !== filteredNotionLength) {
+              log(`🔧 [AUDIT-RECALCULATION] Updating totalLength from ${auditResult.totalLength} to ${filteredHtmlLength} (code blocks excluded)`);
+              log(`🔧 [AUDIT-RECALCULATION] Updating notionTextLength from ${auditResult.notionTextLength} to ${filteredNotionLength} (using extracted text with spaces)`);
+              auditResult.totalLength = filteredHtmlLength;
+              auditResult.notionTextLength = filteredNotionLength;
+              
+              // Recalculate coverage with corrected lengths
+              const newCoverageFloat = auditResult.totalLength > 0 
+                ? (auditResult.notionTextLength / auditResult.totalLength * 100) 
+                : 100;
+              auditResult.coverage = newCoverageFloat.toFixed(1);
+              auditResult.coverageStr = `${auditResult.coverage}%`;
+              auditResult.missing = newCoverageFloat < 100 ? auditResult.totalLength - auditResult.notionTextLength : 0;
+              auditResult.extra = newCoverageFloat > 100 ? auditResult.notionTextLength - auditResult.totalLength : 0;
+              auditResult.missingPercent = auditResult.totalLength > 0 ? ((auditResult.missing / auditResult.totalLength) * 100).toFixed(1) : '0.0';
+              auditResult.extraPercent = auditResult.totalLength > 0 ? ((auditResult.extra / auditResult.totalLength) * 100).toFixed(1) : '0.0';
+              
+              // FIX v11.0.160: Update pass/fail status based on recalculated coverage
+              const minThreshold = auditResult.threshold ? parseFloat(auditResult.threshold.split('-')[0]) : 95;
+              const maxThreshold = auditResult.threshold ? parseFloat(auditResult.threshold.split('-')[1]) : 105;
+              auditResult.passed = newCoverageFloat >= minThreshold && newCoverageFloat <= maxThreshold;
+              
+              log(`🔧 [AUDIT-RECALCULATION] Recalculated: Coverage ${auditResult.coverageStr}, Missing ${auditResult.missing}, Extra ${auditResult.extra}`);
+              log(`🔧 [AUDIT-RECALCULATION] Updated pass/fail: ${auditResult.passed ? 'PASS' : 'FAIL'} (threshold: ${minThreshold}-${maxThreshold}%)`);
+            }
+            
+            // Create a simple detailed comparison
+            auditResult.detailedComparison = {
+              missingSegments: [],
+              extraSegments: [],
+              htmlSegmentCount: 1,
+              notionSegmentCount: 1
+            };
+            
+            // If there's missing content, identify and show the full missing text
+            // FIX v11.0.160: Only report missing segments if difference is significant (>5 chars or >0.5%)
+            if (auditResult.missing > 0 && (auditResult.missing > 5 || parseFloat(auditResult.missingPercent) > 0.5)) {
+              // Extract full missing text by finding content in HTML that's not in Notion
+              const htmlWords = htmlText.split(/\s+/).filter(w => w.length > 0);
+              const notionWords = notionText.split(/\s+/).filter(w => w.length > 0);
+              
+              // Build set of notion words for faster lookup (normalized)
+              const notionWordSet = new Set(notionWords.map(w => w.toLowerCase().trim()));
+              
+              // Find sequences of words in HTML that are missing from Notion
+              const missingSequences = [];
+              let currentSequence = [];
+              
+              for (let i = 0; i < htmlWords.length; i++) {
+                const word = htmlWords[i];
+                const normalizedWord = word.toLowerCase().trim();
+                
+                // Check if this word exists in Notion
+                if (!notionWordSet.has(normalizedWord)) {
+                  currentSequence.push(word);
+                } else {
+                  // Word found in Notion, save current sequence if it exists
+                  if (currentSequence.length > 0) {
+                    missingSequences.push(currentSequence.join(' '));
+                    currentSequence = [];
+                  }
+                }
+              }
+              
+              // Add final sequence if exists
+              if (currentSequence.length > 0) {
+                missingSequences.push(currentSequence.join(' '));
+              }
+              
+              // Add each missing sequence as a segment
+              if (missingSequences.length > 0) {
+                missingSequences.forEach((seq, idx) => {
+                  // Truncate very long sequences to fit in property (max 500 chars per segment)
+                  let segmentText = seq;
+                  if (seq.length > 500) {
+                    segmentText = seq.substring(0, 497) + '...';
+                  }
+                  
+                  auditResult.detailedComparison.missingSegments.push({
+                    text: segmentText,
+                    context: 'html',
+                    length: seq.length
+                  });
+                });
+                
+                log(`🔧 [AUDIT-RECALCULATION] Found ${missingSequences.length} missing text sequences`);
+              } else {
+                // Fallback: if no specific sequences found, show character count
+                auditResult.detailedComparison.missingSegments.push({
+                  text: `Content missing from Notion page (${auditResult.missing} characters, ${auditResult.missingPercent}%)`,
+                  context: 'recalculated'
+                });
+              }
+            } else if (auditResult.missing > 0) {
+              // Minor difference (≤5 chars or ≤0.5%), don't report specific segments
+              log(`🔧 [AUDIT-RECALCULATION] Minor missing content (${auditResult.missing} chars) - not listing specific segments`);
+            }
+            
+            // If there's extra content, identify and show the full extra text
+            // FIX v11.0.160: Only report extra segments if difference is significant (>5 chars or >0.5%)
+            if (auditResult.extra > 0 && (auditResult.extra > 5 || parseFloat(auditResult.extraPercent) > 0.5)) {
+              // Extract full extra text by finding content in Notion that's not in HTML
+              const htmlWords = htmlText.split(/\s+/).filter(w => w.length > 0);
+              const notionWords = notionText.split(/\s+/).filter(w => w.length > 0);
+              
+              // Build set of HTML words for faster lookup (normalized)
+              const htmlWordSet = new Set(htmlWords.map(w => w.toLowerCase().trim()));
+              
+              // Find sequences of words in Notion that are missing from HTML
+              const extraSequences = [];
+              let currentSequence = [];
+              
+              for (let i = 0; i < notionWords.length; i++) {
+                const word = notionWords[i];
+                const normalizedWord = word.toLowerCase().trim();
+                
+                // Check if this word exists in HTML
+                if (!htmlWordSet.has(normalizedWord)) {
+                  currentSequence.push(word);
+                } else {
+                  // Word found in HTML, save current sequence if it exists
+                  if (currentSequence.length > 0) {
+                    extraSequences.push(currentSequence.join(' '));
+                    currentSequence = [];
+                  }
+                }
+              }
+              
+              // Add final sequence if exists
+              if (currentSequence.length > 0) {
+                extraSequences.push(currentSequence.join(' '));
+              }
+              
+              // Add each extra sequence as a segment
+              if (extraSequences.length > 0) {
+                extraSequences.forEach((seq, idx) => {
+                  // Truncate very long sequences to fit in property (max 500 chars per segment)
+                  let segmentText = seq;
+                  if (seq.length > 500) {
+                    segmentText = seq.substring(0, 497) + '...';
+                  }
+                  
+                  auditResult.detailedComparison.extraSegments.push({
+                    text: segmentText,
+                    context: 'notion',
+                    length: seq.length
+                  });
+                });
+                
+                log(`🔧 [AUDIT-RECALCULATION] Found ${extraSequences.length} extra text sequences`);
+              } else {
+                // Fallback: if no specific sequences found, show character count
+                auditResult.detailedComparison.extraSegments.push({
+                  text: `Extra content in Notion page (${auditResult.extra} characters, ${auditResult.extraPercent}%)`,
+                  context: 'recalculated'
+                });
+              }
+            } else if (auditResult.extra > 0) {
+              // Minor difference (≤5 chars or ≤0.5%), don't report specific segments
+              log(`🔧 [AUDIT-RECALCULATION] Minor extra content (${auditResult.extra} chars) - not listing specific segments`);
+            }
+            
+            log(`🔧 [AUDIT-RECALCULATION] Updated detailed comparison: ${auditResult.detailedComparison.missingSegments.length} missing, ${auditResult.detailedComparison.extraSegments.length} extra segments`);
+            
+          } catch (comparisonError) {
+            log(`⚠️ [AUDIT-RECALCULATION] Failed to recalculate detailed comparison: ${comparisonError.message}`);
+            // Keep original detailedComparison if recalculation fails
+          }
+          
+          // FIX v11.0.159: Rebuild Audit property with recalculated metrics
+          // The Audit property was already set earlier with stale values, so we need to update it
+          log(`🔧 [AUDIT-RECALCULATION] Rebuilding Audit property with recalculated metrics...`);
+          
+          const recalculatedAuditLines = [
+            `[${new Date().toISOString().split('T')[0]}] Content Audit: ${auditResult.passed ? '✅ PASS' : '❌ FAIL'}`,
+            `Coverage: ${auditResult.coverageStr} (threshold: ${auditResult.threshold})`,
+            `Threshold reason: ${auditResult.thresholdReason}`,
+            `Source: ${auditResult.totalNodes} text nodes, ${auditResult.totalLength} chars`,
+            `Notion: ${auditResult.notionBlocks} blocks, ${auditResult.notionTextLength} chars`,
+            `Block/Node Ratio: ${(auditResult.notionBlocks / Math.max(auditResult.totalNodes, 1)).toFixed(2)}x`
+          ];
+          
+          // Add content analysis summary
+          if (auditResult.contentAnalysis) {
+            const analysis = [];
+            if (auditResult.contentAnalysis.nestedListDepth > 1) {
+              analysis.push(`${auditResult.contentAnalysis.nestedListDepth}x nested list`);
+            }
+            if (auditResult.contentAnalysis.tableCount > 0) {
+              analysis.push(`${auditResult.contentAnalysis.tableCount} table${auditResult.contentAnalysis.tableCount > 1 ? 's' : ''}`);
+            }
+            if (auditResult.contentAnalysis.calloutCount > 0) {
+              analysis.push(`${auditResult.contentAnalysis.calloutCount} callout${auditResult.contentAnalysis.calloutCount > 1 ? 's' : ''}`);
+            }
+            if (analysis.length > 0) {
+              recalculatedAuditLines.push(`Content: ${analysis.join(', ')}`);
+            }
+          }
+          
+          // Add missing/extra info
+          if (auditResult.missing > 0) {
+            recalculatedAuditLines.push(`⚠️ Missing: ${auditResult.missing} chars (${auditResult.missingPercent}%)`);
+          }
+          if (auditResult.extra > 0) {
+            recalculatedAuditLines.push(`⚠️ Extra: ${auditResult.extra} chars (+${auditResult.extraPercent}%)`);
+          }
+          
+          const recalculatedAuditContent = recalculatedAuditLines.join('\n');
+          
+          // Update the Audit property with recalculated values
+          propertyUpdates["Audit"] = {
+            rich_text: [ { type: 'text', text: { content: recalculatedAuditContent } } ]
+          };
+          
+          log(`🔧 [AUDIT-RECALCULATION] Updated Audit property: Coverage ${auditResult.coverageStr}, Missing ${auditResult.missing} chars`);
+          
+          // FIX v11.0.159: Also update MissingText and ExtraText with recalculated segments
           if (auditResult.detailedComparison) {
             const dc = auditResult.detailedComparison;
             
-            // Clear existing segments and create placeholders based on recalculated metrics
-            dc.missingSegments = [];
-            dc.extraSegments = [];
-            
-            // If there are missing characters, add a summary segment
-            if (auditResult.missing > 0) {
-              dc.missingSegments.push({
-                text: `Content missing from Notion page (${auditResult.missing} characters, ${auditResult.missingPercent}%)`,
-                context: 'recalculated'
-              });
+            function compactContextTag(seg) {
+              try {
+                if (seg.context) {
+                  const ctx = seg.context.toLowerCase();
+                  // Handle simple context tags (html, notion)
+                  if (ctx === 'html' || ctx === 'notion') {
+                    return ` [${ctx}]`;
+                  }
+                  // Handle complex context paths (div > p)
+                  const parts = (seg.context || '').split('>').map(s => s.trim()).filter(Boolean);
+                  if (parts.length) {
+                    const last = parts[parts.length - 1];
+                    const short = last.replace(/[^a-z0-9]/gi, '').substring(0,3) || last.substring(0,3);
+                    return ` [${short}]`;
+                  }
+                }
+              } catch (e) {
+                // ignore
+              }
+              return '';
             }
             
-            // If there are extra characters, add a summary segment  
-            if (auditResult.extra > 0) {
-              dc.extraSegments.push({
-                text: `Extra content in Notion page (${auditResult.extra} characters, ${auditResult.extraPercent}%)`,
-                context: 'recalculated'
+            // Update MissingText with recalculated segments
+            if (dc.missingSegments.length > 0) {
+              const missingLines = [`⚠️ Missing segments (${dc.missingSegments.length}):`];
+              dc.missingSegments.forEach((seg, idx) => {
+                missingLines.push(`   ${idx + 1}. "${seg.text}"${compactContextTag(seg)}`);
               });
+              let missingContent = missingLines.join('\n');
+              
+              if (missingContent.length > 2000) {
+                missingContent = missingContent.substring(0, 1997) + '...';
+              }
+              
+              propertyUpdates["MissingText"] = {
+                rich_text: [ { type: 'text', text: { content: missingContent } } ]
+              };
+              log(`🔧 [AUDIT-RECALCULATION] Updated MissingText: ${dc.missingSegments.length} segments`);
+              log(`🔧 [AUDIT-RECALCULATION] MissingText content preview: ${missingContent.substring(0, 200)}`);
+            } else {
+              propertyUpdates["MissingText"] = {
+                rich_text: [ { type: 'text', text: { content: '✅ No missing content' } } ]
+              };
+              log(`🔧 [AUDIT-RECALCULATION] Updated MissingText: No missing segments`);
             }
             
-            log(`🔧 [AUDIT-RECALCULATION] Updated detailed comparison: ${dc.missingSegments.length} missing, ${dc.extraSegments.length} extra segments`);
+            // Update ExtraText with recalculated segments
+            if (dc.extraSegments.length > 0) {
+              const extraLines = [`⚠️ Extra segments (${dc.extraSegments.length}):`];
+              dc.extraSegments.forEach((seg, idx) => {
+                extraLines.push(`   ${idx + 1}. "${seg.text}"${compactContextTag(seg)}`);
+              });
+              let extraContent = extraLines.join('\n');
+              
+              if (extraContent.length > 2000) {
+                extraContent = extraContent.substring(0, 1997) + '...';
+              }
+              
+              propertyUpdates["ExtraText"] = {
+                rich_text: [ { type: 'text', text: { content: extraContent } } ]
+              };
+              log(`🔧 [AUDIT-RECALCULATION] Updated ExtraText: ${dc.extraSegments.length} segments`);
+              log(`🔧 [AUDIT-RECALCULATION] ExtraText content preview: ${extraContent.substring(0, 200)}`);
+            } else {
+              propertyUpdates["ExtraText"] = {
+                rich_text: [ { type: 'text', text: { content: '✅ No extra content' } } ]
+              };
+              log(`🔧 [AUDIT-RECALCULATION] Updated ExtraText: No extra segments`);
+            }
           }
           
         } catch (recalcError) {
@@ -4561,6 +4890,7 @@ ${html || ''}
         `• Unordered list items: ${sourceCounts.unorderedList} → ${notionCounts.unorderedList}`,
         `• Paragraphs: ${sourceCounts.paragraphs} → ${notionCounts.paragraphs}`,
         `• Headings: ${sourceCounts.headings} → ${notionCounts.headings}`,
+        `• Code blocks: ${sourceCounts.code} → ${notionCounts.code}`,
         `• Tables: ${sourceCounts.tables} → ${notionCounts.tables}`,
         `• Images: ${sourceCounts.images} → ${notionCounts.images}`,
         `• Callouts: ${sourceCounts.callouts} → ${notionCounts.callouts}`,
