@@ -11,13 +11,13 @@
  * 1. HTML → Formatted Notion blocks (with bold, italic, code, colors, etc.)
  * 2. Create plain-text copy using createPlainTextBlocksForValidation() (coalesces rich_text)
  * 3. Send FORMATTED blocks to Notion (users see formatting)
- * 4. Use PLAIN-TEXT blocks for validation statistics (Validation & Stats properties)
+ * 4. Use PLAIN-TEXT blocks for validation statistics (Audit & ContentComparison properties)
  * 5. Discard plain-text copy after validation
  * 
  * Why separate copies?
  * - User Experience: Notion pages have full formatting (bold, colors, etc.)
  * - Validation Accuracy: Plain-text comparison avoids false negatives from formatting variations
- * - Stats Properties: Block counts based on plain-text (consistent with source HTML plain-text)
+ * - ContentComparison Property: Block counts based on plain-text (consistent with source HTML plain-text)
  * 
  * Key Variables:
  * - children: Formatted blocks sent to Notion (preserves bold, italic, code, colors)
@@ -887,7 +887,7 @@ router.post('/W2N', async (req, res) => {
     }
 
     // VALIDATION ENHANCEMENT v11.0.40: Create plain-text copy for validation before page creation
-    // This coalesced version is used ONLY for validation statistics (Validation & Stats properties)
+    // This coalesced version is used ONLY for validation statistics (Audit & ContentComparison properties)
     // and is discarded after validation. The formatted blocks (children) are sent to Notion.
     let plainTextChildren = null;
     try {
@@ -1908,7 +1908,7 @@ router.post('/W2N', async (req, res) => {
             
             const passFail = validationStatus;
 
-            // (Removed deprecated Status property logic; counts handled in Stats header)
+            // (Removed deprecated Status property logic; counts handled in ContentComparison header)
 
             // Order issues section: list ALL issues (not just first 2)
             let orderSection = '';
@@ -2104,14 +2104,13 @@ router.post('/W2N', async (req, res) => {
               }
             }
 
-            // Stats breakdown formatting (first line reflects table/image/callout count match, not validation status)
+            // ContentComparison breakdown formatting (first line reflects table/image/callout count match, not validation status)
             const stats = validationResult.stats || {};
             
-            // FIX v11.0.40: Calculate source counts from plainTextChildren (coalesced blocks for validation)
-            // This ensures validation statistics compare like-for-like: plain-text source vs plain-text Notion
-            // The formatted blocks (children) are sent to Notion with all formatting intact
-            const sourceBlocksForCounting = plainTextChildren || children;
-            log(`📊 [STATS-COUNT] Using ${plainTextChildren ? 'plain-text' : 'formatted'} blocks for source counting`);
+            // FIX v11.0.173: Count blocks from ORIGINAL HTML (not converted Notion blocks)
+            // This shows true conversion accuracy: what's in ServiceNow HTML vs what's in Notion
+            // Previous logic counted already-converted Notion blocks, which would always match unless upload failed
+            log(`📊 [STATS-COUNT] Counting blocks from original HTML (pre-conversion)`);
             
             const sourceCounts = {
               paragraphs: 0,
@@ -2124,33 +2123,89 @@ router.post('/W2N', async (req, res) => {
               unorderedList: 0
             };
             
-            function countSourceBlocks(blocks) {
-              for (const block of blocks) {
-                if (block.type === 'paragraph') sourceCounts.paragraphs++;
-                else if (block.type.startsWith('heading_')) sourceCounts.headings++;
-                else if (block.type === 'table') sourceCounts.tables++;
-                else if (block.type === 'image') sourceCounts.images++;
-                else if (block.type === 'callout') sourceCounts.callouts++;
-                else if (block.type === 'code') sourceCounts.code++;
-                else if (block.type === 'numbered_list_item') sourceCounts.orderedList++;
-                else if (block.type === 'bulleted_list_item') sourceCounts.unorderedList++;
-                
-                // Recursively count children
-                const blockContent = block[block.type];
-                if (blockContent && blockContent.children && Array.isArray(blockContent.children)) {
-                  countSourceBlocks(blockContent.children);
+            // Count blocks directly from HTML structure
+            try {
+              const cheerio = require('cheerio');
+              const sourceHtml = payload.contentHtml || payload.content;
+              const $ = cheerio.load(sourceHtml, { decodeEntities: false });
+              
+              log(`📊 [HTML-SOURCE-DEBUG] HTML length: ${sourceHtml.length} chars`);
+              log(`📊 [HTML-SOURCE-DEBUG] HTML preview: ${sourceHtml.substring(0, 200)}`);
+              
+              // Count paragraphs (p tags that aren't empty)
+              let pCount = 0;
+              $('p').each((i, elem) => {
+                const text = $(elem).text().trim();
+                if (text.length > 0) {
+                  pCount++;
+                  sourceCounts.paragraphs++;
                 }
-              }
-            }
-            
-            countSourceBlocks(sourceBlocksForCounting);
-            
-            // FIX v11.0.39: Also count blocks in markerMap (tables/headings often nested in markers)
-            if (markerMap && Object.keys(markerMap).length > 0) {
-              Object.keys(markerMap).forEach(marker => {
-                countSourceBlocks(markerMap[marker]);
               });
-              log(`📊 Also counted blocks from ${Object.keys(markerMap).length} marker(s)`);
+              log(`📊 [HTML-SOURCE-DEBUG] Found ${pCount} non-empty <p> tags`);
+              
+              // Count headings (h2-h6 + span.title which become headings in Notion)
+              // FIX v11.0.188: Exclude H1 (page title) and sidebar headings from comparison
+              // H1 is always the page name/title and should not be duplicated in page content
+              // Sidebars are navigation/metadata, not content
+              let hCount = 0;
+              $('h2, h3, h4, h5, h6, span.title').each((i, elem) => {
+                const $elem = $(elem);
+                // Skip if inside sidebar/navigation containers
+                const inSidebar = $elem.closest('.zDocsSideBoxes, .contentPlaceholder, .miniTOC, aside, nav').length > 0;
+                if (!inSidebar) {
+                  hCount++;
+                  sourceCounts.headings++;
+                }
+              });
+              log(`📊 [HTML-SOURCE-DEBUG] Found ${hCount} heading tags (h2-h6 + span.title, excluding H1 and sidebars)`);
+              
+              
+              // Count tables
+              const tableCount = $('table').length;
+              sourceCounts.tables = tableCount;
+              log(`📊 [HTML-SOURCE-DEBUG] Found ${tableCount} <table> tags`);
+              
+              // Count images (img tags, excluding base64 data URIs and images inside tables)
+              // FIX v11.0.184: Skip images in tables because Notion tables are incompatible with image handling
+              let imgCount = 0;
+              $('img').each((i, elem) => {
+                const src = $(elem).attr('src') || '';
+                const isInTable = $(elem).closest('table').length > 0;
+                if (!src.startsWith('data:') && !isInTable) {
+                  imgCount++;
+                  sourceCounts.images++;
+                }
+              });
+              log(`📊 [HTML-SOURCE-DEBUG] Found ${imgCount} <img> tags (non-data URI, excluding images in tables)`);
+              
+              // Count callouts (note class, warning class, etc.)
+              // FIX v11.0.180: Only count top-level callout containers (not nested titles/children)
+              // ServiceNow notes have structure: <div class="note note note_note"><span class="note__title">
+              // We should only count the outer <div>, not the inner <span>
+              const calloutCount = $('div.note, div.warning, div.info, div.tip, div.caution, div.important').length;
+              sourceCounts.callouts = calloutCount;
+              log(`📊 [HTML-SOURCE-DEBUG] Found ${calloutCount} callout elements (top-level only)`);
+              
+              // Count code blocks (pre or code tags)
+              const preCount = $('pre').length;
+              sourceCounts.code = preCount;
+              log(`📊 [HTML-SOURCE-DEBUG] Found ${preCount} <pre> tags`);
+              
+              // Count ordered lists (ol > li)
+              const olCount = $('ol > li').length;
+              sourceCounts.orderedList = olCount;
+              log(`📊 [HTML-SOURCE-DEBUG] Found ${olCount} <ol><li> items`);
+              
+              // Count unordered lists (ul > li)
+              const ulCount = $('ul > li').length;
+              sourceCounts.unorderedList = ulCount;
+              log(`📊 [HTML-SOURCE-DEBUG] Found ${ulCount} <ul><li> items`);
+              
+              log(`📊 [HTML-SOURCE-COUNTS] Paragraphs: ${sourceCounts.paragraphs}, Headings: ${sourceCounts.headings}, Tables: ${sourceCounts.tables}, Images: ${sourceCounts.images}, Callouts: ${sourceCounts.callouts}, Code: ${sourceCounts.code}, OL: ${sourceCounts.orderedList}, UL: ${sourceCounts.unorderedList}`);
+            } catch (countError) {
+              log(`⚠️ [HTML-SOURCE-COUNTS] Error counting from HTML: ${countError.message}`);
+              log(`⚠️ [HTML-SOURCE-COUNTS] Stack trace: ${countError.stack}`);
+              // Fall back to zero counts - comparison will show all as mismatches
             }
             
             // Calculate Notion counts from actual page blocks
@@ -2184,10 +2239,12 @@ router.post('/W2N', async (req, res) => {
               
               // FIX v11.0.38: Recursively count images and other blocks in nested structures
               // Previously only counted top-level blocks, missing images in tables/callouts
+              // FIX v11.0.188: Exclude heading_1 blocks (page title) from heading count
+              // Only count heading_2 and higher to match source count (which excludes H1)
               async function countNotionBlocksRecursive(blocks) {
                 for (const block of blocks) {
                   if (block.type === 'paragraph') notionCounts.paragraphs++;
-                  else if (block.type.startsWith('heading_')) notionCounts.headings++;
+                  else if (block.type === 'heading_2' || block.type === 'heading_3') notionCounts.headings++;  // Exclude heading_1 (page title)
                   else if (block.type === 'table') notionCounts.tables++;
                   else if (block.type === 'image') notionCounts.images++;
                   else if (block.type === 'callout') notionCounts.callouts++;
@@ -2224,12 +2281,51 @@ router.post('/W2N', async (req, res) => {
             }
             
             // Use calculated counts for comparison
+            // FIX v11.0.186: Three-tier ContentComparison logic based on element types
+            // ❌ FAIL if mismatch in: Headings, Code blocks, Tables, Images, Callouts (critical elements)
+            // ⚠️ PASS if mismatch in: Ordered lists, Unordered lists, Paragraphs (flexible elements)
+            // ✅ PASS if all elements match
+            const hasHtmlContent = Object.values(sourceCounts).some(count => count > 0);
+            
+            // Critical elements - strict matching required
             const tablesMatch = (sourceCounts.tables === notionCounts.tables);
             const imagesMatch = (sourceCounts.images === notionCounts.images);
             const calloutsMatch = (sourceCounts.callouts === notionCounts.callouts);
-            const countsPass = tablesMatch && imagesMatch && calloutsMatch;
-            const countsIcon = countsPass ? '✅' : '❌';
-            const statsHeader = `${countsIcon}  Content Comparison: ${countsPass ? 'PASS' : 'FAIL'}`; // two spaces after icon per spec
+            const headingsMatch = (sourceCounts.headings === notionCounts.headings);
+            const codeMatch = (sourceCounts.code === notionCounts.code);
+            
+            // Flexible elements - may vary due to HTML structure differences
+            const orderedListMatch = (sourceCounts.orderedList === notionCounts.orderedList);
+            const unorderedListMatch = (sourceCounts.unorderedList === notionCounts.unorderedList);
+            const paragraphsMatch = (sourceCounts.paragraphs === notionCounts.paragraphs);
+            
+            // Determine comparison status (v11.0.186)
+            const criticalMismatch = !tablesMatch || !imagesMatch || !calloutsMatch || 
+                                     !headingsMatch || !codeMatch;
+            const flexibleMismatch = !orderedListMatch || !unorderedListMatch || !paragraphsMatch;
+            
+            let countsPass;
+            let countsIcon;
+            let comparisonStatus;
+            
+            if (criticalMismatch) {
+              // FAIL - critical elements don't match
+              countsPass = false;
+              countsIcon = '❌';
+              comparisonStatus = 'FAIL';
+            } else if (flexibleMismatch) {
+              // PASS with warning - flexible elements may differ, but critical ones match
+              countsPass = true;
+              countsIcon = '⚠️';
+              comparisonStatus = 'PASS';
+            } else {
+              // PASS - all elements match
+              countsPass = true;
+              countsIcon = '✅';
+              comparisonStatus = 'PASS';
+            }
+            
+            const statsHeader = `${countsIcon}  Content Comparison: ${comparisonStatus}`; // two spaces after icon per spec
             const statsLines = [
               statsHeader,
               '📊 (Source → Notion):',
@@ -2255,6 +2351,21 @@ router.post('/W2N', async (req, res) => {
               rich_text: [ { type: 'text', text: { content: truncatedStatsContent } } ]
             };
             log(`📊 Setting ContentComparison property with refined comparison breakdown`);
+            log(`   ${countsIcon}  Content Comparison: ${comparisonStatus}`);
+            log(`   Headings: ${sourceCounts.headings} → ${notionCounts.headings}`);
+            
+            // FIX v11.0.187: Mark pages with critical failures for auto-save
+            // Trigger auto-save if ContentComparison = FAIL or Audit = FAIL
+            const hasContentComparisonFail = countsPass === false;
+            const hasAuditFail = auditResult && auditResult.passed === false;
+            const shouldAutoSaveForFailure = hasContentComparisonFail || hasAuditFail;
+            
+            if (shouldAutoSaveForFailure) {
+              log(`🚩 [v11.0.187] Critical failure detected:`);
+              if (hasContentComparisonFail) log(`   • ContentComparison: ❌ FAIL (critical element mismatch)`);
+              if (hasAuditFail) log(`   • Content Audit: ❌ FAIL`);
+              log(`   → Page will be auto-saved to pages-to-update after creation`);
+            }
             
             // Set Image checkbox if page contains images
             if (sourceCounts.images > 0) {
@@ -2262,9 +2373,9 @@ router.post('/W2N', async (req, res) => {
               log(`🖼️ Setting Image checkbox (${sourceCounts.images} image${sourceCounts.images === 1 ? '' : 's'} detected)`);
             }
             
-            // FIX v11.0.115: Check which property names exist in database (backward compatibility for Validation→Audit, Stats→ContentComparison rename)
+            // FIX v11.0.115: Check which property names exist in database (backward compatibility for Validation→Audit rename)
             let auditPropertyName = "Audit";
-            let statsPropertyName = "ContentComparison";
+            let comparisonPropertyName = "ContentComparison";
             
             try {
               const dbInfo = await notion.databases.retrieve({ database_id: payload.databaseId });
@@ -2273,17 +2384,11 @@ router.post('/W2N', async (req, res) => {
               // Check if old property names exist in database and new ones don't
               const hasOldAudit = dbProps.includes("Validation");
               const hasNewAudit = dbProps.includes("Audit");
-              const hasOldStats = dbProps.includes("Stats");
-              const hasNewStats = dbProps.includes("ContentComparison");
+              const hasContentComparison = dbProps.includes("ContentComparison");
               
               if (hasOldAudit && !hasNewAudit) {
                 auditPropertyName = "Validation";
                 log(`🔄 [POST] Using legacy property name: "Validation" (new name "Audit" not found in database)`);
-              }
-              
-              if (hasOldStats && !hasNewStats) {
-                statsPropertyName = "Stats";
-                log(`🔄 [POST] Using legacy property name: "Stats" (new name "ContentComparison" not found in database)`);
               }
               
               // Rename property keys if using legacy names
@@ -2292,12 +2397,19 @@ router.post('/W2N', async (req, res) => {
                 delete propertyUpdates["Audit"];
               }
               
-              if (statsPropertyName === "Stats" && propertyUpdates["ContentComparison"]) {
-                propertyUpdates["Stats"] = propertyUpdates["ContentComparison"];
+              // FIX v11.0.172: If ContentComparison property doesn't exist, don't send it
+              if (!hasContentComparison && propertyUpdates["ContentComparison"]) {
+                log(`⚠️ [POST] ContentComparison property not found in database, skipping update`);
                 delete propertyUpdates["ContentComparison"];
               }
               
-              log(`📝 [POST] Property names resolved: Audit="${auditPropertyName}", Stats="${statsPropertyName}"`);
+              // FIX v11.0.172: If neither old nor new Audit property exists, don't send it
+              if (!hasOldAudit && !hasNewAudit && propertyUpdates["Audit"]) {
+                log(`⚠️ [POST] Audit property not found in database (neither "Validation" nor "Audit"), skipping Audit update`);
+                delete propertyUpdates["Audit"];
+              }
+              
+              log(`📝 [POST] Property names resolved: Audit="${auditPropertyName}", ContentComparison="${comparisonPropertyName}"`);
               
             } catch (propCheckError) {
               log(`⚠️ [POST] Could not check database properties (using new names): ${propCheckError.message}`);
@@ -2313,7 +2425,77 @@ router.post('/W2N', async (req, res) => {
             
             propertyUpdateSuccess = true;
             log(`✅ [POST-PROPERTY-UPDATE] Validation properties updated successfully${propRetry > 0 ? ` (after ${propRetry} ${propRetry === 1 ? 'retry' : 'retries'})` : ''}`);
-            log(`   Properties set: ${auditPropertyName} (${auditContent.length} chars), ${statsPropertyName}, Error, Image (if applicable)`);
+            log(`   Properties set: ${auditPropertyName} (${auditContent.length} chars), ${comparisonPropertyName}, Error, Image (if applicable)`);
+            
+            // FIX v11.0.187: Auto-save pages with ContentComparison FAIL or Audit FAIL
+            if (shouldAutoSaveForFailure) {
+              try {
+                log(`💾 [v11.0.187] Auto-saving page with critical failure to pages-to-update...`);
+                const fs = require('fs');
+                const path = require('path');
+                
+                const pagesUpdateDir = path.join(__dirname, '../../patch/pages/pages-to-update');
+                if (!fs.existsSync(pagesUpdateDir)) {
+                  fs.mkdirSync(pagesUpdateDir, { recursive: true });
+                }
+                
+                const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
+                const sanitizedTitle = (payload.title || 'untitled')
+                  .toLowerCase()
+                  .replace(/[^a-z0-9]+/g, '-')
+                  .replace(/^-+|-+$/g, '')
+                  .substring(0, 60);
+                const filename = `${sanitizedTitle}-failure-${timestamp}.html`;
+                const filepath = path.join(pagesUpdateDir, filename);
+                
+                const failureReasons = [];
+                if (hasContentComparisonFail) {
+                  failureReasons.push(`ContentComparison FAIL: ${sourceCounts.headings}→${notionCounts.headings} headings (${notionCounts.orderedList}→${sourceCounts.orderedList} lists, ${sourceCounts.paragraphs}→${notionCounts.paragraphs} paragraphs)`);
+                }
+                if (hasAuditFail) {
+                  failureReasons.push(`Content Audit FAIL: Coverage ${auditResult.coverageStr}`);
+                }
+                
+                const htmlContent = `<!--
+Auto-saved: Critical validation failure (v11.0.187)
+Page ID: ${response.id}
+Page URL: ${response.url}
+Page Title: ${payload.title}
+Created: ${new Date().toISOString()}
+Source URL: ${payload.url || 'N/A'}
+
+Failure Reasons:
+${failureReasons.map(r => '• ' + r).join('\n')}
+
+Content Comparison Status: ${countsIcon}  ${comparisonStatus}
+Headings: ${sourceCounts.headings} → ${notionCounts.headings}
+Ordered lists: ${sourceCounts.orderedList} → ${notionCounts.orderedList}
+Unordered lists: ${sourceCounts.unorderedList} → ${notionCounts.unorderedList}
+Paragraphs: ${sourceCounts.paragraphs} → ${notionCounts.paragraphs}
+Code blocks: ${sourceCounts.code} → ${notionCounts.code}
+Tables: ${sourceCounts.tables} → ${notionCounts.tables}
+Images: ${sourceCounts.images} → ${notionCounts.images}
+Callouts: ${sourceCounts.callouts} → ${notionCounts.callouts}
+
+${auditResult ? `Audit Coverage: ${auditResult.coverageStr}
+Audit Threshold: ${auditResult.threshold || '95-105%'}
+Audit Status: ${auditResult.passed ? '✅ PASS' : '❌ FAIL'}` : 'Audit: SKIPPED'}
+
+Action Required: Review extraction and re-PATCH page with corrected content
+-->
+
+${payload.contentHtml || ''}
+`;
+                
+                fs.writeFileSync(filepath, htmlContent, 'utf-8');
+                log(`✅ [v11.0.187] Page auto-saved to pages-to-update for re-extraction`);
+                log(`   Filename: ${filename}`);
+                log(`   Location: patch/pages/pages-to-update/`);
+                savedToUpdateFolder = true;
+              } catch (saveError) {
+                log(`❌ [v11.0.187] Failed to auto-save page with critical failure: ${saveError.message}`);
+              }
+            }
             
             // Auto-save pages with order issues for investigation
             if (Array.isArray(validationResult.orderIssues) && validationResult.orderIssues.length > 0) {
@@ -3066,6 +3248,7 @@ router.patch('/W2N/:pageId', async (req, res) => {
   let operationPhase = 'initializing';
   let heartbeatInterval = null;
   let pageTitle = 'Unknown'; // Initialize for error handling
+  let shouldAutoSaveForFailure = false; // Initialize to prevent ReferenceError when validation is skipped
   
   const cleanup = () => {
     if (heartbeatInterval) {
@@ -3878,10 +4061,10 @@ router.patch('/W2N/:pageId', async (req, res) => {
             verbose: true
           });
           
-          // FIX v11.0.40: Ensure breakdown exists for Stats property by fetching Notion blocks
+          // FIX v11.0.40: Ensure breakdown exists for ContentComparison property by fetching Notion blocks
           // validateContentOrder returns similarity but not block type breakdown
           if (!validationResult.stats || !validationResult.stats.breakdown) {
-            log(`📊 [PATCH-VALIDATION] Fetching blocks from Notion to populate Stats breakdown...`);
+            log(`📊 [PATCH-VALIDATION] Fetching blocks from Notion to populate ContentComparison breakdown...`);
             
             try {
               let allNotionBlocks = [];
@@ -3962,10 +4145,10 @@ router.patch('/W2N/:pageId', async (req, res) => {
                 unorderedListNotion: blockCounts.unorderedList
               };
               
-              log(`✅ [PATCH-VALIDATION] Stats breakdown populated: ${JSON.stringify(validationResult.stats.breakdown)}`);
+              log(`✅ [PATCH-VALIDATION] ContentComparison breakdown populated: ${JSON.stringify(validationResult.stats.breakdown)}`);
               
             } catch (breakdownError) {
-              log(`⚠️ [PATCH-VALIDATION] Failed to populate Stats breakdown: ${breakdownError.message}`);
+              log(`⚠️ [PATCH-VALIDATION] Failed to populate ContentComparison breakdown: ${breakdownError.message}`);
             }
           }
           
@@ -4319,14 +4502,18 @@ ${html || ''}
         }
       }
 
-  // (Removed deprecated Status property logic; counts handled in Stats header)
+  // (Removed deprecated Status property logic; counts handled in ContentComparison header)
 
-      // Stats property refined breakdown (first line reflects table/image/callout count match, not validation status)
+      // ContentComparison property refined breakdown (first line reflects table/image/callout count match, not validation status)
       const stats = validationResult.stats || {};
       const breakdown = stats.breakdown || {};
       const getNum = (v) => (typeof v === 'number' ? v : (v && v.count) || 0);
       
-      // Calculate source counts from the extractedBlocks array we sent to Notion (same as POST)
+      // FIX v11.0.173: Count blocks from ORIGINAL HTML (not converted Notion blocks)
+      // This shows true conversion accuracy: what's in ServiceNow HTML vs what's in Notion
+      // Previous logic counted already-converted Notion blocks, which would always match unless upload failed
+      log(`📊 [PATCH-STATS-COUNT] Counting blocks from original HTML (pre-conversion)`);
+      
       const sourceCounts = {
         paragraphs: 0,
         headings: 0,
@@ -4338,26 +4525,86 @@ ${html || ''}
         unorderedList: 0
       };
       
-      function countSourceBlocks(blocks) {
-        for (const block of blocks) {
-          if (block.type === 'paragraph') sourceCounts.paragraphs++;
-          else if (block.type.startsWith('heading_')) sourceCounts.headings++;
-          else if (block.type === 'table') sourceCounts.tables++;
-          else if (block.type === 'image') sourceCounts.images++;
-          else if (block.type === 'callout') sourceCounts.callouts++;
-          else if (block.type === 'code') sourceCounts.code++;
-          else if (block.type === 'numbered_list_item') sourceCounts.orderedList++;
-          else if (block.type === 'bulleted_list_item') sourceCounts.unorderedList++;
-          
-          // Recursively count children
-          const blockContent = block[block.type];
-          if (blockContent && blockContent.children && Array.isArray(blockContent.children)) {
-            countSourceBlocks(blockContent.children);
+      // Count blocks directly from HTML structure
+      try {
+        const cheerio = require('cheerio');
+        const $ = cheerio.load(html, { decodeEntities: false });
+        
+        log(`📊 [PATCH-HTML-SOURCE-DEBUG] HTML length: ${html.length} chars`);
+        log(`📊 [PATCH-HTML-SOURCE-DEBUG] HTML preview: ${html.substring(0, 200)}`);
+        
+        // Count paragraphs (p tags that aren't empty)
+        let pCount = 0;
+        $('p').each((i, elem) => {
+          const text = $(elem).text().trim();
+          if (text.length > 0) {
+            pCount++;
+            sourceCounts.paragraphs++;
           }
-        }
+        });
+        log(`📊 [PATCH-HTML-SOURCE-DEBUG] Found ${pCount} non-empty <p> tags`);
+        
+        // Count headings (h2-h6 + span.title which become headings in Notion)
+        // FIX v11.0.188: Exclude H1 (page title) and sidebar headings from comparison
+        // H1 is always the page name/title and should not be duplicated in page content
+        // Sidebars are navigation/metadata, not content
+        let hCount = 0;
+        $('h2, h3, h4, h5, h6, span.title').each((i, elem) => {
+          const $elem = $(elem);
+          // Skip if inside sidebar/navigation containers
+          const inSidebar = $elem.closest('.zDocsSideBoxes, .contentPlaceholder, .miniTOC, aside, nav').length > 0;
+          if (!inSidebar) {
+            hCount++;
+            sourceCounts.headings++;
+          }
+        });
+        log(`📊 [PATCH-HTML-SOURCE-DEBUG] Found ${hCount} heading tags (h2-h6 + span.title, excluding H1 and sidebars)`);
+        
+        // Count tables
+        const tableCount = $('table').length;
+        sourceCounts.tables = tableCount;
+        log(`📊 [PATCH-HTML-SOURCE-DEBUG] Found ${tableCount} <table> tags`);
+        
+        // Count images (img tags, excluding base64 data URIs and images inside tables)
+        // FIX v11.0.184: Skip images in tables because Notion tables are incompatible with image handling
+        let imgCount = 0;
+        $('img').each((i, elem) => {
+          const src = $(elem).attr('src') || '';
+          const isInTable = $(elem).closest('table').length > 0;
+          if (!src.startsWith('data:') && !isInTable) {
+            imgCount++;
+            sourceCounts.images++;
+          }
+        });
+        log(`📊 [PATCH-HTML-SOURCE-DEBUG] Found ${imgCount} <img> tags (non-data URI, excluding images in tables)`);
+        
+        // Count callouts (note class, warning class, etc.)
+        // FIX v11.0.180: Only count top-level callout containers (not nested titles/children)
+        const calloutCount = $('div.note, div.warning, div.info, div.tip, div.caution, div.important').length;
+        sourceCounts.callouts = calloutCount;
+        log(`📊 [PATCH-HTML-SOURCE-DEBUG] Found ${calloutCount} callout elements (top-level only)`);
+        
+        // Count code blocks (pre or code tags)
+        const preCount = $('pre').length;
+        sourceCounts.code = preCount;
+        log(`📊 [PATCH-HTML-SOURCE-DEBUG] Found ${preCount} <pre> tags`);
+        
+        // Count ordered lists (ol > li)
+        const olCount = $('ol > li').length;
+        sourceCounts.orderedList = olCount;
+        log(`📊 [PATCH-HTML-SOURCE-DEBUG] Found ${olCount} <ol><li> items`);
+        
+        // Count unordered lists (ul > li)
+        const ulCount = $('ul > li').length;
+        sourceCounts.unorderedList = ulCount;
+        log(`📊 [PATCH-HTML-SOURCE-DEBUG] Found ${ulCount} <ul><li> items`);
+        
+        log(`📊 [PATCH-HTML-SOURCE-COUNTS] Paragraphs: ${sourceCounts.paragraphs}, Headings: ${sourceCounts.headings}, Tables: ${sourceCounts.tables}, Images: ${sourceCounts.images}, Callouts: ${sourceCounts.callouts}, Code: ${sourceCounts.code}, OL: ${sourceCounts.orderedList}, UL: ${sourceCounts.unorderedList}`);
+      } catch (countError) {
+        log(`⚠️ [PATCH-HTML-SOURCE-COUNTS] Error counting from HTML: ${countError.message}`);
+        log(`⚠️ [PATCH-HTML-SOURCE-COUNTS] Stack trace: ${countError.stack}`);
+        // Fall back to zero counts - comparison will show all as mismatches
       }
-      
-      countSourceBlocks(extractedBlocks);
       
       // FIX v11.0.35: Fetch actual Notion block counts from the page (not from breakdown which may be missing)
       log(`📊 Fetching Notion blocks to calculate Stats...`);
@@ -4391,7 +4638,7 @@ ${html || ''}
         async function countNotionBlocksRecursive(blocks) {
           for (const block of blocks) {
             if (block.type === 'paragraph') notionCounts.paragraphs++;
-            else if (block.type.startsWith('heading_')) notionCounts.headings++;
+            else if (block.type === 'heading_2' || block.type === 'heading_3') notionCounts.headings++; // Exclude heading_1 (page title) from heading count - v11.0.188
             else if (block.type === 'table') notionCounts.tables++;
             else if (block.type === 'image') notionCounts.images++;
             else if (block.type === 'callout') notionCounts.callouts++;
@@ -4447,6 +4694,7 @@ ${html || ''}
             // Extract from rich text fields
             function extractFromRichText(richTextArray) {
               if (!Array.isArray(richTextArray)) return '';
+              // FIX v11.0.180: Revert inline code parentheses (caused validation failures)
               return richTextArray.map(rt => rt.plain_text || '').join('');
             }
             
@@ -4545,27 +4793,79 @@ ${html || ''}
             // Convert fetched Notion blocks back to a format we can compare
             // FIX v11.0.159: Exclude buttons from validation
             // FIX v11.0.160: Exclude code blocks from validation
+            // FIX v11.0.172: Exclude "On this page" navigation sections
             const cheerio = require('cheerio');
             const $ = cheerio.load(html, { decodeEntities: false });
             
             // Remove button elements and code blocks from HTML before extracting text
+            // FIX v11.0.180: Revert inline code parentheses (caused validation failures)
             $('button').remove();
             $('.btn, .button, [role="button"]').remove(); // Also remove common button classes
-            $('pre, code').remove(); // Remove code blocks - not counted in text validation
+            $('pre, code').remove(); // Code not counted in text validation
             
-            // FIX v11.0.160: Add spaces between block elements to prevent word concatenation
-            // Insert space markers before removing tags
-            $('p, div, li, td, th, h1, h2, h3, h4, h5, h6, br').each((i, elem) => {
-              $(elem).after(' ___SPACE___ ');
+            // FIX v11.0.172: Remove "On this page" navigation sections (same as audit preprocessing)
+            $('.miniTOC, .zDocsSideBoxes').remove();
+            $('.contentPlaceholder').each((i, elem) => {
+              const $elem = $(elem);
+              const hasMiniToc = $elem.find('.zDocsMiniTocCollapseButton, .zDocsSideBoxes, .contentContainer').length > 0;
+              if (hasMiniToc) {
+                $elem.remove();
+              }
             });
             
+            // FIX v11.0.172: Remove figure captions and labels (images handle their own captions)
+            $('figcaption, .figcap, .fig-title, .figure-title').remove();
+            // Remove standalone "Figure X" text patterns that are separate from actual content
+            $('p, div, span').each((i, elem) => {
+              const $elem = $(elem);
+              const text = $elem.text().trim();
+              // Match patterns like "Figure 1.", "Figure 2", "Fig. 1:", etc.
+              if (/^fig(?:ure)?\s*\d+\.?\:?$/i.test(text)) {
+                $elem.remove();
+              }
+            });
+            
+            // FIX v11.0.172: Improved whitespace handling to prevent word concatenation
+            // Add space BEFORE and AFTER block elements to ensure separation
+            $('p, div, li, td, th, h1, h2, h3, h4, h5, h6').each((i, elem) => {
+              const $elem = $(elem);
+              // Add space before element content and after element content
+              const content = $elem.html();
+              if (content && content.trim()) {
+                $elem.html(' ' + content + ' ');
+              }
+            });
+            // Handle br tags specially
+            $('br').replaceWith(' ');
+            
             const htmlText = $.text()
-              .replace(/___SPACE___/g, ' ')  // Replace space markers with actual spaces
               .replace(/\s+/g, ' ')          // Collapse multiple spaces
               .trim();
             const notionText = allNotionBlocks.map(block => extractAllTextFromBlock(block)).join(' ').trim();
             
+            // FIX v11.0.172: Calculate LCS similarity as confidence metric
+            function lcsLength(str1, str2) {
+              const m = str1.length;
+              const n = str2.length;
+              const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+              
+              for (let i = 1; i <= m; i++) {
+                for (let j = 1; j <= n; j++) {
+                  if (str1[i - 1] === str2[j - 1]) {
+                    dp[i][j] = dp[i - 1][j - 1] + 1;
+                  } else {
+                    dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+                  }
+                }
+              }
+              return dp[m][n];
+            }
+            
+            const lcs = lcsLength(htmlText, notionText);
+            const lcsSimilarity = (lcs / Math.max(htmlText.length, notionText.length) * 100).toFixed(1);
+            
             log(`🔧 [AUDIT-RECALCULATION] HTML text length (excluding buttons & code): ${htmlText.length}, Notion text length: ${notionText.length}`);
+            log(`🔧 [AUDIT-RECALCULATION] LCS similarity: ${lcsSimilarity}% (${lcs} matching chars)`);
             log(`🔧 [AUDIT-RECALCULATION] actualNotionTextLength (from auditResult): ${actualNotionTextLength}`);
             log(`🔧 [AUDIT-RECALCULATION] HTML text preview: ${htmlText.substring(0, 300)}...`);
             log(`🔧 [AUDIT-RECALCULATION] Notion text preview: ${notionText.substring(0, 300)}...`);
@@ -4616,36 +4916,62 @@ ${html || ''}
             // If there's missing content, identify and show the full missing text
             // FIX v11.0.160: Only report missing segments if difference is significant (>5 chars or >0.5%)
             if (auditResult.missing > 0 && (auditResult.missing > 5 || parseFloat(auditResult.missingPercent) > 0.5)) {
-              // Extract full missing text by finding content in HTML that's not in Notion
+              // FIX v11.0.172: Improved algorithm using phrase matching (4-word sliding window)
+              // instead of individual word lookup to reduce false positives
+              
+              // Normalize both texts for comparison
+              const normalizeForComparison = (text) => {
+                return text.toLowerCase()
+                  .replace(/\s+/g, ' ')  // Normalize whitespace
+                  .replace(/[""'']/g, '"')  // Normalize quotes
+                  .replace(/[–—]/g, '-')  // Normalize dashes
+                  .replace(/[()]/g, '')  // FIX v11.0.184: Remove parentheses (inline code comparison)
+                  .trim();
+              };
+              
+              const normalizedHtml = normalizeForComparison(htmlText);
+              const normalizedNotion = normalizeForComparison(notionText);
+              
               const htmlWords = htmlText.split(/\s+/).filter(w => w.length > 0);
-              const notionWords = notionText.split(/\s+/).filter(w => w.length > 0);
               
-              // Build set of notion words for faster lookup (normalized)
-              const notionWordSet = new Set(notionWords.map(w => w.toLowerCase().trim()));
-              
-              // Find sequences of words in HTML that are missing from Notion
+              // Find sequences of words in HTML that are NOT in Notion using phrase matching
               const missingSequences = [];
               let currentSequence = [];
+              const phraseLength = 4; // Use 4-word phrases for matching
               
               for (let i = 0; i < htmlWords.length; i++) {
-                const word = htmlWords[i];
-                const normalizedWord = word.toLowerCase().trim();
+                // Build a phrase starting at this position
+                const phraseWords = [];
+                for (let j = i; j < Math.min(i + phraseLength, htmlWords.length); j++) {
+                  phraseWords.push(htmlWords[j]);
+                }
+                const phrase = normalizeForComparison(phraseWords.join(' '));
                 
-                // Check if this word exists in Notion
-                if (!notionWordSet.has(normalizedWord)) {
-                  currentSequence.push(word);
+                // Check if this phrase exists in Notion
+                const phraseExists = normalizedNotion.includes(phrase);
+                
+                if (!phraseExists) {
+                  // Phrase not found in Notion, add current word to sequence
+                  currentSequence.push(htmlWords[i]);
                 } else {
-                  // Word found in Notion, save current sequence if it exists
+                  // Phrase found in Notion, save current sequence if it exists and is substantial
                   if (currentSequence.length > 0) {
-                    missingSequences.push(currentSequence.join(' '));
+                    const sequenceText = currentSequence.join(' ');
+                    // Only include sequences longer than 10 chars to avoid noise
+                    if (sequenceText.length > 10) {
+                      missingSequences.push(sequenceText);
+                    }
                     currentSequence = [];
                   }
                 }
               }
               
-              // Add final sequence if exists
+              // Add final sequence if exists and is substantial
               if (currentSequence.length > 0) {
-                missingSequences.push(currentSequence.join(' '));
+                const sequenceText = currentSequence.join(' ');
+                if (sequenceText.length > 10) {
+                  missingSequences.push(sequenceText);
+                }
               }
               
               // Add each missing sequence as a segment
@@ -4680,36 +5006,62 @@ ${html || ''}
             // If there's extra content, identify and show the full extra text
             // FIX v11.0.160: Only report extra segments if difference is significant (>5 chars or >0.5%)
             if (auditResult.extra > 0 && (auditResult.extra > 5 || parseFloat(auditResult.extraPercent) > 0.5)) {
-              // Extract full extra text by finding content in Notion that's not in HTML
-              const htmlWords = htmlText.split(/\s+/).filter(w => w.length > 0);
+              // FIX v11.0.172: Improved algorithm using phrase matching (4-word sliding window)
+              // instead of individual word lookup to reduce false positives
+              
+              // Re-use normalize function (already defined above for missing text)
+              const normalizeForComparison = (text) => {
+                return text.toLowerCase()
+                  .replace(/\s+/g, ' ')  // Normalize whitespace
+                  .replace(/[""'']/g, '"')  // Normalize quotes
+                  .replace(/[–—]/g, '-')  // Normalize dashes
+                  .replace(/[()]/g, '')  // FIX v11.0.184: Remove parentheses (inline code comparison)
+                  .trim();
+              };
+              
+              const normalizedHtml = normalizeForComparison(htmlText);
+              const normalizedNotion = normalizeForComparison(notionText);
+              
               const notionWords = notionText.split(/\s+/).filter(w => w.length > 0);
               
-              // Build set of HTML words for faster lookup (normalized)
-              const htmlWordSet = new Set(htmlWords.map(w => w.toLowerCase().trim()));
-              
-              // Find sequences of words in Notion that are missing from HTML
+              // Find sequences of words in Notion that are NOT in HTML using phrase matching
               const extraSequences = [];
               let currentSequence = [];
+              const phraseLength = 4; // Use 4-word phrases for matching
               
               for (let i = 0; i < notionWords.length; i++) {
-                const word = notionWords[i];
-                const normalizedWord = word.toLowerCase().trim();
+                // Build a phrase starting at this position
+                const phraseWords = [];
+                for (let j = i; j < Math.min(i + phraseLength, notionWords.length); j++) {
+                  phraseWords.push(notionWords[j]);
+                }
+                const phrase = normalizeForComparison(phraseWords.join(' '));
                 
-                // Check if this word exists in HTML
-                if (!htmlWordSet.has(normalizedWord)) {
-                  currentSequence.push(word);
+                // Check if this phrase exists in HTML
+                const phraseExists = normalizedHtml.includes(phrase);
+                
+                if (!phraseExists) {
+                  // Phrase not found in HTML, add current word to sequence
+                  currentSequence.push(notionWords[i]);
                 } else {
-                  // Word found in HTML, save current sequence if it exists
+                  // Phrase found in HTML, save current sequence if it exists and is substantial
                   if (currentSequence.length > 0) {
-                    extraSequences.push(currentSequence.join(' '));
+                    const sequenceText = currentSequence.join(' ');
+                    // Only include sequences longer than 10 chars to avoid noise
+                    if (sequenceText.length > 10) {
+                      extraSequences.push(sequenceText);
+                    }
                     currentSequence = [];
                   }
                 }
               }
               
-              // Add final sequence if exists
+              // Add final sequence if exists and is substantial
               if (currentSequence.length > 0) {
-                extraSequences.push(currentSequence.join(' '));
+                const sequenceText = currentSequence.join(' ');
+                if (sequenceText.length > 10) {
+                  extraSequences.push(sequenceText);
+                }
               }
               
               // Add each extra sequence as a segment
@@ -4877,12 +5229,51 @@ ${html || ''}
       }
       
       // Use calculated source and Notion counts
+      // FIX v11.0.186: Three-tier ContentComparison logic based on element types
+      // ❌ FAIL if mismatch in: Headings, Code blocks, Tables, Images, Callouts (critical elements)
+      // ⚠️ PASS if mismatch in: Ordered lists, Unordered lists, Paragraphs (flexible elements)
+      // ✅ PASS if all elements match
+      const hasHtmlContent = Object.values(sourceCounts).some(count => count > 0);
+      
+      // Critical elements - strict matching required
       const tablesMatch = (sourceCounts.tables === notionCounts.tables);
       const imagesMatch = (sourceCounts.images === notionCounts.images);
       const calloutsMatch = (sourceCounts.callouts === notionCounts.callouts);
-      const countsPass = tablesMatch && imagesMatch && calloutsMatch;
-      const countsIcon = countsPass ? '✅' : '❌';
-      const statsHeader = `${countsIcon}  Content Comparison: ${countsPass ? 'PASS' : 'FAIL'}`;
+      const headingsMatch = (sourceCounts.headings === notionCounts.headings);
+      const codeMatch = (sourceCounts.code === notionCounts.code);
+      
+      // Flexible elements - may vary due to HTML structure differences
+      const orderedListMatch = (sourceCounts.orderedList === notionCounts.orderedList);
+      const unorderedListMatch = (sourceCounts.unorderedList === notionCounts.unorderedList);
+      const paragraphsMatch = (sourceCounts.paragraphs === notionCounts.paragraphs);
+      
+      // Determine comparison status (v11.0.186)
+      const criticalMismatch = !tablesMatch || !imagesMatch || !calloutsMatch || 
+                               !headingsMatch || !codeMatch;
+      const flexibleMismatch = !orderedListMatch || !unorderedListMatch || !paragraphsMatch;
+      
+      let countsPass;
+      let countsIcon;
+      let comparisonStatus;
+      
+      if (criticalMismatch) {
+        // FAIL - critical elements don't match
+        countsPass = false;
+        countsIcon = '❌';
+        comparisonStatus = 'FAIL';
+      } else if (flexibleMismatch) {
+        // PASS with warning - flexible elements may differ, but critical ones match
+        countsPass = true;
+        countsIcon = '⚠️';
+        comparisonStatus = 'PASS';
+      } else {
+        // PASS - all elements match
+        countsPass = true;
+        countsIcon = '✅';
+        comparisonStatus = 'PASS';
+      }
+      
+      const statsHeader = `${countsIcon}  Content Comparison: ${comparisonStatus}`;
       const statsLines = [
         statsHeader,
         '📊 (Source → Notion):',
@@ -4911,34 +5302,47 @@ ${html || ''}
       log(`   Stats content length: ${truncatedStatsContent.length} chars`);
       log(`   Stats content preview: ${truncatedStatsContent.substring(0, 100)}...`);
       
+      // FIX v11.0.187: Mark pages with critical failures for auto-save
+      // Trigger auto-save if ContentComparison = FAIL or Audit = FAIL
+      const hasContentComparisonFail = countsPass === false;
+      const hasAuditFail = auditResult && auditResult.passed === false;
+      const shouldAutoSaveForFailure = hasContentComparisonFail || hasAuditFail;
+      
+      if (shouldAutoSaveForFailure) {
+        log(`🚩 [v11.0.187-PATCH] Critical failure detected:`);
+        if (hasContentComparisonFail) log(`   • ContentComparison: ❌ FAIL (critical element mismatch)`);
+        if (hasAuditFail) log(`   • Content Audit: ❌ FAIL`);
+        log(`   → Page will be auto-saved to pages-to-update after PATCH`);
+      }
+      
       // Set Image checkbox if page contains images
       if (sourceCounts.images > 0) {
         propertyUpdates["Image"] = { checkbox: true };
         log(`🖼️ Setting Image checkbox (${sourceCounts.images} image${sourceCounts.images === 1 ? '' : 's'} detected in PATCH)`);
       }
       
-      // FIX v11.0.115: Check which property names exist (backward compatibility for Validation→Audit, Stats→ContentComparison rename)
+      // FIX v11.0.115: Check which property names exist (backward compatibility for Validation→Audit rename)
       let auditPropertyName = "Audit";
-      let statsPropertyName = "ContentComparison";
+      let comparisonPropertyName = "ContentComparison";
       
       try {
         const pageInfo = await notion.pages.retrieve({ page_id: pageId });
         const existingProps = Object.keys(pageInfo.properties);
         
+        // FIX v11.0.172: Log all existing properties for debugging
+        log(`📋 [PROPERTY-CHECK] Page has ${existingProps.length} properties: ${existingProps.join(', ')}`);
+        
         // Check if old property names exist and new ones don't
         const hasOldAudit = existingProps.includes("Validation");
         const hasNewAudit = existingProps.includes("Audit");
-        const hasOldStats = existingProps.includes("Stats");
-        const hasNewStats = existingProps.includes("ContentComparison");
+        const hasContentComparison = existingProps.includes("ContentComparison");
+        
+        log(`📋 [PROPERTY-CHECK] Audit: hasOld=${hasOldAudit}, hasNew=${hasNewAudit}`);
+        log(`📋 [PROPERTY-CHECK] ContentComparison: exists=${hasContentComparison}`);
         
         if (hasOldAudit && !hasNewAudit) {
           auditPropertyName = "Validation";
           log(`🔄 Using legacy property name: "Validation" (new name "Audit" not found)`);
-        }
-        
-        if (hasOldStats && !hasNewStats) {
-          statsPropertyName = "Stats";
-          log(`🔄 Using legacy property name: "Stats" (new name "ContentComparison" not found)`);
         }
         
         // Rename property keys if using legacy names
@@ -4947,12 +5351,19 @@ ${html || ''}
           delete propertyUpdates["Audit"];
         }
         
-        if (statsPropertyName === "Stats" && propertyUpdates["ContentComparison"]) {
-          propertyUpdates["Stats"] = propertyUpdates["ContentComparison"];
+        // FIX v11.0.172: If ContentComparison property doesn't exist, don't send it
+        if (!hasContentComparison && propertyUpdates["ContentComparison"]) {
+          log(`⚠️ ContentComparison property not found in database, skipping update`);
           delete propertyUpdates["ContentComparison"];
         }
         
-        log(`📝 Property names resolved: Audit="${auditPropertyName}", Stats="${statsPropertyName}"`);
+        // FIX v11.0.172: If neither old nor new Audit property exists, don't send it
+        if (!hasOldAudit && !hasNewAudit && propertyUpdates["Audit"]) {
+          log(`⚠️ Audit property not found in database (neither "Validation" nor "Audit"), skipping Audit update`);
+          delete propertyUpdates["Audit"];
+        }
+        
+        log(`📝 Property names resolved: Audit="${auditPropertyName}", ContentComparison="${comparisonPropertyName}"`);
         
       } catch (propCheckError) {
         log(`⚠️ Could not check existing properties (using new names): ${propCheckError.message}`);
@@ -4977,7 +5388,7 @@ ${html || ''}
           log(`   Notion API response: ${JSON.stringify(updateResult).substring(0, 200)}...`);
           
           propertyUpdateSuccess = true;
-          log(`✅ [PATCH-PROPERTY-RETRY] Validation properties updated successfully${propRetry > 0 ? ` (after ${propRetry} retry)` : ''} (used "${auditPropertyName}" and "${statsPropertyName}")`);
+          log(`✅ [PATCH-PROPERTY-RETRY] Validation properties updated successfully${propRetry > 0 ? ` (after ${propRetry} retry)` : ''} (used "${auditPropertyName}" and "${comparisonPropertyName}")`);
           
         } catch (propUpdateError) {
           propertyUpdateError = propUpdateError;
@@ -5207,6 +5618,77 @@ ${html || ''}
     }
     
     const totalPatchTime = ((Date.now() - patchStartTime) / 1000).toFixed(1);
+    
+    // FIX v11.0.187: Auto-save pages with critical failures after PATCH
+    if (shouldAutoSaveForFailure) {
+      try {
+        log(`💾 [v11.0.187-PATCH] Auto-saving PATCH page with critical failure to pages-to-update...`);
+        const fs = require('fs');
+        const path = require('path');
+        
+        const pagesUpdateDir = path.join(__dirname, '../../patch/pages/pages-to-update');
+        if (!fs.existsSync(pagesUpdateDir)) {
+          fs.mkdirSync(pagesUpdateDir, { recursive: true });
+        }
+        
+        const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
+        const sanitizedTitle = (pageTitle || 'untitled')
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .substring(0, 60);
+        const filename = `${sanitizedTitle}-patch-failure-${timestamp}.html`;
+        const filepath = path.join(pagesUpdateDir, filename);
+        
+        const failureReasons = [];
+        if (hasContentComparisonFail) {
+          failureReasons.push(`ContentComparison FAIL: ${sourceCounts.headings}→${notionCounts.headings} headings`);
+        }
+        if (hasAuditFail) {
+          failureReasons.push(`Content Audit FAIL: Coverage ${auditResult.coverageStr}`);
+        }
+        
+        const htmlContent = `<!--
+Auto-saved: PATCH with critical validation failure (v11.0.187)
+Page ID: ${pageId}
+Page URL: https://notion.so/${pageId.replace(/-/g, '')}
+Page Title: ${pageTitle}
+PATCH Completed: ${new Date().toISOString()}
+
+Failure Reasons (AFTER PATCH):
+${failureReasons.map(r => '• ' + r).join('\n')}
+
+Content Comparison Status: ${countsIcon}  ${comparisonStatus}
+Headings: ${sourceCounts.headings} → ${notionCounts.headings}
+Ordered lists: ${sourceCounts.orderedList} → ${notionCounts.orderedList}
+Unordered lists: ${sourceCounts.unorderedList} → ${notionCounts.unorderedList}
+Paragraphs: ${sourceCounts.paragraphs} → ${notionCounts.paragraphs}
+Code blocks: ${sourceCounts.code} → ${notionCounts.code}
+Tables: ${sourceCounts.tables} → ${notionCounts.tables}
+Images: ${sourceCounts.images} → ${notionCounts.images}
+Callouts: ${sourceCounts.callouts} → ${notionCounts.callouts}
+
+${auditResult ? `Audit Coverage: ${auditResult.coverageStr}
+Audit Status: ${auditResult.passed ? '✅ PASS' : '❌ FAIL'}` : 'Audit: SKIPPED'}
+
+Blocks Added: ${extractedBlocks.length}
+Blocks Deleted: ${deletedCount}
+Patch Duration: ${totalPatchTime}s
+
+Action Required: Review extraction and manually fix content or re-extract from source
+-->
+
+${payload?.contentHtml || '<!-- Original HTML content not available in PATCH -->'}
+`;
+        
+        fs.writeFileSync(filepath, htmlContent, 'utf-8');
+        log(`✅ [v11.0.187-PATCH] Page auto-saved to pages-to-update for re-extraction`);
+        log(`   Filename: ${filename}`);
+        log(`   Location: patch/pages/pages-to-update/`);
+      } catch (saveError) {
+        log(`❌ [v11.0.187-PATCH] Failed to auto-save PATCH page with critical failure: ${saveError.message}`);
+      }
+    }
     
     const result = {
       success: true,
