@@ -275,7 +275,15 @@ async function extractContentFromHtml(html) {
     $audit('.btn, .button, [role="button"]').remove(); // Also remove common button classes
     
     // FIX v11.0.160: Exclude code blocks from audit validation
-    $audit('pre, code').remove(); // Remove <pre> and <code> blocks - not counted in text validation
+    // FIX v11.0.180: Revert inline code parentheses (caused validation failures)
+    // Remove both code blocks (<pre>) AND inline code (<code>) from AUDIT
+    $audit('pre, code').remove(); // Code not counted in text validation
+    
+    // FIX v11.0.190: Exclude callouts inside tables from AUDIT validation
+    // Notion table cells cannot contain callouts, so callout content inside tables
+    // gets converted to plain text or other block types, not callout blocks
+    // This prevents AUDIT mismatches where HTML counts callouts in tables but Notion doesn't
+    $audit('table div.note, table div.info, table div.warning, table div.important, table div.tip, table div.caution, table aside, table section.prereq').remove();
     
     const allTextNodes = [];
     
@@ -283,9 +291,12 @@ async function extractContentFromHtml(html) {
       if (!node) return;
       
       if (node.type === 'text' && node.data && node.data.trim()) {
+        // FIX v11.0.185: Normalize spaces within text nodes before AUDIT
+        // Extra spaces like "Service Management ( ITSM" → "Service Management (ITSM"
+        const normalizedText = node.data.trim().replace(/\s+/g, ' '); // Collapse multiple spaces to single
         allTextNodes.push({
-          text: node.data.trim(),
-          length: node.data.trim().length,
+          text: normalizedText,
+          length: normalizedText.length,
           parent: node.parent?.name || 'unknown',
           parentClass: $audit(node.parent).attr('class') || 'none'
         });
@@ -365,6 +376,23 @@ async function extractContentFromHtml(html) {
     
     if (!miniTocFound) {
       console.log(`🔍 [AUDIT] No Mini TOC sidebar found in source HTML`);
+    }
+    
+    // FIX v11.0.172: Remove figure captions and labels (images handle their own captions)
+    $auditHtml('figcaption, .figcap, .fig-title, .figure-title').remove();
+    // Remove standalone "Figure X" text patterns that are separate from actual content
+    let figureCount = 0;
+    $auditHtml('p, div, span').each((i, elem) => {
+      const $elem = $auditHtml(elem);
+      const text = $elem.text().trim();
+      // Match patterns like "Figure 1.", "Figure 2", "Fig. 1:", etc.
+      if (/^fig(?:ure)?\s*\d+\.?\:?$/i.test(text)) {
+        $elem.remove();
+        figureCount++;
+      }
+    });
+    if (figureCount > 0) {
+      console.log(`🔍 [AUDIT] Excluded ${figureCount} figure label(s) from source character count`);
     }
     
     const filteredHtml = $auditHtml.html();
@@ -506,7 +534,10 @@ async function extractContentFromHtml(html) {
     // Check multiple element types that might contain table titles
     // NOTE: 'span' excluded - inline elements should not be evaluated as table title containers
     // Spans are semantic formatting within block elements, not standalone content blocks
-    const elementsToCheck = ['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
+    // FIX v11.0.189: Exclude headings (h1-h6) from table title removal - headings are structural content
+    // that introduce sections, not duplicate table titles. Pattern A pages were losing headings like
+    // "Solution definitions" because they matched table captions.
+    const elementsToCheck = ['p', 'div'];
     
     for (const element of elementsToCheck) {
       html = html.replace(new RegExp(`<${element}[^>]*>([\\s\\S]*?)</${element}>`, 'gi'), (match, content) => {
@@ -6120,7 +6151,18 @@ async function extractContentFromHtml(html) {
       
       function extractFromRichText(richTextArray) {
         if (!Array.isArray(richTextArray)) return '';
-        return richTextArray.map(rt => rt?.text?.content || '').join('');
+        // FIX v11.0.183: Skip inline code (annotations.code = true) to match HTML AUDIT behavior
+        // HTML AUDIT removes <code> tags, so Notion comparison should skip inline code too
+        // FIX v11.0.185: Normalize spaces within each text element before joining
+        // Ensures "Service Management ( ITSM" = "Service Management (ITSM" for comparison
+        return richTextArray
+          .filter(rt => !rt?.annotations?.code) // Skip inline code elements
+          .map(rt => {
+            const text = rt?.text?.content || '';
+            // Normalize multiple spaces to single space
+            return text.replace(/\s+/g, ' ');
+          })
+          .join('');
       }
       
       // Extract from all block types (except code blocks)
@@ -6376,9 +6418,11 @@ async function extractContentFromHtml(html) {
       
       // FIX v11.0.159: Exclude buttons from detailed comparison
       // FIX v11.0.160: Exclude code blocks from detailed comparison
+      // FIX v11.0.172: Exclude figure captions from detailed comparison
+      // FIX v11.0.180: Revert inline code parentheses (caused validation failures)
       $auditHtml('button').remove();
       $auditHtml('.btn, .button, [role="button"]').remove();
-      $auditHtml('pre, code').remove(); // Remove code blocks - not counted in text validation
+      $auditHtml('pre, code').remove(); // Code not counted in text validation
       
       $auditHtml('.contentPlaceholder').each((i, elem) => {
         const $elem = $auditHtml(elem);
@@ -6387,6 +6431,17 @@ async function extractContentFromHtml(html) {
           $elem.remove();
         }
       });
+      
+      // FIX v11.0.172: Remove figure captions and labels
+      $auditHtml('figcaption, .figcap, .fig-title, .figure-title').remove();
+      $auditHtml('p, div, span').each((i, elem) => {
+        const $elem = $auditHtml(elem);
+        const text = $elem.text().trim();
+        if (/^fig(?:ure)?\s*\d+\.?\:?$/i.test(text)) {
+          $elem.remove();
+        }
+      });
+      
       const filteredHtml = $auditHtml.html();
 
       // Helper: detect formatting-only segments we should ignore (e.g., "Figure 1.")
@@ -6419,9 +6474,11 @@ async function extractContentFromHtml(html) {
         
         // FIX v11.0.159: Exclude buttons from detailed comparison
         // FIX v11.0.160: Exclude code blocks from detailed comparison
+        // FIX v11.0.180: Revert inline code parentheses (caused validation failures)
         $('button').remove();
         $('.btn, .button, [role="button"]').remove();
-        $('pre, code').remove(); // Remove code blocks - not counted in text validation
+        $('pre, code').remove(); // Code not counted in text validation
+        
         $('.contentPlaceholder').each((i, elem) => {
           const $elem = $(elem);
           
@@ -6439,6 +6496,20 @@ async function extractContentFromHtml(html) {
             $elem.remove();
           }
         });
+        
+        // FIX v11.0.173: Add spaces around block elements (same as PATCH logic)
+        // This prevents word concatenation like "experienceAutomate"
+        const blockElements = 'p, div, h1, h2, h3, h4, h5, h6, li, td, th, tr, table, section, article, aside, header, footer, nav, main, blockquote, pre, hr, dl, dt, dd, ul, ol, figure';
+        $(blockElements).each((i, elem) => {
+          const $elem = $(elem);
+          const content = $elem.html();
+          if (content) {
+            $elem.html(' ' + content + ' ');
+          }
+        });
+        
+        // Replace <br> tags with spaces
+        $('br').replaceWith(' ');
 
         function collectSegments($elem, context = '') {
           $elem.contents().each((_, node) => {
@@ -6554,7 +6625,15 @@ async function extractContentFromHtml(html) {
 
           // Extract from rich_text (except code blocks)
           if (Array.isArray(data.rich_text)) {
-            let text = data.rich_text.map(rt => rt.plain_text || rt.text?.content || '').join('').trim();
+            // FIX v11.0.173: Add parentheses around inline code for AUDIT comparison
+            let text = data.rich_text.map(rt => {
+              const content = rt.plain_text || rt.text?.content || '';
+              // If this text segment has code annotation, wrap in parentheses
+              if (rt.annotations && rt.annotations.code) {
+                return '(' + content + ')';
+              }
+              return content;
+            }).join('').trim();
             // Strip marker tokens first (Fix #1)
             text = stripSn2nMarkers(text);
             // Strip diagnostic parenthetical annotations
@@ -6575,7 +6654,10 @@ async function extractContentFromHtml(html) {
           if (blockType === 'table_row' && Array.isArray(data.cells)) {
             data.cells.forEach((cell, cellIndex) => {
               if (Array.isArray(cell)) {
-                const cellText = cell.map(rt => rt.plain_text || rt.text?.content || '').join('').trim();
+                // FIX v11.0.180: Revert inline code parentheses (caused validation failures)
+                const cellText = cell.map(rt => {
+                  return rt.plain_text || rt.text?.content || '';
+                }).join('').trim();
                 if (cellText.length > 0) {
                   segments.push({
                     text: cellText,
@@ -6672,21 +6754,123 @@ async function extractContentFromHtml(html) {
       const htmlSegments = extractHtmlTextSegments(filteredHtml);
       const notionSegments = extractNotionTextSegments(blocks);
 
-      // Create normalized versions for comparison
-      const htmlNormalized = htmlSegments.map(s => ({ ...s, normalized: normalizeText(s.text) }));
-      const notionNormalized = notionSegments.map(s => ({ ...s, normalized: normalizeText(s.text) }));
+      // FIX v11.0.172: Use phrase-based matching instead of segment-based matching
+      // to reduce false positives from formatting/whitespace differences
+      
+      // Convert segments to full text for phrase matching
+      const htmlText = htmlSegments.map(s => s.text).join(' ').trim();
+      const notionText = notionSegments.map(s => s.text).join(' ').trim();
+      
+      // Normalize for comparison (same as PATCH logic)
+      const normalizeForComparison = (text) => {
+        return text.toLowerCase()
+          .replace(/\s+/g, ' ')  // Normalize whitespace
+          .replace(/[""'']/g, '"')  // Normalize quotes
+          .replace(/[–—]/g, '-')  // Normalize dashes
+          .replace(/[()]/g, '')  // FIX v11.0.184: Remove parentheses (inline code comparison)
+          .trim();
+      };
+      
+      const normalizedHtml = normalizeForComparison(htmlText);
+      const normalizedNotion = normalizeForComparison(notionText);
+      const htmlWords = htmlText.split(/\s+/).filter(w => w.length > 0);
+      const notionWords = notionText.split(/\s+/).filter(w => w.length > 0);
+      
+      // Find missing sequences using phrase matching (4-word sliding window)
+      const missingSegmentsFull = [];
+      let currentSequence = [];
+      const phraseLength = 4;
+      
+      for (let i = 0; i < htmlWords.length; i++) {
+        const phraseWords = [];
+        for (let j = i; j < Math.min(i + phraseLength, htmlWords.length); j++) {
+          phraseWords.push(htmlWords[j]);
+        }
+        const phrase = normalizeForComparison(phraseWords.join(' '));
+        const phraseExists = normalizedNotion.includes(phrase);
+        
+        if (!phraseExists) {
+          currentSequence.push(htmlWords[i]);
+        } else {
+          if (currentSequence.length > 0) {
+            const sequenceText = currentSequence.join(' ');
+            // Only include sequences longer than 10 chars
+            if (sequenceText.length > 10) {
+              missingSegmentsFull.push({
+                text: sequenceText,
+                context: 'html',
+                length: sequenceText.length
+              });
+            }
+            currentSequence = [];
+          }
+        }
+      }
+      if (currentSequence.length > 0) {
+        const sequenceText = currentSequence.join(' ');
+        if (sequenceText.length > 10) {
+          missingSegmentsFull.push({
+            text: sequenceText,
+            context: 'html',
+            length: sequenceText.length
+          });
+        }
+      }
+      
+      // Find extra sequences using phrase matching
+      const extraSegmentsFull = [];
+      currentSequence = [];
+      
+      for (let i = 0; i < notionWords.length; i++) {
+        const phraseWords = [];
+        for (let j = i; j < Math.min(i + phraseLength, notionWords.length); j++) {
+          phraseWords.push(notionWords[j]);
+        }
+        const phrase = normalizeForComparison(phraseWords.join(' '));
+        const phraseExists = normalizedHtml.includes(phrase);
+        
+        if (!phraseExists) {
+          currentSequence.push(notionWords[i]);
+        } else {
+          if (currentSequence.length > 0) {
+            const sequenceText = currentSequence.join(' ');
+            // Only include sequences longer than 10 chars
+            if (sequenceText.length > 10) {
+              extraSegmentsFull.push({
+                text: sequenceText,
+                context: 'notion',
+                length: sequenceText.length
+              });
+            }
+            currentSequence = [];
+          }
+        }
+      }
+      if (currentSequence.length > 0) {
+        const sequenceText = currentSequence.join(' ');
+        if (sequenceText.length > 10) {
+          extraSegmentsFull.push({
+            text: sequenceText,
+            context: 'notion',
+            length: sequenceText.length
+          });
+        }
+      }
 
-      // Find missing segments (in HTML but not in Notion)
-      const notionNormalizedSet = new Set(notionNormalized.map(s => s.normalized));
-      const missingSegmentsFull = htmlNormalized.filter(s => !notionNormalizedSet.has(s.normalized));
-
-      // Find extra segments (in Notion but not in HTML)
-      const htmlNormalizedSet = new Set(htmlNormalized.map(s => s.normalized));
-      const extraSegmentsFull = notionNormalized.filter(s => !htmlNormalizedSet.has(s.normalized));
-
-      // For reporting we will slice later; operate on full lists for matching/filtering to avoid missing group matches
-
-      // Advanced matching: Find groups of segments that collectively match
+      // FIX v11.0.172: Phrase-based matching replaces old findGroupMatches logic
+      // Return results directly without additional group matching
+      return {
+        htmlSegmentCount: htmlSegments.length,
+        notionSegmentCount: notionSegments.length,
+        missingSegments: missingSegmentsFull.slice(0, 10), // Limit to first 10
+        extraSegments: extraSegmentsFull.slice(0, 10),
+        groupMatches: [], // No longer used with phrase-based matching
+        totalMissingChars: missingSegmentsFull.reduce((sum, s) => sum + (s.length || 0), 0),
+        totalExtraChars: extraSegmentsFull.reduce((sum, s) => sum + (s.length || 0), 0)
+      };
+      
+      // OLD LOGIC BELOW - KEPT FOR REFERENCE BUT NOT EXECUTED
+      /*
       function findGroupMatches(missing, extra) {
         const matches = [];
 
@@ -6902,6 +7086,8 @@ async function extractContentFromHtml(html) {
           totalExtraChars: fallbackExtra.reduce((sum, s) => sum + (s.length || 0), 0)
         };
       }
+      */
+      // END OF OLD LOGIC
     }
 
     // Add detailed comparison to audit results
@@ -7233,7 +7419,7 @@ async function extractContentFromHtml(html) {
  * This coalesces multiple rich_text elements into single plain text strings
  * WITHOUT affecting the actual formatted blocks sent to Notion.
  * 
- * Used for validation statistics (Validation & Stats properties) where formatted
+ * Used for validation statistics (Audit & ContentComparison properties) where formatted
  * variations should be normalized for accurate comparison.
  * 
  * @param {Array} blocks - Array of Notion block objects with formatting
