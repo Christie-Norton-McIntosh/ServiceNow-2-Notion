@@ -2017,6 +2017,13 @@ router.post('/W2N', async (req, res) => {
               validationLines.push('AUDIT system not enabled - no coverage data available');
             }
             
+            // FIX v11.0.216: Include detailed missing segments in Audit property
+            // Users need to see WHAT content is missing, not just coverage percentage
+            if (missingSection) {
+              validationLines.push('');
+              validationLines.push(missingSection);
+            }
+            
             const auditContent = validationLines.join('\n');
 
             log(`📊 [POST-AUDIT-DEBUG] Setting Audit property (POST):`);
