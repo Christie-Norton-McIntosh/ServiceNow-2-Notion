@@ -23,8 +23,10 @@ The `expectedCallouts` calculation in `server/routes/w2n.cjs` (lines 357-410) wa
 It was NOT filtering out:
 2. **Callouts inside tables** ← This was the bug
 
-## The Fix
-Modified `server/routes/w2n.cjs` lines 376-425 to add a check for callouts inside tables:
+## The Fix (Two Parts)
+
+### Part 1: Expected Callouts Count (w2n.cjs lines 376-425)
+When calculating which callouts Notion should have created for dedup logic:
 
 ```javascript
 if (isDivNote || isPrereq || hasNoteRole) {
@@ -48,6 +50,27 @@ if (isDivNote || isPrereq || hasNoteRole) {
   // ... rest of nested callout check ...
 }
 ```
+
+### Part 2: HTML Source Callout Count (w2n.cjs lines 2202 & 4600)
+When comparing HTML source counts to Notion output in AUDIT validation:
+
+```javascript
+// Count callouts - exclude those inside tables
+let calloutCount = 0;
+$('div.note, div.warning, div.info, div.tip, div.caution, div.important').each((i, elem) => {
+  const $elem = $(elem);
+  // Skip if this callout is inside a table - it won't be rendered as a callout block
+  const inTable = $elem.closest('table, thead, tbody, tr, td, th').length > 0;
+  if (!inTable) {
+    calloutCount++;
+  }
+});
+sourceCounts.callouts = calloutCount;
+```
+
+**Two locations fixed:**
+- Line 2202: POST validation (when creating new pages)
+- Line 4600: PATCH validation (when updating existing pages)
 
 ## Why This Works
 1. **Extraction Pipeline** (servicenow.cjs line 287): Removes callouts from tables because Notion table cells can't contain callout blocks

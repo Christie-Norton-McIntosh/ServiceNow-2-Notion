@@ -6371,8 +6371,10 @@ async function extractContentFromHtml(html) {
       thresholdReason = 'many nested lists';
     } else if (contentAnalysis.tableCount > 0 || contentAnalysis.calloutCount > 2) {
       // Tables or multiple callouts
+      // FIX v11.0.86+: Increased maxThreshold to 130% to account for Notion formatting overhead
+      // Tables, callouts, and structured content can add 20-30% due to cell spacing, icons, etc.
       minThreshold = 65;
-      maxThreshold = 110;
+      maxThreshold = 130;
       thresholdReason = 'tables/callouts present';
     } else if (blockCount > 100 || nodeRatio < 0.3) {
       // Large/complex page by size
