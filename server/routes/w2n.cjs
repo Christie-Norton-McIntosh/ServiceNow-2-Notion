@@ -1963,17 +1963,28 @@ router.post('/W2N', async (req, res) => {
             
             // Content Audit section (AUDIT coverage - PASS/FAIL/SKIPPED)
             if (auditResult) {
-              validationLines.push(`[${timestamp}] Content Audit: ${auditResult.passed ? '✅ PASS' : '❌ FAIL'}`);
-              validationLines.push(`Coverage: ${auditResult.coverageStr} (threshold: ${auditResult.threshold || '95-105%'})`);
+              // FIX v11.0.86+: Reorganized output format for clarity
+              // Primary focus: Content extraction success + formatting overhead
+              // Secondary details: Content complexity
               
-              // Add threshold reason if available
-              if (auditResult.thresholdReason) {
-                validationLines.push(`Threshold reason: ${auditResult.thresholdReason}`);
+              // Line 1: Timestamp + Content extraction status
+              if (auditResult.missing === 0 && auditResult.extra === 0) {
+                // Perfect match
+                validationLines.push(`[${timestamp}] ✅ Content Extraction: 100.0% of source (exact match)`);
+              } else if (auditResult.missing === 0 && auditResult.extra > 0) {
+                // All content extracted, with formatting overhead
+                const formattingOverhead = auditResult.extraPercent;
+                validationLines.push(`[${timestamp}] ✅ Content Extraction: 100.0% of source (all content preserved)`);
+                validationLines.push(`Formatting Overhead: +${formattingOverhead}% `);
+              } else if (auditResult.missing > 0) {
+                // Some content missing
+                const contentExtracted = 100 - auditResult.missingPercent;
+                validationLines.push(`[${timestamp}] ${auditResult.passed ? '✅' : '⚠️'} Content Extraction: ${contentExtracted.toFixed(1)}% of source`);
+                if (auditResult.extra > 0) {
+                  validationLines.push(`Formatting Overhead: +${auditResult.extraPercent}%`);
+                }
+                validationLines.push(`⚠️ Missing: ${auditResult.missing.toLocaleString()} chars (${auditResult.missingPercent}%)`);
               }
-              
-              validationLines.push(`Source: ${auditResult.nodeCount || 'N/A'} text nodes, ${auditResult.totalLength || 'N/A'} chars`);
-              validationLines.push(`Notion: ${auditResult.notionBlocks} blocks, ${auditResult.notionTextLength} chars`);
-              validationLines.push(`Block/Node Ratio: ${auditResult.blockNodeRatio}x`);
               
               // Add content complexity summary if available
               if (auditResult.contentAnalysis) {
@@ -1985,28 +1996,18 @@ router.post('/W2N', async (req, res) => {
                 if (ca.deepNestingCount > 0) complexityDetails.push(`${ca.deepNestingCount} deep nesting block${ca.deepNestingCount > 1 ? 's' : ''}`);
                 
                 if (complexityDetails.length > 0) {
-                  validationLines.push(`Content: ${complexityDetails.join(', ')}`);
+                  validationLines.push(`\nContent: ${complexityDetails.join(', ')}`);
                 }
               }
               
-              if (auditResult.missing > 0) {
-                validationLines.push(`⚠️ Missing: ${auditResult.missing.toLocaleString()} chars (${auditResult.missingPercent}%)`);
-              }
+              // Add coverage and threshold info (for reference)
+              validationLines.push(`\nCoverage: ${auditResult.coverageStr} (threshold: ${auditResult.threshold || '95-105%'})`);
               
-              // FIX v11.0.86+: Show content extraction success + formatting overhead breakdown
-              // Instead of just "Extra: X chars", explain that all content was extracted
-              // and the extra is just formatting metadata from tables/callouts/lists
-              if (auditResult.extra > 0) {
-                const contentExtracted = 100 - auditResult.missingPercent;
-                const formattingOverhead = auditResult.extraPercent;
-                validationLines.push(`✅ Content Extraction: ${contentExtracted.toFixed(1)}% of source (all content preserved)`);
-                validationLines.push(`   Formatting Overhead: +${formattingOverhead}% (tables, callouts, lists add metadata)`);
-              } else if (auditResult.missing === 0) {
-                // No extra, no missing = perfect match
-                validationLines.push(`✅ Content Extraction: 100% of source (exact match)`);
-              }
-
-              // Add segment counts to Audit property (hidden detail, not in main output)
+              // Add technical details (hidden from casual reading)
+              validationLines.push(`Source: ${auditResult.nodeCount || 'N/A'} text nodes, ${auditResult.totalLength || 'N/A'} chars`);
+              validationLines.push(`Notion: ${auditResult.notionBlocks} blocks, ${auditResult.notionTextLength} chars`);
+              validationLines.push(`Block/Node Ratio: ${auditResult.blockNodeRatio}x`);
+              
               if (auditResult.detailedComparison) {
                 const dc = auditResult.detailedComparison;
                 validationLines.push(`HTML segments: ${dc.htmlSegmentCount}, Notion segments: ${dc.notionSegmentCount}`);
@@ -4409,21 +4410,28 @@ ${html || ''}
       
       // Build validation content with Content Audit section only
       const validationLines = [];
+      const timestamp = new Date().toISOString().split('T')[0];
       
-      // Content Audit section (AUDIT coverage - PASS/FAIL/SKIPPED)
-      validationLines.push(`[${new Date().toISOString().split('T')[0]}] Content Audit: ${auditIcon} ${auditStatus}`);
-      
+      // Content Audit section (AUDIT coverage - reorganized format)
       if (auditResult) {
-        validationLines.push(`Coverage: ${auditResult.coverageStr} (threshold: ${auditResult.threshold || '95-105%'})`);
-        
-        // Add threshold reason if available
-        if (auditResult.thresholdReason) {
-          validationLines.push(`Threshold reason: ${auditResult.thresholdReason}`);
+        // FIX v11.0.86+: Reorganized output format for clarity (POST/PATCH alignment)
+        if (auditResult.missing === 0 && auditResult.extra === 0) {
+          // Perfect match
+          validationLines.push(`[${timestamp}] ✅ Content Extraction: 100.0% of source (exact match)`);
+        } else if (auditResult.missing === 0 && auditResult.extra > 0) {
+          // All content extracted, with formatting overhead
+          const formattingOverhead = auditResult.extraPercent;
+          validationLines.push(`[${timestamp}] ✅ Content Extraction: 100.0% of source (all content preserved)`);
+          validationLines.push(`Formatting Overhead: +${formattingOverhead}% `);
+        } else if (auditResult.missing > 0) {
+          // Some content missing
+          const contentExtracted = 100 - auditResult.missingPercent;
+          validationLines.push(`[${timestamp}] ${auditResult.passed ? '✅' : '⚠️'} Content Extraction: ${contentExtracted.toFixed(1)}% of source`);
+          if (auditResult.extra > 0) {
+            validationLines.push(`Formatting Overhead: +${auditResult.extraPercent}%`);
+          }
+          validationLines.push(`⚠️ Missing: ${auditResult.missing.toLocaleString()} chars (${auditResult.missingPercent}%)`);
         }
-        
-        validationLines.push(`Source: ${auditResult.nodeCount || 'N/A'} text nodes, ${auditResult.totalLength || 'N/A'} chars`);
-        validationLines.push(`Notion: ${auditResult.notionBlocks} blocks, ${auditResult.notionTextLength} chars`);
-        validationLines.push(`Block/Node Ratio: ${auditResult.blockNodeRatio}x`);
         
         // Add content complexity summary if available
         if (auditResult.contentAnalysis) {
@@ -4435,23 +4443,17 @@ ${html || ''}
           if (ca.deepNestingCount > 0) complexityDetails.push(`${ca.deepNestingCount} deep nesting block${ca.deepNestingCount > 1 ? 's' : ''}`);
           
           if (complexityDetails.length > 0) {
-            validationLines.push(`Content: ${complexityDetails.join(', ')}`);
+            validationLines.push(`\nContent: ${complexityDetails.join(', ')}`);
           }
         }
         
-        if (auditResult.missing > 0) {
-          validationLines.push(`⚠️ Missing: ${auditResult.missing.toLocaleString()} chars (${auditResult.missingPercent}%)`);
-        }
+        // Add coverage and threshold info (for reference)
+        validationLines.push(`\nCoverage: ${auditResult.coverageStr} (threshold: ${auditResult.threshold || '95-105%'})`);
         
-        // FIX v11.0.86+: Show content extraction success + formatting overhead breakdown
-        if (auditResult.extra > 0) {
-          const contentExtracted = 100 - auditResult.missingPercent;
-          const formattingOverhead = auditResult.extraPercent;
-          validationLines.push(`✅ Content Extraction: ${contentExtracted.toFixed(1)}% of source (all content preserved)`);
-          validationLines.push(`   Formatting Overhead: +${formattingOverhead}% (tables, callouts, lists add metadata)`);
-        } else if (auditResult.missing === 0) {
-          validationLines.push(`✅ Content Extraction: 100% of source (exact match)`);
-        }
+        // Add technical details
+        validationLines.push(`Source: ${auditResult.nodeCount || 'N/A'} text nodes, ${auditResult.totalLength || 'N/A'} chars`);
+        validationLines.push(`Notion: ${auditResult.notionBlocks} blocks, ${auditResult.notionTextLength} chars`);
+        validationLines.push(`Block/Node Ratio: ${auditResult.blockNodeRatio}x`);
       } else {
         validationLines.push('AUDIT system not enabled - no coverage data available');
       }
