@@ -285,11 +285,12 @@ async function extractContentFromHtml(html) {
     // This prevents AUDIT mismatches where HTML counts callouts in tables but Notion doesn't
     $audit('table div.note, table div.info, table div.warning, table div.important, table div.tip, table div.caution, table aside, table section.prereq').remove();
     
-    // FIX v11.0.201: Exclude "Before you begin" prerequisite sections from AUDIT
-    // These are converted to callout blocks in Notion, but they're not callouts in HTML source
-    // Excluding them from AUDIT prevents false callout count mismatches
+    // FIX v11.0.215: Include section.prereq in expectedCallouts counting
+    // The extraction pipeline INTENTIONALLY converts section.prereq/"Before you begin" to callout blocks
+    // (see servicenow.cjs line 4479: "Convert entire section to a callout with pushpin emoji")
+    // Therefore, AUDIT validation must COUNT them in expectedCallouts to match extraction behavior
     // Matches: <section class="prereq">, <div class="section prereq">, etc.
-    $audit('section.prereq, div.section.prereq, aside.prereq').remove();
+    // DO NOT remove section.prereq from AUDIT - it's a valid callout that users see in Notion
     
     const allTextNodes = [];
     
