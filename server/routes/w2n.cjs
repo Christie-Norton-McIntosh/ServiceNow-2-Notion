@@ -2198,9 +2198,19 @@ router.post('/W2N', async (req, res) => {
               // FIX v11.0.180: Only count top-level callout containers (not nested titles/children)
               // ServiceNow notes have structure: <div class="note note note_note"><span class="note__title">
               // We should only count the outer <div>, not the inner <span>
-              const calloutCount = $('div.note, div.warning, div.info, div.tip, div.caution, div.important').length;
+              // FIX v11.0.86: Exclude callouts inside tables - Notion table cells can't contain callout blocks
+              // Callouts in tables get converted to text/other types, not callout blocks
+              let calloutCount = 0;
+              $('div.note, div.warning, div.info, div.tip, div.caution, div.important').each((i, elem) => {
+                const $elem = $(elem);
+                // Skip if this callout is inside a table - it won't be rendered as a callout block
+                const inTable = $elem.closest('table, thead, tbody, tr, td, th').length > 0;
+                if (!inTable) {
+                  calloutCount++;
+                }
+              });
               sourceCounts.callouts = calloutCount;
-              log(`📊 [HTML-SOURCE-DEBUG] Found ${calloutCount} callout elements (top-level only)`);
+              log(`📊 [HTML-SOURCE-DEBUG] Found ${calloutCount} callout elements (excluding callouts in tables)`);
               
               // Count code blocks (pre or code tags)
               const preCount = $('pre').length;
@@ -4596,7 +4606,17 @@ ${html || ''}
         
         // Count callouts (note class, warning class, etc.)
         // FIX v11.0.180: Only count top-level callout containers (not nested titles/children)
-        const calloutCount = $('div.note, div.warning, div.info, div.tip, div.caution, div.important').length;
+        // FIX v11.0.86: Exclude callouts inside tables - Notion table cells can't contain callout blocks
+        // Callouts in tables get converted to text/other types, not callout blocks
+        let calloutCount = 0;
+        $('div.note, div.warning, div.info, div.tip, div.caution, div.important').each((i, elem) => {
+          const $elem = $(elem);
+          // Skip if this callout is inside a table - it won't be rendered as a callout block
+          const inTable = $elem.closest('table, thead, tbody, tr, td, th').length > 0;
+          if (!inTable) {
+            calloutCount++;
+          }
+        });
         sourceCounts.callouts = calloutCount;
         log(`📊 [PATCH-HTML-SOURCE-DEBUG] Found ${calloutCount} callout elements (top-level only)`);
         
