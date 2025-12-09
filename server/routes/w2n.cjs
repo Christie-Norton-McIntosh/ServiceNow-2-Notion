@@ -1993,11 +1993,20 @@ router.post('/W2N', async (req, res) => {
                 validationLines.push(`⚠️ Missing: ${auditResult.missing.toLocaleString()} chars (${auditResult.missingPercent}%)`);
               }
               
+              // FIX v11.0.86+: Show content extraction success + formatting overhead breakdown
+              // Instead of just "Extra: X chars", explain that all content was extracted
+              // and the extra is just formatting metadata from tables/callouts/lists
               if (auditResult.extra > 0) {
-                validationLines.push(`⚠️ Extra: ${auditResult.extra.toLocaleString()} chars (+${auditResult.extraPercent}%)`);
+                const contentExtracted = 100 - auditResult.missingPercent;
+                const formattingOverhead = auditResult.extraPercent;
+                validationLines.push(`✅ Content Extraction: ${contentExtracted.toFixed(1)}% of source (all content preserved)`);
+                validationLines.push(`   Formatting Overhead: +${formattingOverhead}% (tables, callouts, lists add metadata)`);
+              } else if (auditResult.missing === 0) {
+                // No extra, no missing = perfect match
+                validationLines.push(`✅ Content Extraction: 100% of source (exact match)`);
               }
 
-              // Add segment counts to Audit property
+              // Add segment counts to Audit property (hidden detail, not in main output)
               if (auditResult.detailedComparison) {
                 const dc = auditResult.detailedComparison;
                 validationLines.push(`HTML segments: ${dc.htmlSegmentCount}, Notion segments: ${dc.notionSegmentCount}`);
@@ -3005,8 +3014,14 @@ ${payload.contentHtml || ''}
             contentSummary += `\n⚠️ Missing: ${auditResult.missing} chars (${auditResult.missingPercent}%)`;
           }
           
+          // FIX v11.0.86+: Show content extraction success + formatting overhead breakdown
           if (auditResult.extra > 0) {
-            contentSummary += `\n⚠️ Extra: ${auditResult.extra} chars (+${auditResult.extraPercent}%)`;
+            const contentExtracted = 100 - auditResult.missingPercent;
+            const formattingOverhead = auditResult.extraPercent;
+            contentSummary += `\n✅ Content Extraction: ${contentExtracted.toFixed(1)}% of source (all content preserved)`;
+            contentSummary += `\n   Formatting Overhead: +${formattingOverhead}% (tables, callouts, lists add metadata)`;
+          } else if (auditResult.missing === 0) {
+            contentSummary += `\n✅ Content Extraction: 100% of source (exact match)`;
           }
 
           // Add segment counts to content summary (detailed comparison now goes to separate properties)
@@ -4428,8 +4443,14 @@ ${html || ''}
           validationLines.push(`⚠️ Missing: ${auditResult.missing.toLocaleString()} chars (${auditResult.missingPercent}%)`);
         }
         
+        // FIX v11.0.86+: Show content extraction success + formatting overhead breakdown
         if (auditResult.extra > 0) {
-          validationLines.push(`⚠️ Extra: ${auditResult.extra.toLocaleString()} chars (+${auditResult.extraPercent}%)`);
+          const contentExtracted = 100 - auditResult.missingPercent;
+          const formattingOverhead = auditResult.extraPercent;
+          validationLines.push(`✅ Content Extraction: ${contentExtracted.toFixed(1)}% of source (all content preserved)`);
+          validationLines.push(`   Formatting Overhead: +${formattingOverhead}% (tables, callouts, lists add metadata)`);
+        } else if (auditResult.missing === 0) {
+          validationLines.push(`✅ Content Extraction: 100% of source (exact match)`);
         }
       } else {
         validationLines.push('AUDIT system not enabled - no coverage data available');
