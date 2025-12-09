@@ -378,13 +378,29 @@ router.post('/W2N', async (req, res) => {
               const hasNoteRole = /note/i.test(role);
 
               if (isDivNote || isPrereq || hasNoteRole) {
-                // CRITICAL: Skip nested callouts to avoid double-counting
+                // CRITICAL: Skip callouts inside tables - they can't be rendered as callouts in Notion
+                // Notion table cells can only contain text and other limited types, not callout blocks
+                // This matches the extraction pipeline which removes callouts from tables (servicenow.cjs line 287)
+                let isInTable = false;
+                const parents = $el.parents().toArray();
+                for (const parent of parents) {
+                  const parentTag = parent.tagName ? parent.tagName.toLowerCase() : '';
+                  if (parentTag === 'table' || parentTag === 'thead' || parentTag === 'tbody' || parentTag === 'tr' || parentTag === 'td' || parentTag === 'th') {
+                    // Found a table ancestor - this callout is inside a table
+                    isInTable = true;
+                    break;
+                  }
+                }
+                
+                if (isInTable) {
+                  // Skip - this callout is inside a table and won't be converted to a callout block
+                  return;
+                }
+
+                // CRITICAL: Also skip nested callouts to avoid double-counting
                 // A callout is nested if it's INSIDE another callout's content area
-                // Check if this element's outerHTML is contained within a parent callout's HTML
                 let isNested = false;
                 
-                // Get all potential parent callout elements
-                const parents = $el.parents().toArray();
                 for (const parent of parents) {
                   const $parent = $(parent);
                   const parentCls = ($parent.attr('class') || '').toString();
