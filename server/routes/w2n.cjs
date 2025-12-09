@@ -2079,55 +2079,10 @@ router.post('/W2N', async (req, res) => {
             if (auditResult && auditResult.detailedComparison) {
               const dc = auditResult.detailedComparison;
 
-              // MissingText property - list all missing segments
-              // FIX v11.0.160: Only report if difference is significant (>5 chars or >0.5%)
-              if (dc.missingSegments.length > 0 && auditResult.missing > 0 && 
-                  (auditResult.missing > 5 || parseFloat(auditResult.missingPercent) > 0.5)) {
-                const missingLines = [`⚠️ Missing segments (${dc.missingSegments.length}):`];
-                dc.missingSegments.forEach((seg, idx) => {
-                  // Include the segment text with a compact context tag (e.g. [p], [tc])
-                    missingLines.push(`   ${idx + 1}. "${seg.text}"${compactContextTag(seg)}`);
-                });
-                let missingContent = missingLines.join('\n');
+              // FIX v11.0.86+: MissingText and ExtraText properties removed
+              // Missing/extra content details now included in Audit property directly
+              // No separate property updates needed
 
-                // Truncate to fit Notion's 2000 character limit for rich text properties
-                if (missingContent.length > 2000) {
-                  missingContent = missingContent.substring(0, 1997) + '...';
-                  log(`⚠️ [PROPERTY-TRUNCATE] MissingText truncated to 2000 chars (was ${missingLines.join('\n').length})`);
-                }
-
-                propertyUpdates["MissingText"] = {
-                  rich_text: [ { type: 'text', text: { content: missingContent } } ]
-                };
-              } else if (dc.missingSegments.length > 0 && auditResult.missing > 0) {
-                // Minor difference (≤5 chars or ≤0.5%), don't report specific segments
-                log(`🔧 [POST-AUDIT] Minor missing content (${auditResult.missing} chars) - not listing specific segments`);
-              }
-
-              // ExtraText property - list all extra segments
-              // FIX v11.0.160: Only report if difference is significant (>5 chars or >0.5%)
-              if (dc.extraSegments.length > 0 && auditResult.extra > 0 && 
-                  (auditResult.extra > 5 || parseFloat(auditResult.extraPercent) > 0.5)) {
-                const extraLines = [`⚠️ Extra segments (${dc.extraSegments.length}):`];
-                dc.extraSegments.forEach((seg, idx) => {
-                  // Include the segment text with a compact context tag (e.g. [p], [tc])
-                    extraLines.push(`   ${idx + 1}. "${seg.text}"${compactContextTag(seg)}`);
-                });
-                let extraContent = extraLines.join('\n');
-
-                // Truncate to fit Notion's 2000 character limit for rich text properties
-                if (extraContent.length > 2000) {
-                  extraContent = extraContent.substring(0, 1997) + '...';
-                  log(`⚠️ [PROPERTY-TRUNCATE] ExtraText truncated to 2000 chars (was ${extraLines.join('\n').length})`);
-                }
-
-                propertyUpdates["ExtraText"] = {
-                  rich_text: [ { type: 'text', text: { content: extraContent } } ]
-                };
-              } else if (dc.extraSegments.length > 0 && auditResult.extra > 0) {
-                // Minor difference (≤5 chars or ≤0.5%), don't report specific segments
-                log(`🔧 [POST-AUDIT] Minor extra content (${auditResult.extra} chars) - not listing specific segments`);
-              }
             }
 
             // ContentComparison breakdown formatting (first line reflects table/image/callout count match, not validation status)
@@ -4478,78 +4433,9 @@ ${html || ''}
         rich_text: [ { type: 'text', text: { content: truncatedAuditContent } } ]
       };
 
-      // MissingText and ExtraText properties (same logic as POST)
-      function compactContextTag(seg) {
-        try {
-          if (seg.context) {
-            const parts = (seg.context || '').split('>').map(s => s.trim()).filter(Boolean);
-            if (parts.length) {
-              const last = parts[parts.length - 1];
-              const short = last.replace(/[^a-z0-9]/gi, '').substring(0,3) || last.substring(0,3);
-              return ` [${short}]`;
-            }
-          }
-        } catch (e) {
-          // ignore
-        }
-        return '';
-      }
-
-      if (auditResult && auditResult.detailedComparison) {
-        const dc = auditResult.detailedComparison;
-
-        // MissingText property - list all missing segments
-        if (dc.missingSegments.length > 0) {
-          const missingLines = [`⚠️ Missing segments (${dc.missingSegments.length}):`];
-          dc.missingSegments.forEach((seg, idx) => {
-            // Include the segment text with a compact context tag (e.g. [p], [tc])
-              missingLines.push(`   ${idx + 1}. "${seg.text}"${compactContextTag(seg)}`);
-          });
-          let missingContent = missingLines.join('\n');
-
-          // Truncate to fit Notion's 2000 character limit for rich text properties
-          if (missingContent.length > 2000) {
-            missingContent = missingContent.substring(0, 1997) + '...';
-            log(`⚠️ [PATCH-PROPERTY-TRUNCATE] MissingText truncated to 2000 chars (was ${missingLines.join('\n').length})`);
-          }
-
-          propertyUpdates["MissingText"] = {
-            rich_text: [ { type: 'text', text: { content: missingContent } } ]
-          };
-        } else {
-          // FIX v11.0.116.4: Always set MissingText property, even when no missing segments
-          // This ensures old values are cleared when content changes
-          propertyUpdates["MissingText"] = {
-            rich_text: [ { type: 'text', text: { content: '✅ No missing content' } } ]
-          };
-        }
-
-        // ExtraText property - list all extra segments
-        if (dc.extraSegments.length > 0) {
-          const extraLines = [`⚠️ Extra segments (${dc.extraSegments.length}):`];
-          dc.extraSegments.forEach((seg, idx) => {
-            // Include the segment text with a compact context tag (e.g. [p], [tc])
-              extraLines.push(`   ${idx + 1}. "${seg.text}"${compactContextTag(seg)}`);
-          });
-          let extraContent = extraLines.join('\n');
-
-          // Truncate to fit Notion's 2000 character limit for rich text properties
-          if (extraContent.length > 2000) {
-            extraContent = extraContent.substring(0, 1997) + '...';
-            log(`⚠️ [PATCH-PROPERTY-TRUNCATE] ExtraText truncated to 2000 chars (was ${extraLines.join('\n').length})`);
-          }
-
-          propertyUpdates["ExtraText"] = {
-            rich_text: [ { type: 'text', text: { content: extraContent } } ]
-          };
-        } else {
-          // FIX v11.0.116.4: Always set ExtraText property, even when no extra segments
-          // This ensures old values are cleared when content changes
-          propertyUpdates["ExtraText"] = {
-            rich_text: [ { type: 'text', text: { content: '✅ No extra content' } } ]
-          };
-        }
-      }
+      // FIX v11.0.161: MissingText and ExtraText properties removed
+      // Missing/extra content details now included in Audit property directly
+      // No separate property updates needed
 
   // (Removed deprecated Status property logic; counts handled in ContentComparison header)
 
@@ -5206,80 +5092,8 @@ ${html || ''}
           
           log(`🔧 [AUDIT-RECALCULATION] Updated Audit property: Coverage ${auditResult.coverageStr}, Missing ${auditResult.missing} chars`);
           
-          // FIX v11.0.159: Also update MissingText and ExtraText with recalculated segments
-          if (auditResult.detailedComparison) {
-            const dc = auditResult.detailedComparison;
-            
-            function compactContextTag(seg) {
-              try {
-                if (seg.context) {
-                  const ctx = seg.context.toLowerCase();
-                  // Handle simple context tags (html, notion)
-                  if (ctx === 'html' || ctx === 'notion') {
-                    return ` [${ctx}]`;
-                  }
-                  // Handle complex context paths (div > p)
-                  const parts = (seg.context || '').split('>').map(s => s.trim()).filter(Boolean);
-                  if (parts.length) {
-                    const last = parts[parts.length - 1];
-                    const short = last.replace(/[^a-z0-9]/gi, '').substring(0,3) || last.substring(0,3);
-                    return ` [${short}]`;
-                  }
-                }
-              } catch (e) {
-                // ignore
-              }
-              return '';
-            }
-            
-            // Update MissingText with recalculated segments
-            if (dc.missingSegments.length > 0) {
-              const missingLines = [`⚠️ Missing segments (${dc.missingSegments.length}):`];
-              dc.missingSegments.forEach((seg, idx) => {
-                missingLines.push(`   ${idx + 1}. "${seg.text}"${compactContextTag(seg)}`);
-              });
-              let missingContent = missingLines.join('\n');
-              
-              if (missingContent.length > 2000) {
-                missingContent = missingContent.substring(0, 1997) + '...';
-              }
-              
-              propertyUpdates["MissingText"] = {
-                rich_text: [ { type: 'text', text: { content: missingContent } } ]
-              };
-              log(`🔧 [AUDIT-RECALCULATION] Updated MissingText: ${dc.missingSegments.length} segments`);
-              log(`🔧 [AUDIT-RECALCULATION] MissingText content preview: ${missingContent.substring(0, 200)}`);
-            } else {
-              propertyUpdates["MissingText"] = {
-                rich_text: [ { type: 'text', text: { content: '✅ No missing content' } } ]
-              };
-              log(`🔧 [AUDIT-RECALCULATION] Updated MissingText: No missing segments`);
-            }
-            
-            // Update ExtraText with recalculated segments
-            if (dc.extraSegments.length > 0) {
-              const extraLines = [`⚠️ Extra segments (${dc.extraSegments.length}):`];
-              dc.extraSegments.forEach((seg, idx) => {
-                extraLines.push(`   ${idx + 1}. "${seg.text}"${compactContextTag(seg)}`);
-              });
-              let extraContent = extraLines.join('\n');
-              
-              if (extraContent.length > 2000) {
-                extraContent = extraContent.substring(0, 1997) + '...';
-              }
-              
-              propertyUpdates["ExtraText"] = {
-                rich_text: [ { type: 'text', text: { content: extraContent } } ]
-              };
-              log(`🔧 [AUDIT-RECALCULATION] Updated ExtraText: ${dc.extraSegments.length} segments`);
-              log(`🔧 [AUDIT-RECALCULATION] ExtraText content preview: ${extraContent.substring(0, 200)}`);
-            } else {
-              propertyUpdates["ExtraText"] = {
-                rich_text: [ { type: 'text', text: { content: '✅ No extra content' } } ]
-              };
-              log(`🔧 [AUDIT-RECALCULATION] Updated ExtraText: No extra segments`);
-            }
-          }
+          // FIX v11.0.161: Removed MissingText and ExtraText property recalculation
+          // These properties are now redundant with comprehensive Audit property
           
         } catch (recalcError) {
           log(`⚠️ [AUDIT-RECALCULATION] Failed to recalculate audit metrics: ${recalcError.message}`);
