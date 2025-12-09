@@ -167,31 +167,14 @@ async function convertTableBlock(tableHtml, options = {}) {
     const titleMatch = captionContent.match(/<span[^>]*class="[^"]*title[^"]*"[^>]*>([\s\S]*?)<\/span>/i);
     const captionText = titleMatch ? cleanHtmlText(titleMatch[1]) : cleanHtmlText(captionContent);
     if (captionText && captionText.trim()) {
-      // Priority 2: Preserve structure mode - keep caption as paragraph instead of heading
-      const preserveStructure = process.env.SN2N_PRESERVE_STRUCTURE === '1';
-      
-      if (preserveStructure) {
-        blocks.push({
-          object: "block",
-          type: "paragraph",
-          paragraph: {
-            rich_text: [{ 
-              type: "text", 
-              text: { content: captionText },
-              annotations: { bold: true } // Make caption bold to distinguish it
-            }],
-          },
-        });
-      } else {
-        // Default: Convert to heading_3 (current behavior)
-        blocks.push({
-          object: "block",
-          type: "heading_3",
-          heading_3: {
-            rich_text: [{ type: "text", text: { content: captionText } }],
-          },
-        });
-      }
+      // Always convert table captions to heading_3 for consistency
+      blocks.push({
+        object: "block",
+        type: "heading_3",
+        heading_3: {
+          rich_text: [{ type: "text", text: { content: captionText } }],
+        },
+      });
     }
   }
 

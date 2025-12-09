@@ -23,7 +23,7 @@ const { validateNotionPage } = require('../utils/validate-notion-page.cjs');
  * Re-validates the page(s) and updates Notion properties:
  *   - Error (checkbox): true when hasErrors, false otherwise
  *   - Validation (rich_text): human-readable summary
- *   - Stats (rich_text): JSON statistics (when available)
+ *   - ContentComparison (rich_text): block count comparison (when available)
  */
 router.post('/validate', async (req, res) => {
   try {
@@ -51,7 +51,7 @@ router.post('/validate', async (req, res) => {
         const existingProps = Object.keys(page.properties);
 
         console.log(`🔍 [VALIDATE] Page has properties: ${existingProps.join(', ')}`);
-        console.log(`🔍 [VALIDATE] Looking for: Error, Audit/Validation, ContentComparison/Stats`);
+        console.log(`🔍 [VALIDATE] Looking for: Error, Audit/Validation, ContentComparison`);
 
         // Build property updates only for properties that exist
         const props = {};
@@ -66,7 +66,7 @@ router.post('/validate', async (req, res) => {
 
         // Get current property values to check if they contain detailed PATCH/POST data
         const currentAuditProp = page.properties.Audit || page.properties.Validation;
-        const currentStatsProp = page.properties.ContentComparison || page.properties.Stats;
+        const currentComparisonProp = page.properties.ContentComparison;
         
         // Extract current text content
         const getCurrentText = (prop) => {
@@ -75,7 +75,7 @@ router.post('/validate', async (req, res) => {
         };
         
         const currentAuditText = getCurrentText(currentAuditProp);
-        const currentStatsText = getCurrentText(currentStatsProp);
+        const currentComparisonText = getCurrentText(currentComparisonProp);
         
         // Check if properties already contain detailed PATCH/POST data
         const hasDetailedAuditData = currentAuditText.includes('Content Audit:') || 
@@ -83,15 +83,15 @@ router.post('/validate', async (req, res) => {
                                     currentAuditText.includes('Missing:') ||
                                     currentAuditText.includes('Extra:');
         
-        const hasDetailedStatsData = currentStatsText.includes('Content Comparison:') ||
-                                    currentStatsText.includes('• Tables:') ||
-                                    currentStatsText.includes('• Images:') ||
-                                    currentStatsText.includes('Source → Notion');
+        const hasDetailedComparisonData = currentComparisonText.includes('Content Comparison:') ||
+                                    currentComparisonText.includes('• Tables:') ||
+                                    currentComparisonText.includes('• Images:') ||
+                                    currentComparisonText.includes('Source → Notion');
         
         console.log(`🔍 [VALIDATE] Current Audit content preview: "${currentAuditText.substring(0, 50)}..."`);
-        console.log(`🔍 [VALIDATE] Current Stats content preview: "${currentStatsText.substring(0, 50)}..."`);
+        console.log(`🔍 [VALIDATE] Current ContentComparison preview: "${currentComparisonText.substring(0, 50)}..."`);
         console.log(`🔍 [VALIDATE] Has detailed audit data: ${hasDetailedAuditData}`);
-        console.log(`🔍 [VALIDATE] Has detailed stats data: ${hasDetailedStatsData}`);
+        console.log(`🔍 [VALIDATE] Has detailed comparison data: ${hasDetailedComparisonData}`);
 
         // Try Audit/Validation property - skip if already has detailed PATCH/POST data
         if (existingProps.includes('Audit')) {
@@ -120,20 +120,14 @@ router.post('/validate', async (req, res) => {
           console.log(`❌ [VALIDATE] Neither Audit nor Validation property found`);
         }
 
-        // Try ContentComparison/Stats property - skip if already has detailed PATCH/POST data
-        // NOTE: Validate endpoint cannot update ContentComparison/Stats properties meaningfully
+        // Try ContentComparison property - skip if already has detailed PATCH/POST data
+        // NOTE: Validate endpoint cannot update ContentComparison property meaningfully
         // because it doesn't have source HTML for block count comparisons
         if (existingProps.includes('ContentComparison')) {
-          if (hasDetailedStatsData) {
+          if (hasDetailedComparisonData) {
             console.log(`⏭️ [VALIDATE] Skipping ContentComparison property update - already contains detailed PATCH/POST data`);
           } else {
             console.log(`⏭️ [VALIDATE] Skipping ContentComparison property update - no source HTML for comparison`);
-          }
-        } else if (existingProps.includes('Stats')) {
-          if (hasDetailedStatsData) {
-            console.log(`⏭️ [VALIDATE] Skipping Stats property update - already contains detailed PATCH/POST data`);
-          } else {
-            console.log(`⏭️ [VALIDATE] Skipping Stats property update - no source HTML for comparison`);
           }
         }
 

@@ -436,25 +436,100 @@ for html_file in "$SRC_DIR"/*.html; do
           unsuccessful_moved=$((unsuccessful_moved+1))
         else
           echo "  ✅ PATCH successful with clean validation" | tee -a "$LOG_FILE"
-          mv "$html_file" "$DST_DIR/"
-          echo "  📦 Moved to updated-pages/" | tee -a "$LOG_FILE"
-          patched=$((patched+1))
-
-          # Per-page Notion property refresh
+          
+          # Before moving to updated-pages/, verify actual Notion validation properties
           clean_page_id=$(echo "$page_id" | tr -d '-')
-          echo "  🔄 Refresh properties for page: $clean_page_id" | tee -a "$LOG_FILE"
-          refresh_resp=$(curl -s -w "\n%{http_code}" -X POST "http://localhost:3004/api/validate" \
-            -H "Content-Type: application/json" \
-            -d "{\"pageIds\":[\"$clean_page_id\"]}" 2>&1 || echo -e "\n000")
-          refresh_http=$(echo "$refresh_resp" | tail -n1)
-          refresh_body=$(echo "$refresh_resp" | sed '$d')
-          if [[ "$refresh_http" == "200" ]]; then
-            updated=$(echo "$refresh_body" | jq -r '.data.summary.updated // 0' 2>/dev/null || echo 0)
-            cleared=$(echo "$refresh_body" | jq -r '.data.summary.errorsCleared // 0' 2>/dev/null || echo 0)
-            failed_prop=$(echo "$refresh_body" | jq -r '.data.summary.failed // 0' 2>/dev/null || echo 0)
-            echo "     ↳ Property refresh: updated=$updated errorsCleared=$cleared failed=$failed_prop" | tee -a "$LOG_FILE"
+          echo "  � Checking Notion validation properties for page: $clean_page_id" | tee -a "$LOG_FILE"
+          
+          # Query Notion page properties directly
+          page_props_resp=$(curl -s -w "\n%{http_code}" -X GET "http://localhost:3004/api/pages/$clean_page_id" 2>&1 || echo -e "\n000")
+          page_props_http=$(echo "$page_props_resp" | tail -n1)
+          page_props_body=$(echo "$page_props_resp" | sed '$d')
+          
+          if [[ "$page_props_http" != "200" ]]; then
+            echo "     ⚠️  Could not fetch Notion properties (HTTP $page_props_http) — moving to updated-pages/ anyway" | tee -a "$LOG_FILE"
+            mv "$html_file" "$DST_DIR/"
+            echo "  📦 Moved to updated-pages/ (property check skipped)" | tee -a "$LOG_FILE"
+            patched=$((patched+1))
           else
-            echo "     ↳ [WARN] Property refresh HTTP $refresh_http" | tee -a "$LOG_FILE"
+            # Wait for validation properties to be written (PATCH writes them asynchronously)
+            echo "     ⏳ Waiting 2s for validation properties to populate..." | tee -a "$LOG_FILE"
+            sleep 2
+            
+            # Re-fetch properties after delay
+            page_props_resp=$(curl -s -w "\n%{http_code}" -X GET "http://localhost:3004/api/pages/$clean_page_id" 2>&1 || echo -e "\n000")
+            page_props_http=$(echo "$page_props_resp" | tail -n1)
+            page_props_body=$(echo "$page_props_resp" | sed '$d')
+            
+            if [[ "$page_props_http" != "200" ]]; then
+              echo "     ⚠️  Could not re-fetch Notion properties (HTTP $page_props_http) — moving to updated-pages/ anyway" | tee -a "$LOG_FILE"
+              mv "$html_file" "$DST_DIR/"
+              echo "  📦 Moved to updated-pages/ (property check skipped)" | tee -a "$LOG_FILE"
+              patched=$((patched+1))
+            else
+              # Extract Audit and ContentComparison property values
+              audit_text=$(echo "$page_props_body" | jq -r '.properties.Audit.rich_text[0].text.content // ""' 2>/dev/null || echo "")
+              content_comp_text=$(echo "$page_props_body" | jq -r '.properties.ContentComparison.rich_text[0].text.content // ""' 2>/dev/null || echo "")
+              error_checkbox=$(echo "$page_props_body" | jq -r '.properties.Error.checkbox // false' 2>/dev/null || echo "false")
+              
+              echo "     ↳ Audit property: ${audit_text:0:80}..." | tee -a "$LOG_FILE"
+              echo "     ↳ ContentComparison property: ${content_comp_text:0:80}..." | tee -a "$LOG_FILE"
+              echo "     ↳ Error checkbox: $error_checkbox" | tee -a "$LOG_FILE"
+              
+              # If properties are empty, validation wasn't run (shouldn't happen with SN2N_AUDIT_CONTENT=1)
+              # In this case, move to updated-pages/ anyway (legacy behavior)
+              if [[ -z "$audit_text" && -z "$content_comp_text" ]]; then
+                echo "     ⚠️  Validation properties are empty (validation may not have run) — moving to updated-pages/" | tee -a "$LOG_FILE"
+                mv "$html_file" "$DST_DIR/"
+                echo "  📦 Moved to updated-pages/ (no validation data)" | tee -a "$LOG_FILE"
+                patched=$((patched+1))
+              else
+                # Check if validation passed (look for ✅ or PASS in both properties)
+                # Also check for explicit FAIL indicators (❌ or FAIL)
+                audit_passed=false
+                audit_failed=false
+                content_comp_passed=false
+                content_comp_failed=false
+                
+                if echo "$audit_text" | grep -q '✅' || echo "$audit_text" | grep -qi '\bPASS\b'; then
+                  audit_passed=true
+                fi
+                if echo "$audit_text" | grep -q '❌' || echo "$audit_text" | grep -qi '\bFAIL\b'; then
+                  audit_failed=true
+                fi
+                
+                if echo "$content_comp_text" | grep -q '✅' || echo "$content_comp_text" | grep -qi '\bPASS\b'; then
+                  content_comp_passed=true
+                fi
+                if echo "$content_comp_text" | grep -q '❌' || echo "$content_comp_text" | grep -qi '\bFAIL\b'; then
+                  content_comp_failed=true
+                fi
+                
+                echo "     ↳ Audit: passed=$audit_passed failed=$audit_failed" | tee -a "$LOG_FILE"
+                echo "     ↳ ContentComparison: passed=$content_comp_passed failed=$content_comp_failed" | tee -a "$LOG_FILE"
+                
+                # Move to updated-pages/ ONLY if both validations explicitly passed and no failures detected
+                if [[ "$audit_passed" == "true" && "$content_comp_passed" == "true" && "$error_checkbox" == "false" ]]; then
+                  echo "  ✅ Validation properties confirm success — moving to updated-pages/" | tee -a "$LOG_FILE"
+                  mv "$html_file" "$DST_DIR/"
+                  echo "  📦 Moved to updated-pages/" | tee -a "$LOG_FILE"
+                  patched=$((patched+1))
+                else
+                  echo "  ❌ Validation properties show failure — keeping in pages-to-update/" | tee -a "$LOG_FILE"
+                  if [[ "$audit_passed" != "true" || "$audit_failed" == "true" ]]; then
+                    echo "     ↳ Reason: Audit property shows FAIL or not PASS" | tee -a "$LOG_FILE"
+                  fi
+                  if [[ "$content_comp_passed" != "true" || "$content_comp_failed" == "true" ]]; then
+                    echo "     ↳ Reason: ContentComparison property shows FAIL or not PASS" | tee -a "$LOG_FILE"
+                  fi
+                  if [[ "$error_checkbox" != "false" ]]; then
+                    echo "     ↳ Reason: Error checkbox is checked" | tee -a "$LOG_FILE"
+                  fi
+                  failed_patch=$((failed_patch+1))
+                  # File stays in pages-to-update/ for retry
+                fi
+              fi
+            fi
           fi
         fi
       else

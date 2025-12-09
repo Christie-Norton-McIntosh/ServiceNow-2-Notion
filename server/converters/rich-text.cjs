@@ -682,10 +682,10 @@ function convertRichTextBlock(input, options = {}) {
     } else if (part === "__ITALIC_END__") {
       currentAnnotations.italic = false;
     } else if (part === "__CODE_START__") {
-      currentAnnotations.code = true;
+      // FIX: Use red color instead of inline code formatting
       currentAnnotations.color = "red";
     } else if (part === "__CODE_END__") {
-      currentAnnotations.code = false;
+      // FIX: Restore default color (no code annotation to remove)
       currentAnnotations.color = "default";
     } else if (part.match(/^__LINK_(\d+)__$/)) {
       const linkIndex = parseInt(part.match(/^__LINK_(\d+)__$/)[1]);

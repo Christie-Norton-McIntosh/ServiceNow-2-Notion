@@ -285,6 +285,12 @@ async function extractContentFromHtml(html) {
     // This prevents AUDIT mismatches where HTML counts callouts in tables but Notion doesn't
     $audit('table div.note, table div.info, table div.warning, table div.important, table div.tip, table div.caution, table aside, table section.prereq').remove();
     
+    // FIX v11.0.201: Exclude "Before you begin" prerequisite sections from AUDIT
+    // These are converted to callout blocks in Notion, but they're not callouts in HTML source
+    // Excluding them from AUDIT prevents false callout count mismatches
+    // Matches: <section class="prereq">, <div class="section prereq">, etc.
+    $audit('section.prereq, div.section.prereq, aside.prereq').remove();
+    
     const allTextNodes = [];
     
     function collectText(node) {
@@ -293,7 +299,11 @@ async function extractContentFromHtml(html) {
       if (node.type === 'text' && node.data && node.data.trim()) {
         // FIX v11.0.185: Normalize spaces within text nodes before AUDIT
         // Extra spaces like "Service Management ( ITSM" → "Service Management (ITSM"
-        const normalizedText = node.data.trim().replace(/\s+/g, ' '); // Collapse multiple spaces to single
+        // FIX v11.0.200: Add Unicode normalization (NFC) for consistent character representation
+        // Handles accented chars (é vs e+´), smart quotes ("" vs ""), emojis, etc.
+        const normalizedText = node.data.trim()
+          .normalize('NFC')  // Unicode normalization (composed form)
+          .replace(/\s+/g, ' '); // Collapse multiple spaces to single
         allTextNodes.push({
           text: normalizedText,
           length: normalizedText.length,
@@ -1054,10 +1064,10 @@ async function extractContentFromHtml(html) {
         currentAnnotations.italic = false;
       } else if (part === "__CODE_START__") {
         currentAnnotations._colorBeforeCode = currentAnnotations.color;
-        currentAnnotations.code = true;
+        // FIX: Use red color instead of inline code formatting
         currentAnnotations.color = "red";
       } else if (part === "__CODE_END__") {
-        currentAnnotations.code = false;
+        // FIX: Restore previous color (no code annotation to remove)
         if (currentAnnotations._colorBeforeCode !== undefined) {
           currentAnnotations.color = currentAnnotations._colorBeforeCode;
           delete currentAnnotations._colorBeforeCode;
@@ -1562,6 +1572,10 @@ async function extractContentFromHtml(html) {
     const elemClass = $elem.attr('class') || 'none';
     const elemId = $elem.attr('id') || 'no-id';
     
+    // [EXTRACTION-DEBUG] Log entry point
+    const elemContent = $elem.text().substring(0, 50);
+    console.log(`[EXTRACTION-DEBUG] ENTRY processElement(<${tagName}${elemId !== 'no-id' ? ` id="${elemId}"` : ''}${elemClass !== 'none' ? ` class="${elemClass.substring(0, 30)}"` : ''}>) content="${elemContent}..."`);
+    
     // Order tracking: Log entry
     if (enableOrderTracking) {
       orderSequence++;
@@ -1659,7 +1673,18 @@ async function extractContentFromHtml(html) {
 
     // Handle different element types
     // 1) Explicit ServiceNow note/callout containers
-    if (tagName === 'div' && $elem.attr('class') && $elem.attr('class').includes('note')) {
+    // FIX v11.0.200: Be specific - match only ServiceNow DITA callout patterns
+    // ServiceNow uses redundant class patterns: "note note note_note", "warning warning_type", etc.
+    // Don't match generic divs with "note" substring like "footnotes", "note-section", "endnotes"
+    const isCalloutDiv = tagName === 'div' && $elem.attr('class') && (() => {
+      const classes = ($elem.attr('class') || '').toLowerCase();
+      // Must match a callout keyword AND have a ServiceNow-specific suffix to avoid false positives
+      const hasCalloutKeyword = /(note|warning|tip|caution|important)/.test(classes);
+      const hasServiceNowSuffix = /(note_note|note_|warning_type|tip_|caution_|important_|tip_tip|caution_type|important_type)/.test(classes);
+      return hasCalloutKeyword && hasServiceNowSuffix;
+    })();
+    
+    if (isCalloutDiv) {
       console.log(`🔍 ✅ MATCHED CALLOUT! class="${$elem.attr('class')}"`);
       console.log(`🔍 Callout HTML preview (first 500 chars): ${($elem.html() || '').substring(0, 500)}`);
 
@@ -4347,6 +4372,37 @@ async function extractContentFromHtml(html) {
         // Add paragraph text blocks (split on newlines) below; videos/images
         // will be appended after to keep source order.
 
+        // FIX v11.0.200: Check if this paragraph is actually a callout BEFORE creating paragraph blocks
+        // This enables the heuristic that converts paragraphs starting with "Note:", "Warning:", etc. to callouts
+        const firstText = cleanedText.substring(0, Math.min(20, cleanedText.length));
+        const labelProps = getCalloutPropsFromLabel(firstText);
+        if (labelProps) {
+          // This paragraph starts with a callout label - create callout blocks instead
+          const richTextChunks = splitRichTextArray(paragraphRichText);
+          console.log(`🔍 Detected inline callout label -> creating ${richTextChunks.length} callout block(s)`);
+          for (const chunk of richTextChunks) {
+            processedBlocks.push({
+              object: "block",
+              type: "callout",
+              callout: {
+                rich_text: chunk,
+                icon: { type: "emoji", emoji: labelProps.icon },
+                color: labelProps.color,
+              },
+            });
+          }
+          // Also append images/videos found in the paragraph
+          if (paragraphImages && paragraphImages.length > 0) {
+            processedBlocks.push(...paragraphImages);
+          }
+          if (paragraphVideos && paragraphVideos.length > 0) {
+            processedBlocks.push(...paragraphVideos);
+          }
+          $elem.remove();
+          return processedBlocks;
+        }
+
+        // Not a callout - create regular paragraph blocks
         // If the rich text contains explicit newline markers, split into separate
         // paragraph blocks at those newlines to better preserve paragraph boundaries
         // (helps the validator match long sentences as separate paragraphs).
@@ -4414,59 +4470,11 @@ async function extractContentFromHtml(html) {
 
         $elem.remove();
         return processedBlocks;
-
-        // Heuristic: convert paragraphs starting with a callout label to callout blocks
-        const firstText = cleanedText.substring(0, Math.min(20, cleanedText.length));
-        const labelProps = getCalloutPropsFromLabel(firstText);
-        if (labelProps) {
-          const richTextChunks = splitRichTextArray(paragraphRichText);
-          console.log(`🔍 Detected inline callout label -> creating ${richTextChunks.length} callout block(s)`);
-          for (const chunk of richTextChunks) {
-            processedBlocks.push({
-              object: "block",
-              type: "callout",
-              callout: {
-                rich_text: chunk,
-                icon: { type: "emoji", emoji: labelProps.icon },
-                color: labelProps.color,
-              },
-            });
-          }
-          $elem.remove();
-          return processedBlocks;
-        }
-        
-        // Only create paragraph blocks if there's actual text content or links
-        // Note: Link elements can have empty content but still be valid (they have link.url)
-        if (paragraphRichText.length > 0 && paragraphRichText.some(rt => rt.text.content.trim() || rt.text.link)) {
-          // Split if exceeds 100 elements (Notion limit)
-          const richTextChunks = splitRichTextArray(paragraphRichText);
-          console.log(`🔍 Split into ${richTextChunks.length} chunks`);
-          
-          for (const chunk of richTextChunks) {
-            console.log(`🔍 Creating paragraph block with ${chunk.length} rich_text elements`);
-            processedBlocks.push({
-              object: "block",
-              type: "paragraph",
-              paragraph: {
-                rich_text: chunk,
-              },
-            });
-          }
-        } else {
-          if (paragraphRichText.length > 0) {
-            console.log(`⚠️ Paragraph has ${paragraphRichText.length} rich_text elements but all are empty/whitespace:`);
-            paragraphRichText.slice(0, 3).forEach((rt, idx) => {
-              console.log(`   [${idx}] type=${rt.type}, content="${rt.text?.content || rt.href || ''}", href=${rt.href || 'none'}`);
-            });
-          } else {
-            console.log(`🔍 Paragraph has no text content, only images were added`);
-          }
-        }
       } else {
-        console.log(`🔍 Paragraph skipped (empty after cleaning and no images)`);
+        // No significant content - skip the paragraph
+        $elem.remove();
+        return processedBlocks;
       }
-      $elem.remove(); // Mark as processed
       
     } else if ((tagName === 'section' || (tagName === 'div' && $elem.hasClass('section'))) && $elem.hasClass('prereq')) {
       // Special handling for "Before you begin" prerequisite sections
@@ -5626,6 +5634,10 @@ async function extractContentFromHtml(html) {
       console.log(`[ORDER-${orderSequence}] ✅ END: Produced ${processedBlocks.length} block(s)${processedBlocks.length > 0 ? ': ' + blockTypes : ''}`);
     }
 
+    // [EXTRACTION-DEBUG] Log exit point
+    const blockTypes = processedBlocks.map(b => b.type).join(', ');
+    console.log(`[EXTRACTION-DEBUG] EXIT processElement(<${tagName}${elemId !== 'no-id' ? ` id="${elemId}"` : ''}${elemClass !== 'none' ? ` class="${elemClass.substring(0, 30)}"` : ''}>) → ${processedBlocks.length} blocks [${blockTypes}]`);
+
     return processedBlocks;
   }
 
@@ -5957,6 +5969,20 @@ async function extractContentFromHtml(html) {
   }
   
   console.log(`🔍 Found ${contentElements.length} elements to process`);
+  console.log(`🔍 [EXTRACTION-DEBUG] contentElements structure:`);
+  contentElements.forEach((el, idx) => {
+    const $el = $(el);
+    const tag = el.name || 'unknown';
+    const id = $el.attr('id') || 'no-id';
+    const cls = $el.attr('class') || 'no-class';
+    const textLen = $el.text().length;
+    const childCount = $el.children().length;
+    const hasLists = $el.find('ul, ol').length > 0;
+    const hasTables = $el.find('table').length > 0;
+    const hasParagraphs = $el.find('p, div.p').length > 0;
+    const contentSummary = `[${childCount} children, text:${textLen}chars, lists:${hasLists}, tables:${hasTables}, paragraphs:${hasParagraphs}]`;
+    console.log(`  [${idx}] <${tag} id="${id}" class="${cls.substring(0, 40)}${cls.length > 40 ? '...' : ''}"> ${contentSummary}`);
+  });
   
   // CRITICAL DIAGNOSTIC: Check if article.nested0 exists in the DOM at all
   const nested0Count = $('article.nested0').length;
@@ -5991,10 +6017,13 @@ async function extractContentFromHtml(html) {
     const childId = $(child).attr('id') || 'no-id';
     const childClass = $(child).attr('class') || 'no-class';
     const childTag = child.name;
+    const blocksBefore = blocks.length;
     console.log(`🔍 Processing contentElement: <${childTag} id="${childId}" class="${childClass}">`);
     
     const childBlocks = await processElement(child);
-    console.log(`🔍   → Element <${childTag} id="${childId}"> produced ${childBlocks.length} blocks`);
+    const blocksAdded = childBlocks.length;
+    const blocksAfter = blocks.length + blocksAdded;
+    console.log(`🔍   → Element <${childTag} id="${childId}"> produced ${blocksAdded} blocks (total: ${blocksBefore} → ${blocksAfter})`);
     blocks.push(...childBlocks);
   }
   
@@ -6151,16 +6180,17 @@ async function extractContentFromHtml(html) {
       
       function extractFromRichText(richTextArray) {
         if (!Array.isArray(richTextArray)) return '';
-        // FIX v11.0.183: Skip inline code (annotations.code = true) to match HTML AUDIT behavior
-        // HTML AUDIT removes <code> tags, so Notion comparison should skip inline code too
+        // FIX v11.0.183: Skip red colored text (technical identifiers) to match HTML AUDIT behavior
+        // HTML AUDIT removes <code> tags, so Notion comparison should skip red text too
         // FIX v11.0.185: Normalize spaces within each text element before joining
         // Ensures "Service Management ( ITSM" = "Service Management (ITSM" for comparison
+        // FIX v11.0.200: Add Unicode normalization to match HTML AUDIT
         return richTextArray
-          .filter(rt => !rt?.annotations?.code) // Skip inline code elements
+          .filter(rt => rt?.annotations?.color !== 'red') // Skip red text (technical identifiers)
           .map(rt => {
             const text = rt?.text?.content || '';
-            // Normalize multiple spaces to single space
-            return text.replace(/\s+/g, ' ');
+            // Unicode normalization + whitespace normalization
+            return text.normalize('NFC').replace(/\s+/g, ' ');
           })
           .join('');
       }
@@ -6409,6 +6439,215 @@ async function extractContentFromHtml(html) {
   }
 
   // Enhanced text comparison for detailed audit reporting
+  // FIX v11.0.200: Add line-by-line diff for failed validations with Unicode normalization
+  // FIX v11.0.206: DISABLE diff analysis in extraction phase
+  // Diff analysis must happen AFTER orchestration in w2n.cjs when markers are stripped
+  // Running it here includes temporary marker tokens in the comparison, causing false mismatches
+  const disableDiffInExtraction = true;  // Moved to w2n.cjs post-orchestration
+  
+  if (!disableDiffInExtraction && enableAudit && sourceAudit && sourceAudit.result && !sourceAudit.result.passed) {
+    console.log(`\n🔍 ========== ENHANCED DIFF ANALYSIS (v11.0.200) ==========`);
+    
+    try {
+      // Extract plain text from HTML (block-by-block)
+      const cheerio = require('cheerio');
+      const $html = cheerio.load(htmlForValidation, { decodeEntities: false });
+      
+      // FIX v11.0.204: Apply comprehensive filtering to match auditTextNodes
+      // Remove UI chrome and navigation elements (buttons, code, mini TOC)
+      $html('button, .btn, .button, [role="button"]').remove();
+      $html('pre, code').remove();  // Code blocks not counted in validation
+      
+      // Remove mini TOC and navigation chrome
+      $html('.miniTOC, .zDocsSideBoxes').remove();
+      $html('.contentPlaceholder').each((i, elem) => {
+        const $elem = $html(elem);
+        const hasMiniToc = $elem.find('.zDocsMiniTocCollapseButton, .zDocsSideBoxes, .contentContainer').length > 0;
+        if (hasMiniToc) {
+          $elem.remove();
+        }
+      });
+      
+      // Remove figure captions and labels (match auditTextNodes)
+      $html('figcaption, .figcap, .fig-title, .figure-title').remove();
+      let figureCount = 0;
+      $html('p, div, span').each((i, elem) => {
+        const $elem = $html(elem);
+        const text = $elem.text().trim();
+        if (/^fig(?:ure)?\s*\d+\.?\:?$/i.test(text)) {
+          $elem.remove();
+          figureCount++;
+        }
+      });
+      
+      // FIX v11.0.205: Exclude table-nested callouts from diff extraction
+      // These can't be rendered as callout blocks in Notion, so they're text-only in tables
+      // Match AUDIT behavior which excludes these from character counts
+      $html('table div.note, table div.info, table div.warning, table div.important, table div.tip, table div.caution, table aside, table section.prereq').remove();
+      
+      // FIX v11.0.203: Include callouts and prereq sections in diff extraction
+      // These get converted to callout blocks in Notion, so they must be included in HTML blocks
+      // Extract text block by block (paragraphs, list items, headings, callouts, prereqs)
+      const htmlBlocks = [];
+      $html('p, li, h1, h2, h3, h4, h5, h6, td, th, div.note, div.info, div.warning, div.important, div.tip, div.caution, section.prereq, aside.prereq').each((i, elem) => {
+        const text = $html(elem).text()
+          .normalize('NFC')  // Unicode normalization
+          .trim()
+          .replace(/\s+/g, ' ');  // Whitespace normalization
+        if (text.length > 0) {
+          htmlBlocks.push(text);
+        }
+      });
+      
+      // Extract text from Notion blocks (block-by-block)
+      const notionBlocks = [];
+      
+      function extractBlockText(block) {
+        if (!block || !block.type) return '';
+        
+        const blockType = block.type;
+        let text = '';
+        
+        // Extract rich_text content
+        if (block[blockType]?.rich_text) {
+          text = block[blockType].rich_text
+            .map(rt => (rt?.text?.content || ''))
+            .join('')
+            .normalize('NFC')  // Unicode normalization
+            .trim()
+            .replace(/\s+/g, ' ');  // Whitespace normalization
+        }
+        
+        return text;
+      }
+      
+      function processBlocks(blockList) {
+        for (const block of blockList) {
+          if (block.type === 'code') continue;  // Skip code blocks
+          
+          const text = extractBlockText(block);
+          if (text) notionBlocks.push(text);
+          
+          // Recurse into children
+          if (block[block.type]?.children) {
+            processBlocks(block[block.type].children);
+          }
+        }
+      }
+      
+      processBlocks(blocks);
+      
+      console.log(`🔍 [DIFF] HTML blocks extracted: ${htmlBlocks.length}`);
+      console.log(`🔍 [DIFF] Notion blocks extracted: ${notionBlocks.length}`);
+      
+      // Use simple diff library if available, otherwise manual comparison
+      let diff;
+      try {
+        diff = require('diff');
+      } catch (e) {
+        console.log(`ℹ️ [DIFF] 'diff' package not found, using simple comparison`);
+        diff = null;
+      }
+      
+      if (diff) {
+        // Line-by-line diff with diff library
+        const htmlText = htmlBlocks.join('\n');
+        const notionText = notionBlocks.join('\n');
+        
+        const changes = diff.diffLines(htmlText, notionText, { 
+          ignoreWhitespace: false,  // Already normalized
+          newlineIsToken: true 
+        });
+        
+        let missingLines = [];
+        let extraLines = [];
+        
+        changes.forEach(part => {
+          if (part.removed) {
+            const lines = part.value.split('\n').filter(l => l.trim());
+            missingLines.push(...lines);
+          } else if (part.added) {
+            const lines = part.value.split('\n').filter(l => l.trim());
+            extraLines.push(...lines);
+          }
+        });
+        
+        if (missingLines.length > 0) {
+          console.log(`\n❌ [DIFF] Missing from Notion (${missingLines.length} blocks):`);
+          missingLines.slice(0, 5).forEach((line, i) => {
+            const preview = line.length > 80 ? line.substring(0, 80) + '...' : line;
+            console.log(`   ${i + 1}. "${preview}"`);
+          });
+          if (missingLines.length > 5) {
+            console.log(`   ... and ${missingLines.length - 5} more`);
+          }
+        }
+        
+        if (extraLines.length > 0) {
+          console.log(`\n➕ [DIFF] Extra in Notion (${extraLines.length} blocks):`);
+          extraLines.slice(0, 3).forEach((line, i) => {
+            const preview = line.length > 80 ? line.substring(0, 80) + '...' : line;
+            console.log(`   ${i + 1}. "${preview}"`);
+          });
+          if (extraLines.length > 3) {
+            console.log(`   ... and ${extraLines.length - 3} more`);
+          }
+        }
+        
+        // Store diff results in audit
+        sourceAudit.result.diff = {
+          missingBlocks: missingLines.length,
+          extraBlocks: extraLines.length,
+          missingSamples: missingLines.slice(0, 5),
+          extraSamples: extraLines.slice(0, 3)
+        };
+        
+      } else {
+        // Simple manual comparison
+        const htmlSet = new Set(htmlBlocks);
+        const notionSet = new Set(notionBlocks);
+        
+        const missing = htmlBlocks.filter(h => !notionSet.has(h));
+        const extra = notionBlocks.filter(n => !htmlSet.has(n));
+        
+        if (missing.length > 0) {
+          console.log(`\n❌ [DIFF] Missing from Notion (${missing.length} unique blocks):`);
+          missing.slice(0, 5).forEach((text, i) => {
+            const preview = text.length > 80 ? text.substring(0, 80) + '...' : text;
+            console.log(`   ${i + 1}. "${preview}"`);
+          });
+          if (missing.length > 5) {
+            console.log(`   ... and ${missing.length - 5} more`);
+          }
+        }
+        
+        if (extra.length > 0) {
+          console.log(`\n➕ [DIFF] Extra in Notion (${extra.length} unique blocks):`);
+          extra.slice(0, 3).forEach((text, i) => {
+            const preview = text.length > 80 ? text.substring(0, 80) + '...' : text;
+            console.log(`   ${i + 1}. "${preview}"`);
+          });
+          if (extra.length > 3) {
+            console.log(`   ... and ${extra.length - 3} more`);
+          }
+        }
+        
+        sourceAudit.result.diff = {
+          missingBlocks: missing.length,
+          extraBlocks: extra.length,
+          missingSamples: missing.slice(0, 5),
+          extraSamples: extra.slice(0, 3)
+        };
+      }
+      
+      console.log(`\n🔍 ================================================\n`);
+      
+    } catch (err) {
+      console.error(`❌ [DIFF] Error generating line-by-line diff: ${err.message}`);
+    }
+  }
+  
+  // Original detailed text comparison (keep for backward compatibility)
   if (enableAudit && sourceAudit && sourceAudit.result) {
     function getDetailedTextComparison(html, blocks) {
       const cheerio = require('cheerio');
@@ -6423,6 +6662,9 @@ async function extractContentFromHtml(html) {
       $auditHtml('button').remove();
       $auditHtml('.btn, .button, [role="button"]').remove();
       $auditHtml('pre, code').remove(); // Code not counted in text validation
+      
+      // FIX v11.0.204: Remove mini TOC and navigation chrome (match AUDIT filtering)
+      $auditHtml('.miniTOC, .zDocsSideBoxes').remove();
       
       $auditHtml('.contentPlaceholder').each((i, elem) => {
         const $elem = $auditHtml(elem);
@@ -6441,6 +6683,9 @@ async function extractContentFromHtml(html) {
           $elem.remove();
         }
       });
+      
+      // FIX v11.0.205: Exclude table-nested callouts (match AUDIT filtering)
+      $auditHtml('table div.note, table div.info, table div.warning, table div.important, table div.tip, table div.caution, table aside, table section.prereq').remove();
       
       const filteredHtml = $auditHtml.html();
 
