@@ -39,6 +39,44 @@ Successfully updated pages that passed both PATCH and validation. These files ha
 
 Main batch PATCH script with adaptive timeout based on page complexity:
 
+### NEW: `config/batch-patch-with-comparator.sh` 🧩 (v11.0.205+)
+
+Enhanced PATCH script with **Text Completeness Comparator** validation. Adds content completeness validation alongside standard validation.
+
+**Features:**
+1. All features of standard PATCH script
+2. **Completeness validation** using LCS/Jaccard algorithms
+3. **Automatic property updates**: Coverage, MissingCount, Method, Status
+4. **Smart categorization**: Incomplete pages → `incomplete-content/`
+5. **Configurable thresholds**: `COVERAGE_THRESHOLD`, `MAX_MISSING_SPANS`
+
+**Usage:**
+```bash
+cd patch/config
+bash batch-patch-with-comparator.sh
+
+# With custom thresholds
+COVERAGE_THRESHOLD=0.95 MAX_MISSING_SPANS=2 bash batch-patch-with-comparator.sh
+```
+
+**Prerequisites:**
+- Comparator API available (see [docs/COMPLETENESS-COMPARATOR.md](../docs/COMPLETENESS-COMPARATOR.md))
+- Notion database with comparator properties (Coverage, MissingCount, etc.)
+
+**When to Use:**
+- Critical pages requiring content validation
+- After major content updates
+- When investigating validation failures
+- To measure content completeness over time
+
+See [docs/BATCH-PATCH-WITH-COMPARATOR.md](docs/BATCH-PATCH-WITH-COMPARATOR.md) for full documentation.
+
+---
+
+### Standard PATCH Script: `config/batch-patch-with-cooldown.sh` ⭐
+
+Fast batch PATCH script with adaptive timeout based on page complexity:
+
 **Features:**
 1. Dry-run validation with complexity estimation (block count, table count)
 2. Adaptive timeout selection:
