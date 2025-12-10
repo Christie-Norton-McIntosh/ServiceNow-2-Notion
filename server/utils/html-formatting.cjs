@@ -23,7 +23,8 @@ const TECHNICAL_PATTERNS = {
   domain: /\.(com|net|org|io|dev|gov|edu|mil|info|biz|tech|app|co|us|uk)/i,
   
   // Dotted identifiers (e.g., table.field, sn_devops.admin, my.package.Class)
-  // Matches identifiers with at least one dot (word.word or word.word.word)
+  // REQUIREMENT: Must contain numbers, underscores, or be ALL_CAPS to be considered technical
+  // This prevents matching regular English text like "some.regular.words"
   dottedIdentifier: /^[\w\-]+\.[\w\-]+/,
   
   // ALL_CAPS constants (4+ characters, allowing underscores)
@@ -68,8 +69,14 @@ function isTechnicalContent(content) {
     return true;
   }
   if (TECHNICAL_PATTERNS.dottedIdentifier.test(trimmed)) {
-    console.log(`🔍 [TECH-CHECK] "${trimmed}" matched: DOTTED-ID`);
-    return true;
+    // For dotted identifiers, require numbers, underscores, or ALL_CAPS to be technical
+    const hasNumbersOrUnderscores = /[0-9_]/.test(trimmed) || /^[A-Z.]+$/.test(trimmed);
+    if (hasNumbersOrUnderscores) {
+      console.log(`🔍 [TECH-CHECK] "${trimmed}" matched: DOTTED-ID (with numbers/underscores or ALL-CAPS)`);
+      return true;
+    } else {
+      console.log(`🚫 [TECH-CHECK] "${trimmed}" skipped: DOTTED-ID but no numbers/underscores and not ALL-CAPS`);
+    }
   }
   if (TECHNICAL_PATTERNS.constant.test(trimmed)) {
     console.log(`🔍 [TECH-CHECK] "${trimmed}" matched: CONSTANT (ALL-CAPS)`);

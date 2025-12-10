@@ -54,6 +54,11 @@ copy(document.querySelector('.zDocsTopicPageBody').outerHTML);
 - Include comments at the top describing the test scenario
 - Add to version control for team sharing
 
+### Current Manual Samples
+
+- **`devops-pipeline-ui-missing-images.html`**: DevOps Pipeline UI page with missing images validation error (expected 4 images, got 1). Tests image handling and validation logic for pages with broken/missing image references.
+- **`table-cell-titles.html`**: Example table with cells containing title-like first lines that should be automatically emphasized as bold. Tests the first-line title detection feature.
+
 ## Best Practices
 
 1. **Review captures**: Periodically review `validation-failures/` and move interesting cases to `manual-samples/`

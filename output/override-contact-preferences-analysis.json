@@ -1,0 +1,2261 @@
+{
+  "fixture": "override-contact-preferences-duplication-order-issue.html",
+  "timestamp": "2025-12-08T07:03:06.340Z",
+  "blockTypes": {
+    "paragraph": 4,
+    "callout": 2,
+    "numbered_list_item": 10,
+    "bulleted_list_item": 8,
+    "image": 1
+  },
+  "calloutCount": 2,
+  "callouts": [
+    {
+      "depth": 0,
+      "text": "Before you begin\nRole required: rota_admin , rota_manager"
+    },
+    {
+      "depth": 1,
+      "text": "Note: SMS and voice require that Notify is active."
+    }
+  ],
+  "searchResults": {
+    "searchText": "SMS and voice require",
+    "occurrences": 1,
+    "locations": [
+      {
+        "path": "numbered_list_item[5] → callout[1]",
+        "type": "callout",
+        "text": "Note: SMS and voice require that Notify is active."
+      }
+    ]
+  },
+  "blocks": [
+    {
+      "object": "block",
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Override all shift members' contact preferences to enforce a communication channel, for example, in case of an emergency."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "callout",
+      "callout": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Before you begin\n"
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "Role required: "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "rota_admin "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": true,
+              "color": "red"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": ", "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "rota_manager"
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": true,
+              "color": "red"
+            }
+          }
+        ],
+        "icon": {
+          "type": "emoji",
+          "emoji": "📍"
+        },
+        "color": "default"
+      }
+    },
+    {
+      "object": "block",
+      "type": "paragraph",
+      "paragraph": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Procedure"
+            },
+            "annotations": {
+              "bold": true,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "numbered_list_item",
+      "numbered_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Use one of the following methods to open the Edit Escalation and Contact Preferences page:"
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": " (sn2n:miwt1g7k-sxvljf)"
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ],
+        "children": [
+          {
+            "object": "block",
+            "type": "bulleted_list_item",
+            "bulleted_list_item": {
+              "rich_text": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": ""
+                  }
+                }
+              ],
+              "children": [
+                {
+                  "object": "block",
+                  "type": "numbered_list_item",
+                  "numbered_list_item": {
+                    "rich_text": [
+                      {
+                        "type": "text",
+                        "text": {
+                          "content": "Navigate to "
+                        },
+                        "annotations": {
+                          "bold": false,
+                          "italic": false,
+                          "strikethrough": false,
+                          "underline": false,
+                          "code": false,
+                          "color": "default"
+                        }
+                      },
+                      {
+                        "type": "text",
+                        "text": {
+                          "content": "On-Call Scheduling "
+                        },
+                        "annotations": {
+                          "bold": true,
+                          "italic": false,
+                          "strikethrough": false,
+                          "underline": false,
+                          "code": false,
+                          "color": "blue"
+                        }
+                      },
+                      {
+                        "type": "text",
+                        "text": {
+                          "content": "> "
+                        },
+                        "annotations": {
+                          "bold": false,
+                          "italic": false,
+                          "strikethrough": false,
+                          "underline": false,
+                          "code": false,
+                          "color": "default"
+                        }
+                      },
+                      {
+                        "type": "text",
+                        "text": {
+                          "content": "On-Call Schedules "
+                        },
+                        "annotations": {
+                          "bold": true,
+                          "italic": false,
+                          "strikethrough": false,
+                          "underline": false,
+                          "code": false,
+                          "color": "blue"
+                        }
+                      },
+                      {
+                        "type": "text",
+                        "text": {
+                          "content": ". The On-Call Schedules page opens to the All On-Call Schedules tab."
+                        },
+                        "annotations": {
+                          "bold": false,
+                          "italic": false,
+                          "strikethrough": false,
+                          "underline": false,
+                          "code": false,
+                          "color": "default"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "numbered_list_item",
+                  "numbered_list_item": {
+                    "rich_text": [
+                      {
+                        "type": "text",
+                        "text": {
+                          "content": "Click a schedule card."
+                        },
+                        "annotations": {
+                          "bold": false,
+                          "italic": false,
+                          "strikethrough": false,
+                          "underline": false,
+                          "code": false,
+                          "color": "default"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "numbered_list_item",
+                  "numbered_list_item": {
+                    "rich_text": [
+                      {
+                        "type": "text",
+                        "text": {
+                          "content": "On the "
+                        },
+                        "annotations": {
+                          "bold": false,
+                          "italic": false,
+                          "strikethrough": false,
+                          "underline": false,
+                          "code": false,
+                          "color": "default"
+                        }
+                      },
+                      {
+                        "type": "text",
+                        "text": {
+                          "content": "Shifts "
+                        },
+                        "annotations": {
+                          "bold": true,
+                          "italic": false,
+                          "strikethrough": false,
+                          "underline": false,
+                          "code": false,
+                          "color": "blue"
+                        }
+                      },
+                      {
+                        "type": "text",
+                        "text": {
+                          "content": "tab, click the Actions icon for the shift and select "
+                        },
+                        "annotations": {
+                          "bold": false,
+                          "italic": false,
+                          "strikethrough": false,
+                          "underline": false,
+                          "code": false,
+                          "color": "default"
+                        }
+                      },
+                      {
+                        "type": "text",
+                        "text": {
+                          "content": "Edit Escalation and Contact Preferences "
+                        },
+                        "annotations": {
+                          "bold": true,
+                          "italic": false,
+                          "strikethrough": false,
+                          "underline": false,
+                          "code": false,
+                          "color": "blue"
+                        }
+                      },
+                      {
+                        "type": "text",
+                        "text": {
+                          "content": "."
+                        },
+                        "annotations": {
+                          "bold": false,
+                          "italic": false,
+                          "strikethrough": false,
+                          "underline": false,
+                          "code": false,
+                          "color": "default"
+                        }
+                      },
+                      {
+                        "type": "text",
+                        "text": {
+                          "content": " (sn2n:miwt1g7j-bkpl3y)"
+                        },
+                        "annotations": {
+                          "bold": false,
+                          "italic": false,
+                          "strikethrough": false,
+                          "underline": false,
+                          "code": false,
+                          "color": "default"
+                        }
+                      }
+                    ]
+                  },
+                  "_sn2n_deferred_children": [
+                    {
+                      "object": "block",
+                      "type": "image",
+                      "image": {
+                        "type": "file_upload",
+                        "file_upload": {
+                          "id": "2c3a89fe-dba5-81ba-a8c2-00b2c65207fa"
+                        },
+                        "caption": [
+                          {
+                            "type": "text",
+                            "text": {
+                              "content": "Actions icon"
+                            }
+                          }
+                        ]
+                      },
+                      "_sn2n_sourceUrl": "https://servicenow-be-prod.servicenow.com/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/../image/icon-actions.png?_LANG=enus",
+                      "_sn2n_marker": "miwt1g7j-bkpl3y"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "object": "block",
+            "type": "bulleted_list_item",
+            "bulleted_list_item": {
+              "rich_text": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": ""
+                  }
+                }
+              ],
+              "children": [
+                {
+                  "object": "block",
+                  "type": "numbered_list_item",
+                  "numbered_list_item": {
+                    "rich_text": [
+                      {
+                        "type": "text",
+                        "text": {
+                          "content": "Navigate to "
+                        },
+                        "annotations": {
+                          "bold": false,
+                          "italic": false,
+                          "strikethrough": false,
+                          "underline": false,
+                          "code": false,
+                          "color": "default"
+                        }
+                      },
+                      {
+                        "type": "text",
+                        "text": {
+                          "content": "On-Call Scheduling "
+                        },
+                        "annotations": {
+                          "bold": true,
+                          "italic": false,
+                          "strikethrough": false,
+                          "underline": false,
+                          "code": false,
+                          "color": "blue"
+                        }
+                      },
+                      {
+                        "type": "text",
+                        "text": {
+                          "content": "> "
+                        },
+                        "annotations": {
+                          "bold": false,
+                          "italic": false,
+                          "strikethrough": false,
+                          "underline": false,
+                          "code": false,
+                          "color": "default"
+                        }
+                      },
+                      {
+                        "type": "text",
+                        "text": {
+                          "content": "My Group Schedules "
+                        },
+                        "annotations": {
+                          "bold": true,
+                          "italic": false,
+                          "strikethrough": false,
+                          "underline": false,
+                          "code": false,
+                          "color": "blue"
+                        }
+                      },
+                      {
+                        "type": "text",
+                        "text": {
+                          "content": "."
+                        },
+                        "annotations": {
+                          "bold": false,
+                          "italic": false,
+                          "strikethrough": false,
+                          "underline": false,
+                          "code": false,
+                          "color": "default"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "numbered_list_item",
+                  "numbered_list_item": {
+                    "rich_text": [
+                      {
+                        "type": "text",
+                        "text": {
+                          "content": "Select the shift."
+                        },
+                        "annotations": {
+                          "bold": false,
+                          "italic": false,
+                          "strikethrough": false,
+                          "underline": false,
+                          "code": false,
+                          "color": "default"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "object": "block",
+                  "type": "numbered_list_item",
+                  "numbered_list_item": {
+                    "rich_text": [
+                      {
+                        "type": "text",
+                        "text": {
+                          "content": "Click "
+                        },
+                        "annotations": {
+                          "bold": false,
+                          "italic": false,
+                          "strikethrough": false,
+                          "underline": false,
+                          "code": false,
+                          "color": "default"
+                        }
+                      },
+                      {
+                        "type": "text",
+                        "text": {
+                          "content": "Edit Escalation and Contact Preferences"
+                        },
+                        "annotations": {
+                          "bold": true,
+                          "italic": false,
+                          "strikethrough": false,
+                          "underline": false,
+                          "code": false,
+                          "color": "blue"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "object": "block",
+            "type": "image",
+            "image": {
+              "type": "file_upload",
+              "file_upload": {
+                "id": "2c3a89fe-dba5-81ba-a8c2-00b2c65207fa"
+              },
+              "caption": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Actions icon"
+                  }
+                }
+              ]
+            },
+            "_sn2n_sourceUrl": "https://servicenow-be-prod.servicenow.com/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/../image/icon-actions.png?_LANG=enus",
+            "_sn2n_marker": "miwt1g7j-bkpl3y"
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "numbered_list_item",
+      "numbered_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "On the "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "Contact Preferences "
+            },
+            "annotations": {
+              "bold": true,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "blue"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "tab, click the contact "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "Attempt "
+            },
+            "annotations": {
+              "bold": true,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "blue"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "method to configure."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": " (sn2n:miwt1g7l-tr2hgy)"
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ],
+        "children": [
+          {
+            "object": "block",
+            "type": "paragraph",
+            "paragraph": {
+              "rich_text": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "The "
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  }
+                },
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Contact Preferences "
+                  },
+                  "annotations": {
+                    "bold": true,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "blue"
+                  }
+                },
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "dialog box appears."
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  }
+                }
+              ]
+            },
+            "_sn2n_source_container": "itemgroup",
+            "_sn2n_mixed_position": "standalone",
+            "_sn2n_marker": "miwt1g7l-tr2hgy"
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "numbered_list_item",
+      "numbered_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Select the contact methods that the instance should use for all shift members for the selected contact attempt."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": " (sn2n:miwt1g7o-e1gsco)"
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ],
+        "children": [
+          {
+            "object": "block",
+            "type": "paragraph",
+            "paragraph": {
+              "rich_text": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Depending on your instance configuration, you can specify any or all of the following notification methods:"
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  }
+                }
+              ]
+            },
+            "_sn2n_source_container": "itemgroup",
+            "_sn2n_mixed_position": "before",
+            "_sn2n_marker": "miwt1g7o-e1gsco"
+          },
+          {
+            "object": "block",
+            "type": "callout",
+            "callout": {
+              "rich_text": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Note: SMS and voice require that Notify is active."
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  }
+                }
+              ],
+              "icon": {
+                "type": "emoji",
+                "emoji": "ℹ️"
+              },
+              "color": "blue_background"
+            },
+            "_sn2n_marker": "miwt1g7o-e1gsco"
+          },
+          {
+            "object": "block",
+            "type": "bulleted_list_item",
+            "bulleted_list_item": {
+              "rich_text": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "SMS text"
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  }
+                }
+              ]
+            },
+            "_sn2n_marker": "miwt1g7o-e1gsco"
+          },
+          {
+            "object": "block",
+            "type": "bulleted_list_item",
+            "bulleted_list_item": {
+              "rich_text": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Email"
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  }
+                }
+              ]
+            },
+            "_sn2n_marker": "miwt1g7o-e1gsco"
+          },
+          {
+            "object": "block",
+            "type": "bulleted_list_item",
+            "bulleted_list_item": {
+              "rich_text": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Slack"
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  }
+                }
+              ]
+            },
+            "_sn2n_marker": "miwt1g7o-e1gsco"
+          },
+          {
+            "object": "block",
+            "type": "bulleted_list_item",
+            "bulleted_list_item": {
+              "rich_text": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Voice"
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  }
+                }
+              ]
+            },
+            "_sn2n_marker": "miwt1g7o-e1gsco"
+          },
+          {
+            "object": "block",
+            "type": "bulleted_list_item",
+            "bulleted_list_item": {
+              "rich_text": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Microsoft Teams. For information on setting up this channel, see "
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  }
+                },
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Set up Microsoft Teams as a contact method for an on-call escalation ",
+                    "link": {
+                      "url": "https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/set-up-msteams-oncall.html"
+                    }
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  }
+                },
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "."
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  }
+                }
+              ]
+            },
+            "_sn2n_marker": "miwt1g7o-e1gsco"
+          },
+          {
+            "object": "block",
+            "type": "bulleted_list_item",
+            "bulleted_list_item": {
+              "rich_text": [
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Mobile push. For information on setting up this channel, see "
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  }
+                },
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "Set up mobile push as a contact method for an on-call escalation ",
+                    "link": {
+                      "url": "https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/set-up-mobile-push-oncall.html"
+                    }
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  }
+                },
+                {
+                  "type": "text",
+                  "text": {
+                    "content": "."
+                  },
+                  "annotations": {
+                    "bold": false,
+                    "italic": false,
+                    "strikethrough": false,
+                    "underline": false,
+                    "code": false,
+                    "color": "default"
+                  }
+                }
+              ]
+            },
+            "_sn2n_marker": "miwt1g7o-e1gsco"
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "numbered_list_item",
+      "numbered_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Enable the "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "Override user preference "
+            },
+            "annotations": {
+              "bold": true,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "blue"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "option."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "fullResult": {
+    "success": true,
+    "data": {
+      "dryRun": true,
+      "pageId": "2bfa89fe-dba5-8119-8c92-d7fcde2546e3",
+      "blocksExtracted": 7,
+      "blockTypes": {
+        "paragraph": 2,
+        "callout": 1,
+        "numbered_list_item": 4
+      },
+      "children": [
+        {
+          "object": "block",
+          "type": "paragraph",
+          "paragraph": {
+            "rich_text": [
+              {
+                "type": "text",
+                "text": {
+                  "content": "Override all shift members' contact preferences to enforce a communication channel, for example, in case of an emergency."
+                },
+                "annotations": {
+                  "bold": false,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "default"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "object": "block",
+          "type": "callout",
+          "callout": {
+            "rich_text": [
+              {
+                "type": "text",
+                "text": {
+                  "content": "Before you begin\n"
+                },
+                "annotations": {
+                  "bold": false,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "default"
+                }
+              },
+              {
+                "type": "text",
+                "text": {
+                  "content": "Role required: "
+                },
+                "annotations": {
+                  "bold": false,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "default"
+                }
+              },
+              {
+                "type": "text",
+                "text": {
+                  "content": "rota_admin "
+                },
+                "annotations": {
+                  "bold": false,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": true,
+                  "color": "red"
+                }
+              },
+              {
+                "type": "text",
+                "text": {
+                  "content": ", "
+                },
+                "annotations": {
+                  "bold": false,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "default"
+                }
+              },
+              {
+                "type": "text",
+                "text": {
+                  "content": "rota_manager"
+                },
+                "annotations": {
+                  "bold": false,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": true,
+                  "color": "red"
+                }
+              }
+            ],
+            "icon": {
+              "type": "emoji",
+              "emoji": "📍"
+            },
+            "color": "default"
+          }
+        },
+        {
+          "object": "block",
+          "type": "paragraph",
+          "paragraph": {
+            "rich_text": [
+              {
+                "type": "text",
+                "text": {
+                  "content": "Procedure"
+                },
+                "annotations": {
+                  "bold": true,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "default"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "object": "block",
+          "type": "numbered_list_item",
+          "numbered_list_item": {
+            "rich_text": [
+              {
+                "type": "text",
+                "text": {
+                  "content": "Use one of the following methods to open the Edit Escalation and Contact Preferences page:"
+                },
+                "annotations": {
+                  "bold": false,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "default"
+                }
+              },
+              {
+                "type": "text",
+                "text": {
+                  "content": " (sn2n:miwt1g7k-sxvljf)"
+                },
+                "annotations": {
+                  "bold": false,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "default"
+                }
+              }
+            ],
+            "children": [
+              {
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                  "rich_text": [
+                    {
+                      "type": "text",
+                      "text": {
+                        "content": ""
+                      }
+                    }
+                  ],
+                  "children": [
+                    {
+                      "object": "block",
+                      "type": "numbered_list_item",
+                      "numbered_list_item": {
+                        "rich_text": [
+                          {
+                            "type": "text",
+                            "text": {
+                              "content": "Navigate to "
+                            },
+                            "annotations": {
+                              "bold": false,
+                              "italic": false,
+                              "strikethrough": false,
+                              "underline": false,
+                              "code": false,
+                              "color": "default"
+                            }
+                          },
+                          {
+                            "type": "text",
+                            "text": {
+                              "content": "On-Call Scheduling "
+                            },
+                            "annotations": {
+                              "bold": true,
+                              "italic": false,
+                              "strikethrough": false,
+                              "underline": false,
+                              "code": false,
+                              "color": "blue"
+                            }
+                          },
+                          {
+                            "type": "text",
+                            "text": {
+                              "content": "> "
+                            },
+                            "annotations": {
+                              "bold": false,
+                              "italic": false,
+                              "strikethrough": false,
+                              "underline": false,
+                              "code": false,
+                              "color": "default"
+                            }
+                          },
+                          {
+                            "type": "text",
+                            "text": {
+                              "content": "On-Call Schedules "
+                            },
+                            "annotations": {
+                              "bold": true,
+                              "italic": false,
+                              "strikethrough": false,
+                              "underline": false,
+                              "code": false,
+                              "color": "blue"
+                            }
+                          },
+                          {
+                            "type": "text",
+                            "text": {
+                              "content": ". The On-Call Schedules page opens to the All On-Call Schedules tab."
+                            },
+                            "annotations": {
+                              "bold": false,
+                              "italic": false,
+                              "strikethrough": false,
+                              "underline": false,
+                              "code": false,
+                              "color": "default"
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "object": "block",
+                      "type": "numbered_list_item",
+                      "numbered_list_item": {
+                        "rich_text": [
+                          {
+                            "type": "text",
+                            "text": {
+                              "content": "Click a schedule card."
+                            },
+                            "annotations": {
+                              "bold": false,
+                              "italic": false,
+                              "strikethrough": false,
+                              "underline": false,
+                              "code": false,
+                              "color": "default"
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "object": "block",
+                      "type": "numbered_list_item",
+                      "numbered_list_item": {
+                        "rich_text": [
+                          {
+                            "type": "text",
+                            "text": {
+                              "content": "On the "
+                            },
+                            "annotations": {
+                              "bold": false,
+                              "italic": false,
+                              "strikethrough": false,
+                              "underline": false,
+                              "code": false,
+                              "color": "default"
+                            }
+                          },
+                          {
+                            "type": "text",
+                            "text": {
+                              "content": "Shifts "
+                            },
+                            "annotations": {
+                              "bold": true,
+                              "italic": false,
+                              "strikethrough": false,
+                              "underline": false,
+                              "code": false,
+                              "color": "blue"
+                            }
+                          },
+                          {
+                            "type": "text",
+                            "text": {
+                              "content": "tab, click the Actions icon for the shift and select "
+                            },
+                            "annotations": {
+                              "bold": false,
+                              "italic": false,
+                              "strikethrough": false,
+                              "underline": false,
+                              "code": false,
+                              "color": "default"
+                            }
+                          },
+                          {
+                            "type": "text",
+                            "text": {
+                              "content": "Edit Escalation and Contact Preferences "
+                            },
+                            "annotations": {
+                              "bold": true,
+                              "italic": false,
+                              "strikethrough": false,
+                              "underline": false,
+                              "code": false,
+                              "color": "blue"
+                            }
+                          },
+                          {
+                            "type": "text",
+                            "text": {
+                              "content": "."
+                            },
+                            "annotations": {
+                              "bold": false,
+                              "italic": false,
+                              "strikethrough": false,
+                              "underline": false,
+                              "code": false,
+                              "color": "default"
+                            }
+                          },
+                          {
+                            "type": "text",
+                            "text": {
+                              "content": " (sn2n:miwt1g7j-bkpl3y)"
+                            },
+                            "annotations": {
+                              "bold": false,
+                              "italic": false,
+                              "strikethrough": false,
+                              "underline": false,
+                              "code": false,
+                              "color": "default"
+                            }
+                          }
+                        ]
+                      },
+                      "_sn2n_deferred_children": [
+                        {
+                          "object": "block",
+                          "type": "image",
+                          "image": {
+                            "type": "file_upload",
+                            "file_upload": {
+                              "id": "2c3a89fe-dba5-81ba-a8c2-00b2c65207fa"
+                            },
+                            "caption": [
+                              {
+                                "type": "text",
+                                "text": {
+                                  "content": "Actions icon"
+                                }
+                              }
+                            ]
+                          },
+                          "_sn2n_sourceUrl": "https://servicenow-be-prod.servicenow.com/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/../image/icon-actions.png?_LANG=enus",
+                          "_sn2n_marker": "miwt1g7j-bkpl3y"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                  "rich_text": [
+                    {
+                      "type": "text",
+                      "text": {
+                        "content": ""
+                      }
+                    }
+                  ],
+                  "children": [
+                    {
+                      "object": "block",
+                      "type": "numbered_list_item",
+                      "numbered_list_item": {
+                        "rich_text": [
+                          {
+                            "type": "text",
+                            "text": {
+                              "content": "Navigate to "
+                            },
+                            "annotations": {
+                              "bold": false,
+                              "italic": false,
+                              "strikethrough": false,
+                              "underline": false,
+                              "code": false,
+                              "color": "default"
+                            }
+                          },
+                          {
+                            "type": "text",
+                            "text": {
+                              "content": "On-Call Scheduling "
+                            },
+                            "annotations": {
+                              "bold": true,
+                              "italic": false,
+                              "strikethrough": false,
+                              "underline": false,
+                              "code": false,
+                              "color": "blue"
+                            }
+                          },
+                          {
+                            "type": "text",
+                            "text": {
+                              "content": "> "
+                            },
+                            "annotations": {
+                              "bold": false,
+                              "italic": false,
+                              "strikethrough": false,
+                              "underline": false,
+                              "code": false,
+                              "color": "default"
+                            }
+                          },
+                          {
+                            "type": "text",
+                            "text": {
+                              "content": "My Group Schedules "
+                            },
+                            "annotations": {
+                              "bold": true,
+                              "italic": false,
+                              "strikethrough": false,
+                              "underline": false,
+                              "code": false,
+                              "color": "blue"
+                            }
+                          },
+                          {
+                            "type": "text",
+                            "text": {
+                              "content": "."
+                            },
+                            "annotations": {
+                              "bold": false,
+                              "italic": false,
+                              "strikethrough": false,
+                              "underline": false,
+                              "code": false,
+                              "color": "default"
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "object": "block",
+                      "type": "numbered_list_item",
+                      "numbered_list_item": {
+                        "rich_text": [
+                          {
+                            "type": "text",
+                            "text": {
+                              "content": "Select the shift."
+                            },
+                            "annotations": {
+                              "bold": false,
+                              "italic": false,
+                              "strikethrough": false,
+                              "underline": false,
+                              "code": false,
+                              "color": "default"
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "object": "block",
+                      "type": "numbered_list_item",
+                      "numbered_list_item": {
+                        "rich_text": [
+                          {
+                            "type": "text",
+                            "text": {
+                              "content": "Click "
+                            },
+                            "annotations": {
+                              "bold": false,
+                              "italic": false,
+                              "strikethrough": false,
+                              "underline": false,
+                              "code": false,
+                              "color": "default"
+                            }
+                          },
+                          {
+                            "type": "text",
+                            "text": {
+                              "content": "Edit Escalation and Contact Preferences"
+                            },
+                            "annotations": {
+                              "bold": true,
+                              "italic": false,
+                              "strikethrough": false,
+                              "underline": false,
+                              "code": false,
+                              "color": "blue"
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "object": "block",
+                "type": "image",
+                "image": {
+                  "type": "file_upload",
+                  "file_upload": {
+                    "id": "2c3a89fe-dba5-81ba-a8c2-00b2c65207fa"
+                  },
+                  "caption": [
+                    {
+                      "type": "text",
+                      "text": {
+                        "content": "Actions icon"
+                      }
+                    }
+                  ]
+                },
+                "_sn2n_sourceUrl": "https://servicenow-be-prod.servicenow.com/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/../image/icon-actions.png?_LANG=enus",
+                "_sn2n_marker": "miwt1g7j-bkpl3y"
+              }
+            ]
+          }
+        },
+        {
+          "object": "block",
+          "type": "numbered_list_item",
+          "numbered_list_item": {
+            "rich_text": [
+              {
+                "type": "text",
+                "text": {
+                  "content": "On the "
+                },
+                "annotations": {
+                  "bold": false,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "default"
+                }
+              },
+              {
+                "type": "text",
+                "text": {
+                  "content": "Contact Preferences "
+                },
+                "annotations": {
+                  "bold": true,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "blue"
+                }
+              },
+              {
+                "type": "text",
+                "text": {
+                  "content": "tab, click the contact "
+                },
+                "annotations": {
+                  "bold": false,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "default"
+                }
+              },
+              {
+                "type": "text",
+                "text": {
+                  "content": "Attempt "
+                },
+                "annotations": {
+                  "bold": true,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "blue"
+                }
+              },
+              {
+                "type": "text",
+                "text": {
+                  "content": "method to configure."
+                },
+                "annotations": {
+                  "bold": false,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "default"
+                }
+              },
+              {
+                "type": "text",
+                "text": {
+                  "content": " (sn2n:miwt1g7l-tr2hgy)"
+                },
+                "annotations": {
+                  "bold": false,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "default"
+                }
+              }
+            ],
+            "children": [
+              {
+                "object": "block",
+                "type": "paragraph",
+                "paragraph": {
+                  "rich_text": [
+                    {
+                      "type": "text",
+                      "text": {
+                        "content": "The "
+                      },
+                      "annotations": {
+                        "bold": false,
+                        "italic": false,
+                        "strikethrough": false,
+                        "underline": false,
+                        "code": false,
+                        "color": "default"
+                      }
+                    },
+                    {
+                      "type": "text",
+                      "text": {
+                        "content": "Contact Preferences "
+                      },
+                      "annotations": {
+                        "bold": true,
+                        "italic": false,
+                        "strikethrough": false,
+                        "underline": false,
+                        "code": false,
+                        "color": "blue"
+                      }
+                    },
+                    {
+                      "type": "text",
+                      "text": {
+                        "content": "dialog box appears."
+                      },
+                      "annotations": {
+                        "bold": false,
+                        "italic": false,
+                        "strikethrough": false,
+                        "underline": false,
+                        "code": false,
+                        "color": "default"
+                      }
+                    }
+                  ]
+                },
+                "_sn2n_source_container": "itemgroup",
+                "_sn2n_mixed_position": "standalone",
+                "_sn2n_marker": "miwt1g7l-tr2hgy"
+              }
+            ]
+          }
+        },
+        {
+          "object": "block",
+          "type": "numbered_list_item",
+          "numbered_list_item": {
+            "rich_text": [
+              {
+                "type": "text",
+                "text": {
+                  "content": "Select the contact methods that the instance should use for all shift members for the selected contact attempt."
+                },
+                "annotations": {
+                  "bold": false,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "default"
+                }
+              },
+              {
+                "type": "text",
+                "text": {
+                  "content": " (sn2n:miwt1g7o-e1gsco)"
+                },
+                "annotations": {
+                  "bold": false,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "default"
+                }
+              }
+            ],
+            "children": [
+              {
+                "object": "block",
+                "type": "paragraph",
+                "paragraph": {
+                  "rich_text": [
+                    {
+                      "type": "text",
+                      "text": {
+                        "content": "Depending on your instance configuration, you can specify any or all of the following notification methods:"
+                      },
+                      "annotations": {
+                        "bold": false,
+                        "italic": false,
+                        "strikethrough": false,
+                        "underline": false,
+                        "code": false,
+                        "color": "default"
+                      }
+                    }
+                  ]
+                },
+                "_sn2n_source_container": "itemgroup",
+                "_sn2n_mixed_position": "before",
+                "_sn2n_marker": "miwt1g7o-e1gsco"
+              },
+              {
+                "object": "block",
+                "type": "callout",
+                "callout": {
+                  "rich_text": [
+                    {
+                      "type": "text",
+                      "text": {
+                        "content": "Note: SMS and voice require that Notify is active."
+                      },
+                      "annotations": {
+                        "bold": false,
+                        "italic": false,
+                        "strikethrough": false,
+                        "underline": false,
+                        "code": false,
+                        "color": "default"
+                      }
+                    }
+                  ],
+                  "icon": {
+                    "type": "emoji",
+                    "emoji": "ℹ️"
+                  },
+                  "color": "blue_background"
+                },
+                "_sn2n_marker": "miwt1g7o-e1gsco"
+              },
+              {
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                  "rich_text": [
+                    {
+                      "type": "text",
+                      "text": {
+                        "content": "SMS text"
+                      },
+                      "annotations": {
+                        "bold": false,
+                        "italic": false,
+                        "strikethrough": false,
+                        "underline": false,
+                        "code": false,
+                        "color": "default"
+                      }
+                    }
+                  ]
+                },
+                "_sn2n_marker": "miwt1g7o-e1gsco"
+              },
+              {
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                  "rich_text": [
+                    {
+                      "type": "text",
+                      "text": {
+                        "content": "Email"
+                      },
+                      "annotations": {
+                        "bold": false,
+                        "italic": false,
+                        "strikethrough": false,
+                        "underline": false,
+                        "code": false,
+                        "color": "default"
+                      }
+                    }
+                  ]
+                },
+                "_sn2n_marker": "miwt1g7o-e1gsco"
+              },
+              {
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                  "rich_text": [
+                    {
+                      "type": "text",
+                      "text": {
+                        "content": "Slack"
+                      },
+                      "annotations": {
+                        "bold": false,
+                        "italic": false,
+                        "strikethrough": false,
+                        "underline": false,
+                        "code": false,
+                        "color": "default"
+                      }
+                    }
+                  ]
+                },
+                "_sn2n_marker": "miwt1g7o-e1gsco"
+              },
+              {
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                  "rich_text": [
+                    {
+                      "type": "text",
+                      "text": {
+                        "content": "Voice"
+                      },
+                      "annotations": {
+                        "bold": false,
+                        "italic": false,
+                        "strikethrough": false,
+                        "underline": false,
+                        "code": false,
+                        "color": "default"
+                      }
+                    }
+                  ]
+                },
+                "_sn2n_marker": "miwt1g7o-e1gsco"
+              },
+              {
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                  "rich_text": [
+                    {
+                      "type": "text",
+                      "text": {
+                        "content": "Microsoft Teams. For information on setting up this channel, see "
+                      },
+                      "annotations": {
+                        "bold": false,
+                        "italic": false,
+                        "strikethrough": false,
+                        "underline": false,
+                        "code": false,
+                        "color": "default"
+                      }
+                    },
+                    {
+                      "type": "text",
+                      "text": {
+                        "content": "Set up Microsoft Teams as a contact method for an on-call escalation ",
+                        "link": {
+                          "url": "https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/set-up-msteams-oncall.html"
+                        }
+                      },
+                      "annotations": {
+                        "bold": false,
+                        "italic": false,
+                        "strikethrough": false,
+                        "underline": false,
+                        "code": false,
+                        "color": "default"
+                      }
+                    },
+                    {
+                      "type": "text",
+                      "text": {
+                        "content": "."
+                      },
+                      "annotations": {
+                        "bold": false,
+                        "italic": false,
+                        "strikethrough": false,
+                        "underline": false,
+                        "code": false,
+                        "color": "default"
+                      }
+                    }
+                  ]
+                },
+                "_sn2n_marker": "miwt1g7o-e1gsco"
+              },
+              {
+                "object": "block",
+                "type": "bulleted_list_item",
+                "bulleted_list_item": {
+                  "rich_text": [
+                    {
+                      "type": "text",
+                      "text": {
+                        "content": "Mobile push. For information on setting up this channel, see "
+                      },
+                      "annotations": {
+                        "bold": false,
+                        "italic": false,
+                        "strikethrough": false,
+                        "underline": false,
+                        "code": false,
+                        "color": "default"
+                      }
+                    },
+                    {
+                      "type": "text",
+                      "text": {
+                        "content": "Set up mobile push as a contact method for an on-call escalation ",
+                        "link": {
+                          "url": "https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/set-up-mobile-push-oncall.html"
+                        }
+                      },
+                      "annotations": {
+                        "bold": false,
+                        "italic": false,
+                        "strikethrough": false,
+                        "underline": false,
+                        "code": false,
+                        "color": "default"
+                      }
+                    },
+                    {
+                      "type": "text",
+                      "text": {
+                        "content": "."
+                      },
+                      "annotations": {
+                        "bold": false,
+                        "italic": false,
+                        "strikethrough": false,
+                        "underline": false,
+                        "code": false,
+                        "color": "default"
+                      }
+                    }
+                  ]
+                },
+                "_sn2n_marker": "miwt1g7o-e1gsco"
+              }
+            ]
+          }
+        },
+        {
+          "object": "block",
+          "type": "numbered_list_item",
+          "numbered_list_item": {
+            "rich_text": [
+              {
+                "type": "text",
+                "text": {
+                  "content": "Enable the "
+                },
+                "annotations": {
+                  "bold": false,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "default"
+                }
+              },
+              {
+                "type": "text",
+                "text": {
+                  "content": "Override user preference "
+                },
+                "annotations": {
+                  "bold": true,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "blue"
+                }
+              },
+              {
+                "type": "text",
+                "text": {
+                  "content": "option."
+                },
+                "annotations": {
+                  "bold": false,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "default"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "hasVideos": false,
+      "audit": {
+        "coverage": 107.2,
+        "coverageStr": "107.2%",
+        "threshold": "68-110%",
+        "thresholdReason": "large page (>100 blocks)",
+        "contentAnalysis": {
+          "tableCount": 0,
+          "calloutCount": 2,
+          "deepNestingCount": 6,
+          "listItemCount": 18,
+          "nestedListCount": 5,
+          "imageCount": 1,
+          "maxNestingDepth": 3,
+          "hasTablesInCallouts": false,
+          "hasListsInCallouts": false,
+          "hasMultiRowTables": false
+        },
+        "nodeCount": 53,
+        "totalLength": 1331,
+        "notionBlocks": 7,
+        "notionTextLength": 1427,
+        "blockNodeRatio": 0.13,
+        "passed": true,
+        "missing": 0,
+        "extra": 96,
+        "missingPercent": 0,
+        "extraPercent": "7.2",
+        "detailedComparison": {
+          "htmlSegmentCount": 53,
+          "notionSegmentCount": 22,
+          "missingSegments": [
+            {
+              "text": "begin Role required: rota_admin,",
+              "context": "html",
+              "length": 32
+            },
+            {
+              "text": "following notification methods:",
+              "context": "html",
+              "length": 31
+            },
+            {
+              "text": "Voice Microsoft Teams",
+              "context": "html",
+              "length": 21
+            },
+            {
+              "text": "on-call escalation .",
+              "context": "html",
+              "length": 20
+            },
+            {
+              "text": "Notify is active.",
+              "context": "html",
+              "length": 17
+            }
+          ],
+          "extraSegments": [
+            {
+              "text": "Role required: (rota_admin",
+              "context": "notion",
+              "length": 26
+            },
+            {
+              "text": "the Actions icon",
+              "context": "notion",
+              "length": 16
+            },
+            {
+              "text": "following notification methods:",
+              "context": "notion",
+              "length": 31
+            },
+            {
+              "text": "Notify is active.",
+              "context": "notion",
+              "length": 17
+            },
+            {
+              "text": "Slack Voice Microsoft Teams.",
+              "context": "notion",
+              "length": 28
+            },
+            {
+              "text": "on-call escalation",
+              "context": "notion",
+              "length": 18
+            }
+          ],
+          "groupMatches": [],
+          "totalMissingChars": 121,
+          "totalExtraChars": 136
+        },
+        "fuzzyConfidenceThreshold": 0.95,
+        "fuzzyMatchedChars": 0,
+        "adjustedCoverage": 107.2,
+        "adjustedCoverageStr": "107.2%",
+        "adjustedPassed": true
+      }
+    },
+    "meta": {}
+  }
+}

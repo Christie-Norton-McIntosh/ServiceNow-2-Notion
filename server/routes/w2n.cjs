@@ -11,13 +11,13 @@
  * 1. HTML → Formatted Notion blocks (with bold, italic, code, colors, etc.)
  * 2. Create plain-text copy using createPlainTextBlocksForValidation() (coalesces rich_text)
  * 3. Send FORMATTED blocks to Notion (users see formatting)
- * 4. Use PLAIN-TEXT blocks for validation statistics (Validation & Stats properties)
+ * 4. Use PLAIN-TEXT blocks for validation statistics (Audit & ContentComparison properties)
  * 5. Discard plain-text copy after validation
  * 
  * Why separate copies?
  * - User Experience: Notion pages have full formatting (bold, colors, etc.)
  * - Validation Accuracy: Plain-text comparison avoids false negatives from formatting variations
- * - Stats Properties: Block counts based on plain-text (consistent with source HTML plain-text)
+ * - ContentComparison Property: Block counts based on plain-text (consistent with source HTML plain-text)
  * 
  * Key Variables:
  * - children: Formatted blocks sent to Notion (preserves bold, italic, code, colors)
@@ -31,9 +31,9 @@ const fs = require('fs');
 const path = require('path');
 const cheerio = require('cheerio');
 
-// FORCE RELOAD TIMESTAMP: 2025-10-24T04:53:00.000Z  
+// FORCE RELOAD TIMESTAMP: 2025-12-07T00:20:00.000Z - v11.0.158 MENU CASCADE FIX
 console.log('🔥🔥🔥 W2N.CJS MODULE LOADED AT:', new Date().toISOString());
-console.log('🔥🔥🔥 MODULE VERSION: 04:53:00 - TIMESTAMP FORCE RELOAD WITH REGEX FIX');
+console.log('🔥🔥🔥 MODULE VERSION: v11.0.158 - MENU CASCADE PREPROCESSING BEFORE AUDIT');
 
 // Import services
 const notionService = require('../services/notion.cjs');
@@ -43,7 +43,7 @@ const { getAndClearPlaceholderWarnings } = require('../converters/rich-text.cjs'
 const { deduplicateTableBlocks } = require('../converters/table.cjs');
 const { logPlaceholderStripped, logUnprocessedContent, logImageUploadFailed, logCheerioParsingIssue } = require('../utils/verification-log.cjs');
 const { validateNotionPage } = require('../utils/validate-notion-page.cjs');
-const { validateContentOrder, closeOrderLog } = require('../services/content-validator.cjs');
+const { diagnoseAndFixAudit, saveDiagnosisToFile } = require('../utils/audit-auto-remediate.cjs');
 
 /**
  * Validation status tracker for async validation monitoring
@@ -204,195 +204,15 @@ router.post('/W2N', async (req, res) => {
 
     // Allow a dry-run mode for testing conversions without creating a Notion page
   if (payload.dryRun) {
-      log("🔍 DryRun mode enabled - converting content to blocks without creating page");
-      let children = [];
-      let hasVideos = false;
-      let extractionWarnings = [];
-      if (payload.contentHtml) {
-        log("🔄 (dryRun) Converting HTML content to Notion blocks");
-  const result = await htmlToNotionBlocks(payload.contentHtml);
-  children = result.blocks;
-        hasVideos = result.hasVideos;
-        extractionWarnings = result.warnings || [];
-        log(`✅ (dryRun) Converted HTML to ${children.length} Notion blocks`);
-        if (hasVideos) {
-          log(`🎥 (dryRun) Video content detected`);
-        }
-        if (extractionWarnings.length > 0) {
-          log(`⚠️ (dryRun) ${extractionWarnings.length} warnings collected during extraction`);
-        }
-      } else if (payload.content) {
-        log("🔄 (dryRun) Converting plain text content to Notion blocks");
-        const result = await htmlToNotionBlocks(payload.content);
-        children = result.blocks;
-        hasVideos = result.hasVideos;
-        extractionWarnings = result.warnings || [];
-        log(`✅ (dryRun) Converted content to ${children.length} Notion blocks`);
-      }
-      // DRYRUN ENHANCEMENT: Simulate marker-based orchestration so structure matches real page
-      try {
-        const { collectAndStripMarkers, removeCollectedBlocks } = getGlobals();
-        if (typeof collectAndStripMarkers === 'function' && typeof removeCollectedBlocks === 'function') {
-          log('🔖 (dryRun) Collecting marker-tagged blocks for simulated orchestration');
-          const markerMap = collectAndStripMarkers(children, {});
-          const removed = removeCollectedBlocks(children);
-          if (removed > 0) log(`🔖 (dryRun) Removed ${removed} collected block(s) from top-level`);
-
-          // Helper: strip marker tokens from rich_text
-          const stripMarkerTokens = (rich) => {
-            if (!Array.isArray(rich)) return rich;
-            const cleaned = [];
-            const tokenRegex = /\(sn2n:[^)]+\)/g;
-            for (const rt of rich) {
-              const t = (rt && rt.text && typeof rt.text.content === 'string') ? rt.text.content : '';
-              const newText = t.replace(tokenRegex, '').replace(/\s{2,}/g, ' ').trim();
-              const clone = { ...(rt || {}) };
-              if (clone.text && typeof clone.text === 'object') {
-                clone.text = { ...clone.text, content: newText };
-              }
-              // Recompute plain_text for consistency
-              clone.plain_text = newText;
-              // Skip empty text nodes without link
-              if (newText.length === 0 && !clone.text?.link) continue;
-              cleaned.push(clone);
-            }
-            return cleaned;
-          };
-
-          // Attach collected blocks to parents containing the corresponding marker token
-          const attachToParents = (arr) => {
-            if (!Array.isArray(arr)) return;
-            for (const blk of arr) {
-              if (!blk || typeof blk !== 'object') continue;
-              const type = blk.type;
-              const typed = type && blk[type] ? blk[type] : null;
-              const rich = typed && Array.isArray(typed.rich_text) ? typed.rich_text : [];
-              // Find any marker tokens in rich_text
-              const concat = rich.map(r => r?.text?.content || '').join('');
-              const matches = concat.match(/\(sn2n:([a-z0-9_\-]+)\)/gi) || [];
-              if (matches.length > 0) {
-                for (const token of matches) {
-                  const marker = token.slice(6, -1); // remove "(sn2n:" and ")"
-                  const blocksToAppend = markerMap[marker] || [];
-                  if (blocksToAppend.length > 0) {
-                    // Ensure children array exists for supported types
-                    const supportedParents = ['numbered_list_item', 'bulleted_list_item', 'callout', 'toggle', 'to_do', 'paragraph'];
-                    if (type && supportedParents.includes(type)) {
-                      if (!blk[type].children) blk[type].children = [];
-                      blk[type].children.push(...blocksToAppend);
-                      // Mark as attached so we don't attach again
-                      markerMap[marker] = [];
-                    }
-                  }
-                }
-                if (typed) {
-                  typed.rich_text = stripMarkerTokens(rich);
-                }
-              }
-              // Recurse into children
-              if (typed && Array.isArray(typed.children)) attachToParents(typed.children);
-              if (Array.isArray(blk.children)) attachToParents(blk.children);
-            }
-          };
-          attachToParents(children);
-          log('🔖 (dryRun) Marker attachment simulation complete');
-        }
-      } catch (e) {
-        log(`⚠️ (dryRun) Marker simulation failed: ${e && e.message ? e.message : e}`);
-      }
-
-      // FIX v11.0.7: Final callout deduplication for dry run mode
-      // Apply same deduplication logic as non-dry-run mode to ensure consistent results
-      try {
-        const calloutIndices = [];
-        children.forEach((block, idx) => {
-          if (block.type === 'callout') calloutIndices.push(idx);
-        });
-        
-        if (calloutIndices.length > 1) {
-          log(`🔍 [DRYRUN-CALLOUT-DEDUPE] Found ${calloutIndices.length} callouts at indices: [${calloutIndices.join(', ')}]`);
-          
-          const seenCalloutTexts = new Map();
-          const indicesToRemove = [];
-          
-          calloutIndices.forEach((idx) => {
-            const callout = children[idx];
-            
-            // Extract and normalize text content
-            const fullText = (callout.callout?.rich_text || [])
-              .map(rt => rt.text?.content || '')
-              .join('')
-              .replace(/\(sn2n:[a-z0-9\-]+\)/gi, '') // Strip markers
-              .replace(/\s+/g, ' ')  // Normalize whitespace
-              .trim();
-            
-            // Check if this is a "Note:" or "Before you begin" callout
-            const isNoteCallout = /^Note:/i.test(fullText);
-            const isBeforeYouBeginCallout = /^Before you begin/i.test(fullText);
-            const isExemptCallout = isNoteCallout || isBeforeYouBeginCallout;
-            
-            // Use first 200 chars as signature (handles minor variations)
-            const signature = fullText.substring(0, 200).toLowerCase();
-            
-            if (seenCalloutTexts.has(signature)) {
-              const entry = seenCalloutTexts.get(signature);
-              const firstIdx = entry.firstIdx;
-              const distance = idx - firstIdx;
-              
-              // For exempt callouts (Note:, Before you begin), only dedupe if ADJACENT (distance <= 1)
-              // For other callouts, dedupe within proximity window (distance <= 5)
-              const shouldRemove = isExemptCallout ? (distance <= 1) : (distance <= 5);
-              
-              if (shouldRemove) {
-                const calloutType = isNoteCallout ? 'Note:' : (isBeforeYouBeginCallout ? 'Before you begin' : 'regular');
-                log(`🚫 [DRYRUN-CALLOUT-DEDUPE] Removing ${calloutType} duplicate at index ${idx} (distance ${distance} from ${firstIdx}): "${fullText.substring(0, 60)}..."`);
-                indicesToRemove.push(idx);
-              } else {
-                log(`✅ [DRYRUN-CALLOUT-DEDUPE] Keeping exempt callout at index ${idx} (distance ${distance} from ${firstIdx} exceeds adjacency): "${fullText.substring(0, 60)}..."`);
-                // Update to track this as a new "first" occurrence for future comparisons
-                seenCalloutTexts.set(signature, {firstIdx: idx, count: entry.count + 1});
-              }
-            } else {
-              // First occurrence - keep it
-              seenCalloutTexts.set(signature, {firstIdx: idx, count: 1});
-            }
-          });
-          
-          if (indicesToRemove.length > 0) {
-            const toRemove = new Set(indicesToRemove);
-            const beforeCount = children.length;
-            children = children.filter((_, idx) => !toRemove.has(idx));
-            const afterCount = children.length;
-            log(`✅ [DRYRUN-CALLOUT-DEDUPE] Removed ${indicesToRemove.length} duplicate callout(s), blocks: ${beforeCount} → ${afterCount}`);
-          }
-        }
-      } catch (dedupeError) {
-        log(`❌ [DRYRUN-CALLOUT-DEDUPE] Error during callout deduplication: ${dedupeError.message}`);
-      }
-
-      // VALIDATION ENHANCEMENT v11.0.40: Create plain-text copy for validation without affecting formatted output
-      let plainTextChildren = null;
-      try {
-        // Use servicenowService which was imported at the top of this file
-        if (typeof servicenowService.createPlainTextBlocksForValidation === 'function') {
-          plainTextChildren = servicenowService.createPlainTextBlocksForValidation(children);
-          log(`📝 [DRYRUN-VALIDATION] Created plain-text copy with ${plainTextChildren.length} blocks for validation`);
-        } else {
-          log(`⚠️ [DRYRUN-VALIDATION] createPlainTextBlocksForValidation not available in servicenowService`);
-        }
-      } catch (plainTextError) {
-        log(`⚠️ [DRYRUN-VALIDATION] Failed to create plain-text copy: ${plainTextError.message}`);
-      }
-
-      log(`📤 [DRYRUN] About to return response with ${children ? children.length : 'NULL'} children blocks`);
-      return sendSuccess(res, { 
-        dryRun: true, 
-        children, 
-        plainTextChildren, // Plain-text version for validation (coalesced rich_text)
-        hasVideos, 
-        warnings: extractionWarnings 
-      });
-    }
+    // Dry-run mode is only supported for PATCH, not POST. For POST, skip dry-run logic.
+    return sendError(
+      res,
+      "DRYRUN_NOT_SUPPORTED",
+      "Dry-run mode is not supported for POST. Use PATCH for dry-run validation.",
+      null,
+      400
+    );
+  }
 
     if (!payload.databaseId) {
       return sendError(
@@ -434,8 +254,15 @@ router.post('/W2N', async (req, res) => {
       log("🔍 Received properties from userscript:");
       log(JSON.stringify(payload.properties, null, 2));
       
-      // Merge with existing properties (userscript already did the mapping)
-      Object.assign(properties, payload.properties);
+      // Merge with existing properties, but preserve server-set URL property
+      // Userscript property mappings should not override the explicit URL from payload.url
+      const userProperties = { ...payload.properties };
+      if (properties["URL"] && userProperties["URL"]) {
+        log("⚠️ Userscript property mappings include URL property - preserving server-set URL");
+        delete userProperties["URL"];
+      }
+      
+      Object.assign(properties, userProperties);
       log("🔍 Properties after merge:");
       log(JSON.stringify(properties, null, 2));
     } else {
@@ -551,13 +378,29 @@ router.post('/W2N', async (req, res) => {
               const hasNoteRole = /note/i.test(role);
 
               if (isDivNote || isPrereq || hasNoteRole) {
-                // CRITICAL: Skip nested callouts to avoid double-counting
+                // CRITICAL: Skip callouts inside tables - they can't be rendered as callouts in Notion
+                // Notion table cells can only contain text and other limited types, not callout blocks
+                // This matches the extraction pipeline which removes callouts from tables (servicenow.cjs line 287)
+                let isInTable = false;
+                const parents = $el.parents().toArray();
+                for (const parent of parents) {
+                  const parentTag = parent.tagName ? parent.tagName.toLowerCase() : '';
+                  if (parentTag === 'table' || parentTag === 'thead' || parentTag === 'tbody' || parentTag === 'tr' || parentTag === 'td' || parentTag === 'th') {
+                    // Found a table ancestor - this callout is inside a table
+                    isInTable = true;
+                    break;
+                  }
+                }
+                
+                if (isInTable) {
+                  // Skip - this callout is inside a table and won't be converted to a callout block
+                  return;
+                }
+
+                // CRITICAL: Also skip nested callouts to avoid double-counting
                 // A callout is nested if it's INSIDE another callout's content area
-                // Check if this element's outerHTML is contained within a parent callout's HTML
                 let isNested = false;
                 
-                // Get all potential parent callout elements
-                const parents = $el.parents().toArray();
                 for (const parent of parents) {
                   const $parent = $(parent);
                   const parentCls = ($parent.attr('class') || '').toString();
@@ -1060,7 +903,7 @@ router.post('/W2N', async (req, res) => {
     }
 
     // VALIDATION ENHANCEMENT v11.0.40: Create plain-text copy for validation before page creation
-    // This coalesced version is used ONLY for validation statistics (Validation & Stats properties)
+    // This coalesced version is used ONLY for validation statistics (Audit & ContentComparison properties)
     // and is discarded after validation. The formatted blocks (children) are sent to Notion.
     let plainTextChildren = null;
     try {
@@ -1921,18 +1764,22 @@ router.post('/W2N', async (req, res) => {
           
           log(`✅ Validation function completed`);
           
-          // FIX v11.0.35: Retry validation once if initial attempt fails
+          // FIX v11.0.36: Retry validation up to 2 times with escalating waits (5s, 10s)
           // Handles edge cases where Notion takes >15s to settle (rare but happens)
           // Only retries if validation has actual errors (not just warnings)
-          if (validationResult && !validationResult.success && validationResult.hasErrors) {
-            log(`\n⚠️ Initial validation failed - attempting retry after additional wait...`);
-            log(`   Original issues: ${validationResult.issues?.join(', ') || 'unknown'}`);
+          const maxValidationRetries = 2;
+          let retryAttempt = 0;
+          
+          while (retryAttempt < maxValidationRetries && validationResult && !validationResult.success && validationResult.hasErrors) {
+            retryAttempt++;
+            const retryWait = retryAttempt * 5000; // 5s, 10s
             
-            const retryWait = 5000; // Additional 5s wait
-            log(`⏳ Waiting ${retryWait}ms for Notion eventual consistency retry...`);
+            log(`\n⚠️ Validation attempt ${retryAttempt} failed - retrying after ${retryWait}ms...`);
+            log(`   Issues: ${validationResult.issues?.join(', ') || 'unknown'}`);
+            
             await new Promise(resolve => setTimeout(resolve, retryWait));
             
-            log(`🔄 Retrying validation...`);
+            log(`🔄 Retrying validation (attempt ${retryAttempt + 1}/${maxValidationRetries + 1})...`);
             const retryResult = await validateNotionPage(
               notion,
               response.id,
@@ -1945,13 +1792,18 @@ router.post('/W2N', async (req, res) => {
             );
             
             if (retryResult.success) {
-              log(`✅ Validation succeeded on retry - Notion eventual consistency resolved`);
+              log(`✅ Validation succeeded on retry ${retryAttempt} - Notion eventual consistency resolved`);
               validationResult = retryResult;
+              break;
             } else {
-              log(`⚠️ Validation still failing after retry - issues persist`);
-              // Keep original validationResult with retry note
-              if (!validationResult.warnings) validationResult.warnings = [];
-              validationResult.warnings.push('Validation retried after +5s wait but still failed');
+              log(`⚠️ Validation still failing after retry ${retryAttempt}`);
+              validationResult = retryResult;
+              
+              if (retryAttempt === maxValidationRetries) {
+                // All retries exhausted
+                if (!validationResult.warnings) validationResult.warnings = [];
+                validationResult.warnings.push(`Validation retried ${maxValidationRetries} times but still failed`);
+              }
             }
           }
         }
@@ -2035,42 +1887,44 @@ router.post('/W2N', async (req, res) => {
           try {
             const propertyUpdates = {};
 
-            // Refined formatting (v11.0.35+): structured Validation & Stats properties
-            // Determine validation status based on similarity, order issues, and missing segments
-            const simPercent = (typeof validationResult.similarity === 'number')
-              ? Math.round(validationResult.similarity)
-              : null;
-            const similarityLine = simPercent != null ? `Similarity: ${simPercent}% (threshold: ≥95%)` : null;
-            
-            const similarityPass = simPercent != null && simPercent >= 95;
+            // FIX v11.0.113: Get audit result from extraction (if available)
+            const auditResult = extractionResult?.audit;
+
+            // FIX v11.0.113: Use AUDIT-only validation (removed all LCS similarity logic)
+            // AUDIT passes if coverage is within 95-105% threshold
             const hasOrderIssues = Array.isArray(validationResult.orderIssues) && validationResult.orderIssues.length > 0;
-            const hasMissingSegments = Array.isArray(validationResult.missing) && validationResult.missing.length > 0;
             const hasMarkerLeaks = validationResult.hasErrors && 
                                    validationResult.issues?.some(issue => 
                                      issue.toLowerCase().includes('marker') || 
                                      issue.toLowerCase().includes('sn2n:')
                                    );
             
-            // Determine status: FAIL if similarity fails OR missing segments exist OR marker leaks detected
-            // WARNING if similarity passes but order issues exist
-            // PASS only if similarity passes and no order or missing issues
+            const auditPassed = auditResult && auditResult.passed;
+            
+            // Determine status based on AUDIT only (no LCS similarity)
             let validationStatus;
             let statusIcon;
-            if (!similarityPass || hasMissingSegments || hasMarkerLeaks) {
+            if (auditPassed) {
+              validationStatus = 'PASS';
+              statusIcon = '✅';
+            } else if (auditResult && !auditResult.passed) {
+              validationStatus = 'FAIL';
+              statusIcon = '❌';
+            } else if (hasMarkerLeaks) {
               validationStatus = 'FAIL';
               statusIcon = '❌';
             } else if (hasOrderIssues) {
               validationStatus = 'WARNING';
               statusIcon = '🔀';
             } else {
-              validationStatus = 'PASS';
-              statusIcon = '✅';
+              // AUDIT not enabled - use WARNING status
+              validationStatus = 'WARNING';
+              statusIcon = '⚠️';
             }
             
-            // Use same icon for Stats property
             const passFail = validationStatus;
 
-            // (Removed deprecated Status property logic; counts handled in Stats header)
+            // (Removed deprecated Status property logic; counts handled in ContentComparison header)
 
             // Order issues section: list ALL issues (not just first 2)
             let orderSection = '';
@@ -2103,31 +1957,148 @@ router.post('/W2N', async (req, res) => {
               missingSection = lines.join('\n');
             }
 
-            // Assemble Validation content
-            const validationLines = [`${statusIcon} Text Content Validation: ${validationStatus}`];
-            // Do not include similarity/content summary lines in Validation per spec
-            if (orderSection) {
-              validationLines.push(''); // blank line before order issues
-              validationLines.push(orderSection);
+            // FIX v11.0.113: Build AUDIT-based Validation property (removed LCS validation)
+            const timestamp = new Date().toISOString().split('T')[0];
+            const validationLines = [];
+            
+            // Content Audit section (AUDIT coverage - PASS/FAIL/SKIPPED)
+            if (auditResult) {
+              // FIX v11.0.86+: Reorganized output format for clarity
+              // Primary focus: Content extraction success + formatting overhead
+              // Secondary details: Content complexity
+              
+              // Line 1: Timestamp + Content extraction status
+              if (auditResult.missing === 0 && auditResult.extra === 0) {
+                // Perfect match
+                validationLines.push(`[${timestamp}] ✅ Content Extraction: 100.0% of source (exact match)`);
+              } else if (auditResult.missing === 0 && auditResult.extra > 0) {
+                // All content extracted, with formatting overhead
+                const formattingOverhead = auditResult.extraPercent;
+                validationLines.push(`[${timestamp}] ✅ Content Extraction: 100.0% of source (all content preserved)`);
+                validationLines.push(`Formatting Overhead: +${formattingOverhead}% `);
+              } else if (auditResult.missing > 0) {
+                // Some content missing
+                const contentExtracted = 100 - auditResult.missingPercent;
+                validationLines.push(`[${timestamp}] ${auditResult.passed ? '✅' : '⚠️'} Content Extraction: ${contentExtracted.toFixed(1)}% of source`);
+                if (auditResult.extra > 0) {
+                  validationLines.push(`Formatting Overhead: +${auditResult.extraPercent}%`);
+                }
+                validationLines.push(`⚠️ Missing: ${auditResult.missing.toLocaleString()} chars (${auditResult.missingPercent}%)`);
+              }
+              
+              // Add content complexity summary if available
+              if (auditResult.contentAnalysis) {
+                const ca = auditResult.contentAnalysis;
+                const complexityDetails = [];
+                if (ca.tableCount > 0) complexityDetails.push(`${ca.tableCount} table${ca.tableCount > 1 ? 's' : ''}`);
+                if (ca.calloutCount > 0) complexityDetails.push(`${ca.calloutCount} callout${ca.calloutCount > 1 ? 's' : ''}`);
+                if (ca.nestedListCount > 0) complexityDetails.push(`${ca.nestedListCount} nested list${ca.nestedListCount > 1 ? 's' : ''}`);
+                if (ca.deepNestingCount > 0) complexityDetails.push(`${ca.deepNestingCount} deep nesting block${ca.deepNestingCount > 1 ? 's' : ''}`);
+                
+                if (complexityDetails.length > 0) {
+                  validationLines.push(`\nContent: ${complexityDetails.join(', ')}`);
+                }
+              }
+              
+              // Add coverage and threshold info (for reference)
+              validationLines.push(`\nCoverage: ${auditResult.coverageStr} (threshold: ${auditResult.threshold || '95-105%'})`);
+              
+              // Add technical details (hidden from casual reading)
+              validationLines.push(`Source: ${auditResult.nodeCount || 'N/A'} text nodes, ${auditResult.totalLength || 'N/A'} chars`);
+              validationLines.push(`Notion: ${auditResult.notionBlocks} blocks, ${auditResult.notionTextLength} chars`);
+              validationLines.push(`Block/Node Ratio: ${auditResult.blockNodeRatio}x`);
+              
+              if (auditResult.detailedComparison) {
+                const dc = auditResult.detailedComparison;
+                validationLines.push(`HTML segments: ${dc.htmlSegmentCount}, Notion segments: ${dc.notionSegmentCount}`);
+              }
+            } else {
+              validationLines.push(`[${timestamp}] Content Audit: ⚠️ SKIPPED`);
+              validationLines.push('AUDIT system not enabled - no coverage data available');
             }
+            
+            // FIX v11.0.216: Include detailed missing segments in Audit property
+            // Users need to see WHAT content is missing, not just coverage percentage
             if (missingSection) {
-              validationLines.push(''); // blank line before missing section
+              validationLines.push('');
               validationLines.push(missingSection);
             }
-            const validationContent = validationLines.join('\n');
+            
+            const auditContent = validationLines.join('\n');
 
-            propertyUpdates["Validation"] = {
-              rich_text: [ { type: 'text', text: { content: validationContent } } ]
+            log(`📊 [POST-AUDIT-DEBUG] Setting Audit property (POST):`);
+            log(`   Content length: ${auditContent.length} chars`);
+            log(`   Content preview: ${auditContent.substring(0, 200)}...`);
+            log(`   Has AUDIT result: ${!!auditResult}`);
+
+            // Truncate to fit Notion's 2000 character limit for rich text properties
+            let truncatedAuditContent = auditContent;
+            if (auditContent.length > 2000) {
+              truncatedAuditContent = auditContent.substring(0, 1997) + '...';
+              log(`⚠️ [PROPERTY-TRUNCATE] Audit property truncated to 2000 chars (was ${auditContent.length})`);
+            }
+
+            propertyUpdates["Audit"] = {
+              rich_text: [ { type: 'text', text: { content: truncatedAuditContent } } ]
             };
 
-            // Stats breakdown formatting (first line reflects table/image/callout count match, not validation status)
+            // Create separate properties for detailed text comparison
+            // Helper: produce a compact context tag for a segment, e.g. ' [p]' or ' [tc]'
+            function compactContextTag(seg) {
+              if (!seg) return '';
+              try {
+                if (seg.blockType) {
+                  const m = {
+                    paragraph: 'p',
+                    callout: 'co',
+                    heading_1: 'h1',
+                    heading_2: 'h2',
+                    heading_3: 'h3',
+                    table_cell: 'tc',
+                    table_row: 'tr',
+                    bulleted_list_item: 'li',
+                    numbered_list_item: 'li',
+                    image: 'img'
+                  };
+                  const key = m[seg.blockType] || (seg.blockType || '').substring(0,3);
+                  return ` [${key}]`;
+                }
+                if (seg.element) {
+                  const el = (seg.element || '').toLowerCase();
+                  const m2 = { p: 'p', li: 'li', td: 'tc', th: 'tc', span: 'sp', div: 'div' };
+                  const key = m2[el] || el.substring(0,3);
+                  return ` [${key}]`;
+                }
+                if (seg.context) {
+                  const parts = (seg.context || '').split('>').map(s => s.trim()).filter(Boolean);
+                  if (parts.length) {
+                    const last = parts[parts.length - 1];
+                    const short = last.replace(/[^a-z0-9]/gi, '').substring(0,3) || last.substring(0,3);
+                    return ` [${short}]`;
+                  }
+                }
+              } catch (e) {
+                // ignore
+              }
+              return '';
+            }
+
+            if (auditResult && auditResult.detailedComparison) {
+              const dc = auditResult.detailedComparison;
+
+              // FIX v11.0.86+: MissingText and ExtraText properties removed
+              // Missing/extra content details now included in Audit property directly
+              // No separate property updates needed
+
+            }
+
+            // ContentComparison breakdown formatting (first line reflects table/image/callout count match, not validation status)
             const stats = validationResult.stats || {};
             
-            // FIX v11.0.40: Calculate source counts from plainTextChildren (coalesced blocks for validation)
-            // This ensures validation statistics compare like-for-like: plain-text source vs plain-text Notion
-            // The formatted blocks (children) are sent to Notion with all formatting intact
-            const sourceBlocksForCounting = plainTextChildren || children;
-            log(`📊 [STATS-COUNT] Using ${plainTextChildren ? 'plain-text' : 'formatted'} blocks for source counting`);
+            // FIX v11.0.173: Count blocks from ORIGINAL HTML (not converted Notion blocks)
+            // This shows true conversion accuracy: what's in ServiceNow HTML vs what's in Notion
+            // Previous logic counted already-converted Notion blocks, which would always match unless upload failed
+            log(`📊 [STATS-COUNT] Counting blocks from original HTML (pre-conversion)`);
             
             const sourceCounts = {
               paragraphs: 0,
@@ -2135,36 +2106,104 @@ router.post('/W2N', async (req, res) => {
               tables: 0,
               images: 0,
               callouts: 0,
+              code: 0,
               orderedList: 0,
               unorderedList: 0
             };
             
-            function countSourceBlocks(blocks) {
-              for (const block of blocks) {
-                if (block.type === 'paragraph') sourceCounts.paragraphs++;
-                else if (block.type.startsWith('heading_')) sourceCounts.headings++;
-                else if (block.type === 'table') sourceCounts.tables++;
-                else if (block.type === 'image') sourceCounts.images++;
-                else if (block.type === 'callout') sourceCounts.callouts++;
-                else if (block.type === 'numbered_list_item') sourceCounts.orderedList++;
-                else if (block.type === 'bulleted_list_item') sourceCounts.unorderedList++;
-                
-                // Recursively count children
-                const blockContent = block[block.type];
-                if (blockContent && blockContent.children && Array.isArray(blockContent.children)) {
-                  countSourceBlocks(blockContent.children);
+            // Count blocks directly from HTML structure
+            try {
+              const cheerio = require('cheerio');
+              const sourceHtml = payload.contentHtml || payload.content;
+              const $ = cheerio.load(sourceHtml, { decodeEntities: false });
+              
+              log(`📊 [HTML-SOURCE-DEBUG] HTML length: ${sourceHtml.length} chars`);
+              log(`📊 [HTML-SOURCE-DEBUG] HTML preview: ${sourceHtml.substring(0, 200)}`);
+              
+              // Count paragraphs (p tags that aren't empty)
+              let pCount = 0;
+              $('p').each((i, elem) => {
+                const text = $(elem).text().trim();
+                if (text.length > 0) {
+                  pCount++;
+                  sourceCounts.paragraphs++;
                 }
-              }
-            }
-            
-            countSourceBlocks(sourceBlocksForCounting);
-            
-            // FIX v11.0.39: Also count blocks in markerMap (tables/headings often nested in markers)
-            if (markerMap && Object.keys(markerMap).length > 0) {
-              Object.keys(markerMap).forEach(marker => {
-                countSourceBlocks(markerMap[marker]);
               });
-              log(`📊 Also counted blocks from ${Object.keys(markerMap).length} marker(s)`);
+              log(`📊 [HTML-SOURCE-DEBUG] Found ${pCount} non-empty <p> tags`);
+              
+              // Count headings (h2-h6 + span.title which become headings in Notion)
+              // FIX v11.0.188: Exclude H1 (page title) and sidebar headings from comparison
+              // H1 is always the page name/title and should not be duplicated in page content
+              // Sidebars are navigation/metadata, not content
+              let hCount = 0;
+              $('h2, h3, h4, h5, h6, span.title').each((i, elem) => {
+                const $elem = $(elem);
+                // Skip if inside sidebar/navigation containers
+                const inSidebar = $elem.closest('.zDocsSideBoxes, .contentPlaceholder, .miniTOC, aside, nav').length > 0;
+                if (!inSidebar) {
+                  hCount++;
+                  sourceCounts.headings++;
+                }
+              });
+              log(`📊 [HTML-SOURCE-DEBUG] Found ${hCount} heading tags (h2-h6 + span.title, excluding H1 and sidebars)`);
+              
+              
+              // Count tables
+              const tableCount = $('table').length;
+              sourceCounts.tables = tableCount;
+              log(`📊 [HTML-SOURCE-DEBUG] Found ${tableCount} <table> tags`);
+              
+              // Count images (img tags, excluding base64 data URIs and images inside tables)
+              // FIX v11.0.184: Skip images in tables because Notion tables are incompatible with image handling
+              let imgCount = 0;
+              $('img').each((i, elem) => {
+                const src = $(elem).attr('src') || '';
+                const isInTable = $(elem).closest('table').length > 0;
+                if (!src.startsWith('data:') && !isInTable) {
+                  imgCount++;
+                  sourceCounts.images++;
+                }
+              });
+              log(`📊 [HTML-SOURCE-DEBUG] Found ${imgCount} <img> tags (non-data URI, excluding images in tables)`);
+              
+              // Count callouts (note class, warning class, etc.)
+              // FIX v11.0.180: Only count top-level callout containers (not nested titles/children)
+              // ServiceNow notes have structure: <div class="note note note_note"><span class="note__title">
+              // We should only count the outer <div>, not the inner <span>
+              // FIX v11.0.86: Exclude callouts inside tables - Notion table cells can't contain callout blocks
+              // Callouts in tables get converted to text/other types, not callout blocks
+              let calloutCount = 0;
+              $('div.note, div.warning, div.info, div.tip, div.caution, div.important').each((i, elem) => {
+                const $elem = $(elem);
+                // Skip if this callout is inside a table - it won't be rendered as a callout block
+                const inTable = $elem.closest('table, thead, tbody, tr, td, th').length > 0;
+                if (!inTable) {
+                  calloutCount++;
+                }
+              });
+              sourceCounts.callouts = calloutCount;
+              log(`📊 [HTML-SOURCE-DEBUG] Found ${calloutCount} callout elements (excluding callouts in tables)`);
+              
+              // Count code blocks (pre or code tags)
+              const preCount = $('pre').length;
+              sourceCounts.code = preCount;
+              log(`📊 [HTML-SOURCE-DEBUG] Found ${preCount} <pre> tags`);
+              
+              // Count ordered lists (ol > li)
+              const olCount = $('ol > li').length;
+              sourceCounts.orderedList = olCount;
+              log(`📊 [HTML-SOURCE-DEBUG] Found ${olCount} <ol><li> items`);
+              
+              // Count unordered lists (ul > li)
+              const ulCount = $('ul > li').length;
+              sourceCounts.unorderedList = ulCount;
+              log(`📊 [HTML-SOURCE-DEBUG] Found ${ulCount} <ul><li> items`);
+              
+              log(`📊 [HTML-SOURCE-COUNTS] Paragraphs: ${sourceCounts.paragraphs}, Headings: ${sourceCounts.headings}, Tables: ${sourceCounts.tables}, Images: ${sourceCounts.images}, Callouts: ${sourceCounts.callouts}, Code: ${sourceCounts.code}, OL: ${sourceCounts.orderedList}, UL: ${sourceCounts.unorderedList}`);
+            } catch (countError) {
+              log(`⚠️ [HTML-SOURCE-COUNTS] Error counting from HTML: ${countError.message}`);
+              log(`⚠️ [HTML-SOURCE-COUNTS] Stack trace: ${countError.stack}`);
+              // Fall back to zero counts - comparison will show all as mismatches
             }
             
             // Calculate Notion counts from actual page blocks
@@ -2176,6 +2215,7 @@ router.post('/W2N', async (req, res) => {
               tables: 0,
               images: 0,
               callouts: 0,
+              code: 0,
               orderedList: 0,
               unorderedList: 0
             };
@@ -2197,13 +2237,16 @@ router.post('/W2N', async (req, res) => {
               
               // FIX v11.0.38: Recursively count images and other blocks in nested structures
               // Previously only counted top-level blocks, missing images in tables/callouts
+              // FIX v11.0.188: Exclude heading_1 blocks (page title) from heading count
+              // Only count heading_2 and higher to match source count (which excludes H1)
               async function countNotionBlocksRecursive(blocks) {
                 for (const block of blocks) {
                   if (block.type === 'paragraph') notionCounts.paragraphs++;
-                  else if (block.type.startsWith('heading_')) notionCounts.headings++;
+                  else if (block.type === 'heading_2' || block.type === 'heading_3') notionCounts.headings++;  // Exclude heading_1 (page title)
                   else if (block.type === 'table') notionCounts.tables++;
                   else if (block.type === 'image') notionCounts.images++;
                   else if (block.type === 'callout') notionCounts.callouts++;
+                  else if (block.type === 'code') notionCounts.code++;
                   else if (block.type === 'numbered_list_item') notionCounts.orderedList++;
                   else if (block.type === 'bulleted_list_item') notionCounts.unorderedList++;
                   
@@ -2236,12 +2279,51 @@ router.post('/W2N', async (req, res) => {
             }
             
             // Use calculated counts for comparison
+            // FIX v11.0.186: Three-tier ContentComparison logic based on element types
+            // ❌ FAIL if mismatch in: Headings, Code blocks, Tables, Images, Callouts (critical elements)
+            // ⚠️ PASS if mismatch in: Ordered lists, Unordered lists, Paragraphs (flexible elements)
+            // ✅ PASS if all elements match
+            const hasHtmlContent = Object.values(sourceCounts).some(count => count > 0);
+            
+            // Critical elements - strict matching required
             const tablesMatch = (sourceCounts.tables === notionCounts.tables);
             const imagesMatch = (sourceCounts.images === notionCounts.images);
             const calloutsMatch = (sourceCounts.callouts === notionCounts.callouts);
-            const countsPass = tablesMatch && imagesMatch && calloutsMatch;
-            const countsIcon = countsPass ? '✅' : '❌';
-            const statsHeader = `${countsIcon}  Content Comparison: ${countsPass ? 'PASS' : 'FAIL'}`; // two spaces after icon per spec
+            const headingsMatch = (sourceCounts.headings === notionCounts.headings);
+            const codeMatch = (sourceCounts.code === notionCounts.code);
+            
+            // Flexible elements - may vary due to HTML structure differences
+            const orderedListMatch = (sourceCounts.orderedList === notionCounts.orderedList);
+            const unorderedListMatch = (sourceCounts.unorderedList === notionCounts.unorderedList);
+            const paragraphsMatch = (sourceCounts.paragraphs === notionCounts.paragraphs);
+            
+            // Determine comparison status (v11.0.186)
+            const criticalMismatch = !tablesMatch || !imagesMatch || !calloutsMatch || 
+                                     !headingsMatch || !codeMatch;
+            const flexibleMismatch = !orderedListMatch || !unorderedListMatch || !paragraphsMatch;
+            
+            let countsPass;
+            let countsIcon;
+            let comparisonStatus;
+            
+            if (criticalMismatch) {
+              // FAIL - critical elements don't match
+              countsPass = false;
+              countsIcon = '❌';
+              comparisonStatus = 'FAIL';
+            } else if (flexibleMismatch) {
+              // PASS with warning - flexible elements may differ, but critical ones match
+              countsPass = true;
+              countsIcon = '⚠️';
+              comparisonStatus = 'PASS';
+            } else {
+              // PASS - all elements match
+              countsPass = true;
+              countsIcon = '✅';
+              comparisonStatus = 'PASS';
+            }
+            
+            const statsHeader = `${countsIcon}  Content Comparison: ${comparisonStatus}`; // two spaces after icon per spec
             const statsLines = [
               statsHeader,
               '📊 (Source → Notion):',
@@ -2249,25 +2331,169 @@ router.post('/W2N', async (req, res) => {
               `• Unordered list items: ${sourceCounts.unorderedList} → ${notionCounts.unorderedList}`,
               `• Paragraphs: ${sourceCounts.paragraphs} → ${notionCounts.paragraphs}`,
               `• Headings: ${sourceCounts.headings} → ${notionCounts.headings}`,
+              `• Code blocks: ${sourceCounts.code} → ${notionCounts.code}`,
               `• Tables: ${sourceCounts.tables} → ${notionCounts.tables}`,
               `• Images: ${sourceCounts.images} → ${notionCounts.images}`,
               `• Callouts: ${sourceCounts.callouts} → ${notionCounts.callouts}`,
             ];
             const statsContent = statsLines.join('\n');
 
-            propertyUpdates["Stats"] = {
-              rich_text: [ { type: 'text', text: { content: statsContent } } ]
+            // Truncate to fit Notion's 2000 character limit for rich text properties
+            let truncatedStatsContent = statsContent;
+            if (statsContent.length > 2000) {
+              truncatedStatsContent = statsContent.substring(0, 1997) + '...';
+              log(`⚠️ [PROPERTY-TRUNCATE] ContentComparison property truncated to 2000 chars (was ${statsContent.length})`);
+            }
+
+            propertyUpdates["ContentComparison"] = {
+              rich_text: [ { type: 'text', text: { content: truncatedStatsContent } } ]
             };
-            log(`📊 Setting Stats property with refined comparison breakdown`);
+            log(`📊 Setting ContentComparison property with refined comparison breakdown`);
+            log(`   ${countsIcon}  Content Comparison: ${comparisonStatus}`);
+            log(`   Headings: ${sourceCounts.headings} → ${notionCounts.headings}`);
+            
+            // FIX v11.0.187: Mark pages with critical failures for auto-save
+            // Trigger auto-save if ContentComparison = FAIL or Audit = FAIL
+            const hasContentComparisonFail = countsPass === false;
+            const hasAuditFail = auditResult && auditResult.passed === false;
+            const shouldAutoSaveForFailure = hasContentComparisonFail || hasAuditFail;
+            
+            if (shouldAutoSaveForFailure) {
+              log(`🚩 [v11.0.187] Critical failure detected:`);
+              if (hasContentComparisonFail) log(`   • ContentComparison: ❌ FAIL (critical element mismatch)`);
+              if (hasAuditFail) log(`   • Content Audit: ❌ FAIL`);
+              log(`   → Page will be auto-saved to pages-to-update after creation`);
+            }
+            
+            // Set Image checkbox if page contains images
+            if (sourceCounts.images > 0) {
+              propertyUpdates["Image"] = { checkbox: true };
+              log(`🖼️ Setting Image checkbox (${sourceCounts.images} image${sourceCounts.images === 1 ? '' : 's'} detected)`);
+            }
+            
+            // FIX v11.0.115: Check which property names exist in database (backward compatibility for Validation→Audit rename)
+            let auditPropertyName = "Audit";
+            let comparisonPropertyName = "ContentComparison";
+            
+            try {
+              const dbInfo = await notion.databases.retrieve({ database_id: payload.databaseId });
+              const dbProps = Object.keys(dbInfo.properties);
+              
+              // Check if old property names exist in database and new ones don't
+              const hasOldAudit = dbProps.includes("Validation");
+              const hasNewAudit = dbProps.includes("Audit");
+              const hasContentComparison = dbProps.includes("ContentComparison");
+              
+              if (hasOldAudit && !hasNewAudit) {
+                auditPropertyName = "Validation";
+                log(`🔄 [POST] Using legacy property name: "Validation" (new name "Audit" not found in database)`);
+              }
+              
+              // Rename property keys if using legacy names
+              if (auditPropertyName === "Validation" && propertyUpdates["Audit"]) {
+                propertyUpdates["Validation"] = propertyUpdates["Audit"];
+                delete propertyUpdates["Audit"];
+              }
+              
+              // FIX v11.0.172: If ContentComparison property doesn't exist, don't send it
+              if (!hasContentComparison && propertyUpdates["ContentComparison"]) {
+                log(`⚠️ [POST] ContentComparison property not found in database, skipping update`);
+                delete propertyUpdates["ContentComparison"];
+              }
+              
+              // FIX v11.0.172: If neither old nor new Audit property exists, don't send it
+              if (!hasOldAudit && !hasNewAudit && propertyUpdates["Audit"]) {
+                log(`⚠️ [POST] Audit property not found in database (neither "Validation" nor "Audit"), skipping Audit update`);
+                delete propertyUpdates["Audit"];
+              }
+              
+              log(`📝 [POST] Property names resolved: Audit="${auditPropertyName}", ContentComparison="${comparisonPropertyName}"`);
+              
+            } catch (propCheckError) {
+              log(`⚠️ [POST] Could not check database properties (using new names): ${propCheckError.message}`);
+              // Continue with new property names
+            }
             
             // Update the page properties
+            log(`📝 [POST-PROPERTY-UPDATE] Updating properties: ${Object.keys(propertyUpdates).join(', ')}`);
             await notion.pages.update({
               page_id: response.id,
               properties: propertyUpdates
             });
             
             propertyUpdateSuccess = true;
-            log(`✅ Validation properties updated successfully${propRetry > 0 ? ` (after ${propRetry} ${propRetry === 1 ? 'retry' : 'retries'})` : ''}`);
+            log(`✅ [POST-PROPERTY-UPDATE] Validation properties updated successfully${propRetry > 0 ? ` (after ${propRetry} ${propRetry === 1 ? 'retry' : 'retries'})` : ''}`);
+            log(`   Properties set: ${auditPropertyName} (${auditContent.length} chars), ${comparisonPropertyName}, Error, Image (if applicable)`);
+            
+            // FIX v11.0.187: Auto-save pages with ContentComparison FAIL or Audit FAIL
+            if (shouldAutoSaveForFailure) {
+              try {
+                log(`💾 [v11.0.187] Auto-saving page with critical failure to pages-to-update...`);
+                const fs = require('fs');
+                const path = require('path');
+                
+                const pagesUpdateDir = path.join(__dirname, '../../patch/pages/pages-to-update');
+                if (!fs.existsSync(pagesUpdateDir)) {
+                  fs.mkdirSync(pagesUpdateDir, { recursive: true });
+                }
+                
+                const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
+                const sanitizedTitle = (payload.title || 'untitled')
+                  .toLowerCase()
+                  .replace(/[^a-z0-9]+/g, '-')
+                  .replace(/^-+|-+$/g, '')
+                  .substring(0, 60);
+                const filename = `${sanitizedTitle}-failure-${timestamp}.html`;
+                const filepath = path.join(pagesUpdateDir, filename);
+                
+                const failureReasons = [];
+                if (hasContentComparisonFail) {
+                  failureReasons.push(`ContentComparison FAIL: ${sourceCounts.headings}→${notionCounts.headings} headings (${notionCounts.orderedList}→${sourceCounts.orderedList} lists, ${sourceCounts.paragraphs}→${notionCounts.paragraphs} paragraphs)`);
+                }
+                if (hasAuditFail) {
+                  failureReasons.push(`Content Audit FAIL: Coverage ${auditResult.coverageStr}`);
+                }
+                
+                const htmlContent = `<!--
+Auto-saved: Critical validation failure (v11.0.187)
+Page ID: ${response.id}
+Page URL: ${response.url}
+Page Title: ${payload.title}
+Created: ${new Date().toISOString()}
+Source URL: ${payload.url || 'N/A'}
+
+Failure Reasons:
+${failureReasons.map(r => '• ' + r).join('\n')}
+
+Content Comparison Status: ${countsIcon}  ${comparisonStatus}
+Headings: ${sourceCounts.headings} → ${notionCounts.headings}
+Ordered lists: ${sourceCounts.orderedList} → ${notionCounts.orderedList}
+Unordered lists: ${sourceCounts.unorderedList} → ${notionCounts.unorderedList}
+Paragraphs: ${sourceCounts.paragraphs} → ${notionCounts.paragraphs}
+Code blocks: ${sourceCounts.code} → ${notionCounts.code}
+Tables: ${sourceCounts.tables} → ${notionCounts.tables}
+Images: ${sourceCounts.images} → ${notionCounts.images}
+Callouts: ${sourceCounts.callouts} → ${notionCounts.callouts}
+
+${auditResult ? `Audit Coverage: ${auditResult.coverageStr}
+Audit Threshold: ${auditResult.threshold || '95-105%'}
+Audit Status: ${auditResult.passed ? '✅ PASS' : '❌ FAIL'}` : 'Audit: SKIPPED'}
+
+Action Required: Review extraction and re-PATCH page with corrected content
+-->
+
+${payload.contentHtml || ''}
+`;
+                
+                fs.writeFileSync(filepath, htmlContent, 'utf-8');
+                log(`✅ [v11.0.187] Page auto-saved to pages-to-update for re-extraction`);
+                log(`   Filename: ${filename}`);
+                log(`   Location: patch/pages/pages-to-update/`);
+                savedToUpdateFolder = true;
+              } catch (saveError) {
+                log(`❌ [v11.0.187] Failed to auto-save page with critical failure: ${saveError.message}`);
+              }
+            }
             
             // Auto-save pages with order issues for investigation
             if (Array.isArray(validationResult.orderIssues) && validationResult.orderIssues.length > 0) {
@@ -2332,22 +2558,22 @@ ${payload.contentHtml || ''}
               await new Promise(resolve => setTimeout(resolve, 500)); // Brief wait for Notion consistency
               
               const updatedPage = await notion.pages.retrieve({ page_id: response.id });
-              const validationProp = updatedPage.properties.Validation;
-              const statsProp = updatedPage.properties.Stats;
+              const auditProp = updatedPage.properties.Audit;
+              const contentComparisonProp = updatedPage.properties.ContentComparison;
               
-              // Check if Validation property is actually empty in Notion
-              const isValidationEmpty = !validationProp || 
-                                       !validationProp.rich_text || 
-                                       validationProp.rich_text.length === 0 ||
-                                       (validationProp.rich_text.length === 1 && !validationProp.rich_text[0].text.content);
+              // Check if Audit property is actually empty in Notion
+              const isAuditEmpty = !auditProp || 
+                                   !auditProp.rich_text || 
+                                   auditProp.rich_text.length === 0 ||
+                                   (auditProp.rich_text.length === 1 && !auditProp.rich_text[0].text.content);
               
-              const isStatsEmpty = !statsProp || 
-                                  !statsProp.rich_text || 
-                                  statsProp.rich_text.length === 0;
+              const isContentComparisonEmpty = !contentComparisonProp || 
+                                               !contentComparisonProp.rich_text || 
+                                               contentComparisonProp.rich_text.length === 0;
               
-              if (isValidationEmpty) {
-                log(`⚠️ WARNING: Validation property is EMPTY in Notion after update!`);
-                log(`   Property value: ${JSON.stringify(validationProp)}`);
+              if (isAuditEmpty) {
+                log(`⚠️ WARNING: Audit property is EMPTY in Notion after update!`);
+                log(`   Property value: ${JSON.stringify(auditProp)}`);
                 log(`   This indicates validationResult.summary was blank/empty`);
                 log(`   Auto-saving page for investigation...`);
                 
@@ -2371,7 +2597,7 @@ ${payload.contentHtml || ''}
                   const filepath = path.join(fixturesDir, filename);
                   
                   const htmlContent = `<!--
-Auto-saved: Validation property is EMPTY in Notion after property update (verified by retrieval)
+Auto-saved: Audit property is EMPTY in Notion after property update (verified by retrieval)
 Page ID: ${response.id}
 Page URL: ${response.url}
 Page Title: ${payload.title}
@@ -2381,25 +2607,25 @@ Source URL: ${payload.url || 'N/A'}
 Validation Result Object:
 ${JSON.stringify(validationResult, null, 2)}
 
-Retrieved Validation Property:
-${JSON.stringify(validationProp, null, 2)}
+Retrieved Audit Property:
+${JSON.stringify(auditProp, null, 2)}
 
 Issue: Notion property has empty rich_text array []
-Root Cause: validationResult.summary was blank/empty when sent to Notion
-Expected: Summary should contain validation results or status message
+Root Cause: Audit content was blank/empty when sent to Notion
+Expected: Audit should contain coverage data or status message
 -->
 
 ${payload.contentHtml || ''}
 `;
                   
                   fs.writeFileSync(filepath, htmlContent, 'utf-8');
-                  log(`✅ AUTO-SAVED: Page with empty validation saved to ${filename}`);
+                  log(`✅ AUTO-SAVED: Page with empty audit saved to ${filename}`);
                   savedToUpdateFolder = true;
                 } catch (saveError) {
-                  log(`❌ Failed to auto-save page with empty validation: ${saveError.message}`);
+                  log(`❌ Failed to auto-save page with empty audit: ${saveError.message}`);
                 }
               } else {
-                log(`✅ Validation property verified - content exists in Notion`);
+                log(`✅ Audit property verified - content exists in Notion`);
               }
             } catch (verifyError) {
               log(`⚠️ Failed to verify properties (non-fatal): ${verifyError.message}`);
@@ -2625,22 +2851,22 @@ ${payload.contentHtml || ''}
     // This catches pages created without validation enabled, API errors, or any other edge case
     if (!savedToUpdateFolder) { // Only check if not already saved
       try {
-        log(`🔍 [FINAL-CHECK] Verifying Validation property was set...`);
+        log(`🔍 [FINAL-CHECK] Verifying Audit property was set...`);
         await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for Notion consistency
         
         const finalPageCheck = await notion.pages.retrieve({ page_id: response.id });
-        const finalValidationProp = finalPageCheck.properties.Validation;
+        const finalAuditProp = finalPageCheck.properties.Audit;
         
-        const isFinallyBlank = !finalValidationProp || 
-                               !finalValidationProp.rich_text || 
-                               finalValidationProp.rich_text.length === 0 ||
-                               (finalValidationProp.rich_text.length === 1 && 
-                                (!finalValidationProp.rich_text[0].text || 
-                                 !finalValidationProp.rich_text[0].text.content ||
-                                 finalValidationProp.rich_text[0].text.content.trim() === ''));
+        const isFinallyBlank = !finalAuditProp || 
+                               !finalAuditProp.rich_text || 
+                               finalAuditProp.rich_text.length === 0 ||
+                               (finalAuditProp.rich_text.length === 1 && 
+                                (!finalAuditProp.rich_text[0].text || 
+                                 !finalAuditProp.rich_text[0].text.content ||
+                                 finalAuditProp.rich_text[0].text.content.trim() === ''));
         
         if (isFinallyBlank) {
-          log(`❌ [FINAL-CHECK] CRITICAL: Validation property is BLANK after all processing!`);
+          log(`❌ [FINAL-CHECK] CRITICAL: Audit property is BLANK after all processing!`);
           log(`   This indicates a failure in the validation/property update flow`);
           log(`   Auto-saving page for re-extraction...`);
           
@@ -2660,22 +2886,22 @@ ${payload.contentHtml || ''}
             const filepath = path.join(fixturesDir, filename);
             
             const htmlContent = `<!--
-[FINAL-CHECK] Auto-saved: Validation property is BLANK after complete page creation flow
+[FINAL-CHECK] Auto-saved: Audit property is BLANK after complete page creation flow
 Page ID: ${response.id}
 Page URL: ${response.url}
 Page Title: ${payload.title}
 Created: ${new Date().toISOString()}
 Source URL: ${payload.url || 'N/A'}
 
-Diagnosis: Validation property never got set or was cleared
+Diagnosis: Audit property never got set or was cleared
 Possible Causes:
-  1. Page created without SN2N_VALIDATE_OUTPUT=1 enabled
-  2. Validation result was null/undefined
+  1. Page created without SN2N_AUDIT_CONTENT=1 enabled
+  2. Audit result was null/undefined
   3. Property update silently failed without throwing error
   4. Notion API consistency issue
 
-Retrieved Validation Property:
-${JSON.stringify(finalValidationProp, null, 2)}
+Retrieved Audit Property:
+${JSON.stringify(finalAuditProp, null, 2)}
 
 Action Required: Re-extract this page with validation enabled
 -->
@@ -2684,25 +2910,25 @@ ${payload.contentHtml || ''}
 `;
             
             fs.writeFileSync(filepath, htmlContent, 'utf-8');
-            log(`✅ [FINAL-CHECK] AUTO-SAVED: Page with blank validation saved to ${filename}`);
+            log(`✅ [FINAL-CHECK] AUTO-SAVED: Page with blank audit saved to ${filename}`);
             savedToUpdateFolder = true; // Mark as saved
             
             log(`\n${'='.repeat(80)}`);
             log(`⚠️⚠️⚠️ [FINAL-CHECK] ACTION REQUIRED: Page auto-saved to pages-to-update folder`);
             log(`   Page ID: ${response.id}`);
             log(`   Title: ${payload.title}`);
-            log(`   Reason: Validation property is BLANK after all processing`);
+            log(`   Reason: Audit property is BLANK after all processing`);
             log(`   Location: patch/pages/pages-to-update/`);
             log(`   Next Steps: Re-extract page with validation enabled`);
             log(`${'='.repeat(80)}\n`);
           } catch (saveError) {
-            log(`❌ [FINAL-CHECK] Failed to auto-save page with blank validation: ${saveError.message}`);
+            log(`❌ [FINAL-CHECK] Failed to auto-save page with blank audit: ${saveError.message}`);
           }
         } else {
-          log(`✅ [FINAL-CHECK] Validation property confirmed present in Notion`);
+          log(`✅ [FINAL-CHECK] Audit property confirmed present in Notion`);
         }
       } catch (finalCheckError) {
-        log(`⚠️ [FINAL-CHECK] Failed to verify validation property (non-fatal): ${finalCheckError.message}`);
+        log(`⚠️ [FINAL-CHECK] Failed to verify audit property (non-fatal): ${finalCheckError.message}`);
       }
     }
     
@@ -2717,93 +2943,113 @@ ${payload.contentHtml || ''}
       log(`========================================\n`);
       
       try {
-        // FIX v11.0.36: Validation paragraphs already removed in pre-validation cleanup
-        // This section now ONLY does content validation (order checking, similarity)
-        // Stats property will be recalculated after content validation completes
+        // FIX v11.0.113: Replace LCS content validation with AUDIT-based validation
+        // AUDIT provides clearer metrics: absolute text coverage instead of fuzzy similarity
         
-        log(`🔍 Running content validation on cleaned page...`);
+        log(`🔍 Using AUDIT results for content validation...`);
         
         // Brief wait for any final Notion propagation
         await new Promise(resolve => setTimeout(resolve, 1000));
         
-        // Run content validation
-        const contentResult = await validateContentOrder(
-          extractionResult?.fixedHtml || payload.contentHtml,
-          response.id,
-          notion
-        );
+        // Use AUDIT results from extraction (if available)
+        const auditResult = extractionResult?.audit;
         
-        log(`✅ Content validation completed`);
-        log(`   Similarity: ${contentResult.similarity}%`);
-        log(`   Result: ${contentResult.success ? 'PASS' : 'FAIL'}`);
+        if (!auditResult) {
+          log(`⚠️ AUDIT results not available - skipping validation`);
+        } else {
+          log(`✅ AUDIT validation completed`);
+          log(`   Coverage: ${auditResult.coverageStr}`);
+          log(`   Result: ${auditResult.passed ? 'PASS' : 'FAIL'}`);
+        }
         
-        // Build content validation summary
+        // Build AUDIT validation summary
         const timestamp = new Date().toISOString().split('T')[0];
-        let contentSummary = `\n\n[${timestamp}] Content Validation: ${contentResult.success ? '✅ PASS' : '❌ FAIL'}`;
-        contentSummary += `\nSimilarity: ${contentResult.similarity}% (threshold: ≥95%)`;
-        contentSummary += `\nHTML: ${contentResult.htmlSegments} segments (${contentResult.htmlChars} chars)`;
-        contentSummary += `\nNotion: ${contentResult.notionSegments} segments (${contentResult.notionChars} chars)`;
+        let contentSummary = '';
         
-        if (contentResult.charDiff !== 0) {
-          contentSummary += `\nChar Diff: ${contentResult.charDiff >= 0 ? '+' : ''}${contentResult.charDiff} (${contentResult.charDiffPercent >= 0 ? '+' : ''}${contentResult.charDiffPercent}%)`;
+        if (auditResult) {
+          contentSummary = `\n\n[${timestamp}] Content Audit: ${auditResult.passed ? '✅ PASS' : '❌ FAIL'}`;
+          contentSummary += `\nCoverage: ${auditResult.coverageStr} (threshold: ${auditResult.threshold || '95-105%'})`;
+          contentSummary += `\nSource: ${auditResult.nodeCount || 'N/A'} text nodes, ${auditResult.totalLength || 'N/A'} chars`;
+          contentSummary += `\nNotion: ${auditResult.notionBlocks} blocks, ${auditResult.notionTextLength} chars`;
+          contentSummary += `\nBlock/Node Ratio: ${auditResult.blockNodeRatio}x`;
+          
+          if (auditResult.missing > 0) {
+            contentSummary += `\n⚠️ Missing: ${auditResult.missing} chars (${auditResult.missingPercent}%)`;
+          }
+          
+          // FIX v11.0.86+: Show content extraction success + formatting overhead breakdown
+          if (auditResult.extra > 0) {
+            const contentExtracted = 100 - auditResult.missingPercent;
+            const formattingOverhead = auditResult.extraPercent;
+            contentSummary += `\n✅ Content Extraction: ${contentExtracted.toFixed(1)}% of source (all content preserved)`;
+            contentSummary += `\n   Formatting Overhead: +${formattingOverhead}% (tables, callouts, lists add metadata)`;
+          } else if (auditResult.missing === 0) {
+            contentSummary += `\n✅ Content Extraction: 100% of source (exact match)`;
+          }
+
+          // Add segment counts to content summary (detailed comparison now goes to separate properties)
+          if (auditResult.detailedComparison) {
+            const dc = auditResult.detailedComparison;
+            contentSummary += `\nHTML segments: ${dc.htmlSegmentCount}, Notion segments: ${dc.notionSegmentCount}`;
+          }
+        } else {
+          contentSummary = `\n\n[${timestamp}] Content Audit: ⚠️ SKIPPED (AUDIT not enabled)`;
         }
         
-        if (contentResult.missing && contentResult.missing.length > 0) {
-          contentSummary += `\n⚠️ Missing: ${contentResult.missing.length} segment(s)`;
+        // Create contentResult object for compatibility with existing code
+        const contentResult = {
+          success: auditResult ? auditResult.passed : true,
+          coverage: auditResult ? auditResult.coverage : null,
+          audit: auditResult
+        };
+        
+        // FIX v11.0.113: Auto-remediate on AUDIT failure
+        if (!contentResult.success && auditResult) {
+          log(`\n🔧 ========== TRIGGERING AUTO-REMEDIATION ==========`);
+          try {
+            const diagnosis = diagnoseAndFixAudit({
+              html: extractionResult?.fixedHtml || payload.contentHtml || payload.content,
+              blocks: plainTextChildren || children,
+              audit: auditResult,
+              pageTitle: payload.title || 'Unknown',
+              log
+            });
+            
+            // Save diagnosis for review
+            const diagnosisFile = saveDiagnosisToFile(diagnosis, response.id);
+            if (diagnosisFile) {
+              log(`💾 Diagnosis saved: ${diagnosisFile}`);
+            }
+          } catch (remErr) {
+            log(`⚠️ Auto-remediation error: ${remErr.message}`);
+          }
+          log(`🔧 =========================================\n`);
         }
         
-        if (contentResult.extra && contentResult.extra.length > 0) {
-          contentSummary += `\n⚠️ Extra: ${contentResult.extra.length} segment(s)`;
-        }
+        // FIX v11.0.113: SKIP appending content validation - already set in initial property update
+        // The initial property update (line ~2123) already sets Validation with AUDIT data
+        // Appending here would cause duplication of AUDIT content
+        log(`✅ Content validation result already set in Validation property (skipping duplicate append)`);
         
-        if (contentResult.orderIssues && contentResult.orderIssues.length > 0) {
-          contentSummary += `\n⚠️ Order Issues: ${contentResult.orderIssues.length} (expected with orchestration/restructuring)`;
-        }
-        
-        // Append content validation to Validation property
         try {
           const maxRetries = 3;
           let updateSuccess = false;
           
           for (let retry = 0; retry <= maxRetries && !updateSuccess; retry++) {
             try {
-              // Get current page to read existing Validation property
-              const currentPage = await notion.pages.retrieve({ page_id: response.id });
-              const currentValidation = currentPage.properties.Validation;
-              
-              // Get existing validation text
-              let existingText = '';
-              if (currentValidation && currentValidation.rich_text && currentValidation.rich_text.length > 0) {
-                existingText = currentValidation.rich_text.map(rt => rt.text.content).join('');
+              // SKIP the duplicate append - Validation property already set with AUDIT data
+              // Just update Error checkbox if needed
+              if (!contentResult.success) {
+                await notion.pages.update({
+                  page_id: response.id,
+                  properties: {
+                    Error: { checkbox: true }
+                  }
+                });
               }
               
-              // Append content validation summary
-              const updatedText = existingText + contentSummary;
-              
-              // Update Validation property
-              await notion.pages.update({
-                page_id: response.id,
-                properties: {
-                  Validation: {
-                    rich_text: [
-                      {
-                        type: "text",
-                        text: { content: updatedText }
-                      }
-                    ]
-                  },
-                  // Set Error checkbox if content validation failed
-                  ...(contentResult.success ? {} : {
-                    Error: { checkbox: true }
-                  })
-                }
-              });
-              
               updateSuccess = true;
-              log(`✅ Content validation result appended to Validation property${retry > 0 ? ` (after ${retry} ${retry === 1 ? 'retry' : 'retries'})` : ''}`);
-              
-              // Close order detection log AFTER Validation property update
-              closeOrderLog();
+              log(`✅ Content validation result already in Validation property${retry > 0 ? ` (verified after ${retry} ${retry === 1 ? 'retry' : 'retries'})` : ''}`);
               
               // If content validation failed, auto-save page
               if (!contentResult.success && !savedToUpdateFolder) {
@@ -3005,6 +3251,8 @@ router.patch('/W2N/:pageId', async (req, res) => {
   let patchStartTime = Date.now();
   let operationPhase = 'initializing';
   let heartbeatInterval = null;
+  let pageTitle = 'Unknown'; // Initialize for error handling
+  let shouldAutoSaveForFailure = false; // Initialize to prevent ReferenceError when validation is skipped
   
   const cleanup = () => {
     if (heartbeatInterval) {
@@ -3021,7 +3269,7 @@ router.patch('/W2N/:pageId', async (req, res) => {
 
   try {
     const payload = req.body;
-    const pageTitle = payload.title || 'Untitled';
+    pageTitle = payload.title || 'Untitled';
     log(`📝 Processing PATCH request for: ${pageTitle}`);
     
     // Heartbeat already started above; patchStartTime/operationPhase initialized
@@ -3038,6 +3286,14 @@ router.patch('/W2N/:pageId', async (req, res) => {
     if (!html) {
       cleanup();
       return sendError(res, "MISSING_CONTENT", "contentHtml or content required", null, 400);
+    }
+    
+    // Validate that html is a string
+    if (typeof html !== 'string') {
+      const actualType = html === null ? 'null' : Array.isArray(html) ? 'array' : typeof html;
+      log(`❌ Invalid content type: expected string, got ${actualType}`);
+      cleanup();
+      return sendError(res, "INVALID_CONTENT_TYPE", `Content must be a string, received ${actualType}`, null, 400);
     }
     
     log(`📄 HTML content length: ${html.length} characters`);
@@ -3065,6 +3321,8 @@ router.patch('/W2N/:pageId', async (req, res) => {
     // If dryRun, return extracted blocks without updating
     if (payload.dryRun) {
       log("🧪 Dry run mode - returning extracted blocks without updating page");
+      log(`🧪 DEBUG: extractedBlocks.length = ${extractedBlocks.length}`);
+      log(`🧪 DEBUG: extractedBlocks is array? ${Array.isArray(extractedBlocks)}`);
       
       // Count block types for reporting
       const blockTypes = {};
@@ -3072,14 +3330,21 @@ router.patch('/W2N/:pageId', async (req, res) => {
         blockTypes[block.type] = (blockTypes[block.type] || 0) + 1;
       });
       
-      return sendSuccess(res, {
+      const responsePayload = {
         dryRun: true,
         pageId,
         blocksExtracted: extractedBlocks.length,
         blockTypes,
         children: extractedBlocks,
-        hasVideos
-      });
+        hasVideos,
+        audit: extractionResult.audit || null  // FIX v11.0.113: Include AUDIT data in dry-run response
+      };
+      
+      log(`🧪 DEBUG: responsePayload.children.length = ${responsePayload.children.length}`);
+      log(`🧪 DEBUG: Calling sendSuccess with payload`);
+      
+      cleanup();
+      return sendSuccess(res, responsePayload);
     }
     
     // Strip private keys before deduplication
@@ -3658,13 +3923,33 @@ router.patch('/W2N/:pageId', async (req, res) => {
     }
     
     // STEP 4: Update page properties if provided
-    if (payload.properties) {
+    if (payload.properties || payload.url) {
       log(`📝 STEP 4: Updating page properties`);
+      
+      const properties = {};
+      
+      // Set URL if provided (same as POST endpoint)
+      if (payload.url) {
+        properties["URL"] = {
+          url: payload.url,
+        };
+      }
+      
+      // Apply property mappings from payload (from userscript) using Notion service
+      if (payload.properties) {
+        log("🔍 Received properties from userscript:");
+        log(JSON.stringify(payload.properties, null, 2));
+        
+        // Merge with existing properties (userscript already did the mapping)
+        Object.assign(properties, payload.properties);
+        log("🔍 Properties after merge:");
+        log(JSON.stringify(properties, null, 2));
+      }
       
       try {
         await notion.pages.update({
           page_id: pageId,
-          properties: payload.properties
+          properties: properties
         });
         log(`✅ Properties updated`);
       } catch (propError) {
@@ -3679,13 +3964,26 @@ router.patch('/W2N/:pageId', async (req, res) => {
     // FIX v11.0.24: Always create a validation result, even if validation is disabled
     // This ensures properties are updated consistently with POST behavior
     if (!shouldValidate) {
+      // Calculate character counts even when validation is disabled
+      const htmlChars = (extractionResult.fixedHtml || html).replace(/<[^>]*>/g, '').length;
+      const notionChars = extractedBlocks.reduce((total, block) => {
+        if (block.type === 'paragraph' || block.type === 'heading_1' || block.type === 'heading_2' || block.type === 'heading_3') {
+          const richText = block[block.type]?.rich_text || [];
+          return total + richText.reduce((blockTotal, text) => blockTotal + (text.plain_text || '').length, 0);
+        }
+        return total;
+      }, 0);
+      
       validationResult = {
         success: true,
         hasErrors: false,
         issues: [],
         warnings: [],
         stats: null,
-        summary: `ℹ️ Validation not enabled (set SN2N_VALIDATE_OUTPUT=1 to enable)`
+        summary: `ℹ️ Validation not enabled (set SN2N_VALIDATE_OUTPUT=1 to enable)`,
+        htmlChars,
+        notionChars,
+        charDiff: notionChars - htmlChars
       };
       log(`ℹ️ Validation skipped - will set properties to indicate validation not run`);
     }
@@ -3767,10 +4065,10 @@ router.patch('/W2N/:pageId', async (req, res) => {
             verbose: true
           });
           
-          // FIX v11.0.40: Ensure breakdown exists for Stats property by fetching Notion blocks
+          // FIX v11.0.40: Ensure breakdown exists for ContentComparison property by fetching Notion blocks
           // validateContentOrder returns similarity but not block type breakdown
           if (!validationResult.stats || !validationResult.stats.breakdown) {
-            log(`📊 [PATCH-VALIDATION] Fetching blocks from Notion to populate Stats breakdown...`);
+            log(`📊 [PATCH-VALIDATION] Fetching blocks from Notion to populate ContentComparison breakdown...`);
             
             try {
               let allNotionBlocks = [];
@@ -3851,10 +4149,10 @@ router.patch('/W2N/:pageId', async (req, res) => {
                 unorderedListNotion: blockCounts.unorderedList
               };
               
-              log(`✅ [PATCH-VALIDATION] Stats breakdown populated: ${JSON.stringify(validationResult.stats.breakdown)}`);
+              log(`✅ [PATCH-VALIDATION] ContentComparison breakdown populated: ${JSON.stringify(validationResult.stats.breakdown)}`);
               
             } catch (breakdownError) {
-              log(`⚠️ [PATCH-VALIDATION] Failed to populate Stats breakdown: ${breakdownError.message}`);
+              log(`⚠️ [PATCH-VALIDATION] Failed to populate ContentComparison breakdown: ${breakdownError.message}`);
             }
           }
           
@@ -3864,18 +4162,22 @@ router.patch('/W2N/:pageId', async (req, res) => {
             log(`⚠️ Validation warnings detected`);
           }
           
-          // FIX v11.0.35: Retry validation once if initial attempt fails (same as POST)
+          // FIX v11.0.36: Retry validation up to 2 times with escalating waits (5s, 10s)
           // Handles edge cases where Notion takes >15s to settle after PATCH
           // Only retries if validation has actual errors (not just warnings)
-          if (validationResult && !validationResult.success && validationResult.hasErrors) {
-            log(`\n⚠️ Initial PATCH validation failed - attempting retry after additional wait...`);
-            log(`   Original issues: ${validationResult.issues?.join(', ') || 'unknown'}`);
+          const maxValidationRetries = 2;
+          let retryAttempt = 0;
+          
+          while (retryAttempt < maxValidationRetries && validationResult && !validationResult.success && validationResult.hasErrors) {
+            retryAttempt++;
+            const retryWait = retryAttempt * 5000; // 5s, 10s
             
-            const retryWait = 5000; // Additional 5s wait
-            log(`⏳ Waiting ${retryWait}ms for Notion eventual consistency retry...`);
+            log(`\n⚠️ PATCH validation attempt ${retryAttempt} failed - retrying after ${retryWait}ms...`);
+            log(`   Issues: ${validationResult.issues?.join(', ') || 'unknown'}`);
+            
             await new Promise(resolve => setTimeout(resolve, retryWait));
             
-            log(`🔄 Retrying PATCH validation...`);
+            log(`🔄 Retrying PATCH validation (attempt ${retryAttempt + 1}/${maxValidationRetries + 1})...`);
             const retryResult = await validateNotionPage(notion, pageId, {
               sourceHtml: extractionResult.fixedHtml || html,
               expectedTitle: pageTitle,
@@ -3883,13 +4185,18 @@ router.patch('/W2N/:pageId', async (req, res) => {
             });
             
             if (retryResult.success) {
-              log(`✅ PATCH validation succeeded on retry - Notion eventual consistency resolved`);
+              log(`✅ PATCH validation succeeded on retry ${retryAttempt} - Notion eventual consistency resolved`);
               validationResult = retryResult;
+              break;
             } else {
-              log(`⚠️ PATCH validation still failing after retry - issues persist`);
-              // Keep original validationResult with retry note
-              if (!validationResult.warnings) validationResult.warnings = [];
-              validationResult.warnings.push('PATCH validation retried after +5s wait but still failed');
+              log(`⚠️ PATCH validation still failing after retry ${retryAttempt}`);
+              validationResult = retryResult;
+              
+              if (retryAttempt === maxValidationRetries) {
+                // All retries exhausted
+                if (!validationResult.warnings) validationResult.warnings = [];
+                validationResult.warnings.push(`PATCH validation retried ${maxValidationRetries} times but still failed`);
+              }
             }
           }
         } catch (valError) {
@@ -3943,10 +4250,17 @@ router.patch('/W2N/:pageId', async (req, res) => {
       validationResult.issues.push('Internal error: validation summary was empty');
     }
     
-    try {
+      // FIX v11.0.116 BUG: Declare propertyUpdateSuccess/Error outside try block so catch block can access them
+      let propertyUpdateSuccess = false;
+      let propertyUpdateError = null;
+      // FIX v11.0.116.1: Declare maxPropertyRetries outside try block for audit recalculation
+      const maxPropertyRetries = 5;
+      // FIX v11.0.116.2: Declare allNotionBlocks outside try block for audit recalculation
+      let allNotionBlocks = [];    try {
       const propertyUpdates = {};
       
-      // Set Error checkbox if validation failed
+      // Set Error checkbox based on validation result
+      propertyUpdates["Error"] = { checkbox: validationResult.hasErrors === true };
       if (validationResult.hasErrors) {
         log(`⚠️ Validation failed`);
         
@@ -3998,159 +4312,1032 @@ ${html || ''}
         }
       }
       
-      // Refined PATCH Validation & Stats formatting (v11.0.35+)
-      const patchIndicator = "🔄 PATCH\n\n";
+      // FIX v11.0.113: Replace LCS validation with AUDIT-based validation for PATCH
+      // Build combined validation content with Text Content Validation + Content Audit sections
       
-      // Determine validation status based on similarity, order issues, and missing segments
-      const simPercent = (typeof validationResult.similarity === 'number')
-        ? Math.round(validationResult.similarity)
-        : null;
-      const similarityLine = simPercent != null ? `Similarity: ${simPercent}% (threshold: ≥95%)` : null;
-
-      const similarityPass = simPercent != null && simPercent >= 95;
-      const hasOrderIssues = Array.isArray(validationResult.orderIssues) && validationResult.orderIssues.length > 0;
-      const hasMissingSegments = Array.isArray(validationResult.missing) && validationResult.missing.length > 0;
-      const hasMarkerLeaks = validationResult.hasErrors && 
-                             validationResult.issues?.some(issue => 
-                               issue.toLowerCase().includes('marker') || 
-                               issue.toLowerCase().includes('sn2n:')
-                             );
-
-      // Determine status: FAIL if similarity fails OR missing segments exist OR marker leaks detected
-      // WARNING if similarity passes but order issues exist
-      // PASS only if similarity passes and no order or missing issues
-      let validationStatus;
-      let statusIcon;
-      if (!similarityPass || hasMissingSegments || hasMarkerLeaks) {
-        validationStatus = 'FAIL';
-        statusIcon = '❌';
-      } else if (hasOrderIssues) {
-        validationStatus = 'WARNING';
-        statusIcon = '🔀';
+      // Use AUDIT results from extraction (if available)
+      const auditResult = extractionResult?.audit;
+      
+      log(`📊 [PATCH-AUDIT-DEBUG] extractionResult keys: ${extractionResult ? Object.keys(extractionResult).join(', ') : 'N/A'}`);
+      log(`📊 [PATCH-AUDIT-DEBUG] auditResult: ${auditResult ? JSON.stringify(auditResult).substring(0, 200) : 'null'}`);
+      
+      let auditStatus = 'SKIPPED';
+      let auditIcon = '⚠️';
+      let auditCoverageFail = false;
+      
+      if (!auditResult) {
+        // No AUDIT data available
+        auditStatus = 'SKIPPED';
+        auditIcon = '⚠️';
+        log(`⚠️ AUDIT results not available for PATCH validation`);
       } else {
-        validationStatus = 'PASS';
-        statusIcon = '✅';
-      }
-
-      // Use same icon for Stats property
-      const passFail = validationStatus;
-
-      // Order issues section: list ALL issues (not just first 2)
-      let orderSection = '';
-      if (Array.isArray(validationResult.orderIssues) && validationResult.orderIssues.length > 0) {
-        const lines = [`⚠️ Order Issues (${validationResult.orderIssues.length} detected):`];
+        // Determine status based on AUDIT coverage
+        const coveragePassed = auditResult.passed; // 95-105% range
+        const hasMarkerLeaks = validationResult.hasErrors && 
+                               validationResult.issues?.some(issue => 
+                                 issue.toLowerCase().includes('marker') || 
+                                 issue.toLowerCase().includes('sn2n:')
+                               );
         
-        validationResult.orderIssues.forEach((iss, idx) => {
-          lines.push(`${idx + 1}. Inversion detected:`);
-          lines.push(`   A: "${iss.segmentA || 'Unknown'}..."`);
-          lines.push(`   B: "${iss.segmentB || 'Unknown'}..."`);
-          lines.push(`   HTML order: A at ${iss.htmlOrder?.[0] ?? '?'}, B at ${iss.htmlOrder?.[1] ?? '?'}`);
-          lines.push(`   Notion order: A at ${iss.notionOrder?.[0] ?? '?'}, B at ${iss.notionOrder?.[1] ?? '?'}`);
-        });
+        if (!coveragePassed || hasMarkerLeaks) {
+          auditStatus = 'FAIL';
+          auditIcon = '❌';
+          auditCoverageFail = true;
+          
+          // FIX v11.0.113: Auto-remediate on AUDIT failure
+          log(`\n🔧 ========== TRIGGERING AUTO-REMEDIATION ==========`);
+          try {
+            const diagnosis = diagnoseAndFixAudit({
+              html,
+              blocks: extractedBlocks,
+              audit: auditResult,
+              pageTitle: payload.title || 'Unknown',
+              log
+            });
+            
+            // Save diagnosis for review
+            const diagnosisFile = saveDiagnosisToFile(diagnosis, pageId);
+            if (diagnosisFile) {
+              log(`💾 Diagnosis saved: ${diagnosisFile}`);
+            }
+          } catch (remErr) {
+            log(`⚠️ Auto-remediation error: ${remErr.message}`);
+          }
+          log(`🔧 =========================================\n`);
+        } else {
+          auditStatus = 'PASS';
+          auditIcon = '✅';
+        }
+      }
+      
+      // Build validation content with Content Audit section only
+      const validationLines = [];
+      const timestamp = new Date().toISOString().split('T')[0];
+      
+      // Content Audit section (AUDIT coverage - reorganized format)
+      if (auditResult) {
+        // FIX v11.0.86+: Reorganized output format for clarity (POST/PATCH alignment)
+        if (auditResult.missing === 0 && auditResult.extra === 0) {
+          // Perfect match
+          validationLines.push(`[${timestamp}] ✅ Content Extraction: 100.0% of source (exact match)`);
+        } else if (auditResult.missing === 0 && auditResult.extra > 0) {
+          // All content extracted, with formatting overhead
+          const formattingOverhead = auditResult.extraPercent;
+          validationLines.push(`[${timestamp}] ✅ Content Extraction: 100.0% of source (all content preserved)`);
+          validationLines.push(`Formatting Overhead: +${formattingOverhead}% `);
+        } else if (auditResult.missing > 0) {
+          // Some content missing
+          const contentExtracted = 100 - auditResult.missingPercent;
+          validationLines.push(`[${timestamp}] ${auditResult.passed ? '✅' : '⚠️'} Content Extraction: ${contentExtracted.toFixed(1)}% of source`);
+          if (auditResult.extra > 0) {
+            validationLines.push(`Formatting Overhead: +${auditResult.extraPercent}%`);
+          }
+          validationLines.push(`⚠️ Missing: ${auditResult.missing.toLocaleString()} chars (${auditResult.missingPercent}%)`);
+        }
         
-        orderSection = lines.join('\n');
+        // Add content complexity summary if available
+        if (auditResult.contentAnalysis) {
+          const ca = auditResult.contentAnalysis;
+          const complexityDetails = [];
+          if (ca.tableCount > 0) complexityDetails.push(`${ca.tableCount} table${ca.tableCount > 1 ? 's' : ''}`);
+          if (ca.calloutCount > 0) complexityDetails.push(`${ca.calloutCount} callout${ca.calloutCount > 1 ? 's' : ''}`);
+          if (ca.nestedListCount > 0) complexityDetails.push(`${ca.nestedListCount} nested list${ca.nestedListCount > 1 ? 's' : ''}`);
+          if (ca.deepNestingCount > 0) complexityDetails.push(`${ca.deepNestingCount} deep nesting block${ca.deepNestingCount > 1 ? 's' : ''}`);
+          
+          if (complexityDetails.length > 0) {
+            validationLines.push(`\nContent: ${complexityDetails.join(', ')}`);
+          }
+        }
+        
+        // Add coverage and threshold info (for reference)
+        validationLines.push(`\nCoverage: ${auditResult.coverageStr} (threshold: ${auditResult.threshold || '95-105%'})`);
+        
+        // Add technical details
+        validationLines.push(`Source: ${auditResult.nodeCount || 'N/A'} text nodes, ${auditResult.totalLength || 'N/A'} chars`);
+        validationLines.push(`Notion: ${auditResult.notionBlocks} blocks, ${auditResult.notionTextLength} chars`);
+        validationLines.push(`Block/Node Ratio: ${auditResult.blockNodeRatio}x`);
+      } else {
+        validationLines.push('AUDIT system not enabled - no coverage data available');
+      }
+      
+      const auditContent = validationLines.join('\n');
+      
+      console.log('🚨🚨🚨🚨🚨 PATCH AUDIT PROPERTY UPDATE 🚨🚨🚨🚨🚨');
+      console.log(`📊 [PATCH-AUDIT-DEBUG] Setting Audit property:`);
+      console.log(`   Content length: ${auditContent.length} chars`);
+      console.log(`   Content preview: ${auditContent.substring(0, 200)}...`);
+      console.log(`   FULL CONTENT:\n${auditContent}`);
+      console.log('🚨🚨🚨🚨🚨 END AUDIT PROPERTY 🚨🚨🚨🚨🚨\n');
+
+      // Truncate to fit Notion's 2000 character limit for rich text properties
+      let truncatedAuditContent = auditContent;
+      if (auditContent.length > 2000) {
+        truncatedAuditContent = auditContent.substring(0, 1997) + '...';
+        console.log(`⚠️ [PATCH-PROPERTY-TRUNCATE] Audit property truncated to 2000 chars (was ${auditContent.length})`);
       }
 
-      // Missing segments section: list ALL missing segments (not just first 3)
-      let missingSection = '';
-      if (Array.isArray(validationResult.missing) && validationResult.missing.length > 0) {
-        const lines = [`⚠️ Missing: ${validationResult.missing.length} segment(s)`];
-        lines.push(`(in HTML but not Notion)`);
-        
-        validationResult.missing.forEach((m, idx) => {
-          const text = m?.text || m?.segment || m || '';
-          const preview = text.length > 80 ? text.substring(0, 80) + '...' : text;
-          lines.push(`${idx + 1}. ${preview}`);
-        });
-        
-        missingSection = lines.join('\n');
-      }
-
-  const validationLines = [`${statusIcon} Text Content Validation: ${validationStatus}`];
-  // Do not include similarity/content summary lines in Validation per spec
-      if (orderSection) {
-        validationLines.push(''); // blank line before order issues
-        validationLines.push(orderSection);
-      }
-      if (missingSection) {
-        validationLines.push(''); // blank line before missing section
-        validationLines.push(missingSection);
-      }
-      const validationContent = patchIndicator + validationLines.join('\n');
-
-      propertyUpdates["Validation"] = {
-        rich_text: [ { type: 'text', text: { content: validationContent } } ]
+      propertyUpdates["Audit"] = {
+        rich_text: [ { type: 'text', text: { content: truncatedAuditContent } } ]
       };
 
-  // (Removed deprecated Status property logic; counts handled in Stats header)
+      // FIX v11.0.161: MissingText and ExtraText properties removed
+      // Missing/extra content details now included in Audit property directly
+      // No separate property updates needed
 
-      // Stats property refined breakdown (first line reflects table/image/callout count match, not validation status)
+  // (Removed deprecated Status property logic; counts handled in ContentComparison header)
+
+      // ContentComparison property refined breakdown (first line reflects table/image/callout count match, not validation status)
       const stats = validationResult.stats || {};
       const breakdown = stats.breakdown || {};
       const getNum = (v) => (typeof v === 'number' ? v : (v && v.count) || 0);
       
-      // Calculate source counts from the extractedBlocks array we sent to Notion (same as POST)
+      // FIX v11.0.173: Count blocks from ORIGINAL HTML (not converted Notion blocks)
+      // This shows true conversion accuracy: what's in ServiceNow HTML vs what's in Notion
+      // Previous logic counted already-converted Notion blocks, which would always match unless upload failed
+      log(`📊 [PATCH-STATS-COUNT] Counting blocks from original HTML (pre-conversion)`);
+      
       const sourceCounts = {
         paragraphs: 0,
         headings: 0,
         tables: 0,
         images: 0,
         callouts: 0,
+        code: 0,
         orderedList: 0,
         unorderedList: 0
       };
       
-      function countSourceBlocks(blocks) {
-        for (const block of blocks) {
-          if (block.type === 'paragraph') sourceCounts.paragraphs++;
-          else if (block.type.startsWith('heading_')) sourceCounts.headings++;
-          else if (block.type === 'table') sourceCounts.tables++;
-          else if (block.type === 'image') sourceCounts.images++;
-          else if (block.type === 'callout') sourceCounts.callouts++;
-          else if (block.type === 'numbered_list_item') sourceCounts.orderedList++;
-          else if (block.type === 'bulleted_list_item') sourceCounts.unorderedList++;
-          
-          // Recursively count children
-          const blockContent = block[block.type];
-          if (blockContent && blockContent.children && Array.isArray(blockContent.children)) {
-            countSourceBlocks(blockContent.children);
+      // Count blocks directly from HTML structure
+      try {
+        const cheerio = require('cheerio');
+        const $ = cheerio.load(html, { decodeEntities: false });
+        
+        log(`📊 [PATCH-HTML-SOURCE-DEBUG] HTML length: ${html.length} chars`);
+        log(`📊 [PATCH-HTML-SOURCE-DEBUG] HTML preview: ${html.substring(0, 200)}`);
+        
+        // Count paragraphs (p tags that aren't empty)
+        let pCount = 0;
+        $('p').each((i, elem) => {
+          const text = $(elem).text().trim();
+          if (text.length > 0) {
+            pCount++;
+            sourceCounts.paragraphs++;
           }
+        });
+        log(`📊 [PATCH-HTML-SOURCE-DEBUG] Found ${pCount} non-empty <p> tags`);
+        
+        // Count headings (h2-h6 + span.title which become headings in Notion)
+        // FIX v11.0.188: Exclude H1 (page title) and sidebar headings from comparison
+        // H1 is always the page name/title and should not be duplicated in page content
+        // Sidebars are navigation/metadata, not content
+        let hCount = 0;
+        $('h2, h3, h4, h5, h6, span.title').each((i, elem) => {
+          const $elem = $(elem);
+          // Skip if inside sidebar/navigation containers
+          const inSidebar = $elem.closest('.zDocsSideBoxes, .contentPlaceholder, .miniTOC, aside, nav').length > 0;
+          if (!inSidebar) {
+            hCount++;
+            sourceCounts.headings++;
+          }
+        });
+        log(`📊 [PATCH-HTML-SOURCE-DEBUG] Found ${hCount} heading tags (h2-h6 + span.title, excluding H1 and sidebars)`);
+        
+        // Count tables
+        const tableCount = $('table').length;
+        sourceCounts.tables = tableCount;
+        log(`📊 [PATCH-HTML-SOURCE-DEBUG] Found ${tableCount} <table> tags`);
+        
+        // Count images (img tags, excluding base64 data URIs and images inside tables)
+        // FIX v11.0.184: Skip images in tables because Notion tables are incompatible with image handling
+        let imgCount = 0;
+        $('img').each((i, elem) => {
+          const src = $(elem).attr('src') || '';
+          const isInTable = $(elem).closest('table').length > 0;
+          if (!src.startsWith('data:') && !isInTable) {
+            imgCount++;
+            sourceCounts.images++;
+          }
+        });
+        log(`📊 [PATCH-HTML-SOURCE-DEBUG] Found ${imgCount} <img> tags (non-data URI, excluding images in tables)`);
+        
+        // Count callouts (note class, warning class, etc.)
+        // FIX v11.0.180: Only count top-level callout containers (not nested titles/children)
+        // FIX v11.0.86: Exclude callouts inside tables - Notion table cells can't contain callout blocks
+        // Callouts in tables get converted to text/other types, not callout blocks
+        let calloutCount = 0;
+        $('div.note, div.warning, div.info, div.tip, div.caution, div.important').each((i, elem) => {
+          const $elem = $(elem);
+          // Skip if this callout is inside a table - it won't be rendered as a callout block
+          const inTable = $elem.closest('table, thead, tbody, tr, td, th').length > 0;
+          if (!inTable) {
+            calloutCount++;
+          }
+        });
+        sourceCounts.callouts = calloutCount;
+        log(`📊 [PATCH-HTML-SOURCE-DEBUG] Found ${calloutCount} callout elements (top-level only)`);
+        
+        // Count code blocks (pre or code tags)
+        const preCount = $('pre').length;
+        sourceCounts.code = preCount;
+        log(`📊 [PATCH-HTML-SOURCE-DEBUG] Found ${preCount} <pre> tags`);
+        
+        // Count ordered lists (ol > li)
+        const olCount = $('ol > li').length;
+        sourceCounts.orderedList = olCount;
+        log(`📊 [PATCH-HTML-SOURCE-DEBUG] Found ${olCount} <ol><li> items`);
+        
+        // Count unordered lists (ul > li)
+        const ulCount = $('ul > li').length;
+        sourceCounts.unorderedList = ulCount;
+        log(`📊 [PATCH-HTML-SOURCE-DEBUG] Found ${ulCount} <ul><li> items`);
+        
+        log(`📊 [PATCH-HTML-SOURCE-COUNTS] Paragraphs: ${sourceCounts.paragraphs}, Headings: ${sourceCounts.headings}, Tables: ${sourceCounts.tables}, Images: ${sourceCounts.images}, Callouts: ${sourceCounts.callouts}, Code: ${sourceCounts.code}, OL: ${sourceCounts.orderedList}, UL: ${sourceCounts.unorderedList}`);
+      } catch (countError) {
+        log(`⚠️ [PATCH-HTML-SOURCE-COUNTS] Error counting from HTML: ${countError.message}`);
+        log(`⚠️ [PATCH-HTML-SOURCE-COUNTS] Stack trace: ${countError.stack}`);
+        // Fall back to zero counts - comparison will show all as mismatches
+      }
+      
+      // FIX v11.0.35: Fetch actual Notion block counts from the page (not from breakdown which may be missing)
+      log(`📊 Fetching Notion blocks to calculate Stats...`);
+      const notionCounts = {
+        paragraphs: 0,
+        headings: 0,
+        tables: 0,
+        images: 0,
+        callouts: 0,
+        code: 0,
+        orderedList: 0,
+        unorderedList: 0
+      };
+      
+      try {
+        allNotionBlocks = [];
+        let cursor = undefined;
+        
+        do {
+          const blockResponse = await notion.blocks.children.list({
+            block_id: pageId,
+            page_size: 100,
+            ...(cursor ? { start_cursor: cursor } : {})
+          });
+          
+          allNotionBlocks.push(...blockResponse.results);
+          cursor = blockResponse.has_more ? blockResponse.next_cursor : undefined;
+        } while (cursor);
+        
+        // Recursively count blocks in nested structures
+        async function countNotionBlocksRecursive(blocks) {
+          for (const block of blocks) {
+            if (block.type === 'paragraph') notionCounts.paragraphs++;
+            else if (block.type === 'heading_2' || block.type === 'heading_3') notionCounts.headings++; // Exclude heading_1 (page title) from heading count - v11.0.188
+            else if (block.type === 'table') notionCounts.tables++;
+            else if (block.type === 'image') notionCounts.images++;
+            else if (block.type === 'callout') notionCounts.callouts++;
+            else if (block.type === 'code') notionCounts.code++;
+            else if (block.type === 'numbered_list_item') notionCounts.orderedList++;
+            else if (block.type === 'bulleted_list_item') notionCounts.unorderedList++;
+            
+            // Recursively fetch and count children if block has them
+            if (block.has_children) {
+              try {
+                let childCursor = undefined;
+                do {
+                  const childResponse = await notion.blocks.children.list({
+                    block_id: block.id,
+                    page_size: 100,
+                    ...(childCursor ? { start_cursor: childCursor } : {})
+                  });
+                  await countNotionBlocksRecursive(childResponse.results);
+                  childCursor = childResponse.has_more ? childResponse.next_cursor : undefined;
+                } while (childCursor);
+              } catch (childError) {
+                log(`⚠️ Failed to fetch children for block ${block.id}: ${childError.message}`);
+              }
+            }
+          }
+        }
+        
+        await countNotionBlocksRecursive(allNotionBlocks);
+        log(`   ✓ Notion counts: ${allNotionBlocks.length} total blocks`);
+        
+      } catch (countError) {
+        log(`⚠️ Failed to fetch Notion blocks for Stats: ${countError.message}`);
+        // Leave notionCounts at 0 - will show all mismatches
+      }
+      
+      // FIX v11.0.116.1: Recalculate audit metrics based on actual Notion page content
+      // The original auditResult uses text length from blocks that were supposed to be uploaded,
+      // but the actual page content may differ due to deletion failures, eventual consistency, or deep nesting.
+      // Recalculate using the same fetched block data used for ContentComparison.
+      if (auditResult && allNotionBlocks) {
+        try {
+          // Extract actual text from all Notion blocks (same logic as servicenow.cjs)
+          function extractAllTextFromBlock(block) {
+            if (!block || typeof block !== 'object') return '';
+            
+            // FIX v11.0.160: Skip code blocks - not counted in text validation
+            if (block.type === 'code') {
+              return '';
+            }
+            
+            let text = '';
+            
+            // Extract from rich text fields
+            function extractFromRichText(richTextArray) {
+              if (!Array.isArray(richTextArray)) return '';
+              // FIX v11.0.180: Revert inline code parentheses (caused validation failures)
+              return richTextArray.map(rt => rt.plain_text || '').join('');
+            }
+            
+            // Extract based on block type (except code blocks)
+            if (block.type === 'paragraph' && block.paragraph?.rich_text) {
+              text += extractFromRichText(block.paragraph.rich_text);
+            } else if (block.type.startsWith('heading_') && block[block.type]?.rich_text) {
+              text += extractFromRichText(block[block.type].rich_text);
+            } else if (block.type === 'bulleted_list_item' && block.bulleted_list_item?.rich_text) {
+              text += extractFromRichText(block.bulleted_list_item.rich_text);
+            } else if (block.type === 'numbered_list_item' && block.numbered_list_item?.rich_text) {
+              text += extractFromRichText(block.numbered_list_item.rich_text);
+            } else if (block.type === 'callout' && block.callout?.rich_text) {
+              text += extractFromRichText(block.callout.rich_text);
+            } else if (block.type === 'quote' && block.quote?.rich_text) {
+              text += extractFromRichText(block.quote.rich_text);
+            } else if (block.type === 'to_do' && block.to_do?.rich_text) {
+              text += extractFromRichText(block.to_do.rich_text);
+            }
+            
+            // Extract from table cells
+            if (block.type === 'table_row' && block.table_row?.cells) {
+              for (const cell of block.table_row.cells) {
+                text += extractFromRichText(cell);
+              }
+            }
+            
+            // Recursively extract from children (for nested blocks)
+            if (block.children && Array.isArray(block.children)) {
+              for (const child of block.children) {
+                text += extractAllTextFromBlock(child);
+              }
+            }
+            
+            // Extract from table children (table_row blocks)
+            if (block.table?.children && Array.isArray(block.table.children)) {
+              for (const child of block.table.children) {
+                text += extractAllTextFromBlock(child);
+              }
+            }
+            
+            // Extract from list items with children
+            if (block.bulleted_list_item?.children) {
+              for (const child of block.bulleted_list_item.children) {
+                text += extractAllTextFromBlock(child);
+              }
+            }
+            if (block.numbered_list_item?.children) {
+              for (const child of block.numbered_list_item.children) {
+                text += extractAllTextFromBlock(child);
+              }
+            }
+            
+            return text;
+          }
+          
+          const actualNotionTextLength = allNotionBlocks.reduce((sum, block) => {
+            return sum + extractAllTextFromBlock(block).length;
+          }, 0);
+          
+          // Update auditResult with actual page content metrics
+          const originalNotionTextLength = auditResult.notionTextLength;
+          auditResult.notionTextLength = actualNotionTextLength;
+          auditResult.notionBlocks = allNotionBlocks.length;
+          
+          // Recalculate coverage and missing/extra based on actual content
+          const coverageFloat = auditResult.totalLength > 0 
+            ? (actualNotionTextLength / auditResult.totalLength * 100) 
+            : 100;
+          auditResult.coverage = coverageFloat.toFixed(1);
+          auditResult.coverageStr = `${auditResult.coverage}%`;
+          auditResult.missing = coverageFloat < 100 ? auditResult.totalLength - actualNotionTextLength : 0;
+          auditResult.extra = coverageFloat > 100 ? actualNotionTextLength - auditResult.totalLength : 0;
+          auditResult.missingPercent = auditResult.totalLength > 0 ? ((auditResult.missing / auditResult.totalLength) * 100).toFixed(1) : '0.0';
+          auditResult.extraPercent = auditResult.totalLength > 0 ? ((auditResult.extra / auditResult.totalLength) * 100).toFixed(1) : '0.0';
+          
+          // Update pass/fail status
+          const minThreshold = auditResult.threshold ? parseFloat(auditResult.threshold.split('-')[0]) : 95;
+          const maxThreshold = auditResult.threshold ? parseFloat(auditResult.threshold.split('-')[1]) : 105;
+          auditResult.passed = coverageFloat >= minThreshold && coverageFloat <= maxThreshold;
+          
+          log(`🔧 [AUDIT-RECALCULATION] Updated audit metrics with actual Notion content:`);
+          log(`   Original notionTextLength: ${originalNotionTextLength} chars`);
+          log(`   Actual notionTextLength: ${actualNotionTextLength} chars`);
+          log(`   Updated coverage: ${auditResult.coverageStr} (was based on ${originalNotionTextLength})`);
+          log(`   Updated missing: ${auditResult.missing} chars (${auditResult.missingPercent}%)`);
+          
+          // FIX v11.0.159: Recalculate detailed comparison using actual Notion content
+          // Compare the original HTML against the fetched Notion blocks to get real missing/extra segments
+          log(`🔧 [AUDIT-RECALCULATION] Recalculating detailed comparison with actual Notion content...`);
+          
+          try {
+            // Import the function to do detailed comparison
+            const servicenowService = require('../services/servicenow.cjs');
+            
+            // Convert fetched Notion blocks back to a format we can compare
+            // FIX v11.0.159: Exclude buttons from validation
+            // FIX v11.0.160: Exclude code blocks from validation
+            // FIX v11.0.172: Exclude "On this page" navigation sections
+            const cheerio = require('cheerio');
+            const $ = cheerio.load(html, { decodeEntities: false });
+            
+            // Remove button elements and code blocks from HTML before extracting text
+            // FIX v11.0.180: Revert inline code parentheses (caused validation failures)
+            $('button').remove();
+            $('.btn, .button, [role="button"]').remove(); // Also remove common button classes
+            $('pre, code').remove(); // Code not counted in text validation
+            
+            // FIX v11.0.172: Remove "On this page" navigation sections (same as audit preprocessing)
+            $('.miniTOC, .zDocsSideBoxes').remove();
+            $('.contentPlaceholder').each((i, elem) => {
+              const $elem = $(elem);
+              const hasMiniToc = $elem.find('.zDocsMiniTocCollapseButton, .zDocsSideBoxes, .contentContainer').length > 0;
+              if (hasMiniToc) {
+                $elem.remove();
+              }
+            });
+            
+            // FIX v11.0.172: Remove figure captions and labels (images handle their own captions)
+            $('figcaption, .figcap, .fig-title, .figure-title').remove();
+            // Remove standalone "Figure X" text patterns that are separate from actual content
+            $('p, div, span').each((i, elem) => {
+              const $elem = $(elem);
+              const text = $elem.text().trim();
+              // Match patterns like "Figure 1.", "Figure 2", "Fig. 1:", etc.
+              if (/^fig(?:ure)?\s*\d+\.?\:?$/i.test(text)) {
+                $elem.remove();
+              }
+            });
+            
+            // FIX v11.0.172: Improved whitespace handling to prevent word concatenation
+            // Add space BEFORE and AFTER block elements to ensure separation
+            $('p, div, li, td, th, h1, h2, h3, h4, h5, h6').each((i, elem) => {
+              const $elem = $(elem);
+              // Add space before element content and after element content
+              const content = $elem.html();
+              if (content && content.trim()) {
+                $elem.html(' ' + content + ' ');
+              }
+            });
+            // Handle br tags specially
+            $('br').replaceWith(' ');
+            
+            const htmlText = $.text()
+              .replace(/\s+/g, ' ')          // Collapse multiple spaces
+              .trim();
+            const notionText = allNotionBlocks.map(block => extractAllTextFromBlock(block)).join(' ').trim();
+            
+            // FIX v11.0.172: Calculate LCS similarity as confidence metric
+            function lcsLength(str1, str2) {
+              const m = str1.length;
+              const n = str2.length;
+              const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+              
+              for (let i = 1; i <= m; i++) {
+                for (let j = 1; j <= n; j++) {
+                  if (str1[i - 1] === str2[j - 1]) {
+                    dp[i][j] = dp[i - 1][j - 1] + 1;
+                  } else {
+                    dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+                  }
+                }
+              }
+              return dp[m][n];
+            }
+            
+            const lcs = lcsLength(htmlText, notionText);
+            const lcsSimilarity = (lcs / Math.max(htmlText.length, notionText.length) * 100).toFixed(1);
+            
+            log(`🔧 [AUDIT-RECALCULATION] HTML text length (excluding buttons & code): ${htmlText.length}, Notion text length: ${notionText.length}`);
+            log(`🔧 [AUDIT-RECALCULATION] LCS similarity: ${lcsSimilarity}% (${lcs} matching chars)`);
+            log(`🔧 [AUDIT-RECALCULATION] actualNotionTextLength (from auditResult): ${actualNotionTextLength}`);
+            log(`🔧 [AUDIT-RECALCULATION] HTML text preview: ${htmlText.substring(0, 300)}...`);
+            log(`🔧 [AUDIT-RECALCULATION] Notion text preview: ${notionText.substring(0, 300)}...`);
+            
+            // Debug: Show last 100 chars to see the difference
+            log(`🔧 [AUDIT-RECALCULATION] HTML text END: ...${htmlText.substring(htmlText.length - 100)}`);
+            log(`🔧 [AUDIT-RECALCULATION] Notion text END: ...${notionText.substring(notionText.length - 100)}`);
+            
+            // FIX v11.0.160: Update auditResult.totalLength and notionTextLength to match filtered text (without code blocks)
+            // This ensures missing/extra calculations are based on the same content scope
+            const filteredHtmlLength = htmlText.length;
+            const filteredNotionLength = notionText.length;
+            
+            if (auditResult.totalLength !== filteredHtmlLength || auditResult.notionTextLength !== filteredNotionLength) {
+              log(`🔧 [AUDIT-RECALCULATION] Updating totalLength from ${auditResult.totalLength} to ${filteredHtmlLength} (code blocks excluded)`);
+              log(`🔧 [AUDIT-RECALCULATION] Updating notionTextLength from ${auditResult.notionTextLength} to ${filteredNotionLength} (using extracted text with spaces)`);
+              auditResult.totalLength = filteredHtmlLength;
+              auditResult.notionTextLength = filteredNotionLength;
+              
+              // Recalculate coverage with corrected lengths
+              const newCoverageFloat = auditResult.totalLength > 0 
+                ? (auditResult.notionTextLength / auditResult.totalLength * 100) 
+                : 100;
+              auditResult.coverage = newCoverageFloat.toFixed(1);
+              auditResult.coverageStr = `${auditResult.coverage}%`;
+              auditResult.missing = newCoverageFloat < 100 ? auditResult.totalLength - auditResult.notionTextLength : 0;
+              auditResult.extra = newCoverageFloat > 100 ? auditResult.notionTextLength - auditResult.totalLength : 0;
+              auditResult.missingPercent = auditResult.totalLength > 0 ? ((auditResult.missing / auditResult.totalLength) * 100).toFixed(1) : '0.0';
+              auditResult.extraPercent = auditResult.totalLength > 0 ? ((auditResult.extra / auditResult.totalLength) * 100).toFixed(1) : '0.0';
+              
+              // FIX v11.0.160: Update pass/fail status based on recalculated coverage
+              const minThreshold = auditResult.threshold ? parseFloat(auditResult.threshold.split('-')[0]) : 95;
+              const maxThreshold = auditResult.threshold ? parseFloat(auditResult.threshold.split('-')[1]) : 105;
+              auditResult.passed = newCoverageFloat >= minThreshold && newCoverageFloat <= maxThreshold;
+              
+              log(`🔧 [AUDIT-RECALCULATION] Recalculated: Coverage ${auditResult.coverageStr}, Missing ${auditResult.missing}, Extra ${auditResult.extra}`);
+              log(`🔧 [AUDIT-RECALCULATION] Updated pass/fail: ${auditResult.passed ? 'PASS' : 'FAIL'} (threshold: ${minThreshold}-${maxThreshold}%)`);
+            }
+            
+            // Create a simple detailed comparison
+            auditResult.detailedComparison = {
+              missingSegments: [],
+              extraSegments: [],
+              htmlSegmentCount: 1,
+              notionSegmentCount: 1
+            };
+            
+            // If there's missing content, identify and show the full missing text
+            // FIX v11.0.160: Only report missing segments if difference is significant (>5 chars or >0.5%)
+            if (auditResult.missing > 0 && (auditResult.missing > 5 || parseFloat(auditResult.missingPercent) > 0.5)) {
+              // FIX v11.0.172: Improved algorithm using phrase matching (4-word sliding window)
+              // instead of individual word lookup to reduce false positives
+              
+              // Normalize both texts for comparison
+              const normalizeForComparison = (text) => {
+                return text.toLowerCase()
+                  .replace(/\s+/g, ' ')  // Normalize whitespace
+                  .replace(/[""'']/g, '"')  // Normalize quotes
+                  .replace(/[–—]/g, '-')  // Normalize dashes
+                  .replace(/[()]/g, '')  // FIX v11.0.184: Remove parentheses (inline code comparison)
+                  .trim();
+              };
+              
+              const normalizedHtml = normalizeForComparison(htmlText);
+              const normalizedNotion = normalizeForComparison(notionText);
+              
+              const htmlWords = htmlText.split(/\s+/).filter(w => w.length > 0);
+              
+              // Find sequences of words in HTML that are NOT in Notion using phrase matching
+              const missingSequences = [];
+              let currentSequence = [];
+              const phraseLength = 4; // Use 4-word phrases for matching
+              
+              for (let i = 0; i < htmlWords.length; i++) {
+                // Build a phrase starting at this position
+                const phraseWords = [];
+                for (let j = i; j < Math.min(i + phraseLength, htmlWords.length); j++) {
+                  phraseWords.push(htmlWords[j]);
+                }
+                const phrase = normalizeForComparison(phraseWords.join(' '));
+                
+                // Check if this phrase exists in Notion
+                const phraseExists = normalizedNotion.includes(phrase);
+                
+                if (!phraseExists) {
+                  // Phrase not found in Notion, add current word to sequence
+                  currentSequence.push(htmlWords[i]);
+                } else {
+                  // Phrase found in Notion, save current sequence if it exists and is substantial
+                  if (currentSequence.length > 0) {
+                    const sequenceText = currentSequence.join(' ');
+                    // Only include sequences longer than 10 chars to avoid noise
+                    if (sequenceText.length > 10) {
+                      missingSequences.push(sequenceText);
+                    }
+                    currentSequence = [];
+                  }
+                }
+              }
+              
+              // Add final sequence if exists and is substantial
+              if (currentSequence.length > 0) {
+                const sequenceText = currentSequence.join(' ');
+                if (sequenceText.length > 10) {
+                  missingSequences.push(sequenceText);
+                }
+              }
+              
+              // Add each missing sequence as a segment
+              if (missingSequences.length > 0) {
+                missingSequences.forEach((seq, idx) => {
+                  // Truncate very long sequences to fit in property (max 500 chars per segment)
+                  let segmentText = seq;
+                  if (seq.length > 500) {
+                    segmentText = seq.substring(0, 497) + '...';
+                  }
+                  
+                  auditResult.detailedComparison.missingSegments.push({
+                    text: segmentText,
+                    context: 'html',
+                    length: seq.length
+                  });
+                });
+                
+                log(`🔧 [AUDIT-RECALCULATION] Found ${missingSequences.length} missing text sequences`);
+              } else {
+                // Fallback: if no specific sequences found, show character count
+                auditResult.detailedComparison.missingSegments.push({
+                  text: `Content missing from Notion page (${auditResult.missing} characters, ${auditResult.missingPercent}%)`,
+                  context: 'recalculated'
+                });
+              }
+            } else if (auditResult.missing > 0) {
+              // Minor difference (≤5 chars or ≤0.5%), don't report specific segments
+              log(`🔧 [AUDIT-RECALCULATION] Minor missing content (${auditResult.missing} chars) - not listing specific segments`);
+            }
+            
+            // If there's extra content, identify and show the full extra text
+            // FIX v11.0.160: Only report extra segments if difference is significant (>5 chars or >0.5%)
+            if (auditResult.extra > 0 && (auditResult.extra > 5 || parseFloat(auditResult.extraPercent) > 0.5)) {
+              // FIX v11.0.172: Improved algorithm using phrase matching (4-word sliding window)
+              // instead of individual word lookup to reduce false positives
+              
+              // Re-use normalize function (already defined above for missing text)
+              const normalizeForComparison = (text) => {
+                return text.toLowerCase()
+                  .replace(/\s+/g, ' ')  // Normalize whitespace
+                  .replace(/[""'']/g, '"')  // Normalize quotes
+                  .replace(/[–—]/g, '-')  // Normalize dashes
+                  .replace(/[()]/g, '')  // FIX v11.0.184: Remove parentheses (inline code comparison)
+                  .trim();
+              };
+              
+              const normalizedHtml = normalizeForComparison(htmlText);
+              const normalizedNotion = normalizeForComparison(notionText);
+              
+              const notionWords = notionText.split(/\s+/).filter(w => w.length > 0);
+              
+              // Find sequences of words in Notion that are NOT in HTML using phrase matching
+              const extraSequences = [];
+              let currentSequence = [];
+              const phraseLength = 4; // Use 4-word phrases for matching
+              
+              for (let i = 0; i < notionWords.length; i++) {
+                // Build a phrase starting at this position
+                const phraseWords = [];
+                for (let j = i; j < Math.min(i + phraseLength, notionWords.length); j++) {
+                  phraseWords.push(notionWords[j]);
+                }
+                const phrase = normalizeForComparison(phraseWords.join(' '));
+                
+                // Check if this phrase exists in HTML
+                const phraseExists = normalizedHtml.includes(phrase);
+                
+                if (!phraseExists) {
+                  // Phrase not found in HTML, add current word to sequence
+                  currentSequence.push(notionWords[i]);
+                } else {
+                  // Phrase found in HTML, save current sequence if it exists and is substantial
+                  if (currentSequence.length > 0) {
+                    const sequenceText = currentSequence.join(' ');
+                    // Only include sequences longer than 10 chars to avoid noise
+                    if (sequenceText.length > 10) {
+                      extraSequences.push(sequenceText);
+                    }
+                    currentSequence = [];
+                  }
+                }
+              }
+              
+              // Add final sequence if exists and is substantial
+              if (currentSequence.length > 0) {
+                const sequenceText = currentSequence.join(' ');
+                if (sequenceText.length > 10) {
+                  extraSequences.push(sequenceText);
+                }
+              }
+              
+              // Add each extra sequence as a segment
+              if (extraSequences.length > 0) {
+                extraSequences.forEach((seq, idx) => {
+                  // Truncate very long sequences to fit in property (max 500 chars per segment)
+                  let segmentText = seq;
+                  if (seq.length > 500) {
+                    segmentText = seq.substring(0, 497) + '...';
+                  }
+                  
+                  auditResult.detailedComparison.extraSegments.push({
+                    text: segmentText,
+                    context: 'notion',
+                    length: seq.length
+                  });
+                });
+                
+                log(`🔧 [AUDIT-RECALCULATION] Found ${extraSequences.length} extra text sequences`);
+              } else {
+                // Fallback: if no specific sequences found, show character count
+                auditResult.detailedComparison.extraSegments.push({
+                  text: `Extra content in Notion page (${auditResult.extra} characters, ${auditResult.extraPercent}%)`,
+                  context: 'recalculated'
+                });
+              }
+            } else if (auditResult.extra > 0) {
+              // Minor difference (≤5 chars or ≤0.5%), don't report specific segments
+              log(`🔧 [AUDIT-RECALCULATION] Minor extra content (${auditResult.extra} chars) - not listing specific segments`);
+            }
+            
+            log(`🔧 [AUDIT-RECALCULATION] Updated detailed comparison: ${auditResult.detailedComparison.missingSegments.length} missing, ${auditResult.detailedComparison.extraSegments.length} extra segments`);
+            
+          } catch (comparisonError) {
+            log(`⚠️ [AUDIT-RECALCULATION] Failed to recalculate detailed comparison: ${comparisonError.message}`);
+            // Keep original detailedComparison if recalculation fails
+          }
+          
+          // FIX v11.0.159: Rebuild Audit property with recalculated metrics
+          // The Audit property was already set earlier with stale values, so we need to update it
+          log(`🔧 [AUDIT-RECALCULATION] Rebuilding Audit property with recalculated metrics...`);
+          
+          const recalculatedAuditLines = [
+            `[${new Date().toISOString().split('T')[0]}] Content Audit: ${auditResult.passed ? '✅ PASS' : '❌ FAIL'}`,
+            `Coverage: ${auditResult.coverageStr} (threshold: ${auditResult.threshold})`,
+            `Threshold reason: ${auditResult.thresholdReason}`,
+            `Source: ${auditResult.totalNodes} text nodes, ${auditResult.totalLength} chars`,
+            `Notion: ${auditResult.notionBlocks} blocks, ${auditResult.notionTextLength} chars`,
+            `Block/Node Ratio: ${(auditResult.notionBlocks / Math.max(auditResult.totalNodes, 1)).toFixed(2)}x`
+          ];
+          
+          // Add content analysis summary
+          if (auditResult.contentAnalysis) {
+            const analysis = [];
+            if (auditResult.contentAnalysis.nestedListDepth > 1) {
+              analysis.push(`${auditResult.contentAnalysis.nestedListDepth}x nested list`);
+            }
+            if (auditResult.contentAnalysis.tableCount > 0) {
+              analysis.push(`${auditResult.contentAnalysis.tableCount} table${auditResult.contentAnalysis.tableCount > 1 ? 's' : ''}`);
+            }
+            if (auditResult.contentAnalysis.calloutCount > 0) {
+              analysis.push(`${auditResult.contentAnalysis.calloutCount} callout${auditResult.contentAnalysis.calloutCount > 1 ? 's' : ''}`);
+            }
+            if (analysis.length > 0) {
+              recalculatedAuditLines.push(`Content: ${analysis.join(', ')}`);
+            }
+          }
+          
+          // Add missing/extra info
+          if (auditResult.missing > 0) {
+            recalculatedAuditLines.push(`⚠️ Missing: ${auditResult.missing} chars (${auditResult.missingPercent}%)`);
+          }
+          if (auditResult.extra > 0) {
+            recalculatedAuditLines.push(`⚠️ Extra: ${auditResult.extra} chars (+${auditResult.extraPercent}%)`);
+          }
+          
+          const recalculatedAuditContent = recalculatedAuditLines.join('\n');
+          
+          // Update the Audit property with recalculated values
+          propertyUpdates["Audit"] = {
+            rich_text: [ { type: 'text', text: { content: recalculatedAuditContent } } ]
+          };
+          
+          log(`🔧 [AUDIT-RECALCULATION] Updated Audit property: Coverage ${auditResult.coverageStr}, Missing ${auditResult.missing} chars`);
+          
+          // FIX v11.0.161: Removed MissingText and ExtraText property recalculation
+          // These properties are now redundant with comprehensive Audit property
+          
+        } catch (recalcError) {
+          log(`⚠️ [AUDIT-RECALCULATION] Failed to recalculate audit metrics: ${recalcError.message}`);
+          // Continue with original auditResult
         }
       }
       
-      countSourceBlocks(extractedBlocks);
+      // Use calculated source and Notion counts
+      // FIX v11.0.186: Three-tier ContentComparison logic based on element types
+      // ❌ FAIL if mismatch in: Headings, Code blocks, Tables, Images, Callouts (critical elements)
+      // ⚠️ PASS if mismatch in: Ordered lists, Unordered lists, Paragraphs (flexible elements)
+      // ✅ PASS if all elements match
+      const hasHtmlContent = Object.values(sourceCounts).some(count => count > 0);
       
-      // Use calculated source counts and breakdown Notion counts (if available)
-      const tablesMatch = (sourceCounts.tables === (getNum(breakdown.tablesNotion) || breakdown.tablesNotion || 0));
-      const imagesMatch = (sourceCounts.images === (getNum(breakdown.imagesNotion) || breakdown.imagesNotion || 0));
-      const calloutsMatch = (sourceCounts.callouts === (getNum(breakdown.calloutsNotion) || breakdown.calloutsNotion || 0));
-      const countsPass = tablesMatch && imagesMatch && calloutsMatch;
-      const countsIcon = countsPass ? '✅' : '❌';
-      const statsHeader = `${countsIcon}  Content Comparison: ${countsPass ? 'PASS' : 'FAIL'}`;
+      // Critical elements - strict matching required
+      const tablesMatch = (sourceCounts.tables === notionCounts.tables);
+      const imagesMatch = (sourceCounts.images === notionCounts.images);
+      const calloutsMatch = (sourceCounts.callouts === notionCounts.callouts);
+      const headingsMatch = (sourceCounts.headings === notionCounts.headings);
+      const codeMatch = (sourceCounts.code === notionCounts.code);
+      
+      // Flexible elements - may vary due to HTML structure differences
+      const orderedListMatch = (sourceCounts.orderedList === notionCounts.orderedList);
+      const unorderedListMatch = (sourceCounts.unorderedList === notionCounts.unorderedList);
+      const paragraphsMatch = (sourceCounts.paragraphs === notionCounts.paragraphs);
+      
+      // Determine comparison status (v11.0.186)
+      const criticalMismatch = !tablesMatch || !imagesMatch || !calloutsMatch || 
+                               !headingsMatch || !codeMatch;
+      const flexibleMismatch = !orderedListMatch || !unorderedListMatch || !paragraphsMatch;
+      
+      let countsPass;
+      let countsIcon;
+      let comparisonStatus;
+      
+      if (criticalMismatch) {
+        // FAIL - critical elements don't match
+        countsPass = false;
+        countsIcon = '❌';
+        comparisonStatus = 'FAIL';
+      } else if (flexibleMismatch) {
+        // PASS with warning - flexible elements may differ, but critical ones match
+        countsPass = true;
+        countsIcon = '⚠️';
+        comparisonStatus = 'PASS';
+      } else {
+        // PASS - all elements match
+        countsPass = true;
+        countsIcon = '✅';
+        comparisonStatus = 'PASS';
+      }
+      
+      const statsHeader = `${countsIcon}  Content Comparison: ${comparisonStatus}`;
       const statsLines = [
         statsHeader,
         '📊 (Source → Notion):',
-        `• Ordered list items: ${sourceCounts.orderedList} → ${getNum(breakdown.orderedListNotion) || 0}`,
-        `• Unordered list items: ${sourceCounts.unorderedList} → ${getNum(breakdown.unorderedListNotion) || 0}`,
-        `• Paragraphs: ${sourceCounts.paragraphs} → ${getNum(breakdown.paragraphsNotion) || 0}`,
-        `• Headings: ${sourceCounts.headings} → ${getNum(breakdown.headingsNotion) || 0}`,
-        `• Tables: ${sourceCounts.tables} → ${getNum(breakdown.tablesNotion) || 0}`,
-        `• Images: ${sourceCounts.images} → ${getNum(breakdown.imagesNotion) || 0}`,
-        `• Callouts: ${sourceCounts.callouts} → ${getNum(breakdown.calloutsNotion) || 0}`,
+        `• Ordered list items: ${sourceCounts.orderedList} → ${notionCounts.orderedList}`,
+        `• Unordered list items: ${sourceCounts.unorderedList} → ${notionCounts.unorderedList}`,
+        `• Paragraphs: ${sourceCounts.paragraphs} → ${notionCounts.paragraphs}`,
+        `• Headings: ${sourceCounts.headings} → ${notionCounts.headings}`,
+        `• Code blocks: ${sourceCounts.code} → ${notionCounts.code}`,
+        `• Tables: ${sourceCounts.tables} → ${notionCounts.tables}`,
+        `• Images: ${sourceCounts.images} → ${notionCounts.images}`,
+        `• Callouts: ${sourceCounts.callouts} → ${notionCounts.callouts}`,
       ];
       const statsContent = statsLines.join('\n');
-      propertyUpdates["Stats"] = {
-        rich_text: [ { type: 'text', text: { content: statsContent } } ]
+      
+      // Truncate to fit Notion's 2000 character limit for rich text properties
+      let truncatedStatsContent = statsContent;
+      if (statsContent.length > 2000) {
+        truncatedStatsContent = statsContent.substring(0, 1997) + '...';
+        log(`⚠️ [PATCH-PROPERTY-TRUNCATE] ContentComparison property truncated to 2000 chars (was ${statsContent.length})`);
+      }
+      
+      propertyUpdates["ContentComparison"] = {
+        rich_text: [ { type: 'text', text: { content: truncatedStatsContent } } ]
       };
-      log(`📊 Setting Stats property with refined comparison breakdown (PATCH)`);
+      log(`📊 Setting ContentComparison property with refined comparison breakdown (PATCH)`);
+      log(`   Stats content length: ${truncatedStatsContent.length} chars`);
+      log(`   Stats content preview: ${truncatedStatsContent.substring(0, 100)}...`);
       
-      // Update the page properties
-      await notion.pages.update({
-        page_id: pageId,
-        properties: propertyUpdates
-      });
+      // FIX v11.0.187: Mark pages with critical failures for auto-save
+      // Trigger auto-save if ContentComparison = FAIL or Audit = FAIL
+      const hasContentComparisonFail = countsPass === false;
+      const hasAuditFail = auditResult && auditResult.passed === false;
+      const shouldAutoSaveForFailure = hasContentComparisonFail || hasAuditFail;
       
-      log(`✅ Validation properties updated with PATCH indicator`);
+      if (shouldAutoSaveForFailure) {
+        log(`🚩 [v11.0.187-PATCH] Critical failure detected:`);
+        if (hasContentComparisonFail) log(`   • ContentComparison: ❌ FAIL (critical element mismatch)`);
+        if (hasAuditFail) log(`   • Content Audit: ❌ FAIL`);
+        log(`   → Page will be auto-saved to pages-to-update after PATCH`);
+      }
+      
+      // Set Image checkbox if page contains images
+      if (sourceCounts.images > 0) {
+        propertyUpdates["Image"] = { checkbox: true };
+        log(`🖼️ Setting Image checkbox (${sourceCounts.images} image${sourceCounts.images === 1 ? '' : 's'} detected in PATCH)`);
+      }
+      
+      // FIX v11.0.115: Check which property names exist (backward compatibility for Validation→Audit rename)
+      let auditPropertyName = "Audit";
+      let comparisonPropertyName = "ContentComparison";
+      
+      try {
+        const pageInfo = await notion.pages.retrieve({ page_id: pageId });
+        const existingProps = Object.keys(pageInfo.properties);
+        
+        // FIX v11.0.172: Log all existing properties for debugging
+        log(`📋 [PROPERTY-CHECK] Page has ${existingProps.length} properties: ${existingProps.join(', ')}`);
+        
+        // Check if old property names exist and new ones don't
+        const hasOldAudit = existingProps.includes("Validation");
+        const hasNewAudit = existingProps.includes("Audit");
+        const hasContentComparison = existingProps.includes("ContentComparison");
+        
+        log(`📋 [PROPERTY-CHECK] Audit: hasOld=${hasOldAudit}, hasNew=${hasNewAudit}`);
+        log(`📋 [PROPERTY-CHECK] ContentComparison: exists=${hasContentComparison}`);
+        
+        if (hasOldAudit && !hasNewAudit) {
+          auditPropertyName = "Validation";
+          log(`🔄 Using legacy property name: "Validation" (new name "Audit" not found)`);
+        }
+        
+        // Rename property keys if using legacy names
+        if (auditPropertyName === "Validation" && propertyUpdates["Audit"]) {
+          propertyUpdates["Validation"] = propertyUpdates["Audit"];
+          delete propertyUpdates["Audit"];
+        }
+        
+        // FIX v11.0.172: If ContentComparison property doesn't exist, don't send it
+        if (!hasContentComparison && propertyUpdates["ContentComparison"]) {
+          log(`⚠️ ContentComparison property not found in database, skipping update`);
+          delete propertyUpdates["ContentComparison"];
+        }
+        
+        // FIX v11.0.172: If neither old nor new Audit property exists, don't send it
+        if (!hasOldAudit && !hasNewAudit && propertyUpdates["Audit"]) {
+          log(`⚠️ Audit property not found in database (neither "Validation" nor "Audit"), skipping Audit update`);
+          delete propertyUpdates["Audit"];
+        }
+        
+        log(`📝 Property names resolved: Audit="${auditPropertyName}", ContentComparison="${comparisonPropertyName}"`);
+        
+      } catch (propCheckError) {
+        log(`⚠️ Could not check existing properties (using new names): ${propCheckError.message}`);
+        // Continue with new property names
+      }
+      
+      // FIX v11.0.116: Add property update retry logic to PATCH (matching POST endpoint)
+      // POST has 5 retries with exponential backoff, PATCH had ZERO retries (silent failures)
+      
+      for (let propRetry = 0; propRetry <= maxPropertyRetries && !propertyUpdateSuccess; propRetry++) {
+        try {
+          // Update the page properties with retries
+          log(`📝 [PATCH-PROPERTY-RETRY] Attempt ${propRetry + 1}/${maxPropertyRetries + 1}: Updating page with properties: ${Object.keys(propertyUpdates).join(', ')}`);
+          log(`   propertyUpdates keys: ${JSON.stringify(Object.keys(propertyUpdates))}`);
+          log(`   propertyUpdates content preview: ${JSON.stringify(propertyUpdates).substring(0, 500)}...`);
+          
+          const updateResult = await notion.pages.update({
+            page_id: pageId,
+            properties: propertyUpdates
+          });
+          
+          log(`   Notion API response: ${JSON.stringify(updateResult).substring(0, 200)}...`);
+          
+          propertyUpdateSuccess = true;
+          log(`✅ [PATCH-PROPERTY-RETRY] Validation properties updated successfully${propRetry > 0 ? ` (after ${propRetry} retry)` : ''} (used "${auditPropertyName}" and "${comparisonPropertyName}")`);
+          
+        } catch (propUpdateError) {
+          propertyUpdateError = propUpdateError;
+          
+          const isLastRetry = propRetry >= maxPropertyRetries;
+          const waitTime = Math.min(Math.pow(2, propRetry), 32) * 1000; // 1s, 2s, 4s, 8s, 16s, 32s
+          
+          if (isLastRetry) {
+            // All retries exhausted
+            log(`\n${'='.repeat(80)}`);
+            log(`❌ [PATCH-PROPERTY-RETRY] CRITICAL: Property update failed after ${maxPropertyRetries + 1} attempts`);
+            log(`   Error: ${propUpdateError.message}`);
+            log(`   Page ID: ${pageId}`);
+            log(`   Page Title: ${pageTitle}`);
+            log(`   Note: Content WAS updated (${extractedBlocks.length} blocks), but properties NOT set`);
+            log(`   Auto-saving to pages-to-update for re-extraction...`);
+            log(`${'='.repeat(80)}\n`);
+            
+            // Auto-save page for re-extraction
+            try {
+              const fixturesDir = path.join(__dirname, '../../patch/pages/pages-to-update');
+              if (!fs.existsSync(fixturesDir)) {
+                fs.mkdirSync(fixturesDir, { recursive: true });
+              }
+              
+              const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
+              const sanitizedTitle = (pageTitle || 'untitled')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '')
+                .substring(0, 60);
+              const filename = `${sanitizedTitle}-property-update-failed-${timestamp}.html`;
+              const filepath = path.join(fixturesDir, filename);
+              
+              const htmlContent = `<!--
+Auto-saved: Property update failed after ${maxPropertyRetries + 1} retry attempts
+Page ID: ${pageId}
+Page Title: ${pageTitle}
+PATCH Time: ${new Date().toISOString()}
+Content Updated: YES (${extractedBlocks.length} blocks uploaded successfully)
+Properties Updated: NO (property update API failed after ${maxPropertyRetries + 1} retries)
+
+Error Details:
+${propUpdateError.message}
+
+Last Error:
+${propUpdateError.stack ? propUpdateError.stack.substring(0, 500) : 'N/A'}
+
+Action Required: Retry PATCH operation - content is correct but properties need to be set
+-->
+
+${html || ''}
+`;
+              
+              fs.writeFileSync(filepath, htmlContent, 'utf-8');
+              log(`✅ [PATCH-PROPERTY-RETRY] Auto-saved: ${filename}`);
+            } catch (saveError) {
+              log(`❌ [PATCH-PROPERTY-RETRY] Failed to auto-save: ${saveError.message}`);
+            }
+            
+            break; // Exit retry loop
+          } else {
+            // Retry with exponential backoff
+            log(`⚠️ [PATCH-PROPERTY-RETRY] Attempt ${propRetry + 1} failed, will retry after ${waitTime}ms`);
+            log(`   Error: ${propUpdateError.message}`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+          }
+        }
+      }
       
       // Auto-save pages with order issues for investigation (PATCH)
       if (Array.isArray(validationResult.orderIssues) && validationResult.orderIssues.length > 0) {
@@ -4208,28 +5395,33 @@ ${html || ''}
       }
       
     } catch (propError) {
-      log(`⚠️ Failed to update validation properties: ${propError.message}`);
+      log(`⚠️ Failed to build validation properties: ${propError.message}`);
       // Don't throw - page was updated successfully, just property update failed
+      propertyUpdateSuccess = false;
     }
     
-    // FIX v11.0.31: FINAL CATCH-ALL for PATCH - Verify Validation property was actually set
+    // FIX v11.0.31: FINAL CATCH-ALL for PATCH - Verify Audit property was actually set
+    // FIX v11.0.115: Check both "Audit" and "Validation" property names (backward compatibility)
     try {
-      log(`🔍 [FINAL-CHECK-PATCH] Verifying Validation property was set...`);
+      log(`🔍 [FINAL-CHECK-PATCH] Verifying Audit property was set...`);
       await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for Notion consistency
       
       const finalPageCheck = await notion.pages.retrieve({ page_id: pageId });
-      const finalValidationProp = finalPageCheck.properties.Validation;
       
-      const isFinallyBlank = !finalValidationProp || 
-                             !finalValidationProp.rich_text || 
-                             finalValidationProp.rich_text.length === 0 ||
-                             (finalValidationProp.rich_text.length === 1 && 
-                              (!finalValidationProp.rich_text[0].text || 
-                               !finalValidationProp.rich_text[0].text.content ||
-                               finalValidationProp.rich_text[0].text.content.trim() === ''));
+      // Check both new and old property names
+      const finalAuditProp = finalPageCheck.properties.Audit || finalPageCheck.properties.Validation;
+      const propertyNameUsed = finalPageCheck.properties.Audit ? "Audit" : (finalPageCheck.properties.Validation ? "Validation" : "unknown");
+      
+      const isFinallyBlank = !finalAuditProp || 
+                             !finalAuditProp.rich_text || 
+                             finalAuditProp.rich_text.length === 0 ||
+                             (finalAuditProp.rich_text.length === 1 && 
+                              (!finalAuditProp.rich_text[0].text || 
+                               !finalAuditProp.rich_text[0].text.content ||
+                               finalAuditProp.rich_text[0].text.content.trim() === ''));
       
       if (isFinallyBlank) {
-        log(`❌ [FINAL-CHECK-PATCH] CRITICAL: Validation property is BLANK after PATCH!`);
+        log(`❌ [FINAL-CHECK-PATCH] CRITICAL: ${propertyNameUsed} property is BLANK after PATCH!`);
         log(`   Auto-saving page for re-extraction...`);
         
         try {
@@ -4248,15 +5440,15 @@ ${html || ''}
           const filepath = path.join(fixturesDir, filename);
           
           const htmlContent = `<!--
-[FINAL-CHECK-PATCH] Auto-saved: Validation property is BLANK after PATCH operation
+[FINAL-CHECK-PATCH] Auto-saved: Audit property is BLANK after PATCH operation
 Page ID: ${pageId}
 Page Title: ${pageTitle}
 PATCH Completed: ${new Date().toISOString()}
 Source URL: ${payload.url || 'N/A'}
 
-Diagnosis: Validation property update failed during PATCH
-Retrieved Validation Property:
-${JSON.stringify(finalValidationProp, null, 2)}
+Diagnosis: Audit property update failed during PATCH
+Retrieved Audit Property:
+${JSON.stringify(finalAuditProp, null, 2)}
 
 Action Required: Re-PATCH this page with validation enabled
 -->
@@ -4271,21 +5463,112 @@ ${html || ''}
           log(`⚠️⚠️⚠️ [FINAL-CHECK-PATCH] Page auto-saved to pages-to-update folder`);
           log(`   Page ID: ${pageId}`);
           log(`   Title: ${pageTitle}`);
-          log(`   Reason: Validation property is BLANK after PATCH`);
+          log(`   Reason: Audit property is BLANK after PATCH`);
           log(`${'='.repeat(80)}\n`);
         } catch (saveError) {
           log(`❌ [FINAL-CHECK-PATCH] Failed to auto-save: ${saveError.message}`);
         }
       } else {
-        log(`✅ [FINAL-CHECK-PATCH] Validation property confirmed present`);
+        log(`✅ [FINAL-CHECK-PATCH] ${propertyNameUsed} property confirmed present`);
       }
     } catch (finalCheckError) {
-      log(`⚠️ [FINAL-CHECK-PATCH] Failed to verify validation property (non-fatal): ${finalCheckError.message}`);
+      log(`⚠️ [FINAL-CHECK-PATCH] Failed to verify audit property (non-fatal): ${finalCheckError.message}`);
     }
     
     // Success response
     cleanup(); // Stop heartbeat
+    
+    // FIX v11.0.116: Don't return "success" if property update failed
+    // This ensures batch script detects the failure and re-queues the page
+    if (!propertyUpdateSuccess) {
+      log(`\n${'='.repeat(80)}`);
+      log(`❌ [PATCH-PROPERTY-RETRY] Cannot return success - property update failed`);
+      log(`   Page content WAS updated successfully (${extractedBlocks.length} blocks)`);
+      log(`   But validation properties could NOT be set after ${maxPropertyRetries + 1} attempts`);
+      log(`   Error: ${propertyUpdateError?.message || 'Unknown error'}`);
+      log(`   Page has been auto-saved to pages-to-update for re-extraction`);
+      log(`${'='.repeat(80)}\n`);
+      
+      cleanup();
+      return sendError(res, "PROPERTY_UPDATE_FAILED",
+        `Page content updated (${extractedBlocks.length} blocks) but validation properties could not be set after ${maxPropertyRetries + 1} attempts`,
+        { pageId, pageTitle, blocksAdded: extractedBlocks.length, error: propertyUpdateError?.message },
+        500
+      );
+    }
+    
     const totalPatchTime = ((Date.now() - patchStartTime) / 1000).toFixed(1);
+    
+    // FIX v11.0.187: Auto-save pages with critical failures after PATCH
+    if (shouldAutoSaveForFailure) {
+      try {
+        log(`💾 [v11.0.187-PATCH] Auto-saving PATCH page with critical failure to pages-to-update...`);
+        const fs = require('fs');
+        const path = require('path');
+        
+        const pagesUpdateDir = path.join(__dirname, '../../patch/pages/pages-to-update');
+        if (!fs.existsSync(pagesUpdateDir)) {
+          fs.mkdirSync(pagesUpdateDir, { recursive: true });
+        }
+        
+        const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '');
+        const sanitizedTitle = (pageTitle || 'untitled')
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .substring(0, 60);
+        const filename = `${sanitizedTitle}-patch-failure-${timestamp}.html`;
+        const filepath = path.join(pagesUpdateDir, filename);
+        
+        const failureReasons = [];
+        if (hasContentComparisonFail) {
+          failureReasons.push(`ContentComparison FAIL: ${sourceCounts.headings}→${notionCounts.headings} headings`);
+        }
+        if (hasAuditFail) {
+          failureReasons.push(`Content Audit FAIL: Coverage ${auditResult.coverageStr}`);
+        }
+        
+        const htmlContent = `<!--
+Auto-saved: PATCH with critical validation failure (v11.0.187)
+Page ID: ${pageId}
+Page URL: https://notion.so/${pageId.replace(/-/g, '')}
+Page Title: ${pageTitle}
+PATCH Completed: ${new Date().toISOString()}
+
+Failure Reasons (AFTER PATCH):
+${failureReasons.map(r => '• ' + r).join('\n')}
+
+Content Comparison Status: ${countsIcon}  ${comparisonStatus}
+Headings: ${sourceCounts.headings} → ${notionCounts.headings}
+Ordered lists: ${sourceCounts.orderedList} → ${notionCounts.orderedList}
+Unordered lists: ${sourceCounts.unorderedList} → ${notionCounts.unorderedList}
+Paragraphs: ${sourceCounts.paragraphs} → ${notionCounts.paragraphs}
+Code blocks: ${sourceCounts.code} → ${notionCounts.code}
+Tables: ${sourceCounts.tables} → ${notionCounts.tables}
+Images: ${sourceCounts.images} → ${notionCounts.images}
+Callouts: ${sourceCounts.callouts} → ${notionCounts.callouts}
+
+${auditResult ? `Audit Coverage: ${auditResult.coverageStr}
+Audit Status: ${auditResult.passed ? '✅ PASS' : '❌ FAIL'}` : 'Audit: SKIPPED'}
+
+Blocks Added: ${extractedBlocks.length}
+Blocks Deleted: ${deletedCount}
+Patch Duration: ${totalPatchTime}s
+
+Action Required: Review extraction and manually fix content or re-extract from source
+-->
+
+${payload?.contentHtml || '<!-- Original HTML content not available in PATCH -->'}
+`;
+        
+        fs.writeFileSync(filepath, htmlContent, 'utf-8');
+        log(`✅ [v11.0.187-PATCH] Page auto-saved to pages-to-update for re-extraction`);
+        log(`   Filename: ${filename}`);
+        log(`   Location: patch/pages/pages-to-update/`);
+      } catch (saveError) {
+        log(`❌ [v11.0.187-PATCH] Failed to auto-save PATCH page with critical failure: ${saveError.message}`);
+      }
+    }
     
     const result = {
       success: true,

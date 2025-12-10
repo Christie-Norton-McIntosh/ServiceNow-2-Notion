@@ -23,7 +23,7 @@ const { validateNotionPage } = require('../utils/validate-notion-page.cjs');
  * Re-validates the page(s) and updates Notion properties:
  *   - Error (checkbox): true when hasErrors, false otherwise
  *   - Validation (rich_text): human-readable summary
- *   - Stats (rich_text): JSON statistics (when available)
+ *   - ContentComparison (rich_text): block count comparison (when available)
  */
 router.post('/validate', async (req, res) => {
   try {
@@ -46,22 +46,97 @@ router.post('/validate', async (req, res) => {
       try {
         const validation = await validateNotionPage(notion, id, options, console.log);
 
-        // Build property updates
-        const props = {
-          Error: { checkbox: !!validation.hasErrors },
-          Validation: {
-            rich_text: [
-              { type: 'text', text: { content: validation.summary || (validation.hasErrors ? '❌ Validation failed' : '✅ Validation passed') } }
-            ]
-          }
-        };
+        // Get the current page to see what properties exist
+        const page = await notion.pages.retrieve({ page_id: id });
+        const existingProps = Object.keys(page.properties);
 
-        if (validation.stats) {
-          props.Stats = {
-            rich_text: [
-              { type: 'text', text: { content: JSON.stringify(validation.stats, null, 2) } }
-            ]
-          };
+        console.log(`🔍 [VALIDATE] Page has properties: ${existingProps.join(', ')}`);
+        console.log(`🔍 [VALIDATE] Looking for: Error, Audit/Validation, ContentComparison`);
+
+        // Build property updates only for properties that exist
+        const props = {};
+
+        // Always try to update Error checkbox if it exists
+        if (existingProps.includes('Error')) {
+          props.Error = { checkbox: !!validation.hasErrors };
+          console.log(`✅ [VALIDATE] Will update Error property`);
+        } else {
+          console.log(`❌ [VALIDATE] Error property not found`);
+        }
+
+        // Get current property values to check if they contain detailed PATCH/POST data
+        const currentAuditProp = page.properties.Audit || page.properties.Validation;
+        const currentComparisonProp = page.properties.ContentComparison;
+        
+        // Extract current text content
+        const getCurrentText = (prop) => {
+          if (!prop || !prop.rich_text || prop.rich_text.length === 0) return '';
+          return prop.rich_text.map(rt => rt.text?.content || '').join('');
+        };
+        
+        const currentAuditText = getCurrentText(currentAuditProp);
+        const currentComparisonText = getCurrentText(currentComparisonProp);
+        
+        // Check if properties already contain detailed PATCH/POST data
+        const hasDetailedAuditData = currentAuditText.includes('Content Audit:') || 
+                                    currentAuditText.includes('Coverage:') ||
+                                    currentAuditText.includes('Missing:') ||
+                                    currentAuditText.includes('Extra:');
+        
+        const hasDetailedComparisonData = currentComparisonText.includes('Content Comparison:') ||
+                                    currentComparisonText.includes('• Tables:') ||
+                                    currentComparisonText.includes('• Images:') ||
+                                    currentComparisonText.includes('Source → Notion');
+        
+        console.log(`🔍 [VALIDATE] Current Audit content preview: "${currentAuditText.substring(0, 50)}..."`);
+        console.log(`🔍 [VALIDATE] Current ContentComparison preview: "${currentComparisonText.substring(0, 50)}..."`);
+        console.log(`🔍 [VALIDATE] Has detailed audit data: ${hasDetailedAuditData}`);
+        console.log(`🔍 [VALIDATE] Has detailed comparison data: ${hasDetailedComparisonData}`);
+
+        // Try Audit/Validation property - skip if already has detailed PATCH/POST data
+        if (existingProps.includes('Audit')) {
+          if (hasDetailedAuditData) {
+            console.log(`⏭️ [VALIDATE] Skipping Audit property update - already contains detailed PATCH/POST data`);
+          } else {
+            props.Audit = {
+              rich_text: [
+                { type: 'text', text: { content: validation.summary || (validation.hasErrors ? '❌ Validation failed' : '✅ Validation passed') } }
+              ]
+            };
+            console.log(`✅ [VALIDATE] Will update Audit property`);
+          }
+        } else if (existingProps.includes('Validation')) {
+          if (hasDetailedAuditData) {
+            console.log(`⏭️ [VALIDATE] Skipping Validation property update - already contains detailed PATCH/POST data`);
+          } else {
+            props.Validation = {
+              rich_text: [
+                { type: 'text', text: { content: validation.summary || (validation.hasErrors ? '❌ Validation failed' : '✅ Validation passed') } }
+              ]
+            };
+            console.log(`✅ [VALIDATE] Will update Validation property`);
+          }
+        } else {
+          console.log(`❌ [VALIDATE] Neither Audit nor Validation property found`);
+        }
+
+        // Try ContentComparison property - skip if already has detailed PATCH/POST data
+        // NOTE: Validate endpoint cannot update ContentComparison property meaningfully
+        // because it doesn't have source HTML for block count comparisons
+        if (existingProps.includes('ContentComparison')) {
+          if (hasDetailedComparisonData) {
+            console.log(`⏭️ [VALIDATE] Skipping ContentComparison property update - already contains detailed PATCH/POST data`);
+          } else {
+            console.log(`⏭️ [VALIDATE] Skipping ContentComparison property update - no source HTML for comparison`);
+          }
+        }
+
+        console.log(`🔄 [VALIDATE] Final properties to update: ${Object.keys(props).join(', ')}`);
+
+        if (Object.keys(props).length === 0) {
+          console.log(`⚠️ [VALIDATE] No compatible properties found to update`);
+          results.push({ pageId: id, success: true, hasErrors: !!validation.hasErrors, warning: 'No compatible properties found' });
+          continue;
         }
 
         await notion.pages.update({ page_id: id, properties: props });
