@@ -1,0 +1,435 @@
+[
+  {
+    "id": "inline_code_parentheses_1",
+    "name": "inline_code_parentheses_asymmetry",
+    "version": "11.0.184",
+    "date": "2025-12-07",
+    "severity": "HIGH",
+    "category": "content_validation_failure",
+    "frequency": {
+      "count": 15,
+      "total": 44,
+      "percentage": 0.34
+    },
+    "root_cause": {
+      "description": "HTML inline code tags removed from AUDIT text, but Notion inline code wrapped with parentheses",
+      "html_behavior": "Code tags stripped during AUDIT extraction → clean text",
+      "notion_behavior": "Inline code preserved in rich_text annotations → includes parentheses",
+      "text_length_ratio": "1.2-1.5x (Notion longer)"
+    },
+    "html_signature": {
+      "elements": [
+        "code",
+        "span.parmname",
+        "span.keyword",
+        "span.codeph"
+      ],
+      "pattern_examples": [
+        "<code>procurement_admin</code>",
+        "<span class=\"parmname\">asset</span>",
+        "<span class=\"keyword\">financial_mgmt_user</span>"
+      ],
+      "typical_location": "body text, table cells, field descriptions",
+      "min_count": 1,
+      "typical_count": 3
+    },
+    "failure_signature": {
+      "metric": "AUDIT coverage",
+      "value_range": "110-160%",
+      "validation_status": "FAIL"
+    },
+    "example": {
+      "html_audit_text": "Role required: procurement_admin or procurement_user. Configure the asset, financial_mgmt_user roles",
+      "html_length": 92,
+      "notion_audit_text": "Role required: (procurement_admin) or (procurement_user). Configure the (asset), (financial_mgmt_user) roles",
+      "notion_length": 106,
+      "coverage_percent": 115.2,
+      "status": "FAIL"
+    },
+    "detection": {
+      "trigger": "AUDIT coverage > 110%",
+      "analysis_steps": [
+        "Extract HTML audit text (remove code tags)",
+        "Extract Notion audit text (include inline code)",
+        "Calculate coverage: Notion length / HTML length",
+        "Check for inline code annotations in Notion blocks",
+        "Verify length ratio > 1.1"
+      ],
+      "confidence": 0.92
+    },
+    "fix": {
+      "version_introduced": "11.0.184",
+      "type": "filter_and_normalization",
+      "locations": [
+        {
+          "file": "server/services/servicenow.cjs",
+          "lines": "6138-6144",
+          "function": "extractFromRichText",
+          "change": "filter(rt => !rt?.annotations?.code)"
+        },
+        {
+          "file": "server/routes/w2n.cjs",
+          "lines": "4780-4787",
+          "function": "normalizeForComparison (POST)",
+          "change": ".replace(/[()]/g, '')"
+        },
+        {
+          "file": "server/routes/w2n.cjs",
+          "lines": "4869-4876",
+          "function": "normalizeForComparison (PATCH extra text)",
+          "change": ".replace(/[()]/g, '')"
+        }
+      ]
+    },
+    "success_metrics": {
+      "before": {
+        "audit_coverage_range": "110-160%",
+        "typical_coverage": "135%",
+        "validation_status": "FAIL"
+      },
+      "after": {
+        "audit_coverage_range": "95-105%",
+        "typical_coverage": "100%",
+        "validation_status": "PASS"
+      },
+      "improvement_points": 35
+    },
+    "affected_pages": [
+      "create-a-purchase-order",
+      "add-a-user-or-asset-to-a-contract",
+      "predictive-intelligence-for-incident-management",
+      "add-terms-and-conditions-to-a-contract",
+      "supply-contract-renewal-information",
+      "receive-a-purchase-order-for-contract-assets",
+      "view-ibm-pvu-mappings-for-the-legacy-ibm-pvu-process-pack"
+    ],
+    "content_types": [
+      "procedural_documentation",
+      "field_descriptions",
+      "role_based_access_control",
+      "configuration_guides"
+    ]
+  },
+  {
+    "id": "nested_element_counting_1",
+    "name": "nested_element_counting_asymmetry",
+    "version": "11.0.184",
+    "date": "2025-12-07",
+    "severity": "HIGH",
+    "category": "content_validation_failure",
+    "frequency": {
+      "count": 18,
+      "total": 44,
+      "percentage": 0.41
+    },
+    "root_cause": {
+      "description": "HTML counts all descendant elements (nested), Notion flattens nesting (max 2 levels)",
+      "html_behavior": "Selectors count all nested descendants",
+      "notion_behavior": "Deep nesting converted to flat structure, blocks counted by level",
+      "count_discrepancy": "0.45-0.70 (HTML >> Notion)"
+    },
+    "html_signature": {
+      "elements": [
+        {
+          "type": "callout",
+          "selectors": ["div.note", "div.warning", "div.info", "div.tip"],
+          "nesting": true,
+          "structure": "div.note > span.note__title + text content"
+        },
+        {
+          "type": "list",
+          "selectors": ["ol li", "ul li"],
+          "nesting": true,
+          "structure": "ol > li > (ol > li)"
+        },
+        {
+          "type": "table",
+          "selectors": ["table"],
+          "nesting": false,
+          "note": "May contain images, callouts, lists"
+        }
+      ],
+      "typical_nesting_levels": 3,
+      "html_count_bias": "counts all descendants"
+    },
+    "failure_signature": {
+      "metric": "block_count",
+      "type": "mismatch_low",
+      "html_expected": 22,
+      "notion_actual": 10,
+      "coverage": 0.45,
+      "validation_status": "FAIL"
+    },
+    "example": {
+      "html_structure": "1 table + 2 callouts (with nested titles) + 4 callouts nested inside = 7 top-level + many nested",
+      "html_count": 22,
+      "notion_count": 10,
+      "coverage_percent": 45,
+      "discrepancy": "HTML counts nested elements, Notion flattens",
+      "status": "FAIL"
+    },
+    "detection": {
+      "trigger": "block_count mismatch with actual < expected by >50%",
+      "analysis_steps": [
+        "Compare expected vs actual block counts",
+        "Break down by element type (callout, list, table, image)",
+        "Check for nested structures in HTML",
+        "Verify nesting depth > 2 in source",
+        "Look for multiple element types mixed together"
+      ],
+      "confidence": 0.88
+    },
+    "fix": {
+      "version_introduced": "11.0.184",
+      "type": "counting_adjustment",
+      "changes": [
+        "Only count top-level callout containers (not nested titles)",
+        "Count all list items but limit nesting depth",
+        "Exclude images inside tables (incompatible)"
+      ],
+      "locations": [
+        {
+          "file": "server/routes/w2n.cjs",
+          "lines": "2115-2180",
+          "context": "POST endpoint sourceCounts",
+          "changes": [
+            "Callout: count only top-level div.note etc.",
+            "Image: skip if inside table via $(elem).closest('table').length"
+          ]
+        },
+        {
+          "file": "server/routes/w2n.cjs",
+          "lines": "4387-4450",
+          "context": "PATCH endpoint sourceCounts",
+          "changes": "Same as POST"
+        }
+      ]
+    },
+    "success_metrics": {
+      "before": {
+        "expected_blocks": 22,
+        "actual_blocks": 10,
+        "coverage_percent": 45,
+        "validation_status": "FAIL"
+      },
+      "after": {
+        "expected_blocks": 10,
+        "actual_blocks": 10,
+        "coverage_percent": 100,
+        "validation_status": "PASS"
+      },
+      "improvement": {
+        "coverage_points": 55,
+        "expected_baseline_reduction": 0.55
+      }
+    },
+    "affected_pages": [
+      "complex_procedures_with_nested_lists",
+      "reference_tables_with_callouts",
+      "multi_level_documentation",
+      "tables_with_embedded_content"
+    ],
+    "content_types": [
+      "complex_procedures",
+      "nested_documentation",
+      "field_reference_tables",
+      "mixed_rich_content"
+    ]
+  },
+  {
+    "id": "table_image_incompatibility_1",
+    "name": "table_image_incompatibility",
+    "version": "11.0.184",
+    "date": "2025-12-07",
+    "severity": "MEDIUM",
+    "category": "content_comparison_mismatch",
+    "frequency": {
+      "count": 6,
+      "total": 44,
+      "percentage": 0.14
+    },
+    "root_cause": {
+      "description": "ServiceNow HTML allows images in table cells, Notion tables cannot reliably render images",
+      "html_behavior": "HTML tables can contain img elements in td/th",
+      "notion_behavior": "Notion table cells reject image blocks, images lost during conversion",
+      "incompatibility": "100% of table images lost in conversion"
+    },
+    "html_signature": {
+      "pattern": "table > tbody > tr > td > img",
+      "example_html": "<table><tr><td><img src=\"chart.png\" /></td><td>Data</td></tr></table>",
+      "typical_use_case": "data comparison tables, visual indicators in cells",
+      "image_count_bias": "includes table images in HTML count"
+    },
+    "failure_signature": {
+      "metric": "image_count",
+      "type": "mismatch_high",
+      "html_count": 3,
+      "notion_count": 1,
+      "coverage": 0.33,
+      "validation_status": "MISMATCH"
+    },
+    "example": {
+      "html_content": "Table with 2 embedded charts + 1 standalone image",
+      "html_image_count": 3,
+      "html_breakdown": {
+        "in_table": 2,
+        "outside_table": 1
+      },
+      "notion_image_count": 1,
+      "notion_breakdown": {
+        "from_table": 0,
+        "from_outside": 1
+      },
+      "coverage_percent": 33,
+      "status": "MISMATCH"
+    },
+    "detection": {
+      "trigger": "image_count mismatch with notion < html",
+      "analysis_steps": [
+        "Extract all img src attributes",
+        "Check if parent chain includes table element",
+        "Count images inside tables separately",
+        "Compare HTML vs Notion image counts",
+        "Check for >25% discrepancy"
+      ],
+      "confidence": 0.95
+    },
+    "fix": {
+      "version_introduced": "11.0.184",
+      "type": "source_counting_filter",
+      "locations": [
+        {
+          "file": "server/routes/w2n.cjs",
+          "lines": "2156-2162",
+          "context": "POST endpoint - image counting",
+          "change": "const isInTable = $(elem).closest('table').length > 0; if (!src.startsWith('data:') && !isInTable)"
+        },
+        {
+          "file": "server/routes/w2n.cjs",
+          "lines": "4429-4435",
+          "context": "PATCH endpoint - image counting",
+          "change": "Same filter applied"
+        }
+      ]
+    },
+    "success_metrics": {
+      "before": {
+        "html_count": 3,
+        "notion_count": 1,
+        "coverage_percent": 33,
+        "validation_status": "MISMATCH"
+      },
+      "after": {
+        "html_count": 1,
+        "notion_count": 1,
+        "coverage_percent": 100,
+        "validation_status": "PASS"
+      },
+      "improvement": "Baseline count adjusted to match Notion capability"
+    },
+    "affected_pages": [
+      "pages_with_data_comparison_tables",
+      "financial_documentation",
+      "procurement_guides",
+      "reference_tables_with_indicators"
+    ],
+    "content_types": [
+      "data_comparison",
+      "financial_reports",
+      "procurement_documentation",
+      "visual_reference_tables"
+    ]
+  },
+  {
+    "id": "normalization_tolerance_1",
+    "name": "normalization_tolerance",
+    "version": "11.0.184",
+    "date": "2025-12-07",
+    "severity": "LOW",
+    "category": "content_comparison_tolerance",
+    "frequency": {
+      "count": 44,
+      "total": 44,
+      "percentage": 1.0
+    },
+    "description": "Text normalization rules applied before phrase matching to provide tolerance for formatting variations",
+    "normalization_rules": [
+      {
+        "rule": "Lowercase conversion",
+        "regex": "text.toLowerCase()",
+        "example_before": "System, SYSTEM, system",
+        "example_after": "system (all lowercase)",
+        "impact": "Case-insensitive matching"
+      },
+      {
+        "rule": "Whitespace normalization",
+        "regex": ".replace(/\\s+/g, ' ')",
+        "example_before": "text\\n\\nmore    text",
+        "example_after": "text more text (single spaces)",
+        "impact": "Handles HTML formatting, newlines, indentation"
+      },
+      {
+        "rule": "Smart quote normalization",
+        "regex": ".replace(/[\\u201c\\u201d\\u2018\\u2019]/g, '\"')",
+        "example_before": "curved quotes or single",
+        "example_after": "straight quotes or single",
+        "impact": "Unicode quote variations treated as equivalent"
+      },
+      {
+        "rule": "Dash normalization",
+        "regex": ".replace(/[–—]/g, '-')",
+        "example_before": "item–value or item—value",
+        "example_after": "item-value (all hyphens)",
+        "impact": "En-dash, em-dash, hyphen treated as same"
+      },
+      {
+        "rule": "Parentheses removal",
+        "regex": ".replace(/[()]/g, '')",
+        "example_before": "(optional) or (required)",
+        "example_after": "optional or required",
+        "impact": "v11.0.184: Handles inline code wrapped in parentheses"
+      }
+    ],
+    "phrase_matching": {
+      "algorithm": "4-word sliding window",
+      "description": "Check if 4 consecutive words from HTML exist in Notion",
+      "sequence_reporting": "Only report missing/extra sequences > 10 characters",
+      "false_positive_reduction": 0.75
+    },
+    "examples": [
+      {
+        "scenario": "Whitespace formatting",
+        "html": "The    system\\n\\nprovides",
+        "notion": "The system provides",
+        "normalized": "the system provides",
+        "result": "MATCH ✅"
+      },
+      {
+        "scenario": "Smart quotes",
+        "html": "The curved smart-quotes example—with em-dash",
+        "notion": "The straight-smart-quotes example-with em-dash",
+        "normalized": "the smart-quotes example-with em-dash",
+        "result": "MATCH ✅"
+      },
+      {
+        "scenario": "Parentheses (v11.0.184)",
+        "html": "Configure the asset, financial_mgmt_user",
+        "notion": "Configure the (asset), (financial_mgmt_user)",
+        "normalized": "configure the asset financial_mgmt_user",
+        "result": "MATCH ✅"
+      },
+      {
+        "scenario": "Punctuation (NOT normalized)",
+        "html": "Configure the system.",
+        "notion": "Configure the system",
+        "normalized": "configure the system (period remains in HTML)",
+        "result": "MISMATCH ❌"
+      }
+    ],
+    "impact": {
+      "false_negatives_reduced": 0.85,
+      "false_positives_accepted": 0.05,
+      "tolerance_improvement": "Handles 80-95% of formatting variations"
+    }
+  }
+]

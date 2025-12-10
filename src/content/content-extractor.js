@@ -442,6 +442,34 @@ export async function extractContentWithIframes(contentElement) {
   // Clean the HTML content (removes unwanted elements, processes code-toolbar, etc.)
   combinedHtml = cleanHtmlContent(combinedHtml);
 
+  // Filter out "Related Content" sections before sending to server
+  // This prevents AUDIT validation from showing them as "extra" content
+  // Server-side filtering also exists, but userscript filtering ensures cleaner AUDIT results
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = combinedHtml;
+  
+  // Remove contentPlaceholder elements that contain "Related Content"
+  const contentPlaceholders = tempDiv.querySelectorAll('.contentPlaceholder');
+  let removedCount = 0;
+  contentPlaceholders.forEach(cp => {
+    const text = cp.textContent.trim().toLowerCase();
+    const headings = cp.querySelectorAll('h1, h2, h3, h4, h5, h6');
+    const hasRelatedContentHeading = Array.from(headings).some(h => 
+      h.textContent.trim().toLowerCase().includes('related content')
+    );
+    
+    if (text.includes('related content') || hasRelatedContentHeading) {
+      debug(`🗑️ Filtering out Related Content section from userscript extraction`);
+      cp.remove();
+      removedCount++;
+    }
+  });
+  
+  if (removedCount > 0) {
+    combinedHtml = tempDiv.innerHTML;
+    debug(`✅ Filtered out ${removedCount} Related Content section(s) in userscript`);
+  }
+
   return { combinedHtml, combinedImages };
 }
 

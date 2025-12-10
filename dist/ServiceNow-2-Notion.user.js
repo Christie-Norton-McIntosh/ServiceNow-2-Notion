@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.86
+// @version      11.0.205
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.86";
+    window.BUILD_VERSION = "11.0.205";
 (function () {
 
   // Configuration constants and default settings
@@ -785,7 +785,13 @@
           </div>
         </div>
         
-        <div style="display:flex; gap:10px; padding-top:16px; border-top:1px solid #eee;">
+        <div style="padding-top:16px; border-top:1px solid #eee; margin-bottom:16px;">
+          <button id="w2n-configure-property-mapping" style="width:100%;padding:10px;border-radius:6px;background:#8b5cf6;color:white;border:none;cursor:pointer;font-size:14px;">
+            🗺️ Configure Property Mapping
+          </button>
+        </div>
+        
+        <div style="display:flex; gap:10px;">
           <button id="w2n-save-advanced-settings" style="flex:1;padding:10px;border-radius:6px;background:#10b981;color:white;border:none;cursor:pointer;font-size:14px;">
             Save Settings
           </button>
@@ -809,6 +815,7 @@
     const closeBtn = modal.querySelector("#w2n-close-advanced-settings");
     const saveBtn = modal.querySelector("#w2n-save-advanced-settings");
     const cancelBtn = modal.querySelector("#w2n-cancel-advanced-settings");
+    const propertyMappingBtn = modal.querySelector("#w2n-configure-property-mapping");
 
     function closeModal() {
       if (modal.parentNode) {
@@ -818,6 +825,19 @@
 
     closeBtn.onclick = closeModal;
     cancelBtn.onclick = closeModal;
+    
+    // Property mapping button handler
+    if (propertyMappingBtn) {
+      propertyMappingBtn.onclick = () => {
+        closeModal();
+        // Import and show property mapping modal
+        Promise.resolve().then(function () { return propertyMappingModal; }).then(module => {
+          module.showPropertyMappingModal();
+        }).catch(e => {
+          debug("Failed to open property mapping modal:", e);
+        });
+      };
+    }
 
     // Click outside to close
     modal.onclick = (e) => {
@@ -2091,7 +2111,7 @@
     const properties = {};
     const dbProperties = database.properties || {};
 
-    // Apply each mapping
+    // Apply user-configured mappings
     Object.entries(mappings).forEach(([notionProperty, sourceField]) => {
       if (!sourceField || !dbProperties[notionProperty]) return;
 
@@ -2110,7 +2130,38 @@
       }
     });
 
-    debug(`✅ Applied ${Object.keys(properties).length} property mappings`);
+    // Auto-map hardcoded properties (Page URL, Content Source, CurrentReleaseURL)
+    // These are automatically extracted and should always be included if the properties exist
+    const autoMappings = {
+      'Page URL': window.location.href,
+      'Content Source': 'ServiceNow Technical Documentation',
+      'CurrentReleaseURL': extractedData.CurrentReleaseURL || window.location.href,
+    };
+
+    // Debug: Log what CurrentReleaseURL value we have
+    debug(`🔍 [CurrentReleaseURL DEBUG] extractedData.CurrentReleaseURL = ${extractedData.CurrentReleaseURL}`);
+    debug(`🔍 [CurrentReleaseURL DEBUG] Database has "CurrentReleaseURL" property: ${!!dbProperties['CurrentReleaseURL']}`);
+    debug(`🔍 [CurrentReleaseURL DEBUG] Available database properties: ${Object.keys(dbProperties).join(', ')}`);
+
+    Object.entries(autoMappings).forEach(([notionProperty, value]) => {
+      if (dbProperties[notionProperty] && value) {
+        const propConfig = dbProperties[notionProperty];
+        const mappedValue = mapValueToNotionProperty(value, propConfig);
+        if (mappedValue !== null) {
+          properties[notionProperty] = mappedValue;
+          debug(`✅ Auto-mapped: "${notionProperty}" = "${value}"`);
+        }
+      } else {
+        // Debug: Log why auto-mapping failed
+        if (!dbProperties[notionProperty]) {
+          debug(`⚠️ [AUTO-MAP] Property "${notionProperty}" not found in database`);
+        } else if (!value) {
+          debug(`⚠️ [AUTO-MAP] Property "${notionProperty}" has no value`);
+        }
+      }
+    });
+
+    debug(`✅ Applied ${Object.keys(properties).length} property mappings (user + auto)`);
     return properties;
   }
 
@@ -2464,16 +2515,6 @@
         description: "The main title of the captured page",
       },
       {
-        key: "url",
-        label: "Page URL",
-        description: "The URL of the captured page",
-      },
-      {
-        key: "source",
-        label: "Content Source",
-        description: 'The source platform (e.g., "ServiceNow")',
-      },
-      {
         key: "category",
         label: "Category",
         description: "ServiceNow category or classification",
@@ -2492,11 +2533,6 @@
         key: "updated",
         label: "Updated Date",
         description: "Last updated date",
-      },
-      {
-        key: "CurrentReleaseURL",
-        label: "Current Release URL",
-        description: "The latest version URL or permanent link to the content",
       },
       {
         key: "breadcrumb",
@@ -2600,6 +2636,55 @@
     debug(`Property mappings reset for database ${databaseId}`);
   }
 
+  /**
+   * Generate default property mappings based on common ServiceNow fields
+   * Maps common content types to Notion properties that might exist
+   * @param {Object} schema - Database schema with property definitions
+   * @returns {Object} Default property mappings
+   */
+  function generateDefaultPropertyMappings(schema) {
+    const defaultMappings = {};
+    
+    if (!schema || typeof schema !== 'object') {
+      debug('⚠️ No schema provided for default mapping generation');
+      return defaultMappings;
+    }
+
+    // Map extracted content field names to possible Notion property names
+    // Format: contentField -> [possible Notion property names]
+    // Note: Page URL, Content Source, and CurrentReleaseURL are automatically handled
+    // and should not be included in manual property mappings
+    const contentFieldMappings = {
+      // Extracted field name -> Possible Notion property names (case-sensitive)
+      'title': ['Title', 'Name', 'Page Title'],
+      'category': ['Category', 'Type', 'Topic', 'Classification'],
+      'version': ['Version', 'Release', 'Build', 'Version Number'],
+      'updated': ['Updated', 'Last Updated', 'Modified Date', 'Date Modified', 'Updated Date'],
+      'status': ['Status', 'State', 'Page Status', 'Workflow Status'],
+      'author': ['Author', 'Created By', 'Owner', 'Author Name'],
+      'breadcrumb': ['Breadcrumb', 'Navigation', 'Path', 'Hierarchy'],
+      'section': ['Section', 'Topic', 'Area'],
+      'hasVideos': ['Has Videos', 'Video', 'Videos', 'Contains Videos'],
+      'hasImages': ['Has Images', 'Image', 'Images', 'Contains Images'],
+    };
+
+    // Scan database schema for properties matching extracted content fields
+    for (const [contentField, possibleNotionNames] of Object.entries(contentFieldMappings)) {
+      // Check if any of the possible Notion property names exist in the schema
+      for (const notionPropName of possibleNotionNames) {
+        if (schema.hasOwnProperty(notionPropName)) {
+          // Found a match - add to default mappings
+          // Format: Notion property name -> content field name
+          defaultMappings[notionPropName] = contentField;
+          debug(`✅ Auto-mapped: Notion property "${notionPropName}" -> content field "${contentField}"`);
+          break; // Move to next content field
+        }
+      }
+    }
+
+    return defaultMappings;
+  }
+
   function showPropertyMappingModal() {
     debug("🔗 Opening property mapping modal");
     injectPropertyMappingModal();
@@ -2609,6 +2694,18 @@
       modal.loadDatabaseMappings(config.databaseId, config.databaseName);
     }
   }
+
+  var propertyMappingModal = /*#__PURE__*/Object.freeze({
+    __proto__: null,
+    generateDefaultPropertyMappings: generateDefaultPropertyMappings,
+    injectPropertyMappingModal: injectPropertyMappingModal,
+    loadPropertyMappings: loadPropertyMappings,
+    populatePropertyMappings: populatePropertyMappings,
+    resetPropertyMappings: resetPropertyMappings,
+    savePropertyMappings: savePropertyMappings,
+    setupPropertyMappingModal: setupPropertyMappingModal,
+    showPropertyMappingModal: showPropertyMappingModal
+  });
 
   // UI Utilities and Common Functions
 
@@ -2747,21 +2844,75 @@
     
     try {
       // Prepare PATCH payload (similar to POST but with pageId in URL)
+      // Extract the HTML content from the nested structure
+      const contentHtml = extractedData.content?.combinedHtml || extractedData.contentHtml || extractedData.content;
+      
+      if (!contentHtml) {
+        debug(`[AUTOEXTRACT-UPDATE] ❌ No content HTML found`);
+        debug(`[AUTOEXTRACT-UPDATE]    extractedData.content:`, extractedData.content);
+        debug(`[AUTOEXTRACT-UPDATE]    extractedData.contentHtml:`, extractedData.contentHtml);
+        throw new Error("No content HTML found in extracted data");
+      }
+      
+      debug(`[AUTOEXTRACT-UPDATE] ✅ Content HTML extracted: ${contentHtml.length} characters`);
+      
+      // Get database and mappings (same as POST/manual PATCH)
+      const config = await getConfig();
+      const database = await getDatabase(config.databaseId);
+      const mappings = await getPropertyMappings(config.databaseId);
+      
+      // Apply property mappings (includes CurrentReleaseURL)
+      const properties = applyPropertyMappings(extractedData, database, mappings);
+      debug(`[AUTOEXTRACT-UPDATE] ✅ Applied ${Object.keys(properties).length} property mappings`);
+      
       const patchData = {
         title: extractedData.title,
-        contentHtml: extractedData.contentHtml || extractedData.content,
-        url: extractedData.url
+        contentHtml: contentHtml,
+        url: extractedData.url,
+        properties: properties, // Include property mappings for AutoExtract PATCH
       };
 
-      // Call PATCH endpoint
-      const result = await apiCall("PATCH", `/api/W2N/${pageId}`, patchData);
+      debug(`[AUTOEXTRACT-UPDATE] 📦 PATCH payload prepared:`);
+      debug(`[AUTOEXTRACT-UPDATE]    title: "${patchData.title}"`);
+      debug(`[AUTOEXTRACT-UPDATE]    contentHtml: ${contentHtml.length} chars`);
+      debug(`[AUTOEXTRACT-UPDATE]    url: "${patchData.url}"`);
+      debug(`[AUTOEXTRACT-UPDATE]    properties: ${Object.keys(properties).join(', ')}`);
+      debug(`[AUTOEXTRACT-UPDATE]    pageId: ${pageId}`);
 
-      if (result && result.success) {
-        debug(`[AUTOEXTRACT-UPDATE] ✅ Page updated successfully`);
-        return result;
+      // Call PATCH endpoint and wait for completion
+      debug(`[AUTOEXTRACT-UPDATE] ⏳ Sending PATCH request to /api/W2N/${pageId}...`);
+      const result = await apiCall("PATCH", `/api/W2N/${pageId}`, patchData);
+      
+      debug(`[AUTOEXTRACT-UPDATE] 📬 Received response from server:`, result);
+
+      if (!result || !result.success) {
+        throw new Error(result?.error || "PATCH request failed");
       }
 
-      throw new Error(result?.error || "Failed to update page");
+      // Log PATCH completion details
+      debug(`[AUTOEXTRACT-UPDATE] ✅ PATCH completed in ${result.patchTimeSeconds || 'N/A'}s`);
+      debug(`[AUTOEXTRACT-UPDATE]    Blocks deleted: ${result.blocksDeleted || 0}`);
+      debug(`[AUTOEXTRACT-UPDATE]    Blocks added: ${result.blocksAdded || 0}`);
+      
+      // Check validation result if present
+      if (result.validation) {
+        const validation = result.validation;
+        if (validation.hasErrors) {
+          debug(`[AUTOEXTRACT-UPDATE] ⚠️ Validation completed with errors`);
+          debug(`[AUTOEXTRACT-UPDATE]    Issues: ${validation.issues?.length || 0}`);
+          debug(`[AUTOEXTRACT-UPDATE]    Summary: ${validation.summary}`);
+        } else {
+          debug(`[AUTOEXTRACT-UPDATE] ✅ Validation passed`);
+          if (validation.stats) {
+            debug(`[AUTOEXTRACT-UPDATE]    Similarity: ${validation.stats.similarity || 'N/A'}%`);
+          }
+        }
+      } else {
+        debug(`[AUTOEXTRACT-UPDATE] ℹ️ No validation result (validation may be disabled)`);
+      }
+
+      debug(`[AUTOEXTRACT-UPDATE] ✅ Page update and validation complete`);
+      return result;
     } catch (error) {
       debug(`[AUTOEXTRACT-UPDATE] ❌ Failed to update page: ${error.message}`);
       throw error;
@@ -2772,6 +2923,15 @@
     if (document.getElementById("w2n-notion-panel")) return;
 
     const config = getConfig();
+
+    // Helper function to format database ID with hyphens (8-4-4-4-12)
+    const formatDatabaseId = (id) => {
+      if (!id) return "(no database)";
+      // Remove any existing hyphens first
+      const cleanId = id.replace(/-/g, '');
+      // Format as 8-4-4-4-12
+      return cleanId.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5');
+    };
 
     const panel = document.createElement("div");
     panel.id = "w2n-notion-panel";
@@ -2856,11 +3016,9 @@
         <select id="w2n-database-select" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:4px;">
           <option value="${config.databaseId || ""}">${config.databaseName || "(no database)"}</option>
         </select>
-        <div id="w2n-selected-database-label" style="margin-top:8px;font-size:12px;color:#6b7280;">Database: ${config.databaseName || "(no database)"}</div>
+        <div id="w2n-selected-database-label" style="margin-top:8px;font-size:11px;color:#6b7280;font-family:monospace;">${formatDatabaseId(config.databaseId)}</div>
         <div style="margin-top:8px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-          <button id="w2n-list-all-dbs" style="flex:1; font-size:11px;padding:6px 8px;border:1px solid #3b82f6;border-radius:4px;background:#3b82f6;color:white;cursor:pointer;min-width:80px;">📋 List All</button>
-          <button id="w2n-search-dbs" style="flex:1; font-size:11px;padding:6px 8px;border:1px solid #10b981;border-radius:4px;background:#10b981;color:white;cursor:pointer;min-width:80px;">🔍 Search</button>
-          <button id="w2n-get-db" style="flex:1; font-size:11px;padding:6px 8px;border:1px solid #f59e0b;border-radius:4px;background:#f59e0b;color:white;cursor:pointer;min-width:80px;">🆔 By ID</button>
+          <button id="w2n-search-dbs" style="flex:1; font-size:11px;padding:6px 8px;border:1px solid #10b981;border-radius:4px;background:#10b981;color:white;cursor:pointer;min-width:120px;">🔍 Search (Name/URL/ID)</button>
         </div>
         <div id="w2n-db-spinner" style="display:none; margin-top:8px; font-size:12px; color:#6b7280; align-items:center;">
           <span style="display:inline-block; width:12px; height:12px; border:2px solid #d1d5db; border-top:2px solid #10b981; border-radius:50%; animation:spin 1s linear infinite; margin-right:8px;"></span>
@@ -2869,8 +3027,8 @@
       </div>
 
       <div style="display:grid; gap:8px; margin-bottom:16px;">
-        <button id="w2n-capture-page" style="width:100%; padding:12px; background:#10b981; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">📄 Save Current Page</button>
-        <button id="w2n-update-page" style="width:100%; padding:12px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">� Update Current Page</button>
+        <button id="w2n-capture-page" style="width:100%; padding:12px; background:#8b5cf6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">📄 Save Current Page</button>
+        <button id="w2n-update-page" style="width:100%; padding:12px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:500;">🔄 Update Current Page</button>
       </div>
 
       <div style="border-top:1px solid #e5e7eb; padding-top:16px;">
@@ -2895,7 +3053,6 @@
           </div>
           <div style="display:flex; gap:8px; margin-top:8px;">
             <button id="w2n-open-icon-cover" style="flex:1; padding:8px; background:#6b7280; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px;">Icon & Cover</button>
-            <button id="w2n-diagnose-autoextract" style="flex:1; padding:8px; background:#0ea5e9; color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px;">🔍 Diagnose</button>
           </div>
         </div>
       </div>
@@ -3003,135 +3160,196 @@
     };
 
     // Database button handlers
-    const listAllBtn = panel.querySelector("#w2n-list-all-dbs");
     const searchBtn = panel.querySelector("#w2n-search-dbs");
-    const getByIdBtn = panel.querySelector("#w2n-get-db");
     const databaseSelect = panel.querySelector("#w2n-database-select");
     const databaseLabel = panel.querySelector("#w2n-selected-database-label");
 
-    if (listAllBtn) {
-      listAllBtn.onclick = async () => {
-        try {
-          debug("� Fetching all databases...");
-          showSpinner();
-          const databases = await getAllDatabases({ forceRefresh: true });
-          populateDatabaseSelect(databaseSelect, databases);
-          debug(`[DATABASE] ✅ Loaded ${databases.length} databases`);
-          showToast(`✅ Loaded ${databases.length} databases`, 2000);
-        } catch (e) {
-          debug("Failed to fetch databases:", e);
-          showToast("❌ Failed to fetch databases", 3000);
-        } finally {
-          hideSpinner();
-        }
-      };
-    }
 
     if (searchBtn) {
       searchBtn.onclick = async () => {
         try {
-          const searchTerm = prompt("Enter database name or ID to search:");
-          if (!searchTerm || searchTerm.trim() === "") return;
+          const input = prompt("Enter database name, URL, or ID:");
+          if (!input || input.trim() === "") return;
 
-          debug(`[DATABASE] 🔍 Searching for database: ${searchTerm}`);
+          debug(`[DATABASE] 🔍 Searching for database: ${input}`);
           showSpinner();
 
-          // Query all databases fresh (no cache)
-          const databases = await getAllDatabases({ forceRefresh: true });
+          const trimmedInput = input.trim();
+          let cleanDbId = null;
+          let searchByName = true;
+          
+          // Check if input is a URL and extract the database ID
+          if (trimmedInput.includes('notion.so/') || trimmedInput.includes('notion.site/')) {
+            debug(`[DATABASE] 🔗 Detected URL input, extracting database ID`);
+            
+            // Extract ID from URL patterns:
+            // https://www.notion.so/username/abc123...
+            // https://notion.so/abc123...
+            // https://username.notion.site/abc123...
+            const urlMatch = trimmedInput.match(/([a-f0-9]{32})|([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+            
+            if (urlMatch) {
+              cleanDbId = urlMatch[0].replace(/-/g, '');
+              searchByName = false;
+              debug(`[DATABASE] ✅ Extracted database ID from URL: ${cleanDbId}`);
+            } else {
+              // URL detected but no valid ID found
+              alert(`Could not extract a valid database ID from the URL.\n\nMake sure the URL is a valid Notion database sharing link.`);
+              return;
+            }
+          }
+          // Check if input looks like a database ID (32 hex chars with optional hyphens)
+          else if (/^[a-f0-9-]{32,36}$/i.test(trimmedInput)) {
+            cleanDbId = trimmedInput.replace(/-/g, '');
+            searchByName = false;
+            debug(`[DATABASE] 🆔 Detected database ID format`);
+          }
 
-          debug(
-            `📋 Available databases: ${databases
-            .map((db) => `${db.id.slice(-8)}: ${db.title || "Untitled"}`)
-            .join(", ")}`
-          );
+          // Try to get database by ID first if we extracted/detected one
+          if (cleanDbId) {
+            try {
+              debug(`[DATABASE] 🔍 Getting database by ID: ${cleanDbId}`);
+              const dbDetails = await getDatabase(cleanDbId);
 
-          // Find matching database
-          const searchTermTrimmed = searchTerm.trim();
-          let matchingDb = databases.find(
-            (db) =>
-              db.id === searchTermTrimmed ||
-              (db.title &&
-                typeof db.title === "string" &&
-                db.title.toLowerCase().includes(searchTermTrimmed.toLowerCase()))
-          );
+              // Update config with validated database
+              const config = getConfig();
+              config.databaseId = cleanDbId;
+              config.databaseName = dbDetails.title || "Database by ID";
 
-          // If not found by exact match, try partial ID match (last 8 chars)
-          if (!matchingDb && searchTermTrimmed.length >= 8) {
-            const partialId = searchTermTrimmed.slice(-8);
-            matchingDb = databases.find((db) => db.id.endsWith(partialId));
-            if (matchingDb) {
-              debug(`[DATABASE] ✅ Found database by partial ID match: ${partialId}`);
+              if (typeof GM_setValue === "function") {
+                GM_setValue("notionConfig", config);
+              }
+
+              // Generate and save default property mappings based on schema
+              if (dbDetails.properties) {
+                const defaultMappings = generateDefaultPropertyMappings(dbDetails.properties);
+                if (Object.keys(defaultMappings).length > 0) {
+                  savePropertyMappings(cleanDbId, defaultMappings);
+                  debug(`[DATABASE] ✅ Applied ${Object.keys(defaultMappings).length} default property mappings`);
+                  showToast(`✅ Applied ${Object.keys(defaultMappings).length} default mappings`, 2000);
+                }
+              }
+
+              // Update UI
+              databaseSelect.innerHTML = `<option value="${cleanDbId}">${config.databaseName}</option>`;
+              databaseLabel.textContent = formatDatabaseId(cleanDbId);
+
+              debug(`✅ Set target database to: ${config.databaseName} (${cleanDbId})`);
+              showToast(`✅ Found database: ${config.databaseName}`, 2000);
+              return;
+            } catch (e) {
+              const errorMsg = e?.message || e?.toString() || "Unknown error";
+              const isNotAccessible = errorMsg.includes("not found") || errorMsg.includes("not shared") || errorMsg.includes("403") || errorMsg.includes("404");
+              debug(`[DATABASE] ⚠️ Failed to get database by ID: ${cleanDbId} (${errorMsg})`);
+              
+              if (isNotAccessible) {
+                // Show a helpful message about sharing the database
+                alert(
+                  `Database ID: ${cleanDbId}\n\n` +
+                  `This database is not accessible to your Notion integration.\n\n` +
+                  `Make sure:\n` +
+                  `1. The database exists in your Notion workspace\n` +
+                  `2. You have access to it\n` +
+                  `3. It's shared with your Notion integration\n\n` +
+                  `How to share a database:\n` +
+                  `1. Open the database in Notion\n` +
+                  `2. Click "Share" button (top right)\n` +
+                  `3. Find your integration/bot in the access list\n` +
+                  `4. If not there, add it using "Invite" button\n` +
+                  `5. Try again here`
+                );
+                return;
+              }
+              
+              searchByName = true;
             }
           }
 
-          if (matchingDb) {
-            // Update config with new database
-            const config = getConfig();
-            config.databaseId = matchingDb.id;
-            config.databaseName =
-              typeof matchingDb.title === "string"
-                ? matchingDb.title
-                : "Unknown Database";
-
-            // Save to storage
-            if (typeof GM_setValue === "function") {
-              GM_setValue("notionConfig", config);
-            }
-
-            // Update UI
-            databaseSelect.innerHTML = `<option value="${matchingDb.id}">${config.databaseName}</option>`;
-            databaseLabel.textContent = `Database: ${config.databaseName}`;
+          // Search by name if no ID or ID lookup failed
+          if (searchByName) {
+            // Query all databases fresh (no cache)
+            const databases = await getAllDatabases({ forceRefresh: true });
 
             debug(
-              `✅ Set target database to: ${config.databaseName} (${matchingDb.id})`
+              `📋 Available databases: ${databases
+              .map((db) => `${db.id.slice(-8)}: ${db.title || "Untitled"}`)
+              .join(", ")}`
             );
-          } else {
-            alert(`Database "${searchTerm}" not found.`);
-            debug(`[DATABASE] ❌ Database "${searchTerm}" not found`);
+
+            // Find matching database by name
+            let matchingDb = databases.find(
+              (db) =>
+                db.title &&
+                typeof db.title === "string" &&
+                db.title.toLowerCase().includes(trimmedInput.toLowerCase())
+            );
+
+            // If not found by name, try partial ID match (last 8 chars)
+            if (!matchingDb && trimmedInput.length >= 8) {
+              const partialId = trimmedInput.slice(-8);
+              matchingDb = databases.find((db) => db.id.endsWith(partialId));
+              if (matchingDb) {
+                debug(`[DATABASE] ✅ Found database by partial ID match: ${partialId}`);
+              }
+            }
+
+            if (matchingDb) {
+              // Update config with new database
+              const config = getConfig();
+              config.databaseId = matchingDb.id;
+              config.databaseName =
+                typeof matchingDb.title === "string"
+                  ? matchingDb.title
+                  : "Unknown Database";
+
+              // Save to storage
+              if (typeof GM_setValue === "function") {
+                GM_setValue("notionConfig", config);
+              }
+
+              // Generate and save default property mappings based on schema
+              try {
+                const dbDetails = await getDatabase(matchingDb.id);
+                if (dbDetails.properties) {
+                  const defaultMappings = generateDefaultPropertyMappings(dbDetails.properties);
+                  if (Object.keys(defaultMappings).length > 0) {
+                    savePropertyMappings(matchingDb.id, defaultMappings);
+                    debug(`[DATABASE] ✅ Applied ${Object.keys(defaultMappings).length} default property mappings`);
+                  }
+                }
+              } catch (e) {
+                debug(`[DATABASE] ⚠️ Could not fetch schema for default mappings: ${e.message}`);
+              }
+
+              // Update UI
+              databaseSelect.innerHTML = `<option value="${matchingDb.id}">${config.databaseName}</option>`;
+              databaseLabel.textContent = formatDatabaseId(matchingDb.id);
+
+              debug(
+                `✅ Set target database to: ${config.databaseName} (${matchingDb.id})`
+              );
+              showToast(`✅ Found database: ${config.databaseName}`, 2000);
+            } else {
+              // Provide detailed guidance when database is not found
+              const isIdFormat = /^[a-f0-9-]{32,36}$/i.test(trimmedInput);
+              let errorMessage = `Database "${trimmedInput}" not found.`;
+              
+              if (isIdFormat) {
+                errorMessage += `\n\nMake sure:\n1. The database ID is correct\n2. You have access to it\n3. It's shared with your Notion integration`;
+              } else if (databases.length === 0) {
+                errorMessage += `\n\nNo accessible databases found. Make sure at least one database is shared with your Notion integration.`;
+              } else {
+                errorMessage += `\n\nAvailable databases:\n${databases.slice(0, 5).map(db => `• ${db.title || "Untitled"}`).join("\n")}${databases.length > 5 ? `\n... and ${databases.length - 5} more` : ""}`;
+              }
+              
+              alert(errorMessage);
+              debug(`[DATABASE] ❌ Database "${trimmedInput}" not found`);
+            }
           }
         } catch (e) {
-          debug("Failed to search database:", e);
-          alert("Error searching for database. Check console for details.");
-        } finally {
-          hideSpinner();
-        }
-      };
-    }
-
-    if (getByIdBtn) {
-      getByIdBtn.onclick = async () => {
-        try {
-          const dbId = prompt("Enter database ID:");
-          if (!dbId || dbId.trim() === "") return;
-
-          const cleanDbId = dbId.trim();
-          debug(`[DATABASE] 🔍 Getting database by ID: ${cleanDbId}`);
-          showSpinner();
-
-          // Fetch database details to validate and get name
-          const dbDetails = await getDatabase(cleanDbId);
-
-          // Update config with validated database
-          const config = getConfig();
-          config.databaseId = cleanDbId;
-          config.databaseName = dbDetails.title || "Database by ID";
-
-          if (typeof GM_setValue === "function") {
-            GM_setValue("notionConfig", config);
-          }
-
-          // Update UI
-          databaseSelect.innerHTML = `<option value="${cleanDbId}">${config.databaseName}</option>`;
-          databaseLabel.textContent = `Database: ${config.databaseName}`;
-
-          debug(
-            `✅ Set target database to: ${config.databaseName} (${cleanDbId})`
-          );
-        } catch (e) {
-          debug("Failed to get database by ID:", e);
-          alert(
-            `Error: Could not access database with ID "${dbId}". Make sure the database is shared with your Notion integration.`
-          );
+          const errorMsg = e?.message || e?.toString() || "Unknown error";
+          debug("Failed to search database:", errorMsg);
+          alert(`Error searching for database: ${errorMsg}\n\nCheck console for details.`);
         } finally {
           hideSpinner();
         }
@@ -3174,18 +3392,21 @@
     // AutoExtract button handlers
     const startAutoExtractBtn = panel.querySelector("#w2n-start-autoextract");
     const stopAutoExtractBtn = panel.querySelector("#w2n-stop-autoextract");
-    const diagnoseAutoExtractBtn = panel.querySelector(
-      "#w2n-diagnose-autoextract"
-    );
 
     if (startAutoExtractBtn) {
       startAutoExtractBtn.onclick = async () => {
+        console.log(`[AUTO-EXTRACT-DEBUG] 🔵 AutoExtract button onclick handler FIRED`);
+        debug(`[AUTO-EXTRACT-DEBUG] 🔵 AutoExtract button onclick handler FIRED`);
         try {
           // Show stop button, hide start button
           startAutoExtractBtn.style.display = "none";
           if (stopAutoExtractBtn) stopAutoExtractBtn.style.display = "block";
 
+          console.log(`[AUTO-EXTRACT-DEBUG] 🔵 Calling startAutoExtraction()...`);
+          debug(`[AUTO-EXTRACT-DEBUG] 🔵 Calling startAutoExtraction()...`);
           await startAutoExtraction();
+          console.log(`[AUTO-EXTRACT-DEBUG] 🔵 startAutoExtraction() returned`);
+          debug(`[AUTO-EXTRACT-DEBUG] 🔵 startAutoExtraction() returned`);
 
           // After completion, restore buttons
           startAutoExtractBtn.style.display = "block";
@@ -3235,17 +3456,6 @@
         // Restore buttons
         startAutoExtractBtn.style.display = "block";
         stopAutoExtractBtn.style.display = "none";
-      };
-    }
-
-    if (diagnoseAutoExtractBtn) {
-      diagnoseAutoExtractBtn.onclick = () => {
-        try {
-          diagnoseAutoExtraction();
-        } catch (e) {
-          debug("Failed to diagnose auto extraction:", e);
-          alert("Error diagnosing auto extraction. Check console for details.");
-        }
       };
     }
 
@@ -3358,25 +3568,6 @@
     }
   };
 
-  /**
-   * Populate the database select dropdown
-   * @param {HTMLElement} selectEl - The select element
-   * @param {Array} databases - Array of database objects
-   */
-  function populateDatabaseSelect(selectEl, databases) {
-    if (!selectEl) return;
-
-    selectEl.innerHTML = '<option value="">Select a database...</option>';
-
-    databases.forEach((db) => {
-      const option = document.createElement("option");
-      option.value = db.id;
-      option.textContent =
-        db.title && db.title[0] ? db.title[0].plain_text : "Untitled Database";
-      selectEl.appendChild(option);
-    });
-  }
-
   // AutoExtract functionality
 
   /**
@@ -3436,8 +3627,16 @@
   }
 
   async function startAutoExtraction() {
+    console.log(`[AUTO-EXTRACT-DEBUG] 🚀🚀🚀 startAutoExtraction() CALLED - AutoExtract button clicked`);
+    debug(`[AUTO-EXTRACT-DEBUG] 🚀🚀🚀 startAutoExtraction() CALLED - AutoExtract button clicked`);
+    
     const config = getConfig();
+    console.log(`[AUTO-EXTRACT-DEBUG] 📋 Config retrieved: databaseId=${config.databaseId || '(missing)'}`);
+    debug(`[AUTO-EXTRACT-DEBUG] 📋 Config retrieved: databaseId=${config.databaseId || '(missing)'}`);
+    
     if (!config.databaseId) {
+      console.log(`[AUTO-EXTRACT-DEBUG] ❌ BLOCKED: No database ID configured`);
+      debug(`[AUTO-EXTRACT-DEBUG] ❌ BLOCKED: No database ID configured`);
       alert("Please select a database first.");
       return;
     }
@@ -3515,7 +3714,7 @@
       // Start the extraction process
       overlayModule.start("Starting multi-page extraction...");
 
-      await runAutoExtractLoop(autoExtractState, app, nextPageSelector);
+      await runAutoExtractLoop(autoExtractState, app, nextPageSelector, config);
 
       // Clean up
       window.removeEventListener('beforeunload', beforeUnloadHandler);
@@ -3674,13 +3873,28 @@
     });
   }
 
-  async function runAutoExtractLoop(autoExtractState, app, nextPageSelector) {
+  async function runAutoExtractLoop(autoExtractState, app, nextPageSelector, config) {
+    console.log("[AUTO-EXTRACT-DEBUG] 🔄🔄🔄 runAutoExtractLoop() ENTERED");
+    console.log(`[AUTO-EXTRACT-DEBUG]    - autoExtractState.running: ${autoExtractState.running}`);
+    console.log(`[AUTO-EXTRACT-DEBUG]    - autoExtractState.paused: ${autoExtractState.paused}`);
+    console.log(`[AUTO-EXTRACT-DEBUG]    - nextPageSelector: ${nextPageSelector}`);
+    console.log(`[AUTO-EXTRACT-DEBUG]    - config.databaseId: ${config?.databaseId || '(missing)'}`);
+    debug("[AUTO-EXTRACT-DEBUG] 🔄🔄🔄 runAutoExtractLoop() ENTERED");
+    debug(`[AUTO-EXTRACT-DEBUG]    - autoExtractState.running: ${autoExtractState.running}`);
+    debug(`[AUTO-EXTRACT-DEBUG]    - autoExtractState.paused: ${autoExtractState.paused}`);
+    debug(`[AUTO-EXTRACT-DEBUG]    - nextPageSelector: ${nextPageSelector}`);
+    debug(`[AUTO-EXTRACT-DEBUG]    - config.databaseId: ${config?.databaseId || '(missing)'}`);
+    console.log("🔄 Starting AutoExtract loop");
     debug("🔄 Starting AutoExtract loop");
 
     // Get button reference for progress updates
     const button = document.getElementById("w2n-start-autoextract");
 
+    console.log("[AUTO-EXTRACT-DEBUG] 🔁 Entering while loop...");
+    debug("[AUTO-EXTRACT-DEBUG] 🔁 Entering while loop...");
     while (autoExtractState.running && !autoExtractState.paused) {
+      console.log(`[AUTO-EXTRACT-DEBUG] ➰ While loop iteration started`);
+      debug(`[AUTO-EXTRACT-DEBUG] ➰ While loop iteration started`);
       // Check running state at the very beginning of each iteration
       if (!autoExtractState.running) {
         debug(`[AUTO-EXTRACT] ⏹ AutoExtract stopped at beginning of loop iteration`);
@@ -3942,17 +4156,39 @@
               }
             }
 
+        console.log(`[AUTO-EXTRACT-DEBUG] 🚀 Calling app.extractCurrentPageData() for page ${currentPageNum}...`);
+        debug(`[AUTO-EXTRACT-DEBUG] 🚀 Calling app.extractCurrentPageData() for page ${currentPageNum}...`);
         const extractedData = await app.extractCurrentPageData();
+        console.log(`[AUTO-EXTRACT-DEBUG] ✅ Extraction completed successfully`);
+        debug(`[AUTO-EXTRACT-DEBUG] ✅ Extraction completed successfully`);
+        
+          // DEBUG: Log extracted data structure
+          debug(`[AUTO-EXTRACT-DEBUG] 📦 Extracted data for page ${currentPageNum}:`);
+          debug(`[AUTO-EXTRACT-DEBUG]    - title: "${extractedData.title || '(missing)'}"`);
+          debug(`[AUTO-EXTRACT-DEBUG]    - contentHtml length: ${extractedData.contentHtml?.length || 0}`);
+          debug(`[AUTO-EXTRACT-DEBUG]    - content.combinedHtml length: ${extractedData.content?.combinedHtml?.length || 0}`);
+          debug(`[AUTO-EXTRACT-DEBUG]    - databaseId: ${extractedData.databaseId || '(missing)'}`);
+          debug(`[AUTO-EXTRACT-DEBUG]    - url: ${extractedData.url || '(missing)'}`);
 
-        // STEP 1.5: Check for duplicate content
-        const contentToHash = extractedData.content?.combinedHtml || "";
-        const contentHash = simpleHash(contentToHash);
+          // STEP 1.5: Check for duplicate content
+          // NOTE: Only check duplicates in CREATE mode, not UPDATE mode
+          // In UPDATE mode, we want to update the page even if content is the same
+          const contentToHash = extractedData.content?.combinedHtml || "";
+          const contentHash = simpleHash(contentToHash);
 
-        debug(`[CONTENT-HASH] 🔍 Content to hash length: ${contentToHash.length} characters`);
-        debug(`[CONTENT-HASH] 🔍 Calculated hash: ${contentHash}, Previous hash: ${autoExtractState.lastContentHash}`);          if (contentHash === autoExtractState.lastContentHash) {
+          // Check if we're in update mode - will be checked again later but need it here for duplicate logic
+          let updateModeCheckbox2 = document.getElementById('w2n-autoextract-update-mode');
+          const isUpdateMode = updateModeCheckbox2?.checked || false;
+
+          debug(`[CONTENT-HASH] 🔍 Content to hash length: ${contentToHash.length} characters`);
+          debug(`[CONTENT-HASH] 🔍 Calculated hash: ${contentHash}, Previous hash: ${autoExtractState.lastContentHash}`);
+          debug(`[CONTENT-HASH] 🔍 Mode: ${isUpdateMode ? 'UPDATE' : 'CREATE'}`);
+          
+          // Only check for duplicates in CREATE mode
+          if (!isUpdateMode && contentHash === autoExtractState.lastContentHash) {
               autoExtractState.duplicateCount++;
               debug(
-                `[CONTENT-HASH] ⚠️ DUPLICATE CONTENT DETECTED (${autoExtractState.duplicateCount} consecutive)!`
+                `[CONTENT-HASH] ⚠️ DUPLICATE CONTENT DETECTED in CREATE mode (${autoExtractState.duplicateCount} consecutive)!`
               );
               debug(`[CONTENT-HASH] Hash: ${contentHash}, Last Hash: ${autoExtractState.lastContentHash}`);
               
@@ -3965,7 +4201,7 @@
               }
               
               // Skip this duplicate and go straight to navigation (don't create page)
-              debug(`[CONTENT-HASH] ⊘ Skipping duplicate content, will retry navigation without creating page...`);
+              debug(`[CONTENT-HASH] ⊘ Skipping duplicate content in CREATE mode, will retry navigation without creating page...`);
               showToast(
                 `⚠️ Duplicate content #${autoExtractState.duplicateCount}, skipping to navigation...`,
                 3000
@@ -3976,10 +4212,8 @@
               // Content is different, reset duplicate counter
               autoExtractState.duplicateCount = 0;
               autoExtractState.lastContentHash = contentHash;
-              debug(`[CONTENT-HASH] ✅ Content is unique (hash: ${contentHash})`);
-            }
-
-            // Check if stop was requested before creating the page
+              debug(`[CONTENT-HASH] ✅ Content is unique (hash: ${contentHash}) or in UPDATE mode - proceeding`);
+            }          // Check if stop was requested before creating the page
             if (!autoExtractState.running) {
               debug(`[AUTO-EXTRACT] ⏹ AutoExtract stop requested before creating page ${currentPageNum}`);
               showToast(
@@ -3994,31 +4228,69 @@
             // STEP 2: Create or Update Notion page based on mode
             const updateModeCheckbox = document.getElementById('w2n-autoextract-update-mode');
             const updateMode = updateModeCheckbox?.checked || false;
+            
+            debug(`[AUTO-EXTRACT-DEBUG] 🔀 Mode detection:`);
+            debug(`[AUTO-EXTRACT-DEBUG]    - updateModeCheckbox element: ${updateModeCheckbox ? 'found' : 'NOT FOUND'}`);
+            debug(`[AUTO-EXTRACT-DEBUG]    - updateModeCheckbox.checked: ${updateModeCheckbox?.checked}`);
+            debug(`[AUTO-EXTRACT-DEBUG]    - updateMode final value: ${updateMode}`);
+            debug(`[AUTO-EXTRACT-DEBUG]    - config.databaseId: ${config.databaseId || '(missing)'}`);
 
             if (updateMode) {
               // UPDATE MODE: Search for existing page and update
               debug(
                 `[AUTO-EXTRACT] 🔄 Step 2: Searching for existing page "${extractedData.title}"...`
               );
+              debug(`[AUTO-EXTRACT]    Database ID: ${config.databaseId}`);
               overlayModule.setMessage(`Searching for page "${extractedData.title}"...`);
               
-              const existingPage = await searchNotionPageByTitle(config.databaseId, extractedData.title);
+              let existingPage = null;
+              try {
+                existingPage = await searchNotionPageByTitle(config.databaseId, extractedData.title);
+                debug(`[AUTO-EXTRACT] 🔍 Search result:`, existingPage ? `Found page ${existingPage.id}` : 'No page found');
+              } catch (searchError) {
+                debug(`[AUTO-EXTRACT] ❌ Search failed:`, searchError);
+                throw new Error(`Failed to search for page: ${searchError.message}`);
+              }
               
               if (existingPage) {
                 // Page found, update it
                 debug(`[AUTO-EXTRACT] 📝 Updating existing page ${existingPage.id}...`);
+                debug(`[AUTO-EXTRACT]    Page title: "${extractedData.title}"`);
+                debug(`[AUTO-EXTRACT]    Content length: ${extractedData.content?.combinedHtml?.length || 0} chars`);
                 overlayModule.setMessage(`Updating page ${currentPageNum}...`);
-                await updateNotionPage(existingPage.id, extractedData);
+                
+                let updateResult = null;
+                try {
+                  // Wait for update to complete (including validation)
+                  debug(`[AUTO-EXTRACT] 🚀 Calling updateNotionPage()...`);
+                  updateResult = await updateNotionPage(existingPage.id, extractedData);
+                  debug(`[AUTO-EXTRACT] ✅ updateNotionPage() completed successfully`);
+                } catch (updateError) {
+                  debug(`[AUTO-EXTRACT] ❌ updateNotionPage() failed:`, updateError);
+                  throw new Error(`Failed to update page: ${updateError.message}`);
+                }
+                
+                // Additional wait after update completes to ensure Notion properties are fully committed
+                debug(`[AUTO-EXTRACT] ⏳ Waiting 2s for Notion to commit all changes...`);
+                overlayModule.setMessage(`Finalizing update for page ${currentPageNum}...`);
+                await new Promise((resolve) => setTimeout(resolve, 2000));
                 
                 captureSuccess = true;
                 autoExtractState.totalProcessed++;
                 autoExtractState.totalUpdated = (autoExtractState.totalUpdated || 0) + 1;
+                
+                // Show validation status in success message
+                let statusEmoji = '✅';
+                if (updateResult?.validation?.hasErrors) {
+                  statusEmoji = '⚠️';
+                }
+                
                 debug(
-                  `✅ Page ${currentPageNum} updated successfully${
+                  `${statusEmoji} Page ${currentPageNum} updated successfully${
                   captureAttempts > 1 ? ` (attempt ${captureAttempts})` : ""
-                }`
+                }${updateResult?.validation ? ` (validation: ${updateResult.validation.hasErrors ? 'has issues' : 'passed'})` : ''}`
                 );
-                showToast(`✅ Updated: ${extractedData.title}`, 2000);
+                showToast(`${statusEmoji} Updated: ${extractedData.title}`, 2000);
               } else {
                 // Page not found, create new with 🆕 prefix
                 debug(`[AUTO-EXTRACT] 🆕 Page "${extractedData.title}" not found, creating new page with 🆕 prefix...`);
@@ -4060,10 +4332,24 @@
             // Brief wait to ensure API call fully completes
             await new Promise((resolve) => setTimeout(resolve, 2000));
           } catch (error) {
+            console.log(
+              `❌ Capture attempt ${captureAttempts} failed for page ${currentPageNum}:`,
+              error
+            );
+            console.log(`[AUTO-EXTRACT-DEBUG] 🔴 ERROR DETAILS:`);
+            console.log(`[AUTO-EXTRACT-DEBUG]    - error.name: ${error.name}`);
+            console.log(`[AUTO-EXTRACT-DEBUG]    - error.message: ${error.message}`);
+            console.log(`[AUTO-EXTRACT-DEBUG]    - error.stack: ${error.stack?.substring(0, 500)}`);
+            console.log(`[AUTO-EXTRACT-DEBUG]    - typeof error: ${typeof error}`);
             debug(
               `❌ Capture attempt ${captureAttempts} failed for page ${currentPageNum}:`,
               error
             );
+            debug(`[AUTO-EXTRACT-DEBUG] 🔴 ERROR DETAILS:`);
+            debug(`[AUTO-EXTRACT-DEBUG]    - error.name: ${error.name}`);
+            debug(`[AUTO-EXTRACT-DEBUG]    - error.message: ${error.message}`);
+            debug(`[AUTO-EXTRACT-DEBUG]    - error.stack: ${error.stack?.substring(0, 500)}`);
+            debug(`[AUTO-EXTRACT-DEBUG]    - typeof error: ${typeof error}`);
             
             // Check if stop was requested during error handling
             if (!autoExtractState.running) {
@@ -4602,6 +4888,16 @@
         // Navigate to next page
         const beforeNavUrl = window.location.href;
         const beforeNavPageId = currentPageId;
+        
+        // Save autoExtractState before navigation in case of browser reload
+        debug(`[STATE-MANAGEMENT] 💾 Saving autoExtractState before navigation (page ${currentPageNum + 1})`);
+        const stateToSave = {
+          ...autoExtractState,
+          // Convert Set to Array for JSON serialization
+          processedUrls: Array.from(autoExtractState.processedUrls || []),
+        };
+        const stateJson = JSON.stringify(stateToSave);
+        GM_setValue("w2n_autoExtractState", stateJson);
         
         const nextButton = await findAndClickNextButton(
           nextPageSelector,
@@ -5365,41 +5661,6 @@
         }
       }, 60000);
     });
-  }
-
-  function diagnoseAutoExtraction() {
-    const nextPageSelector =
-      typeof GM_getValue === "function"
-        ? GM_getValue("w2n_next_page_selector", "div.zDocsNextTopicButton a")
-        : "div.zDocsNextTopicButton a";
-
-    let diagnosis = "AutoExtract Diagnosis:\n\n";
-    diagnosis += `Next page selector: ${nextPageSelector || "Not set"}\n\n`;
-
-    if (!nextPageSelector) {
-      diagnosis +=
-        "❌ No next page selector configured. Use 'Select Next Page Element' first.\n";
-    } else {
-      diagnosis += "✅ Next page selector configured.\n";
-      // Test if selector exists on current page
-      try {
-        const element = document.querySelector(nextPageSelector);
-        if (element) {
-          diagnosis += `✅ Selector found on current page: ${
-          element.textContent?.trim().substring(0, 50) || element.tagName
-        }\n`;
-        } else {
-          diagnosis += "⚠️ Selector not found on current page.\n";
-        }
-      } catch (e) {
-        diagnosis += `❌ Invalid selector: ${e.message}\n`;
-      }
-    }
-
-    diagnosis +=
-      "\nNote: Full auto-extraction functionality is not yet implemented.";
-
-    alert(diagnosis);
   }
 
   // Advanced element discovery with multiple strategies
@@ -6735,6 +6996,34 @@
     // Clean the HTML content (removes unwanted elements, processes code-toolbar, etc.)
     combinedHtml = cleanHtmlContent(combinedHtml);
 
+    // Filter out "Related Content" sections before sending to server
+    // This prevents AUDIT validation from showing them as "extra" content
+    // Server-side filtering also exists, but userscript filtering ensures cleaner AUDIT results
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = combinedHtml;
+    
+    // Remove contentPlaceholder elements that contain "Related Content"
+    const contentPlaceholders = tempDiv.querySelectorAll('.contentPlaceholder');
+    let removedCount = 0;
+    contentPlaceholders.forEach(cp => {
+      const text = cp.textContent.trim().toLowerCase();
+      const headings = cp.querySelectorAll('h1, h2, h3, h4, h5, h6');
+      const hasRelatedContentHeading = Array.from(headings).some(h => 
+        h.textContent.trim().toLowerCase().includes('related content')
+      );
+      
+      if (text.includes('related content') || hasRelatedContentHeading) {
+        debug(`🗑️ Filtering out Related Content section from userscript extraction`);
+        cp.remove();
+        removedCount++;
+      }
+    });
+    
+    if (removedCount > 0) {
+      combinedHtml = tempDiv.innerHTML;
+      debug(`✅ Filtered out ${removedCount} Related Content section(s) in userscript`);
+    }
+
     return { combinedHtml, combinedImages };
   }
 
@@ -7965,18 +8254,50 @@
       this.isProcessing = true;
 
       try {
-        // Prompt for page ID
-        const pageId = prompt("Enter the Notion Page ID to update (32 characters, with or without hyphens):");
-        if (!pageId || pageId.trim() === "") {
+        // Prompt for page ID or URL
+        const input = prompt("Enter the Notion Page ID or URL to update:");
+        if (!input || input.trim() === "") {
           overlayModule.close();
           this.isProcessing = false;
           return;
         }
 
-        // Validate page ID format (32 hex chars with optional hyphens)
-        const cleanPageId = pageId.replace(/-/g, '');
+        const trimmedInput = input.trim();
+        let cleanPageId = null;
+        
+        // Check if input is a URL and extract the page ID
+        if (trimmedInput.includes('notion.so/') || trimmedInput.includes('notion.site/')) {
+          debug(`[UPDATE-PAGE] 🔗 Detected URL input, extracting page ID`);
+          
+          // Extract ID from URL patterns:
+          // https://www.notion.so/username/Page-Title-abc123...
+          // https://notion.so/abc123...
+          // https://username.notion.site/abc123...
+          const urlMatch = trimmedInput.match(/([a-f0-9]{32})|([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+          
+          if (urlMatch) {
+            cleanPageId = urlMatch[0].replace(/-/g, '');
+            debug(`[UPDATE-PAGE] ✅ Extracted page ID from URL: ${cleanPageId}`);
+          } else {
+            alert("Could not extract a valid page ID from the URL. Please check the URL and try again.");
+            overlayModule.close();
+            this.isProcessing = false;
+            return;
+          }
+        } else if (/^[a-f0-9-]{32,36}$/i.test(trimmedInput)) {
+          // Input looks like a page ID (32 hex chars with optional hyphens)
+          cleanPageId = trimmedInput.replace(/-/g, '');
+          debug(`[UPDATE-PAGE] ✅ Using page ID: ${cleanPageId}`);
+        } else {
+          alert("Invalid input. Please enter a valid Notion page URL or page ID (32 hexadecimal characters).");
+          overlayModule.close();
+          this.isProcessing = false;
+          return;
+        }
+
+        // Validate final page ID format
         if (!/^[a-f0-9]{32}$/i.test(cleanPageId)) {
-          alert("Invalid Page ID format. Must be 32 hexadecimal characters (with or without hyphens).");
+          alert("Invalid Page ID format. Must be 32 hexadecimal characters.");
           overlayModule.close();
           this.isProcessing = false;
           return;
@@ -8018,10 +8339,34 @@
       debug(`📝 Updating existing page ${pageId}...`);
 
       try {
+        // Extract HTML content from the nested content object
+        const htmlContent = extractedData.content?.combinedHtml || extractedData.content?.html || extractedData.contentHtml || '';
+        
+        if (!htmlContent) {
+          throw new Error("No content found in extractedData");
+        }
+        
+        // Get database and mappings (same as POST operation)
+        const config = await getConfig();
+        overlayModule.setMessage("Fetching database schema...");
+        const database = await getDatabase(config.databaseId);
+        
+        overlayModule.setMessage("Loading property mappings...");
+        const mappings = await getPropertyMappings(config.databaseId);
+
+        // Apply mappings to extracted data (same as POST operation)
+        overlayModule.setMessage("Mapping properties to Notion format...");
+        const properties = applyPropertyMappings(
+          extractedData,
+          database,
+          mappings
+        );
+        
         const patchData = {
           title: extractedData.title,
-          contentHtml: extractedData.contentHtml || extractedData.content,
-          url: extractedData.url
+          contentHtml: htmlContent,
+          url: extractedData.url,
+          properties: properties, // Include property mappings for PATCH (same as POST)
         };
 
         const result = await apiCall("PATCH", `/api/W2N/${pageId}`, patchData);

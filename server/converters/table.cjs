@@ -27,6 +27,67 @@ const { convertServiceNowUrl } = require("../utils/url.cjs");
 const cheerio = require('cheerio');
 
 /**
+ * Emphasizes the first line of table cell content as a title when it appears to be a header.
+ * 
+ * Many ServiceNow tables use the first line of cell content as an informal title/header
+ * that's not marked up as <th> but serves as a heading for the cell content. This function
+ * detects such patterns and wraps them in bold formatting.
+ * 
+ * Detection patterns:
+ * - First line ends with colon (:)
+ * - First line is short (≤ 50 chars) and followed by longer content
+ * - First line contains title-like words (e.g., "Description", "Purpose", "Steps")
+ * - First line is followed by a blank line or list
+ * 
+ * @param {string} textContent - The processed text content of a table cell
+ * @returns {string} Text content with first line emphasized as bold if detected as title
+ */
+function emphasizeFirstLineAsTitle(textContent) {
+  // Skip if no content or already contains HTML tags (already processed)
+  if (!textContent || textContent.includes('<') || textContent.includes('>')) {
+    return textContent;
+  }
+  
+  // Split content into lines (preserving __BR_NEWLINE__ markers)
+  const lines = textContent.split('__BR_NEWLINE__');
+  if (lines.length < 2) {
+    return textContent; // Single line, no title to emphasize
+  }
+  
+  const firstLine = lines[0].trim();
+  const remainingContent = lines.slice(1).join('__BR_NEWLINE__');
+  
+  // Skip if first line is already a bullet or starts with special characters
+  if (firstLine.startsWith('•') || firstLine.startsWith('✅') || firstLine.startsWith('❌') || 
+      firstLine.startsWith('⚠️') || firstLine.startsWith('ℹ️') ||
+      firstLine.startsWith('\u200B•')) {  // Also check for zero-width space + bullet
+    return textContent;
+  }
+  
+  // Detection criteria for title-like first lines
+  const isTitleLike = (
+    // Ends with colon
+    firstLine.endsWith(':') ||
+    // Short line (≤ 50 chars) followed by substantial content
+    (firstLine.length <= 50 && remainingContent.length > firstLine.length * 2) ||
+    // Contains common title words
+    /\b(Description|Purpose|Steps?|Procedure|Requirements?|Configuration|Settings?|Options?|Parameters?|Properties?|Details?|Overview|Summary|Notes?|Examples?|Usage|Methods?|Types?|Values?|Results?|Output|Input)\b/i.test(firstLine) ||
+    // Followed by a list (bullet points)
+    (remainingContent.includes('•') && firstLine.length <= 60) ||
+    // Followed by numbered list
+    (/\d+\./.test(remainingContent) && firstLine.length <= 60)
+  );
+  
+  if (isTitleLike && firstLine.length > 0) {
+    // Wrap first line in bold markers for rich text processing
+    const emphasizedFirstLine = `<strong>${firstLine}</strong>`;
+    return `${emphasizedFirstLine}__BR_NEWLINE__${remainingContent}`;
+  }
+  
+  return textContent;
+}
+
+/**
  * Converts HTML table content to Notion table block array.
  * 
  * This function processes HTML table markup and converts it to Notion's table format,
@@ -97,19 +158,16 @@ async function convertTableBlock(tableHtml, options = {}) {
   const blocks = [];
   if (captionMatch) {
     let captionContent = captionMatch[1];
-    // Preserve the table title label (e.g., "Table 1.") instead of stripping it
-    // so that validation expects like "Table 1. Empty state..." match exactly.
-    let titleLabel = '';
+    // Remove the table numbering label (e.g., "Table 1.") - keep only the title
     captionContent = captionContent.replace(
       /<span[^>]*class="[^"]*table--title-label[^"]*"[^>]*>([\s\S]*?)<\/span>/gi,
-      (m, p1) => {
-        titleLabel = cleanHtmlText(p1 || '');
-        return '';
-      }
+      ''
     );
-    const captionBody = cleanHtmlText(captionContent);
-    const captionText = (titleLabel ? `${titleLabel} ` : '') + (captionBody || '');
+    // Extract only the content from <span class="title"> if present
+    const titleMatch = captionContent.match(/<span[^>]*class="[^"]*title[^"]*"[^>]*>([\s\S]*?)<\/span>/i);
+    const captionText = titleMatch ? cleanHtmlText(titleMatch[1]) : cleanHtmlText(captionContent);
     if (captionText && captionText.trim()) {
+      // Always convert table captions to heading_3 for consistency
       blocks.push({
         object: "block",
         type: "heading_3",
@@ -142,11 +200,23 @@ async function convertTableBlock(tableHtml, options = {}) {
     
     // Process each figure
     for (const figureHtml of figures) {
-      // Extract img src from within figure
+      // Extract img src and dimensions from within figure
       const imgMatch = /<img[^>]*src=["']([^"']*)["'][^>]*>/i.exec(figureHtml);
       if (imgMatch) {
         let src = imgMatch[1];
         const originalSrc = src; // Track original URL to match against HTML
+        
+        // Check image dimensions to filter out small icons
+        const widthMatch = /width=["']?(\d+)/i.exec(imgMatch[0]);
+        const heightMatch = /height=["']?(\d+)/i.exec(imgMatch[0]);
+        const width = widthMatch ? parseInt(widthMatch[1]) : 0;
+        const height = heightMatch ? parseInt(heightMatch[1]) : 0;
+        const isIcon = (width > 0 && width < 64) || (height > 0 && height < 64);
+        
+        if (isIcon) {
+          console.log(`🚫 [TABLE] Skipping small icon image (${width}x${height}): ${src.substring(0, 50)}`);
+          continue; // Skip icons in tables
+        }
         
         // Extract figcaption text
         const captionMatch = /<figcaption[^>]*>([\s\S]*?)<\/figcaption>/i.exec(figureHtml);
@@ -201,12 +271,7 @@ async function convertTableBlock(tableHtml, options = {}) {
       const isValidImage = imgMatch && validImageUrls.has(imgMatch[1]);
       
       if (isValidImage) {
-        // Image will be included - use descriptive placeholder
-        const captionMatch = /<figcaption[^>]*>([\s\S]*?)<\/figcaption>/i.exec(match);
-        if (captionMatch) {
-          const caption = cleanHtmlText(captionMatch[1]);
-          return ` See "${caption}" `;
-        }
+        // Image will be included - keep a neutral marker (caption renders on the image block)
         return ' See image below ';
       } else {
         // Image won't be included - use bullet placeholder
@@ -540,13 +605,13 @@ async function convertTableBlock(tableHtml, options = {}) {
           
           // If there's text before, add newline + bullet marker to make it a new list item
           // Add newline before if there's text before the note
-          const prefix = textBeforeNote ? '__NEWLINE__• ' : '';
+          const prefix = textBeforeNote ? '__BR_NEWLINE__• ' : '';
           
           // Prepend the note title (e.g., "Note:") to the content
           const contentWithTitle = noteTitle ? `${noteTitle} ${noteContent}` : noteContent;
           
           // Return content without the note wrapper, adding newline after
-          return `${prefix}${contentWithTitle}__NEWLINE__`;
+          return `${prefix}${contentWithTitle}__BR_NEWLINE__`;
         }
       );
     }
@@ -572,7 +637,7 @@ async function convertTableBlock(tableHtml, options = {}) {
     
     // Separate consecutive inline code elements with newlines
     // This handles cases like: <code>role1</code> <code>role2</code> <code>role3</code>
-    processedHtml = processedHtml.replace(/(<\/code>)(\s*)(<code>)/gi, '$1__NEWLINE__$3');
+    processedHtml = processedHtml.replace(/(<\/code>)(\s*)(<code>)/gi, '$1__BR_NEWLINE__$3');
     
     // Reload Cheerio with processed HTML (after figure/image replacement)
     // Strategy: For cells with multiple <p> tags, we need to:
@@ -585,22 +650,26 @@ async function convertTableBlock(tableHtml, options = {}) {
     // Check if cell has paragraph tags
     const paragraphMatches = processedHtml.match(/<p[^>]*>[\s\S]*?<\/p>/gi);
     
-    if (paragraphMatches && paragraphMatches.length > 1) {
+    // FIX v11.0.111: Check for leading text BEFORE checking paragraph count
+    // This handles cases like: "inventory_user<p>category_manager</p><p>contract_manager</p>"
+    // where there's text before the first <p> tag
+    const textBeforeP = /^([^<]+)<p/i.exec(processedHtml);
+    
+    if (textBeforeP && paragraphMatches && paragraphMatches.length >= 1) {
+      // Mixed content: text followed by one or more <p> tags
+      // Add newline before each <p> tag to separate from preceding content
+      textContent = processedHtml
+        .replace(/<p[^>]*>/gi, '__BR_NEWLINE__')  // Add newline before each <p>
+        .replace(/<\/p>/gi, '');  // Remove closing </p> tags
+    } else if (paragraphMatches && paragraphMatches.length > 1) {
       // Multiple paragraphs - split on </p> and add newlines between them
       // This preserves the HTML inside each <p> tag
       textContent = processedHtml
-        .replace(/<\/p>\s*<p[^>]*>/gi, '</p>__NEWLINE__<p>')  // Mark newlines with placeholder
+        .replace(/<\/p>\s*<p[^>]*>/gi, '</p>__BR_NEWLINE__<p>')  // Mark newlines with placeholder
         .replace(/<\/?p[^>]*>/gi, '');  // Remove <p> tags but keep content
     } else if (paragraphMatches && paragraphMatches.length === 1) {
-      // Single paragraph - check if there's text before it (mixed content)
-      const textBeforeP = /^([^<]+)<p/i.exec(processedHtml);
-      if (textBeforeP) {
-        // Mixed content: text followed by <p>
-        textContent = processedHtml.replace(/<p[^>]*>/gi, '__NEWLINE__').replace(/<\/p>/gi, '');
-      } else {
-        // Just a single <p> wrapper
-        textContent = processedHtml.replace(/<\/?p[^>]*>/gi, '');
-      }
+      // Single paragraph without leading text
+      textContent = processedHtml.replace(/<\/?p[^>]*>/gi, '');
     } else {
       // No paragraph tags
       textContent = processedHtml;
@@ -613,45 +682,99 @@ async function convertTableBlock(tableHtml, options = {}) {
       .replace(/\s{2,}/g, ' ')    // Collapse multiple spaces to single space
       .trim();
     
-    // DON'T restore intentional newlines yet - keep as __NEWLINE__ markers
-    // They will be restored later in list processing (line 330) or at the end for non-lists
-    // textContent = textContent.replace(/__NEWLINE__/g, '\n');
+    // DON'T convert __BR_NEWLINE__ to \n here - let convertRichTextBlock handle it
+    // The marker is protected from whitespace collapse in rich-text.cjs
+    // (Previously used __NEWLINE__ but that got collapsed by whitespace normalization)
     
     // Remove lists, replace <li> with bullets
     if (/<[uo]l[^>]*>/i.test(textContent)) {
       textContent = textContent.replace(/<\/?[uo]l[^>]*>/gi, "");
-      // CRITICAL: Add newline marker BEFORE bullet to ensure each item is on its own line
+      // CRITICAL: Use __BR_NEWLINE__ marker (not __NEWLINE__) so convertRichTextBlock preserves it
+      // The __BR_NEWLINE__ marker is protected from whitespace normalization in rich-text.cjs
       // First <li> shouldn't have newline before it (at start of cell)
       textContent = textContent.replace(/^\s*<li[^>]*>/gi, "• ");  // First item, no newline
-      textContent = textContent.replace(/<li[^>]*>/gi, "__NEWLINE__• ");  // Subsequent items
+      textContent = textContent.replace(/<li[^>]*>/gi, "__BR_NEWLINE__• ");  // Subsequent items
       textContent = textContent.replace(/<\/li>/gi, "");
       
       // For list content, preserve HTML tags (for uicontrol, links, etc.) and normalize whitespace
-      const $list = cheerio.load(textContent, { decodeEntities: true });
-      const listParagraphs = [];
-      $list('p, div.p').each((i, elem) => {
-        // Use .html() instead of .text() to preserve formatting tags like <span class="uicontrol">
-        let html = $list(elem).html();
-        if (html && html.trim()) {
-          // Normalize whitespace but keep HTML tags
-          html = html.replace(/\s+/g, ' ').trim();
-          listParagraphs.push(html);
-        }
-      });
+      // Skip cheerio paragraph extraction for bullet lists to preserve bullet association
+      const hasBullets = textContent.includes('•');
+      // textContent is already declared above, no need to redeclare
       
-      textContent = listParagraphs.length > 0
-        ? listParagraphs.join('__NEWLINE__')
-        : $list('body').html().replace(/\s+/g, ' ').trim();
+      if (!hasBullets) {
+        const $list = cheerio.load(textContent, { decodeEntities: true });
+        const listParagraphs = [];
+        $list('p, div.p').each((i, elem) => {
+          // Use .html() instead of .text() to preserve formatting tags like <span class="uicontrol">
+          let html = $list(elem).html();
+          if (html && html.trim()) {
+            // Normalize whitespace but keep HTML tags
+            html = html.replace(/\s+/g, ' ').trim();
+            listParagraphs.push(html);
+          }
+        });
+        
+        textContent = listParagraphs.length > 0
+          ? listParagraphs.join('__BR_NEWLINE__')
+          : $list('body').html().replace(/\s+/g, ' ').trim();
+      } else {
+        // For bullet lists, convert <p> tags to __BR_NEWLINE__ markers to preserve structure
+        // but don't extract paragraphs as that would lose bullet association
+        textContent = textContent
+          .replace(/<\/p>\s*<p[^>]*>/gi, '__BR_NEWLINE__')  // Between paragraphs
+          .replace(/<p[^>]*>/gi, '')  // Remove opening <p> tags
+          .replace(/<\/p>/gi, '')     // Remove closing </p> tags
+          .replace(/<div[^>]*class="p"[^>]*>/gi, '')  // Remove opening div.p tags
+          .replace(/<\/div>/gi, '');  // Remove closing </div> tags
+      }
       
-      // CRITICAL: Normalize whitespace BEFORE restoring newlines
-      // This preserves intentional __NEWLINE__ markers while removing formatting whitespace
+      // CRITICAL: Normalize whitespace but preserve __BR_NEWLINE__ markers
+      // Remove any spaces immediately before or after markers to prevent indentation issues
       textContent = textContent
         .replace(/\s*\n\s*/g, ' ')  // Remove actual newlines from HTML formatting
+        .replace(/\s+__BR_NEWLINE__/g, '__BR_NEWLINE__')  // Remove spaces before marker
+        .replace(/__BR_NEWLINE__\s+/g, '__BR_NEWLINE__')  // Remove spaces after marker
         .replace(/\s{2,}/g, ' ')     // Collapse multiple spaces
         .trim();
       
-      // Now restore intentional newlines from markers
-      textContent = textContent.replace(/__NEWLINE__/g, '\n');
+      // CRITICAL FIX: Handle bullet indentation for multi-line list items
+      // When a bullet spans multiple lines, continuation lines should be indented
+      // to align with the text after the bullet, not the bullet itself
+      if (textContent.includes('•') && textContent.includes('__BR_NEWLINE__')) {
+        // Split by bullet markers to process each list item separately
+        const bulletItems = textContent.split(/(•\s*)/);
+        const processedItems = [];
+        
+        for (let i = 0; i < bulletItems.length; i++) {
+          let item = bulletItems[i];
+          
+          // If this is a bullet marker, add it as-is
+          if (item.match(/^•\s*$/)) {
+            processedItems.push(item);
+            continue;
+          }
+          
+          // If this item contains newlines, indent continuation lines
+          if (item.includes('__BR_NEWLINE__')) {
+            // Split by newlines and indent all lines after the first
+            const lines = item.split('__BR_NEWLINE__');
+            const indentedLines = lines.map((line, lineIndex) => {
+              // First line of bullet item doesn't need indentation
+              // Continuation lines get indented to align with text after bullet
+              // Skip indentation for empty lines (boundary markers)
+              return lineIndex > 0 && line.trim() ? `  ${line}` : line;
+            });
+            item = indentedLines.join('__BR_NEWLINE__');
+          }
+          
+          processedItems.push(item);
+        }
+        
+        textContent = processedItems.join('');
+      }
+      
+      // DON'T convert __BR_NEWLINE__ to \n here - let convertRichTextBlock handle it
+      // The marker is protected from whitespace collapse in rich-text.cjs
       
       // DEBUG: Log result structure for bullets
       if (textContent.includes('•')) {
@@ -665,6 +788,18 @@ async function convertTableBlock(tableHtml, options = {}) {
     // This prevents table cells from matching to H2 headings with similar text
     // Using Zero-Width Space (U+200B) as an invisible prefix marker
     textContent = `\u200B${textContent}`;
+    
+    // AUTO-DETECT AND EMPHASIZE FIRST LINE AS TITLE
+    // Many table cells use the first line as an informal title/header that's not marked up as <th>
+    // Detect these patterns and format them as bold to improve readability
+    const originalContent = textContent;
+    console.log(`🔍 [TABLE CELL] Processing cell content: "${textContent.replace(/__BR_NEWLINE__/g, ' | ')}"`);
+    textContent = emphasizeFirstLineAsTitle(textContent);
+    if (originalContent !== textContent) {
+      console.log(`🔍 [TABLE TITLE] Emphasized first line as title:`);
+      console.log(`   Before: "${originalContent.replace(/__BR_NEWLINE__/g, ' | ')}"`);
+      console.log(`   After:  "${textContent.replace(/__BR_NEWLINE__/g, ' | ')}"`);
+    }
     
     // Use rich text block conversion for list items
     const { convertRichTextBlock } = require("./rich-text.cjs");
@@ -694,16 +829,18 @@ async function convertTableBlock(tableHtml, options = {}) {
     
     // For cells with multiple bullet items (not from HTML lists), add soft returns between them
     // Match pattern: bullet followed by space and text, then another bullet
-    // Example: "• Item 1 • Item 2" becomes "• Item 1\n• Item 2"
+    // Example: "• Item 1 • Item 2" becomes "• Item 1__BR_NEWLINE__• Item 2"
     if (/•[^•]+•/.test(textContent)) {
       // Add newline before each bullet that's not at the start
-      textContent = textContent.replace(/([^\n])(\s*•\s*)/g, '$1__NEWLINE__$2');
+      // Use __BR_NEWLINE__ marker which is protected from whitespace collapse
+      textContent = textContent.replace(/([^__BR_NEWLINE__])(\s*•\s*)/g, (match, before, bullet) => {
+        // Don't add marker if there's already one before this position
+        if (before.endsWith('__BR_NEWLINE__')) return match;
+        return `${before}__BR_NEWLINE__${bullet}`;
+      });
       textContent = textContent.replace(/^\s+/, ""); // Clean leading whitespace
-      textContent = textContent.replace(/__NEWLINE__/g, '\n'); // Restore newlines
-    } else {
-      // For non-list content, restore intentional newlines from markers
-      textContent = textContent.replace(/__NEWLINE__/g, '\n');
     }
+    // DON'T convert __BR_NEWLINE__ to \n - let convertRichTextBlock handle it
     
     // CRITICAL: Add invisible prefix marker to help validation matching distinguish table content
     // This prevents table cells from matching to H2 headings with similar text

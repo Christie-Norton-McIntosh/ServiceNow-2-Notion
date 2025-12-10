@@ -429,18 +429,50 @@ class ServiceNowToNotionApp {
     this.isProcessing = true;
 
     try {
-      // Prompt for page ID
-      const pageId = prompt("Enter the Notion Page ID to update (32 characters, with or without hyphens):");
-      if (!pageId || pageId.trim() === "") {
+      // Prompt for page ID or URL
+      const input = prompt("Enter the Notion Page ID or URL to update:");
+      if (!input || input.trim() === "") {
         overlayModule.close();
         this.isProcessing = false;
         return;
       }
 
-      // Validate page ID format (32 hex chars with optional hyphens)
-      const cleanPageId = pageId.replace(/-/g, '');
+      const trimmedInput = input.trim();
+      let cleanPageId = null;
+      
+      // Check if input is a URL and extract the page ID
+      if (trimmedInput.includes('notion.so/') || trimmedInput.includes('notion.site/')) {
+        debug(`[UPDATE-PAGE] 🔗 Detected URL input, extracting page ID`);
+        
+        // Extract ID from URL patterns:
+        // https://www.notion.so/username/Page-Title-abc123...
+        // https://notion.so/abc123...
+        // https://username.notion.site/abc123...
+        const urlMatch = trimmedInput.match(/([a-f0-9]{32})|([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+        
+        if (urlMatch) {
+          cleanPageId = urlMatch[0].replace(/-/g, '');
+          debug(`[UPDATE-PAGE] ✅ Extracted page ID from URL: ${cleanPageId}`);
+        } else {
+          alert("Could not extract a valid page ID from the URL. Please check the URL and try again.");
+          overlayModule.close();
+          this.isProcessing = false;
+          return;
+        }
+      } else if (/^[a-f0-9-]{32,36}$/i.test(trimmedInput)) {
+        // Input looks like a page ID (32 hex chars with optional hyphens)
+        cleanPageId = trimmedInput.replace(/-/g, '');
+        debug(`[UPDATE-PAGE] ✅ Using page ID: ${cleanPageId}`);
+      } else {
+        alert("Invalid input. Please enter a valid Notion page URL or page ID (32 hexadecimal characters).");
+        overlayModule.close();
+        this.isProcessing = false;
+        return;
+      }
+
+      // Validate final page ID format
       if (!/^[a-f0-9]{32}$/i.test(cleanPageId)) {
-        alert("Invalid Page ID format. Must be 32 hexadecimal characters (with or without hyphens).");
+        alert("Invalid Page ID format. Must be 32 hexadecimal characters.");
         overlayModule.close();
         this.isProcessing = false;
         return;
@@ -482,10 +514,34 @@ class ServiceNowToNotionApp {
     debug(`📝 Updating existing page ${pageId}...`);
 
     try {
+      // Extract HTML content from the nested content object
+      const htmlContent = extractedData.content?.combinedHtml || extractedData.content?.html || extractedData.contentHtml || '';
+      
+      if (!htmlContent) {
+        throw new Error("No content found in extractedData");
+      }
+      
+      // Get database and mappings (same as POST operation)
+      const config = await getConfig();
+      overlayModule.setMessage("Fetching database schema...");
+      const database = await getDatabase(config.databaseId);
+      
+      overlayModule.setMessage("Loading property mappings...");
+      const mappings = await getPropertyMappings(config.databaseId);
+
+      // Apply mappings to extracted data (same as POST operation)
+      overlayModule.setMessage("Mapping properties to Notion format...");
+      const properties = applyPropertyMappings(
+        extractedData,
+        database,
+        mappings
+      );
+      
       const patchData = {
         title: extractedData.title,
-        contentHtml: extractedData.contentHtml || extractedData.content,
-        url: extractedData.url
+        contentHtml: htmlContent,
+        url: extractedData.url,
+        properties: properties, // Include property mappings for PATCH (same as POST)
       };
 
       const result = await apiCall("PATCH", `/api/W2N/${pageId}`, patchData);

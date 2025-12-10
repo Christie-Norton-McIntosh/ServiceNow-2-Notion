@@ -58,11 +58,13 @@ fi
 
 if [[ $health_ok -ne 1 ]]; then
   echo "[SERVER] Not responding — starting server..." | tee -a "$LOG_FILE"
+  SERVER_LOG="$ROOT_DIR/server/logs/server-terminal-$(date +%Y%m%d-%H%M%S).log"
   (
     cd "$ROOT_DIR/server" && \
-    SN2N_VERBOSE=1 SN2N_VALIDATE_OUTPUT=1 SN2N_CONTENT_VALIDATION=1 SN2N_ORPHAN_LIST_REPAIR=1 node sn2n-proxy.cjs
+    SN2N_VERBOSE=1 SN2N_VALIDATE_OUTPUT=1 SN2N_CONTENT_VALIDATION=1 SN2N_ORPHAN_LIST_REPAIR=1 SN2N_AUDIT_CONTENT=1 node sn2n-proxy.cjs 2>&1 | tee -a "$SERVER_LOG"
   ) &
   SERVER_PID=$!
+  echo "[SERVER] Server output logging to: $SERVER_LOG" | tee -a "$LOG_FILE"
   echo "[SERVER] Launch PID: $SERVER_PID" | tee -a "$LOG_FILE"
   server_ready=0
   for i in $(seq 1 30); do
@@ -90,11 +92,13 @@ else
     echo "[SERVER] Validation flags not enabled (SN2N_VALIDATE_OUTPUT=$validate_output_enabled, SN2N_CONTENT_VALIDATION=$content_validation_enabled) — restarting with newest validation" | tee -a "$LOG_FILE"
     pkill -f sn2n-proxy.cjs 2>/dev/null || killall node 2>/dev/null || true
     sleep 2
+    SERVER_LOG="$ROOT_DIR/server/logs/server-terminal-$(date +%Y%m%d-%H%M%S).log"
     (
       cd "$ROOT_DIR/server" && \
-      SN2N_VERBOSE=1 SN2N_VALIDATE_OUTPUT=1 SN2N_CONTENT_VALIDATION=1 SN2N_ORPHAN_LIST_REPAIR=1 node sn2n-proxy.cjs
+      SN2N_VERBOSE=1 SN2N_VALIDATE_OUTPUT=1 SN2N_CONTENT_VALIDATION=1 SN2N_ORPHAN_LIST_REPAIR=1 SN2N_AUDIT_CONTENT=1 node sn2n-proxy.cjs 2>&1 | tee -a "$SERVER_LOG"
     ) &
     SERVER_PID=$!
+    echo "[SERVER] Server output logging to: $SERVER_LOG" | tee -a "$LOG_FILE"
     echo "[SERVER] Relaunch PID: $SERVER_PID" | tee -a "$LOG_FILE"
     for i in $(seq 1 30); do
       if curl -sf -m2 "$HEALTH_URL_PRIMARY" >/dev/null 2>&1 || curl -sf -m2 "$HEALTH_URL_ALT" >/dev/null 2>&1; then
@@ -197,23 +201,39 @@ for html_file in "$SRC_DIR"/*.html; do
 
   echo "  Page ID: $page_id" | tee -a "$LOG_FILE"
 
+  # Extract URL from HTML metadata
+  page_url=$(grep -m1 "URL:" "$html_file" | sed -E 's/.*URL: ([^[:space:]]+).*/\1/' | tr -d '\r' || echo "")
+  if [[ -z "$page_url" ]]; then
+    echo "  ⚠️  No URL found in file metadata — using default" | tee -a "$LOG_FILE"
+    page_url="https://docs.servicenow.com"
+  fi
+  echo "  URL: $page_url" | tee -a "$LOG_FILE"
+
   # Read HTML content
   content=$(cat "$html_file")
   title="${filename%.html}"
 
-  # STEP 1: Dry-run validation
+  # STEP 1: Dry-run validation (use PATCH for existing pages, POST for new)
   echo "  1️⃣  Validating..." | tee -a "$LOG_FILE"
   validate_start_epoch=$(date +%s)
   validate_start_human=$(date +"%Y-%m-%d %H:%M:%S")
   echo "  🕒 Validation start: $validate_start_human (epoch $validate_start_epoch)" | tee -a "$LOG_FILE"
   
-  dry_response=$(curl -s -m 60 -w "\n%{http_code}" -X POST "$API_URL" \
-    -H "Content-Type: application/json" \
-    -d "{\"title\":\"test\",\"databaseId\":\"178f8dc43e2780d09be1c568a04d7bf3\",\"content\":$(echo "$content" | jq -Rs .),\"url\":\"https://test.com\",\"dryRun\":true}" \
-    2>&1)
-
-  dry_http_code=$(echo "$dry_response" | tail -n1)
-  dry_body=$(echo "$dry_response" | sed '$d')
+  if [[ -n "$page_id" && "$page_id" != "null" ]]; then
+    # Existing page: use PATCH with dryRun
+    dry_temp=$(mktemp)
+    dry_http_code=$(curl -s -m 60 -w "%{http_code}" -X PATCH "$API_URL/$page_id" \
+      -H "Content-Type: application/json" \
+      -d "{\"title\":\"$title\",\"contentHtml\":$(echo "$content" | jq -Rs .),\"url\":\"$page_url\",\"dryRun\":true}" \
+      -o "$dry_temp" 2>/dev/null)
+    dry_body=$(cat "$dry_temp")
+    rm -f "$dry_temp"
+  else
+    # New page: use POST without dryRun (dryRun not supported for POST)
+    echo "  ℹ️  New page (no Page ID) — skipping validation, proceeding to creation" | tee -a "$LOG_FILE"
+    dry_http_code="200"
+    dry_body="{}"
+  fi
 
   if [[ "$dry_http_code" != "200" ]]; then
     echo "  ❌ Validation HTTP error: $dry_http_code" | tee -a "$LOG_FILE"
@@ -226,15 +246,24 @@ for html_file in "$SRC_DIR"/*.html; do
     if [[ "${VALIDATION_RETRY:-0}" == "1" ]]; then
       echo "  ↻ Retry validation (VALIDATION_RETRY=1)" | tee -a "$LOG_FILE"
       sleep 2
-      retry_response=$(curl -s -m 60 -w "\n%{http_code}" -X POST "$API_URL" \
-        -H "Content-Type: application/json" \
-        -d "{\"title\":\"test\",\"databaseId\":\"178f8dc43e2780d09be1c568a04d7bf3\",\"content\":$(echo "$content" | jq -Rs .),\"url\":\"https://test.com\",\"dryRun\":true}" 2>&1)
-      retry_http_code=$(echo "$retry_response" | tail -n1)
-      retry_body=$(echo "$retry_response" | sed '$d')
+      if [[ -n "$page_id" && "$page_id" != "null" ]]; then
+        # Existing page: use PATCH with dryRun
+        retry_temp=$(mktemp)
+        retry_http_code=$(curl -s -m 60 -w "%{http_code}" -X PATCH "$API_URL/$page_id" \
+          -H "Content-Type: application/json" \
+          -d "{\"title\":\"$title\",\"contentHtml\":$(echo "$content" | jq -Rs .),\"url\":\"$page_url\",\"dryRun\":true}" \
+          -o "$retry_temp" 2>/dev/null)
+        retry_body=$(cat "$retry_temp")
+        rm -f "$retry_temp"
+      else
+        # New page: cannot retry validation
+        retry_http_code="400"
+        retry_body="{}"
+      fi
       echo "    ↳ Retry HTTP: $retry_http_code" | tee -a "$LOG_FILE"
       if [[ "$retry_http_code" == "200" ]]; then
-        retry_has_errors=$(echo "$retry_body" | jq -r '.validationResult.hasErrors // false')
-        if [[ "$retry_has_errors" == "false" ]]; then
+        retry_audit_passed=$(echo "$retry_body" | jq -r '.data.audit.passed // false' 2>/dev/null || echo 'false')
+        if [[ "$retry_audit_passed" == "true" ]]; then
           echo "    ✅ Retry validation passed; continuing to PATCH" | tee -a "$LOG_FILE"
           dry_http_code=200
           dry_body="$retry_body"
@@ -248,43 +277,48 @@ for html_file in "$SRC_DIR"/*.html; do
   fi
   fi
 
-  has_errors=$(echo "$dry_body" | jq -r '.validationResult.hasErrors // false')
+  # Dry-run just checks if blocks can be extracted (doesn't perform validation)
+  blocks_extracted=$(echo "$dry_body" | jq -r '.data.blocksExtracted // .blocksExtracted // 0' 2>/dev/null || echo '0')
   
-  if [[ "$has_errors" != "false" ]]; then
-    echo "  ❌ Validation failed" | tee -a "$LOG_FILE"
-    error_count=$(echo "$dry_body" | jq -r '.validationResult.errors | length')
-    echo "     Errors: $error_count" | tee -a "$LOG_FILE"
-    first_error=$(echo "$dry_body" | jq -r '.validationResult.errors[0].message // "Unknown"')
-    echo "     First: $first_error" | tee -a "$LOG_FILE"
-    echo "$dry_body" > "$FAILED_VALIDATION_DIR/${filename%.html}-validation.json" || true
+  if [[ "$blocks_extracted" == "0" ]]; then
+    echo "  ❌ Dry-run extraction failed (0 blocks extracted)" | tee -a "$LOG_FILE"
+    echo "     This indicates the HTML content could not be converted to Notion blocks" | tee -a "$LOG_FILE"
+    echo "$dry_body" > "$FAILED_VALIDATION_DIR/${filename%.html}-dryrun-failed.json" || true
     # Optional retry
     if [[ "${VALIDATION_RETRY:-0}" == "1" ]]; then
-      echo "  ↻ Retry validation (VALIDATION_RETRY=1)" | tee -a "$LOG_FILE"
+      echo "  ↻ Retry dry-run (VALIDATION_RETRY=1)" | tee -a "$LOG_FILE"
       sleep 2
-      retry_response=$(curl -s -m 60 -w "\n%{http_code}" -X POST "$API_URL" \
-        -H "Content-Type: application/json" \
-        -d "{\"title\":\"test\",\"databaseId\":\"178f8dc43e2780d09be1c568a04d7bf3\",\"content\":$(echo "$content" | jq -Rs .),\"url\":\"https://test.com\",\"dryRun\":true}" 2>&1)
+      if [[ -n "$page_id" && "$page_id" != "null" ]]; then
+        # Existing page: use PATCH with dryRun
+        retry_response=$(curl -s -m 60 -w "\n%{http_code}" -X PATCH "$API_URL/$page_id" \
+          -H "Content-Type: application/json" \
+          -d "{\"title\":\"$title\",\"contentHtml\":$(echo "$content" | jq -Rs .),\"url\":\"$page_url\",\"dryRun\":true}" 2>&1)
+      else
+        # New page: cannot retry
+        retry_http_code="400"
+        retry_body="{}"
+      fi
       retry_http_code=$(echo "$retry_response" | tail -n1)
       retry_body=$(echo "$retry_response" | sed '$d')
       echo "    ↳ Retry HTTP: $retry_http_code" | tee -a "$LOG_FILE"
       if [[ "$retry_http_code" == "200" ]]; then
-        retry_has_errors=$(echo "$retry_body" | jq -r '.validationResult.hasErrors // false')
-        if [[ "$retry_has_errors" == "false" ]]; then
-          echo "    ✅ Retry validation passed; continuing to PATCH" | tee -a "$LOG_FILE"
+        retry_blocks=$(echo "$retry_body" | jq -r '.blocksExtracted // 0' 2>/dev/null || echo '0')
+        if [[ "$retry_blocks" != "0" ]]; then
+          echo "    ✅ Retry succeeded - extracted $retry_blocks blocks; continuing to PATCH" | tee -a "$LOG_FILE"
           dry_body="$retry_body"
-          has_errors=false
+          blocks_extracted="$retry_blocks"
         else
-          echo "    ❌ Retry still failing" | tee -a "$LOG_FILE"
+          echo "    ❌ Retry still failing (0 blocks extracted)" | tee -a "$LOG_FILE"
         fi
       fi
     fi
-    if [[ "$has_errors" != "false" ]]; then
+    if [[ "$blocks_extracted" == "0" ]]; then
     failed_validation=$((failed_validation+1))
     continue
     fi
   fi
 
-  echo "  ✅ Validation passed" | tee -a "$LOG_FILE"
+  echo "  ✅ Dry-run passed (extracted $blocks_extracted blocks)" | tee -a "$LOG_FILE"
   validate_end_epoch=$(date +%s)
   validate_duration=$((validate_end_epoch - validate_start_epoch))
   validate_end_human=$(date +"%Y-%m-%d %H:%M:%S")
@@ -293,22 +327,48 @@ for html_file in "$SRC_DIR"/*.html; do
   # STEP 2: Execute PATCH with adaptive timeout based on complexity
   echo "  2️⃣  PATCHing page..." | tee -a "$LOG_FILE"
   
+  # Get file size for timeout calculation (fallback heuristic)
+  file_size_kb=$(du -k "$html_file" | cut -f1)
+  
   # Estimate complexity from dry-run response
   block_count=$(echo "$dry_body" | jq -r '.data.children | length' 2>/dev/null || echo 0)
   table_count=$(echo "$dry_body" | jq -r '[.data.children[] | select(.type == "table")] | length' 2>/dev/null || echo 0)
   
-  echo "  📊 Complexity: $block_count blocks, $table_count tables" | tee -a "$LOG_FILE"
+  echo "  📊 Complexity: $block_count blocks, $table_count tables, ${file_size_kb}KB file" | tee -a "$LOG_FILE"
   
-  # Adaptive timeout selection
+  # Adaptive timeout selection (dual-criteria: block/table count AND file size)
+  # Use the higher timeout from either criteria to ensure sufficient time
+  timeout_by_content=180
+  timeout_by_filesize=180
+  
+  # Content-based timeout
   if [[ $block_count -gt 500 || $table_count -gt 50 ]]; then
-    manual_timeout=480  # 8 minutes for very complex pages (80+ tables)
-    echo "  ⚡ Using extended timeout: ${manual_timeout}s (high complexity)" | tee -a "$LOG_FILE"
+    timeout_by_content=480  # 8 minutes for very complex pages
   elif [[ $block_count -gt 300 || $table_count -gt 30 ]]; then
-    manual_timeout=300  # 5 minutes for complex pages (30-80 tables)
-    echo "  ⚡ Using extended timeout: ${manual_timeout}s (medium complexity)" | tee -a "$LOG_FILE"
+    timeout_by_content=300  # 5 minutes for complex pages
   else
-    manual_timeout=180  # 3 minutes for normal pages
-    echo "  ⚡ Using standard timeout: ${manual_timeout}s" | tee -a "$LOG_FILE"
+    timeout_by_content=180  # 3 minutes for normal pages
+  fi
+  
+  # File size-based timeout (additional safety net)
+  if [[ $file_size_kb -gt 100 ]]; then
+    timeout_by_filesize=300  # 5 minutes for large files (>100KB)
+  elif [[ $file_size_kb -gt 50 ]]; then
+    timeout_by_filesize=240  # 4 minutes for medium files (>50KB)
+  else
+    timeout_by_filesize=180  # 3 minutes for small files
+  fi
+  
+  # Use the maximum timeout from both criteria
+  if [[ $timeout_by_content -gt $timeout_by_filesize ]]; then
+    manual_timeout=$timeout_by_content
+    echo "  ⚡ Using timeout: ${manual_timeout}s (content-based: high complexity)" | tee -a "$LOG_FILE"
+  elif [[ $timeout_by_filesize -gt $timeout_by_content ]]; then
+    manual_timeout=$timeout_by_filesize
+    echo "  ⚡ Using timeout: ${manual_timeout}s (file size-based: ${file_size_kb}KB)" | tee -a "$LOG_FILE"
+  else
+    manual_timeout=$timeout_by_content
+    echo "  ⚡ Using timeout: ${manual_timeout}s (standard)" | tee -a "$LOG_FILE"
   fi
   
   patch_start_epoch=$(date +%s)
@@ -320,7 +380,7 @@ for html_file in "$SRC_DIR"/*.html; do
   
   curl -s -m "$manual_timeout" -w "\n%{http_code}" -X PATCH "$API_URL/$page_id" \
     -H "Content-Type: application/json" \
-    -d "{\"title\":\"$title\",\"contentHtml\":$(echo "$content" | jq -Rs .),\"url\":\"https://docs.servicenow.com\"}" \
+    -d "{\"title\":\"$title\",\"contentHtml\":$(echo "$content" | jq -Rs .),\"url\":\"$page_url\"}" \
     > "$temp_response" 2>&1 &
   
   curl_pid=$!
@@ -363,9 +423,9 @@ for html_file in "$SRC_DIR"/*.html; do
       patch_body=$(sed '$d' "$temp_response")
       
       if [[ "$patch_http_code" == "200" ]]; then
-        # Verify validation passed
-        validation_result=$(echo "$patch_body" | jq -r '.validationResult // {}')
-        has_errors=$(echo "$validation_result" | jq -r '.hasErrors // false')
+        # Verify validation passed (response structure: { success: true, validation: { hasErrors: false, ... } })
+        validation_result=$(echo "$patch_body" | jq -r '.validation // {}' 2>/dev/null || echo '{}')
+        has_errors=$(echo "$validation_result" | jq -r '.hasErrors // false' 2>/dev/null || echo 'false')
         
         if [[ "$has_errors" != "false" ]]; then
           echo "  ❌ PATCH completed but validation failed" | tee -a "$LOG_FILE"
@@ -376,25 +436,100 @@ for html_file in "$SRC_DIR"/*.html; do
           unsuccessful_moved=$((unsuccessful_moved+1))
         else
           echo "  ✅ PATCH successful with clean validation" | tee -a "$LOG_FILE"
-          mv "$html_file" "$DST_DIR/"
-          echo "  📦 Moved to updated-pages/" | tee -a "$LOG_FILE"
-          patched=$((patched+1))
-
-          # Per-page Notion property refresh
+          
+          # Before moving to updated-pages/, verify actual Notion validation properties
           clean_page_id=$(echo "$page_id" | tr -d '-')
-          echo "  🔄 Refresh properties for page: $clean_page_id" | tee -a "$LOG_FILE"
-          refresh_resp=$(curl -s -w "\n%{http_code}" -X POST "http://localhost:3004/api/validate" \
-            -H "Content-Type: application/json" \
-            -d "{\"pageIds\":[\"$clean_page_id\"]}" 2>&1 || echo -e "\n000")
-          refresh_http=$(echo "$refresh_resp" | tail -n1)
-          refresh_body=$(echo "$refresh_resp" | sed '$d')
-          if [[ "$refresh_http" == "200" ]]; then
-            updated=$(echo "$refresh_body" | jq -r '.data.summary.updated // 0' 2>/dev/null || echo 0)
-            cleared=$(echo "$refresh_body" | jq -r '.data.summary.errorsCleared // 0' 2>/dev/null || echo 0)
-            failed_prop=$(echo "$refresh_body" | jq -r '.data.summary.failed // 0' 2>/dev/null || echo 0)
-            echo "     ↳ Property refresh: updated=$updated errorsCleared=$cleared failed=$failed_prop" | tee -a "$LOG_FILE"
+          echo "  � Checking Notion validation properties for page: $clean_page_id" | tee -a "$LOG_FILE"
+          
+          # Query Notion page properties directly
+          page_props_resp=$(curl -s -w "\n%{http_code}" -X GET "http://localhost:3004/api/pages/$clean_page_id" 2>&1 || echo -e "\n000")
+          page_props_http=$(echo "$page_props_resp" | tail -n1)
+          page_props_body=$(echo "$page_props_resp" | sed '$d')
+          
+          if [[ "$page_props_http" != "200" ]]; then
+            echo "     ⚠️  Could not fetch Notion properties (HTTP $page_props_http) — moving to updated-pages/ anyway" | tee -a "$LOG_FILE"
+            mv "$html_file" "$DST_DIR/"
+            echo "  📦 Moved to updated-pages/ (property check skipped)" | tee -a "$LOG_FILE"
+            patched=$((patched+1))
           else
-            echo "     ↳ [WARN] Property refresh HTTP $refresh_http" | tee -a "$LOG_FILE"
+            # Wait for validation properties to be written (PATCH writes them asynchronously)
+            echo "     ⏳ Waiting 2s for validation properties to populate..." | tee -a "$LOG_FILE"
+            sleep 2
+            
+            # Re-fetch properties after delay
+            page_props_resp=$(curl -s -w "\n%{http_code}" -X GET "http://localhost:3004/api/pages/$clean_page_id" 2>&1 || echo -e "\n000")
+            page_props_http=$(echo "$page_props_resp" | tail -n1)
+            page_props_body=$(echo "$page_props_resp" | sed '$d')
+            
+            if [[ "$page_props_http" != "200" ]]; then
+              echo "     ⚠️  Could not re-fetch Notion properties (HTTP $page_props_http) — moving to updated-pages/ anyway" | tee -a "$LOG_FILE"
+              mv "$html_file" "$DST_DIR/"
+              echo "  📦 Moved to updated-pages/ (property check skipped)" | tee -a "$LOG_FILE"
+              patched=$((patched+1))
+            else
+              # Extract Audit and ContentComparison property values
+              audit_text=$(echo "$page_props_body" | jq -r '.properties.Audit.rich_text[0].text.content // ""' 2>/dev/null || echo "")
+              content_comp_text=$(echo "$page_props_body" | jq -r '.properties.ContentComparison.rich_text[0].text.content // ""' 2>/dev/null || echo "")
+              error_checkbox=$(echo "$page_props_body" | jq -r '.properties.Error.checkbox // false' 2>/dev/null || echo "false")
+              
+              echo "     ↳ Audit property: ${audit_text:0:80}..." | tee -a "$LOG_FILE"
+              echo "     ↳ ContentComparison property: ${content_comp_text:0:80}..." | tee -a "$LOG_FILE"
+              echo "     ↳ Error checkbox: $error_checkbox" | tee -a "$LOG_FILE"
+              
+              # If properties are empty, validation wasn't run (shouldn't happen with SN2N_AUDIT_CONTENT=1)
+              # In this case, move to updated-pages/ anyway (legacy behavior)
+              if [[ -z "$audit_text" && -z "$content_comp_text" ]]; then
+                echo "     ⚠️  Validation properties are empty (validation may not have run) — moving to updated-pages/" | tee -a "$LOG_FILE"
+                mv "$html_file" "$DST_DIR/"
+                echo "  📦 Moved to updated-pages/ (no validation data)" | tee -a "$LOG_FILE"
+                patched=$((patched+1))
+              else
+                # Check if validation passed (look for ✅ or PASS in both properties)
+                # Also check for explicit FAIL indicators (❌ or FAIL)
+                audit_passed=false
+                audit_failed=false
+                content_comp_passed=false
+                content_comp_failed=false
+                
+                if echo "$audit_text" | grep -q '✅' || echo "$audit_text" | grep -qi '\bPASS\b'; then
+                  audit_passed=true
+                fi
+                if echo "$audit_text" | grep -q '❌' || echo "$audit_text" | grep -qi '\bFAIL\b'; then
+                  audit_failed=true
+                fi
+                
+                if echo "$content_comp_text" | grep -q '✅' || echo "$content_comp_text" | grep -qi '\bPASS\b'; then
+                  content_comp_passed=true
+                fi
+                if echo "$content_comp_text" | grep -q '❌' || echo "$content_comp_text" | grep -qi '\bFAIL\b'; then
+                  content_comp_failed=true
+                fi
+                
+                echo "     ↳ Audit: passed=$audit_passed failed=$audit_failed" | tee -a "$LOG_FILE"
+                echo "     ↳ ContentComparison: passed=$content_comp_passed failed=$content_comp_failed" | tee -a "$LOG_FILE"
+                
+                # Move to updated-pages/ ONLY if both validations explicitly passed and no failures detected
+                if [[ "$audit_passed" == "true" && "$content_comp_passed" == "true" && "$error_checkbox" == "false" ]]; then
+                  echo "  ✅ Validation properties confirm success — moving to updated-pages/" | tee -a "$LOG_FILE"
+                  mv "$html_file" "$DST_DIR/"
+                  echo "  📦 Moved to updated-pages/" | tee -a "$LOG_FILE"
+                  patched=$((patched+1))
+                else
+                  echo "  ❌ Validation properties show failure — keeping in pages-to-update/" | tee -a "$LOG_FILE"
+                  if [[ "$audit_passed" != "true" || "$audit_failed" == "true" ]]; then
+                    echo "     ↳ Reason: Audit property shows FAIL or not PASS" | tee -a "$LOG_FILE"
+                  fi
+                  if [[ "$content_comp_passed" != "true" || "$content_comp_failed" == "true" ]]; then
+                    echo "     ↳ Reason: ContentComparison property shows FAIL or not PASS" | tee -a "$LOG_FILE"
+                  fi
+                  if [[ "$error_checkbox" != "false" ]]; then
+                    echo "     ↳ Reason: Error checkbox is checked" | tee -a "$LOG_FILE"
+                  fi
+                  failed_patch=$((failed_patch+1))
+                  # File stays in pages-to-update/ for retry
+                fi
+              fi
+            fi
           fi
         fi
       else
@@ -453,14 +588,14 @@ for html_file in "$SRC_DIR"/*.html; do
               retry_temp="/tmp/patch-retry-response-$$-$total-attempt-$generic_attempt.txt"
               curl -s -m "$manual_timeout" -w "\n%{http_code}" -X PATCH "$API_URL/$page_id" \
                 -H "Content-Type: application/json" \
-                -d "{\"title\":\"$title\",\"contentHtml\":$(echo "$content" | jq -Rs .),\"url\":\"https://docs.servicenow.com\"}" > "$retry_temp" 2>&1
+                -d "{\"title\":\"$title\",\"contentHtml\":$(echo "$content" | jq -Rs .),\"url\":\"$page_url\"}" > "$retry_temp" 2>&1
               retry_http_code=$(tail -n1 "$retry_temp")
               retry_body=$(sed '$d' "$retry_temp")
               rm -f "$retry_temp"
               echo "        ↳ Retry HTTP: $retry_http_code" | tee -a "$LOG_FILE"
               if [[ "$retry_http_code" == "200" ]]; then
-                retry_has_errors=$(echo "$retry_body" | jq -r '.validationResult.hasErrors // false')
-                if [[ "$retry_has_errors" == "false" ]]; then
+                retry_audit_passed=$(echo "$retry_body" | jq -r '.data.audit.passed // false' 2>/dev/null || echo 'false')
+                if [[ "$retry_audit_passed" == "true" ]]; then
                   echo "        ✅ Retry succeeded (attempt $generic_attempt)." | tee -a "$LOG_FILE"
                   mv "$html_file" "$DST_DIR/"
                   echo "        📦 Moved to updated-pages/ (success after retry)" | tee -a "$LOG_FILE"

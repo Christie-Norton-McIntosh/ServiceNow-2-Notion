@@ -237,7 +237,7 @@ export function applyPropertyMappings(extractedData, database, mappings) {
   const properties = {};
   const dbProperties = database.properties || {};
 
-  // Apply each mapping
+  // Apply user-configured mappings
   Object.entries(mappings).forEach(([notionProperty, sourceField]) => {
     if (!sourceField || !dbProperties[notionProperty]) return;
 
@@ -256,7 +256,38 @@ export function applyPropertyMappings(extractedData, database, mappings) {
     }
   });
 
-  debug(`✅ Applied ${Object.keys(properties).length} property mappings`);
+  // Auto-map hardcoded properties (Page URL, Content Source, CurrentReleaseURL)
+  // These are automatically extracted and should always be included if the properties exist
+  const autoMappings = {
+    'Page URL': window.location.href,
+    'Content Source': 'ServiceNow Technical Documentation',
+    'CurrentReleaseURL': extractedData.CurrentReleaseURL || window.location.href,
+  };
+
+  // Debug: Log what CurrentReleaseURL value we have
+  debug(`🔍 [CurrentReleaseURL DEBUG] extractedData.CurrentReleaseURL = ${extractedData.CurrentReleaseURL}`);
+  debug(`🔍 [CurrentReleaseURL DEBUG] Database has "CurrentReleaseURL" property: ${!!dbProperties['CurrentReleaseURL']}`);
+  debug(`🔍 [CurrentReleaseURL DEBUG] Available database properties: ${Object.keys(dbProperties).join(', ')}`);
+
+  Object.entries(autoMappings).forEach(([notionProperty, value]) => {
+    if (dbProperties[notionProperty] && value) {
+      const propConfig = dbProperties[notionProperty];
+      const mappedValue = mapValueToNotionProperty(value, propConfig);
+      if (mappedValue !== null) {
+        properties[notionProperty] = mappedValue;
+        debug(`✅ Auto-mapped: "${notionProperty}" = "${value}"`);
+      }
+    } else {
+      // Debug: Log why auto-mapping failed
+      if (!dbProperties[notionProperty]) {
+        debug(`⚠️ [AUTO-MAP] Property "${notionProperty}" not found in database`);
+      } else if (!value) {
+        debug(`⚠️ [AUTO-MAP] Property "${notionProperty}" has no value`);
+      }
+    }
+  });
+
+  debug(`✅ Applied ${Object.keys(properties).length} property mappings (user + auto)`);
   return properties;
 }
 

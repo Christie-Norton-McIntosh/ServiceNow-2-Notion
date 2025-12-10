@@ -70,7 +70,13 @@ export function injectAdvancedSettingsModal() {
           </div>
         </div>
         
-        <div style="display:flex; gap:10px; padding-top:16px; border-top:1px solid #eee;">
+        <div style="padding-top:16px; border-top:1px solid #eee; margin-bottom:16px;">
+          <button id="w2n-configure-property-mapping" style="width:100%;padding:10px;border-radius:6px;background:#8b5cf6;color:white;border:none;cursor:pointer;font-size:14px;">
+            🗺️ Configure Property Mapping
+          </button>
+        </div>
+        
+        <div style="display:flex; gap:10px;">
           <button id="w2n-save-advanced-settings" style="flex:1;padding:10px;border-radius:6px;background:#10b981;color:white;border:none;cursor:pointer;font-size:14px;">
             Save Settings
           </button>
@@ -94,6 +100,7 @@ export function setupAdvancedSettingsModal(modal) {
   const closeBtn = modal.querySelector("#w2n-close-advanced-settings");
   const saveBtn = modal.querySelector("#w2n-save-advanced-settings");
   const cancelBtn = modal.querySelector("#w2n-cancel-advanced-settings");
+  const propertyMappingBtn = modal.querySelector("#w2n-configure-property-mapping");
 
   function closeModal() {
     if (modal.parentNode) {
@@ -103,6 +110,19 @@ export function setupAdvancedSettingsModal(modal) {
 
   closeBtn.onclick = closeModal;
   cancelBtn.onclick = closeModal;
+  
+  // Property mapping button handler
+  if (propertyMappingBtn) {
+    propertyMappingBtn.onclick = () => {
+      closeModal();
+      // Import and show property mapping modal
+      import("./property-mapping-modal.js").then(module => {
+        module.showPropertyMappingModal();
+      }).catch(e => {
+        debug("Failed to open property mapping modal:", e);
+      });
+    };
+  }
 
   // Click outside to close
   modal.onclick = (e) => {

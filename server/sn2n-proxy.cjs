@@ -721,28 +721,60 @@ function sendError(res, errorCode, message, details = null, statusCode = 500) {
 
 
 async function downloadAndUploadImage(imageUrl, alt = "image") {
-  try {
-    if (SN2N_VERBOSE)
-      log(`⬇️ Downloading image: ${String(imageUrl).substring(0, 120)}`);
-    const response = await axios.get(imageUrl, {
-      responseType: "arraybuffer",
-      timeout: 30000,
-      headers: { "User-Agent": "SN2N-Proxy/1.0" },
-    });
+  const maxRetries = 3;
+  let retryCount = 0;
 
-    const buffer = Buffer.from(response.data);
-    const contentType = response.headers["content-type"] || "image/png";
-    const ext = contentType.split("/").pop().split(";")[0] || "png";
-    const filename = `${(alt || "image")
-      .replace(/[^a-zA-Z0-9]/g, "_")
-      .substring(0, 20)}.${ext}`;
+  while (retryCount <= maxRetries) {
+    try {
+      if (SN2N_VERBOSE) {
+        const retryMsg = retryCount > 0 ? ` (retry ${retryCount}/${maxRetries})` : "";
+        log(`⬇️ Downloading image${retryMsg}: ${String(imageUrl).substring(0, 120)}`);
+      }
+      
+      const response = await axios.get(imageUrl, {
+        responseType: "arraybuffer",
+        timeout: 30000,
+        headers: { "User-Agent": "SN2N-Proxy/1.0" },
+      });
 
-    const uploadId = await uploadBufferToNotion(buffer, filename, contentType);
-    return uploadId;
-  } catch (err) {
-    if (SN2N_VERBOSE) log("downloadAndUploadImage failed:", err.message || err);
-    return null;
+      const buffer = Buffer.from(response.data);
+      const contentType = response.headers["content-type"] || "image/png";
+      const ext = contentType.split("/").pop().split(";")[0] || "png";
+      const filename = `${(alt || "image")
+        .replace(/[^a-zA-Z0-9]/g, "_")
+        .substring(0, 20)}.${ext}`;
+
+      const uploadId = await uploadBufferToNotion(buffer, filename, contentType);
+      
+      if (uploadId) {
+        if (SN2N_VERBOSE && retryCount > 0) {
+          log(`✅ Image upload succeeded after ${retryCount} retries`);
+        }
+        return uploadId;
+      }
+      
+      // If uploadId is null but no exception, try again
+      throw new Error("Upload returned null");
+    } catch (err) {
+      retryCount++;
+      
+      if (retryCount <= maxRetries) {
+        const delay = retryCount * 2000; // 2s, 4s, 6s
+        if (SN2N_VERBOSE) {
+          log(`⚠️ Image upload failed (attempt ${retryCount}/${maxRetries + 1}): ${err.message || err}`);
+          log(`⏳ Retrying in ${delay / 1000}s...`);
+        }
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        if (SN2N_VERBOSE) {
+          log(`❌ Image upload failed after ${maxRetries + 1} attempts: ${err.message || err}`);
+        }
+        return null;
+      }
+    }
   }
+  
+  return null;
 }
 
 async function uploadBufferToNotion(
@@ -1885,6 +1917,7 @@ try {
   app.use("/api", require('./routes/databases.cjs'));
   app.use("/api", require('./routes/upload.cjs'));
   app.use("/api", require('./routes/validate.cjs'));
+  app.use("/api", require('./routes/pages.cjs'));
 } catch (e) {
   console.log("⚠️ API route modules not available, using inline fallbacks:", e.message);
   // Main API routes will be handled by the inline endpoints defined above
