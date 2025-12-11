@@ -109,6 +109,7 @@ This project transforms a large monolithic userscript (18,438 lines across 4 fil
 - **Local Proxy Server**: Node.js server handles HTML-to-Notion conversion with full Cheerio DOM manipulation
 - **Modular Architecture**: Clean ES6 modules bundled with Rollup for easy maintenance
 - **🧠 Pattern Learning System** (v11.0.113+): Automatic capture of failing HTML patterns with auto-remediation, creating a self-learning feedback loop for continuous improvement
+- **🧩 Text Completeness Comparator** (v11.0.205+): Validates that ServiceNow content is fully captured in Notion using canonicalization + LCS/Jaccard algorithms (see [docs/COMPLETENESS-COMPARATOR.md](docs/COMPLETENESS-COMPARATOR.md))
 
 ## 🧠 Smart Learning & Auto-Remediation (v11.0.113+)
 
@@ -132,6 +133,63 @@ node tools/manage-patterns.cjs --clean
 ```
 
 See [docs/PATTERN-LEARNING.md](docs/PATTERN-LEARNING.md) for detailed documentation.
+
+## 🧩 Text Completeness Comparator (v11.0.205+)
+
+Validates that ServiceNow content is fully captured in Notion pages using advanced text comparison:
+
+- **Canonicalization**: Normalizes text (Unicode NFKC, punctuation, whitespace) for consistent comparison
+- **LCS Algorithm**: Computes exact coverage with missing text spans using dynamic programming
+- **Jaccard Fallback**: Scalable order-insensitive comparison for very large content
+- **Notion Integration**: Fetches page content, updates database properties, optional toggle append
+- **REST API**: Three endpoints for different comparison scenarios
+
+### Quick Start
+
+```bash
+# Start the server (includes comparator)
+npm start
+
+# Check comparator health
+curl http://localhost:3004/api/compare/health
+
+# Compare two text sections
+curl -X POST http://localhost:3004/api/compare/section \
+  -H "Content-Type: application/json" \
+  -d '{
+    "srcText": "Your ServiceNow content here",
+    "dstText": "Your Notion content here"
+  }'
+```
+
+### API Endpoints
+
+- `GET /api/compare/health` - Health check with version info
+- `POST /api/compare/section` - Compare two arbitrary text strings
+- `POST /api/compare/notion-page` - Fetch and compare Notion page content
+- `POST /api/compare/notion-db-row` - Compare and update database properties
+
+### Configuration
+
+Add to your `.env` file:
+
+```bash
+# Comparator thresholds
+MAX_CELLS=50000000      # LCS DP guardrail: (n+1)*(m+1)
+MIN_SPAN=40             # Min tokens to report a missing span
+APPEND_TOGGLE=false     # Append missing spans toggle to page
+
+# Optional: Bearer token for API authentication
+# AUTH_TOKEN=your-secret-token
+```
+
+### Documentation
+
+- **[Quick Start Guide](docs/COMPARATOR-QUICK-START.md)** - 5-minute setup and common use cases ⭐
+- [Main Documentation](docs/COMPLETENESS-COMPARATOR.md) - Overview and features
+- [API Reference](docs/API-COMPARATOR.md) - Endpoint details and examples
+- [Architecture](docs/ARCHITECTURE-COMPARATOR.md) - Technical details and algorithms
+- [Deployment Guide](docs/DEPLOYMENT-COMPARATOR.md) - Installation and configuration
 
 ## 📦 Installation
 

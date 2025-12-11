@@ -849,6 +849,8 @@ try {
   app.use(require('./routes/ping.cjs'));
   app.use(require('./routes/status.cjs'));
   app.use(require('./routes/logging.cjs'));
+  app.use('/api/compare', require('./routes/compare.cjs'));
+  console.log("✅ Comparator routes loaded successfully");
 } catch (e) {
   console.log("⚠️ Route modules not available, using inline fallbacks:", e.message);
   
