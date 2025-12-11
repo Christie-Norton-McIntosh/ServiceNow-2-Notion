@@ -2921,6 +2921,74 @@ async function extractContentFromHtml(html) {
       
       for (let li of listItems) {
         const $li = $(li);
+
+        // QUICK-FIX: Prefer cleaned label/href when list items are UI checkbox filters
+        // or simple anchors. Many ULs in the site use a <div>.zDocsCheckbox with
+        // <input> + <label> inside; parseRichText preserved raw HTML. Detect those
+        // patterns and emit a clean bulleted_list_item using the label text (or
+        // anchor text/href) to avoid raw HTML in Notion rich_text.
+        try {
+          // 1) Anchor-first: if an <a> exists, prefer its text and href
+          const $anchor = $li.find('a').first();
+          if ($anchor && $anchor.length > 0) {
+            const aText = ($anchor.text() || '').trim();
+            let aHref = ($anchor.attr('href') || '').trim();
+            if (aHref && aHref.startsWith('/')) aHref = `https://www.servicenow.com${aHref}`;
+            try { if (aHref) new URL(aHref); } catch (e) { aHref = ''; }
+
+            const aRich = [{ type: 'text', text: { content: aText || (aHref || '' ) }, annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' } }];
+            if (aHref) aRich[0].text.link = { url: aHref };
+
+            processedBlocks.push({ object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: aRich } });
+
+            // preserve any descriptive paragraphs inside the li (same as downstream logic)
+            const paras = $li.find('p').toArray();
+            for (const p of paras) {
+              const pHtml = $(p).html() || '';
+              if (pHtml) {
+                const { richText: pRichText } = await parseRichText(pHtml);
+                if (pRichText.length > 0 && pRichText.some(rt => rt.text.content.trim())) {
+                  const chunks = splitRichTextArray(pRichText);
+                  for (const chunk of chunks) {
+                    processedBlocks.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: chunk } });
+                  }
+                }
+              }
+            }
+
+            // remove the list item from DOM to avoid double-processing
+            $li.remove();
+            continue; // next li
+          }
+
+          // 2) Checkbox pattern: look for .zDocsCheckbox label text
+          const $checkboxLabel = $li.find('.zDocsCheckbox label').first();
+          if ($checkboxLabel && $checkboxLabel.length > 0) {
+            const labelText = ($checkboxLabel.text() || '').trim();
+            const labelRich = [{ type: 'text', text: { content: labelText }, annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' } }];
+            processedBlocks.push({ object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: labelRich } });
+
+            // preserve any descriptive paragraphs inside the li
+            const paras2 = $li.find('p').toArray();
+            for (const p of paras2) {
+              const pHtml = $(p).html() || '';
+              if (pHtml) {
+                const { richText: pRichText } = await parseRichText(pHtml);
+                if (pRichText.length > 0 && pRichText.some(rt => rt.text.content.trim())) {
+                  const chunks = splitRichTextArray(pRichText);
+                  for (const chunk of chunks) {
+                    processedBlocks.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: chunk } });
+                  }
+                }
+              }
+            }
+
+            $li.remove();
+            continue; // next li
+          }
+        } catch (ux) {
+          console.log('🔍 [UL-CLEANUP] error during anchor/checkbox cleanup', ux && ux.message);
+        }
         
         // Check if list item contains nested block elements (pre, ul, ol, div.note, p, etc.)
         // Note: We search for div.p wrappers which may contain div.note elements
@@ -4795,7 +4863,11 @@ async function extractContentFromHtml(html) {
       try {
         const relatedH5_any = $elem.find('h5').filter((i, h5) => $(h5).text().trim().toLowerCase() === 'related content');
         if (relatedH5_any.length > 0) {
-          console.log(`🔍 [CONTENT-PLACEHOLDER-RELATED] Found Related Content heading inside contentPlaceholder (early check) - inserting heading and list`);
+          // Extra diagnostic: print the exact h5 text (escaped) and nearby UL outerHTML so we can see invisible whitespace
+          const rawH5Text = relatedH5_any.first().text();
+          console.log(`🔍 [CONTENT-PLACEHOLDER-RELATED] Found Related Content heading inside contentPlaceholder (early check) - h5 text (raw): "${rawH5Text.replace(/\n/g, '\\n').replace(/\r/g, '\\r')}"`);
+          console.log(`🔍 [CONTENT-PLACEHOLDER-RELATED] contentPlaceholder snippet (first 400 chars): ${$elem.html().substring(0,400).replace(/\n/g,'\\n').replace(/\r/g,'\\r')}...`);
+          console.log(`🔍 [CONTENT-PLACEHOLDER-RELATED] inserting heading and list`);
           const headingText = 'Related Content';
           processedBlocks.push({
             object: 'block',
@@ -4808,6 +4880,13 @@ async function extractContentFromHtml(html) {
           if (!$ul_any || $ul_any.length === 0) $ul_any = relatedH5_any.first().parent().find('ul').first();
 
           if ($ul_any && $ul_any.length > 0) {
+            // Diagnostic: show the UL outerHTML (shortened) so we can confirm exact structure
+            try {
+              const ulHtml = $ul_any.html() || '';
+              console.log(`🔍 [CONTENT-PLACEHOLDER-RELATED] Found UL with ${$ul_any.find('> li').length} li(s) - UL snippet: ${ulHtml.substring(0,400).replace(/\n/g,'\\n').replace(/\r/g,'\\r')}...`);
+            } catch (ux) {
+              console.log('🔍 [CONTENT-PLACEHOLDER-RELATED] Warning: unable to serialize UL HTML', ux && ux.message);
+            }
             const lis_any = $ul_any.find('> li').toArray();
             for (const li of lis_any) {
               const $li = $(li);
@@ -4859,7 +4938,13 @@ async function extractContentFromHtml(html) {
           processedBlocks.push(...childBlocks);
         }
       } else {
-        console.log(`🔍 Skipping empty contentPlaceholder (UI chrome)`);
+        // Diagnostic: output the contentPlaceholder outerHTML to help debugging cases where it looks empty
+        try {
+          const cpHtml = $elem.html() || '';
+          console.log(`🔍 Skipping empty contentPlaceholder (UI chrome) - outerHTML snippet: ${cpHtml.substring(0,400).replace(/\n/g,'\\n').replace(/\r/g,'\\r')}...`);
+        } catch (cpErr) {
+          console.log('🔍 Skipping empty contentPlaceholder (UI chrome) - unable to serialize outerHTML', cpErr && cpErr.message);
+        }
       }
       $elem.remove(); // Mark as processed
       
