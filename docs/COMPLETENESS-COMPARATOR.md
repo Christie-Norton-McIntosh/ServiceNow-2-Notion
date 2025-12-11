@@ -13,6 +13,17 @@ The Text Completeness Comparator provides a way to validate that content extract
 - **Jaccard Fallback**: Scalable order-insensitive comparison for very large content
 - **Notion Integration**: Fetches page content, updates database properties, optional toggle append
 - **Configurable Thresholds**: Customize coverage requirements and minimum span sizes
+- **Multiple Usage Options**: Integrated PATCH workflow, standalone validation, or manual API calls
+
+## Usage Options
+
+The comparator can be used in three ways:
+
+1. **Option A: Integrated PATCH Workflow** - Automatically validates during PATCH operations
+2. **Option B: Standalone Validation** - Validate existing pages without re-PATCHing
+3. **Option C: Manual API Calls** - Direct API integration for custom workflows
+
+See [COMPARATOR-LOCAL-USAGE.md](COMPARATOR-LOCAL-USAGE.md) for detailed instructions on all three options.
 
 ## Key References
 
