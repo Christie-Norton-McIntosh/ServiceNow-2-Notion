@@ -448,26 +448,29 @@ export async function extractContentWithIframes(contentElement) {
   const tempDiv = document.createElement('div');
   tempDiv.innerHTML = combinedHtml;
   
-  // Remove contentPlaceholder elements that contain "Related Content"
+  // Historically we filtered out 'Related Content' here in the userscript to reduce AUDIT noise.
+  // That caused legitimate Related Content to be dropped before server-side processing.
+  // New behavior (v11.0.231+): only strip the *Mini TOC* ("On this page") from userscript extraction.
+  // Keep actual "Related Content" sections so the server can decide how to render them.
   const contentPlaceholders = tempDiv.querySelectorAll('.contentPlaceholder');
   let removedCount = 0;
   contentPlaceholders.forEach(cp => {
-    const text = cp.textContent.trim().toLowerCase();
     const headings = cp.querySelectorAll('h1, h2, h3, h4, h5, h6');
-    const hasRelatedContentHeading = Array.from(headings).some(h => 
-      h.textContent.trim().toLowerCase().includes('related content')
-    );
-    
-    if (text.includes('related content') || hasRelatedContentHeading) {
-      debug(`🗑️ Filtering out Related Content section from userscript extraction`);
+    const hasOnThisPage = Array.from(headings).some(h => {
+      const t = h.textContent.trim().toLowerCase();
+      return t === 'on this page';
+    });
+
+    if (hasOnThisPage) {
+      debug(`🗑️ Filtering out Mini TOC (On this page) from userscript extraction`);
       cp.remove();
       removedCount++;
     }
   });
-  
+
   if (removedCount > 0) {
     combinedHtml = tempDiv.innerHTML;
-    debug(`✅ Filtered out ${removedCount} Related Content section(s) in userscript`);
+    debug(`✅ Filtered out ${removedCount} Mini TOC contentPlaceholder(s) in userscript`);
   }
 
   return { combinedHtml, combinedImages };
