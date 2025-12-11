@@ -297,4 +297,78 @@ async function appendMissingSpansToggle(notion, pageId, spans) {
   await notion.blocks.children.append({ block_id: pageId, children });
 }
 
+/**
+ * Run completeness comparison and return results (for integration with W2N)
+ * This function is called internally after POST/PATCH orchestration completes
+ * 
+ * @param {Object} notion - Notion client instance
+ * @param {string} pageId - Notion page ID
+ * @param {string} srcText - Source HTML text (plain text, no tags)
+ * @param {Object} options - Comparison options
+ * @param {function} log - Logging function
+ * @returns {Promise<Object>} Comparison result with coverage, missing spans, etc.
+ */
+async function runCompletenessComparison(notion, pageId, srcText, options = {}, log = console.log) {
+  try {
+    log(`[COMPARATOR] Starting completeness comparison for page ${pageId}`);
+    
+    const lower = options.lowerCase !== false;
+    
+    // Fetch page blocks recursively
+    log(`[COMPARATOR] Fetching page blocks...`);
+    const blocks = await fetchPageBlocks(notion, pageId);
+    const dstText = flattenBlocks(blocks);
+    
+    log(`[COMPARATOR] Source tokens: ${srcText.length} chars`);
+    log(`[COMPARATOR] Notion tokens: ${dstText.length} chars`);
+    
+    // Canonicalize and tokenize
+    const canonSrc = canonicalizeText(srcText, { lower });
+    const canonDst = canonicalizeText(dstText, { lower });
+    const srcTokens = tokenizeWords(canonSrc);
+    const dstTokens = tokenizeWords(canonDst);
+    
+    log(`[COMPARATOR] Canonicalized source: ${srcTokens.length} tokens`);
+    log(`[COMPARATOR] Canonicalized notion: ${dstTokens.length} tokens`);
+    
+    // Run LCS/Jaccard comparison
+    const result = lcsCoverage(srcTokens, dstTokens, {
+      maxCells: options.maxCells ?? Number(process.env.MAX_CELLS || 50_000_000),
+      minMissingSpanTokens: options.minMissingSpanTokens ?? Number(process.env.MIN_SPAN || 40)
+    });
+    
+    const canonicalMissing = result.spans.map(([s, e]) => spanToCanonicalText(srcTokens, [s, e]));
+    
+    log(`[COMPARATOR] Method: ${result.method}`);
+    log(`[COMPARATOR] Coverage: ${(result.coverage * 100).toFixed(2)}%`);
+    log(`[COMPARATOR] Missing spans: ${result.spans.length}`);
+    
+    return {
+      success: true,
+      coverage: Number(result.coverage.toFixed(6)),
+      method: result.method,
+      lcsLength: result.lcsLength,
+      srcTokenCount: srcTokens.length,
+      dstTokenCount: dstTokens.length,
+      missingSpans: result.spans,
+      canonicalMissing,
+      runId: crypto.createHash('sha256')
+        .update(`${canonSrc.length}:${canonDst.length}:${result.method}:${result.lcsLength}`)
+        .digest('hex').slice(0, 16)
+    };
+  } catch (err) {
+    log(`[COMPARATOR] Error: ${err.message}`);
+    log(`[COMPARATOR] Stack: ${err.stack}`);
+    return {
+      success: false,
+      error: err.message,
+      coverage: 0,
+      method: 'error',
+      missingSpans: [],
+      canonicalMissing: []
+    };
+  }
+}
+
 module.exports = router;
+module.exports.runCompletenessComparison = runCompletenessComparison;
