@@ -44,6 +44,7 @@ delete require.cache[tablePath];
 const { convertTableBlock } = require('../converters/table.cjs');
 
 const { generateMarker, removeMarkerFromRichTextArray } = require('../orchestration/marker-management.cjs');
+const { lcsCoverage, canonicalizeText, tokenizeWords, compareTexts } = require('../utils/lcs-comparator.cjs');
 
 /** @private Global tracker for video detection (reset per conversion) */
 let hasDetectedVideos = false;
@@ -488,6 +489,20 @@ async function extractContentFromHtml(html) {
   html = html.replace(/<div[^>]*class="[^\"]*miniTOC[^\"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
   html = html.replace(/<div[^>]*class="[^\"]*zDocsSideBoxes[^\"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
   
+  // Remove EMPTY navigation chrome elements (UI only, no content).
+  // DO NOT remove all <nav> elements - some contain Related Content links!
+  // Strategy: Remove specific UI chrome navs by class, or empty navs with no meaningful content
+  html = html.replace(/<nav[^>]*class="[^\"]*tasksNavigation[^\"]*"[^>]*>[\s\S]*?<\/nav>/gi, "");
+  html = html.replace(/<div[^>]*class="[^\"]*related-links[^\"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
+  html = html.replace(/<div[^>]*class="[^\"]*tasksNavigation[^\"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
+  
+  // Remove empty navs (no text content except whitespace)
+  // Regex: <nav...>...content...</nav> where content has no letters/numbers
+  html = html.replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, (match) => {
+    // Keep nav if it contains any alphanumeric characters (actual content)
+    return /[a-zA-Z0-9]/.test(match) ? match : "";
+  });
+  
   // NOTE: Menu cascade preprocessing moved earlier (before AUDIT) in v11.0.158
   // This ensures both AUDIT and extraction use the same preprocessed HTML
   // See lines 283-295 for the menu cascade preprocessing
@@ -629,6 +644,63 @@ async function extractContentFromHtml(html) {
   // recent rollback. We only remove opening/closing tags; keep inner text for later formatting.
   // Examples: <var class="keyword varname">true</var> -> true
   text = text.replace(/<var[^>]*>([\s\S]*?)<\/var>/gi, '$1');
+
+    // CRITICAL: Protect technical placeholders FIRST (before SAMP/CODE processing)
+    // These are non-HTML tags like <plugin name>, <instance-name>, <Tool ID>, etc.
+    // Must protect them BEFORE they get wrapped in CODE markers or cleaned
+    const localTechnicalPlaceholders = [];
+    
+    // STEP 1: Protect HTML-encoded placeholders like &lt;plugin name&gt;
+    text = text.replace(/&lt;([^&]+)&gt;/g, (match, content) => {
+      const trimmed = content.trim();
+      
+      // Extract tag name (first word, ignoring / for closing tags)
+      const tagMatch = /^\/?\s*([a-z][a-z0-9-]*)/i.exec(trimmed);
+      if (!tagMatch) {
+        // Doesn't start with valid tag pattern, protect it
+        const marker = `__LOCAL_TECH_PLACEHOLDER_${localTechnicalPlaceholders.length}__`;
+        localTechnicalPlaceholders.push(content);
+        return marker;
+      }
+      
+      const tagName = tagMatch[1].toLowerCase();
+      
+      // If it's a known HTML tag, leave it for normal entity decoding
+      if (HTML_TAGS.has(tagName)) {
+        return match;
+      }
+      
+      // Unknown tag, protect it as a placeholder
+      const marker = `__LOCAL_TECH_PLACEHOLDER_${localTechnicalPlaceholders.length}__`;
+      localTechnicalPlaceholders.push(content);
+      return marker;
+    });
+    
+    // STEP 2: Protect raw angle bracket placeholders like <plugin name>
+    text = text.replace(/<([^>]+)>/g, (match, content) => {
+      const trimmed = content.trim();
+      
+      // Extract tag name (first word, ignoring / for closing tags)
+      const tagMatch = /^\/?\s*([a-z][a-z0-9-]*)/i.exec(trimmed);
+      if (!tagMatch) {
+        // Doesn't start with valid tag pattern, protect it
+        const marker = `__LOCAL_TECH_PLACEHOLDER_${localTechnicalPlaceholders.length}__`;
+        localTechnicalPlaceholders.push(content);
+        return marker;
+      }
+      
+      const tagName = tagMatch[1].toLowerCase();
+      
+      // If it's a known HTML tag, leave it alone
+      if (HTML_TAGS.has(tagName)) {
+        return match;
+      }
+      
+      // Unknown tag, protect it as a placeholder
+      const marker = `__LOCAL_TECH_PLACEHOLDER_${localTechnicalPlaceholders.length}__`;
+      localTechnicalPlaceholders.push(content);
+      return marker;
+    });
 
     // DEBUG: Log input HTML BEFORE normalization
     if (text && (text.includes('http') || text.includes('<code'))) {
@@ -932,12 +1004,24 @@ async function extractContentFromHtml(html) {
     });
 
     // Handle inline code tags
+    // FIX v11.0.220: Trim content to remove trailing/leading spaces inside code tags
     text = text.replace(/<code([^>]*)>([\s\S]*?)<\/code>/gi, (match, attrs, content) => {
       // If content already has CODE markers (from URL restoration), don't double-wrap
       if (content.includes('__CODE_START__')) {
         return content;
       }
-      return `__CODE_START__${content}__CODE_END__`;
+      return `__CODE_START__${content.trim()}__CODE_END__`;
+    });
+
+    // Handle <samp> tags (sample output/system output) - treat same as inline code
+    // CRITICAL: Must preserve <plugin name> placeholders inside samp content
+    // FIX v11.0.220: Trim content to remove trailing/leading spaces inside samp tags
+    text = text.replace(/<samp([^>]*)>([\s\S]*?)<\/samp>/gi, (match, attrs, content) => {
+      // If content already has CODE markers, don't double-wrap
+      if (content.includes('__CODE_START__')) {
+        return content;
+      }
+      return `__CODE_START__${content.trim()}__CODE_END__`;
     });
 
     // CRITICAL: Extract links FIRST, before identifier detection
@@ -966,8 +1050,9 @@ async function extractContentFromHtml(html) {
     });
 
     // Handle raw technical identifiers in parentheses/brackets as inline code
+    // FIX v11.0.220: Trim content and preserve original bracket/paren spacing
     text = text.replace(/([\(\[])[ \t\n\r]*([^\s()[\]]*[_.][^\s()[\]]*)[ \t\n\r]*([\)\]])/g, (match, open, code, close) => {
-      return `__CODE_START__${code.trim()}__CODE_END__`;
+      return `${open}__CODE_START__${code.trim()}__CODE_END__${close}`;
     });
 
     // Handle technical identifiers like (com.snc.software_asset_management) as inline code
@@ -992,6 +1077,7 @@ async function extractContentFromHtml(html) {
     // Handle standalone multi-word identifiers connected by _ or . (no spaces) as inline code
     // Examples: com.snc.incident.mim.ml_solution, sys_user_table, package.class.method
     // Must have at least 2 segments and no brackets/parentheses
+    // FIX v11.0.220: Trim identifier to remove any whitespace
     text = text.replace(/\b([a-zA-Z][a-zA-Z0-9]*(?:[_.][a-zA-Z][a-zA-Z0-9]*)+)(?![_.a-zA-Z0-9])/g, (match, identifier, offset) => {
       // Skip if already wrapped or if it's part of a URL
       if (match.includes('__CODE_START__') || match.includes('http')) {
@@ -1005,7 +1091,7 @@ async function extractContentFromHtml(html) {
         // We're inside a CODE block, don't wrap again
         return match;
       }
-      return `__CODE_START__${identifier}__CODE_END__`;
+      return `__CODE_START__${identifier.trim()}__CODE_END__`;
     });
 
     // Handle p/span with sectiontitle tasklabel class as bold
@@ -1033,6 +1119,11 @@ async function extractContentFromHtml(html) {
     text = text.replace(/__\s+BOLD\s+END__/g, '__BOLD_END__');
     text = text.replace(/__\s+ITALIC\s+START__/g, '__ITALIC_START__');
     text = text.replace(/__\s+ITALIC\s+END__/g, '__ITALIC_END__');
+    
+    // FIX v11.0.222: Remove extra spaces immediately after CODE_START and before CODE_END
+    // This handles cases like "( com.snc.procurement  )" where spaces are inside the formatted text
+    text = text.replace(/__CODE_START__\s+/g, '__CODE_START__');
+    text = text.replace(/\s+__CODE_END__/g, '__CODE_END__');
 
     // Add soft return between </a> and any <p> tag
     text = text.replace(/(<\/a>)(\s*)(<p[^>]*>)/gi, (match, closingA, whitespace, openingP) => {
@@ -1064,17 +1155,9 @@ async function extractContentFromHtml(html) {
       } else if (part === "__ITALIC_END__") {
         currentAnnotations.italic = false;
       } else if (part === "__CODE_START__") {
-        currentAnnotations._colorBeforeCode = currentAnnotations.color;
-        // FIX: Use red color instead of inline code formatting
-        currentAnnotations.color = "red";
+        currentAnnotations.code = true;
       } else if (part === "__CODE_END__") {
-        // FIX: Restore previous color (no code annotation to remove)
-        if (currentAnnotations._colorBeforeCode !== undefined) {
-          currentAnnotations.color = currentAnnotations._colorBeforeCode;
-          delete currentAnnotations._colorBeforeCode;
-        } else {
-          currentAnnotations.color = "default";
-        }
+        currentAnnotations.code = false;
       } else if (part === "__SOFT_BREAK__") {
         richText.push({
           type: "text",
@@ -1122,11 +1205,13 @@ async function extractContentFromHtml(html) {
           const lines = cleanedText.split('\n');
           for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
+            // FIX v11.0.223: Trim each line to remove trailing spaces in inline code
+            const trimmedLine = line.trim();
             // Add the line if it has content or if it's not the last line (preserve empty lines between content)
-            if (line || i < lines.length - 1) {
+            if (trimmedLine || i < lines.length - 1) {
               richText.push({
                 type: "text",
-                text: { content: line },
+                text: { content: trimmedLine },
                 annotations: normalizeAnnotations(currentAnnotations),
               });
               // Add a soft line break after each line except the last
@@ -1165,6 +1250,16 @@ async function extractContentFromHtml(html) {
         current.text.content += " ";
       }
     }
+
+    // CRITICAL: Restore local technical placeholders before returning
+    // These were protected at the start of parseRichText to survive SAMP/CODE processing
+    richText.forEach(obj => {
+      if (obj.text && obj.text.content) {
+        obj.text.content = obj.text.content.replace(/__LOCAL_TECH_PLACEHOLDER_(\d+)__/g, (match, index) => {
+          return `<${localTechnicalPlaceholders[parseInt(index)]}>`;
+        });
+      }
+    });
 
     return { richText, imageBlocks, videoBlocks };
   }
@@ -2826,6 +2921,74 @@ async function extractContentFromHtml(html) {
       
       for (let li of listItems) {
         const $li = $(li);
+
+        // QUICK-FIX: Prefer cleaned label/href when list items are UI checkbox filters
+        // or simple anchors. Many ULs in the site use a <div>.zDocsCheckbox with
+        // <input> + <label> inside; parseRichText preserved raw HTML. Detect those
+        // patterns and emit a clean bulleted_list_item using the label text (or
+        // anchor text/href) to avoid raw HTML in Notion rich_text.
+        try {
+          // 1) Anchor-first: if an <a> exists, prefer its text and href
+          const $anchor = $li.find('a').first();
+          if ($anchor && $anchor.length > 0) {
+            const aText = ($anchor.text() || '').trim();
+            let aHref = ($anchor.attr('href') || '').trim();
+            if (aHref && aHref.startsWith('/')) aHref = `https://www.servicenow.com${aHref}`;
+            try { if (aHref) new URL(aHref); } catch (e) { aHref = ''; }
+
+            const aRich = [{ type: 'text', text: { content: aText || (aHref || '' ) }, annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' } }];
+            if (aHref) aRich[0].text.link = { url: aHref };
+
+            processedBlocks.push({ object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: aRich } });
+
+            // preserve any descriptive paragraphs inside the li (same as downstream logic)
+            const paras = $li.find('p').toArray();
+            for (const p of paras) {
+              const pHtml = $(p).html() || '';
+              if (pHtml) {
+                const { richText: pRichText } = await parseRichText(pHtml);
+                if (pRichText.length > 0 && pRichText.some(rt => rt.text.content.trim())) {
+                  const chunks = splitRichTextArray(pRichText);
+                  for (const chunk of chunks) {
+                    processedBlocks.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: chunk } });
+                  }
+                }
+              }
+            }
+
+            // remove the list item from DOM to avoid double-processing
+            $li.remove();
+            continue; // next li
+          }
+
+          // 2) Checkbox pattern: look for .zDocsCheckbox label text
+          const $checkboxLabel = $li.find('.zDocsCheckbox label').first();
+          if ($checkboxLabel && $checkboxLabel.length > 0) {
+            const labelText = ($checkboxLabel.text() || '').trim();
+            const labelRich = [{ type: 'text', text: { content: labelText }, annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' } }];
+            processedBlocks.push({ object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: labelRich } });
+
+            // preserve any descriptive paragraphs inside the li
+            const paras2 = $li.find('p').toArray();
+            for (const p of paras2) {
+              const pHtml = $(p).html() || '';
+              if (pHtml) {
+                const { richText: pRichText } = await parseRichText(pHtml);
+                if (pRichText.length > 0 && pRichText.some(rt => rt.text.content.trim())) {
+                  const chunks = splitRichTextArray(pRichText);
+                  for (const chunk of chunks) {
+                    processedBlocks.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: chunk } });
+                  }
+                }
+              }
+            }
+
+            $li.remove();
+            continue; // next li
+          }
+        } catch (ux) {
+          console.log('🔍 [UL-CLEANUP] error during anchor/checkbox cleanup', ux && ux.message);
+        }
         
         // Check if list item contains nested block elements (pre, ul, ol, div.note, p, etc.)
         // Note: We search for div.p wrappers which may contain div.note elements
@@ -4682,16 +4845,82 @@ async function extractContentFromHtml(html) {
       // contentPlaceholder divs can contain actual content like "Related Content" sections
       // BUT they also contain UI chrome like Mini TOC navigation sidebars
       
-      // FILTER: Skip Mini TOC sidebars (navigation chrome, not article content)
-      const hasMiniToc = $elem.find('.zDocsMiniTocCollapseButton, .zDocsSideBoxes').length > 0;
-      const hasContentContainer = $elem.find('.contentContainer').length > 0;
+      // FILTER: Skip only "On this page" Mini TOC, not all sidebars (v11.0.229)
+      // Check for specific "On this page" heading text to distinguish from "Related Content"
+      const hasOnThisPage = $elem.find('h5').filter((i, h5) => {
+        const text = $(h5).text().trim().toLowerCase();
+        return text === 'on this page';
+      }).length > 0;
       
-      if (hasMiniToc || hasContentContainer) {
-        console.log(`🔍 Skipping contentPlaceholder with Mini TOC/sidebar (UI navigation, not article content)`);
+      if (hasOnThisPage) {
+        console.log(`🔍 Skipping contentPlaceholder with "On this page" Mini TOC (UI navigation, not article content)`);
         $elem.remove(); // Mark as processed
         return processedBlocks;
       }
       
+      // Check for a Related Content heading anywhere inside this placeholder even
+      // if the placeholder otherwise looks empty (some pages render a small h5 + ul)
+      try {
+        const relatedH5_any = $elem.find('h5').filter((i, h5) => $(h5).text().trim().toLowerCase() === 'related content');
+        if (relatedH5_any.length > 0) {
+          // Extra diagnostic: print the exact h5 text (escaped) and nearby UL outerHTML so we can see invisible whitespace
+          const rawH5Text = relatedH5_any.first().text();
+          console.log(`🔍 [CONTENT-PLACEHOLDER-RELATED] Found Related Content heading inside contentPlaceholder (early check) - h5 text (raw): "${rawH5Text.replace(/\n/g, '\\n').replace(/\r/g, '\\r')}"`);
+          console.log(`🔍 [CONTENT-PLACEHOLDER-RELATED] contentPlaceholder snippet (first 400 chars): ${$elem.html().substring(0,400).replace(/\n/g,'\\n').replace(/\r/g,'\\r')}...`);
+          console.log(`🔍 [CONTENT-PLACEHOLDER-RELATED] inserting heading and list`);
+          const headingText = 'Related Content';
+          processedBlocks.push({
+            object: 'block',
+            type: 'heading_3',
+            heading_3: { rich_text: [{ type: 'text', text: { content: headingText }, annotations: { bold: true, italic: false, strikethrough: false, underline: false, code: false, color: 'default' } }] }
+          });
+
+          // Try to find UL as sibling or descendant
+          let $ul_any = relatedH5_any.first().nextAll('ul').first();
+          if (!$ul_any || $ul_any.length === 0) $ul_any = relatedH5_any.first().parent().find('ul').first();
+
+          if ($ul_any && $ul_any.length > 0) {
+            // Diagnostic: show the UL outerHTML (shortened) so we can confirm exact structure
+            try {
+              const ulHtml = $ul_any.html() || '';
+              console.log(`🔍 [CONTENT-PLACEHOLDER-RELATED] Found UL with ${$ul_any.find('> li').length} li(s) - UL snippet: ${ulHtml.substring(0,400).replace(/\n/g,'\\n').replace(/\r/g,'\\r')}...`);
+            } catch (ux) {
+              console.log('🔍 [CONTENT-PLACEHOLDER-RELATED] Warning: unable to serialize UL HTML', ux && ux.message);
+            }
+            const lis_any = $ul_any.find('> li').toArray();
+            for (const li of lis_any) {
+              const $li = $(li);
+              const link = $li.find('a').first();
+              const linkText = (link.text() || '').trim();
+              let linkHref = (link.attr('href') || '').trim();
+              const linkRichText = [{ type: 'text', text: { content: linkText }, annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' } }];
+              if (linkHref && linkHref.startsWith('/')) linkHref = `https://www.servicenow.com${linkHref}`;
+              try { if (linkHref) new URL(linkHref); if (linkHref) linkRichText[0].text.link = { url: linkHref }; } catch (e) { /* ignore invalid URLs */ }
+
+              processedBlocks.push({ object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: linkRichText } });
+
+              const paragraphs_any = $li.find('p').toArray();
+              for (const p of paragraphs_any) {
+                const pHtml = $(p).html() || '';
+                if (pHtml) {
+                  const { richText: pRichText } = await parseRichText(pHtml);
+                  if (pRichText.length > 0 && pRichText.some(rt => rt.text.content.trim())) {
+                    const chunks = splitRichTextArray(pRichText);
+                    for (const chunk of chunks) {
+                      processedBlocks.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: chunk } });
+                    }
+                  }
+                }
+              }
+            }
+
+            $ul_any.remove();
+          }
+        }
+      } catch (e) {
+        console.log('⚠️ Error processing Related Content in contentPlaceholder (early check):', e && e.message);
+      }
+
       // Check if it has meaningful content before skipping
       const children = $elem.find('> *').toArray();
       const hasContent = children.some(child => {
@@ -4701,7 +4930,7 @@ async function extractContentFromHtml(html) {
         const hasNavElements = $child.find('nav, [role="navigation"]').length > 0 || $child.is('nav, [role="navigation"]');
         return text.length > 20 || $child.find('h1, h2, h3, h4, h5, h6, ul, ol, p, a').length > 0 || hasNavElements;
       });
-      
+
       if (hasContent) {
         console.log(`🔍 contentPlaceholder has meaningful content (${children.length} children) - processing`);
         for (const child of children) {
@@ -4709,7 +4938,13 @@ async function extractContentFromHtml(html) {
           processedBlocks.push(...childBlocks);
         }
       } else {
-        console.log(`🔍 Skipping empty contentPlaceholder (UI chrome)`);
+        // Diagnostic: output the contentPlaceholder outerHTML to help debugging cases where it looks empty
+        try {
+          const cpHtml = $elem.html() || '';
+          console.log(`🔍 Skipping empty contentPlaceholder (UI chrome) - outerHTML snippet: ${cpHtml.substring(0,400).replace(/\n/g,'\\n').replace(/\r/g,'\\r')}...`);
+        } catch (cpErr) {
+          console.log('🔍 Skipping empty contentPlaceholder (UI chrome) - unable to serialize outerHTML', cpErr && cpErr.message);
+        }
       }
       $elem.remove(); // Mark as processed
       
@@ -4717,34 +4952,51 @@ async function extractContentFromHtml(html) {
       // Navigation elements - extract links and descriptions but flatten structure
       // ServiceNow docs use <nav><ul><li><a>link</a><p>description</p></li></ul></nav>
       // We want: both link and description as separate root-level paragraphs (not as list items)
-      console.log(`🔍 Processing <nav> element - will flatten nested paragraphs`);
+      const navHtml = $elem.html() || '';
+      const navClass = $elem.attr('class') || 'none';
+      console.log(`🔍 Processing <nav> element (class: ${navClass}) - will flatten nested paragraphs`);
+      console.log(`🔍 Nav content preview: ${navHtml.substring(0, 200)}...`);
       
       // Find all list items in the nav
       const listItems = $elem.find('li').toArray();
-      
+
+      // Detect if nav is actually a Related Content TOC: check preceding heading text or nav class
+      const prevHeading = $elem.prevAll('h1,h2,h3,h4,h5,h6').first();
+      const prevHeadingText = prevHeading ? $(prevHeading).text().trim().toLowerCase() : '';
+      const navClassAttr = $elem.attr('class') || '';
+      const isRelatedTOC = prevHeadingText === 'related content' || /related/i.test(navClassAttr);
+      if (isRelatedTOC) {
+        const headingText = 'Related Content';
+        processedBlocks.push({
+          object: 'block',
+          type: 'heading_3',
+          heading_3: {
+            rich_text: [{ type: 'text', text: { content: headingText }, annotations: { bold: true, italic: false, strikethrough: false, underline: false, code: false, color: 'default' } }]
+          }
+        });
+        console.log(`🔍 [NAV-RELATED] Inserting heading for Related Content: "${headingText}"`);
+      }
+
       for (const li of listItems) {
         const $li = $(li);
-        
-        // Extract link as a root-level paragraph
+
+        // Extract link text and href
         const linkText = $li.find('a').first().text().trim();
         let linkHref = $li.find('a').first().attr('href');
-        
+
+        console.log(`🔍 [NAV-LINK] Found link: "${linkText}" (href: ${linkHref})`);
+
         if (linkText) {
-          // Create paragraph with link
           const linkRichText = [{
             type: "text",
             text: { content: linkText },
             annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: "default" }
           }];
-          
-          // Add link annotation if href exists and is valid
+
           if (linkHref) {
-            // Convert relative URLs to absolute URLs for ServiceNow docs
             if (linkHref.startsWith('/')) {
               linkHref = `https://www.servicenow.com${linkHref}`;
             }
-            
-            // Validate URL before adding link annotation
             try {
               new URL(linkHref);
               linkRichText[0].text.link = { url: linkHref };
@@ -4752,17 +5004,27 @@ async function extractContentFromHtml(html) {
               console.log(`⚠️ Invalid URL in nav link, skipping link annotation: ${linkHref}`);
             }
           }
-          
-          processedBlocks.push({
-            object: "block",
-            type: "paragraph",
-            paragraph: {
-              rich_text: linkRichText
-            }
-          });
+
+          if (isRelatedTOC) {
+            // Create bulleted list item for Related Content
+            processedBlocks.push({
+              object: "block",
+              type: "bulleted_list_item",
+              bulleted_list_item: { rich_text: linkRichText }
+            });
+            console.log(`🔍 [NAV-RELATED] Created bulleted_list_item for link: "${linkText.substring(0,50)}..."`);
+          } else {
+            processedBlocks.push({
+              object: "block",
+              type: "paragraph",
+              paragraph: { rich_text: linkRichText }
+            });
+            console.log(`🔍 [NAV-BLOCK] Created paragraph block with link: "${linkText.substring(0, 50)}..."`);
+            console.log(`🔍 [NAV-BLOCK-RICHTEXT] Link rich_text length: ${linkRichText.length}, content: ${JSON.stringify(linkRichText.slice(0, 2))}`);
+          }
         }
-        
-        // Find any paragraphs in the list item and add them as root-level paragraphs
+
+        // Descriptions: add as paragraphs (after the list item)
         const paragraphs = $li.find('p').toArray();
         for (const p of paragraphs) {
           const $p = $(p);
@@ -4777,12 +5039,15 @@ async function extractContentFromHtml(html) {
                   type: "paragraph",
                   paragraph: { rich_text: chunk }
                 });
+                if (isRelatedTOC) console.log(`🔍 [NAV-RELATED] Created paragraph description for list item: "${chunk[0]?.text?.content?.substring(0,50) || 'empty'}..."`);
+                else console.log(`🔍 [NAV-BLOCK] Created paragraph block with description: "${chunk[0]?.text?.content?.substring(0, 50) || 'empty'}..."`);
+                console.log(`🔍 [NAV-BLOCK-RICHTEXT] Desc rich_text length: ${chunk.length}, content: ${JSON.stringify(chunk.slice(0, 2))}`);
               }
             }
           }
         }
       }
-      
+
       $elem.remove(); // Mark as processed
       
     } else if (tagName === 'div' && ($elem.hasClass('itemgroup') || $elem.hasClass('info') || $elem.hasClass('stepxmp'))) {
@@ -5831,29 +6096,36 @@ async function extractContentFromHtml(html) {
       
       // ALSO include nav elements that are children of articles (e.g., #request-predictive-intelligence-for-im > nav)
       // These should come AFTER sections but BEFORE contentPlaceholder
-      const articleNavs = $('.zDocsTopicPageBody article > nav, .zDocsTopicPageBody article[role="article"] > nav').toArray();
+      // Try multiple selectors: direct children of article, or any nav inside zDocsTopicPageBody
+      let articleNavs = $('.zDocsTopicPageBody article > nav, .zDocsTopicPageBody article[role="article"] > nav').toArray();
+      if (articleNavs.length === 0) {
+        // Fallback: Find all navs in zDocsTopicPageBody
+        articleNavs = $('.zDocsTopicPageBody nav').toArray();
+        if (articleNavs.length > 0) {
+          console.log(`🔍 ⏭️  Direct article > nav selector found 0 navs, using fallback .zDocsTopicPageBody nav selector`);
+        }
+      }
       if (articleNavs.length > 0) {
         console.log(`🔍 ✅ Found ${articleNavs.length} nav element(s) as children of articles, adding to contentElements`);
       }
       
       // ALSO include contentPlaceholder siblings (Related Links, etc.) - these go at the END
-      // BUT filter out Mini TOC sidebars (navigation chrome) AND Related Content sections
+      // BUT filter out Mini TOC sidebars (navigation chrome)
+      // FIX v11.0.217: REMOVED Related Content filter - users want this content extracted
+      // FIX v11.0.229: More specific Mini TOC detection - only skip "On this page" sections, keep "Related Content"
       const contentPlaceholders = topLevelChildren.filter(c => {
         const $c = $(c);
         if (!$c.hasClass('contentPlaceholder')) return false;
         
-        // Skip Mini TOC sidebars and navigation containers
-        const hasMiniToc = $c.find('.zDocsMiniTocCollapseButton, .zDocsSideBoxes, .contentContainer').length > 0;
-        if (hasMiniToc) {
-          console.log(`🔍 ⏭️  Skipping contentPlaceholder with Mini TOC/sidebar (navigation chrome)`);
-          return false;
-        }
+        // Skip only "On this page" Mini TOC, not all sidebars
+        // Check for specific "On this page" heading text to distinguish from "Related Content"
+        const hasOnThisPage = $c.find('h5').filter((i, h5) => {
+          const text = $(h5).text().trim().toLowerCase();
+          return text === 'on this page';
+        }).length > 0;
         
-        // Skip Related Content sections (not part of main article content)
-        const hasRelatedContent = $c.text().trim().toLowerCase().includes('related content') ||
-                                  $c.find('h1, h2, h3, h4, h5, h6').text().trim().toLowerCase().includes('related content');
-        if (hasRelatedContent) {
-          console.log(`🔍 ⏭️  Skipping contentPlaceholder with Related Content section (not article content)`);
+        if (hasOnThisPage) {
+          console.log(`🔍 ⏭️  Skipping contentPlaceholder with "On this page" Mini TOC (navigation chrome)`);
           return false;
         }
         
@@ -6027,7 +6299,69 @@ async function extractContentFromHtml(html) {
     console.log(`🔍   → Element <${childTag} id="${childId}"> produced ${blocksAdded} blocks (total: ${blocksBefore} → ${blocksAfter})`);
     blocks.push(...childBlocks);
   }
-  
+
+  // FALLBACK: If we didn't find any .contentPlaceholder elements earlier,
+  // some pages render a "Related Content" h5 + ul outside of that wrapper.
+  // Detect any standalone <h5>Related Content</h5> anywhere and normalize it
+  // into a heading + bulleted list items at the end so users see related links.
+  try {
+    const globalContentPlaceholderCount = $('.contentPlaceholder').length;
+    if (globalContentPlaceholderCount === 0) {
+      const relatedH5s = $('h5').filter((i, h5) => $(h5).text().trim().toLowerCase().includes('related content'));
+      if (relatedH5s.length > 0) {
+        console.log(`🔍 [FALLBACK-RELATED] Found ${relatedH5s.length} <h5> elements with "Related Content" (global fallback) - emitting as heading + bullets`);
+        for (let i = 0; i < relatedH5s.length; i++) {
+          const $h5 = $(relatedH5s[i]);
+          const headingText = 'Related Content';
+          blocks.push({
+            object: 'block',
+            type: 'heading_3',
+            heading_3: { rich_text: [{ type: 'text', text: { content: headingText }, annotations: { bold: true, italic: false, strikethrough: false, underline: false, code: false, color: 'default' } }] }
+          });
+
+          // Find a sibling or descendant UL for list items
+          let $ul = $h5.nextAll('ul').first();
+          if (!$ul || $ul.length === 0) $ul = $h5.parent().find('ul').first();
+
+          if ($ul && $ul.length > 0) {
+            const lis = $ul.find('> li').toArray();
+            for (const li of lis) {
+              const $li = $(li);
+              const link = $li.find('a').first();
+              const linkText = (link.text() || '').trim();
+              let linkHref = (link.attr('href') || '').trim();
+              const linkRichText = [{ type: 'text', text: { content: linkText }, annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' } }];
+              if (linkHref && linkHref.startsWith('/')) linkHref = `https://www.servicenow.com${linkHref}`;
+              try { if (linkHref) new URL(linkHref); if (linkHref) linkRichText[0].text.link = { url: linkHref }; } catch (e) { /* ignore */ }
+
+              blocks.push({ object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: linkRichText } });
+
+              // Optional description paragraphs under the list item
+              const paragraphs = $li.find('p').toArray();
+              for (const p of paragraphs) {
+                const pHtml = $(p).html() || '';
+                if (pHtml) {
+                  const { richText: pRichText } = await parseRichText(pHtml);
+                  if (pRichText.length > 0 && pRichText.some(rt => rt.text.content.trim())) {
+                    const chunks = splitRichTextArray(pRichText);
+                    for (const chunk of chunks) {
+                      blocks.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: chunk } });
+                    }
+                  }
+                }
+              }
+            }
+
+            // Remove UL from DOM to avoid duplication by normal flow
+            $ul.remove();
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.log('⚠️ [FALLBACK-RELATED] Error while running fallback related-content extraction:', e && e.message);
+  }
+
   console.log(`🔍 Total blocks after processing: ${blocks.length}`);
   
   // Check for any truly unprocessed content in the PROCESSED area only
@@ -6730,19 +7064,20 @@ async function extractContentFromHtml(html) {
         $('.contentPlaceholder').each((i, elem) => {
           const $elem = $(elem);
           
-          // Skip Mini TOC sidebars and navigation containers
-          const hasMiniToc = $elem.find('.zDocsMiniTocCollapseButton, .zDocsSideBoxes, .contentContainer').length > 0;
-          if (hasMiniToc) {
+          // FIX v11.0.229: Skip only "On this page" Mini TOC, not all sidebars
+          // Check for specific "On this page" heading text to keep "Related Content"
+          const hasOnThisPage = $elem.find('h5').filter((i, h5) => {
+            const text = $(h5).text().trim().toLowerCase();
+            return text === 'on this page';
+          }).length > 0;
+          
+          if (hasOnThisPage) {
             $elem.remove();
             return;
           }
           
-          // Skip Related Content sections (not part of main article content)
-          const hasRelatedContent = $elem.text().trim().toLowerCase().includes('related content') ||
-                                    $elem.find('h1, h2, h3, h4, h5, h6').text().trim().toLowerCase().includes('related content');
-          if (hasRelatedContent) {
-            $elem.remove();
-          }
+          // FIX v11.0.227: REMOVED Related Content filter - users want this section extracted
+          // (filter removed entirely - keeping only "On this page" filter above)
         });
         
         // FIX v11.0.173: Add spaces around block elements (same as PATCH logic)
@@ -7730,6 +8065,105 @@ function createPlainTextBlocksForValidation(blocks) {
   });
 }
 
+// Lightweight, exportable detailed text comparison used by tests and diagnostics.
+// This implements the phrase-based matching logic (v11.0.172+) used by the
+// internal comparator but is kept small so it can be safely exported for
+// external callers and test scripts.
+function getDetailedTextComparison(html, blocks) {
+  const cheerio = require('cheerio');
+
+  // Basic HTML filtering to remove non-content noise
+  const $ = cheerio.load(html || '', { decodeEntities: false });
+  $('script, style, noscript, svg, iframe, button').remove();
+  $('.btn, .button, [role="button"]').remove();
+  $('pre, code').remove();
+  $('.miniTOC, .zDocsSideBoxes').remove();
+  $('.contentPlaceholder').each((i, el) => {
+    const $el = $(el);
+    const hasMiniToc = $el.find('.zDocsMiniTocCollapseButton, .zDocsSideBoxes, .contentContainer').length > 0;
+    if (hasMiniToc) $el.remove();
+  });
+  // Add spaces around block elements and replace <br> with space to avoid word joins
+  const blockElements = 'p, div, h1, h2, h3, h4, h5, h6, li, td, th, tr, table, section, article, aside, header, footer, nav, main, blockquote, pre, hr, dl, dt, dd, ul, ol, figure';
+  $(blockElements).each((i, el) => {
+    const $el = $(el);
+    const content = $el.html();
+    if (content) $el.html(' ' + content + ' ');
+  });
+  $('br').replaceWith(' ');
+
+  const filteredHtml = $.html();
+
+  // Extract plain text from HTML
+  const htmlText = cheerio.load(filteredHtml).text().replace(/\s+/g, ' ').trim();
+
+  // Extract plain text from notion blocks
+  const notionTextParts = [];
+  (blocks || []).forEach(b => {
+    try {
+      const tarr = (b && b[b.type] && b[b.type].rich_text) || [];
+      const txt = tarr.map(rt => rt.plain_text || (rt.text && rt.text.content) || '').join('').trim();
+      if (txt) notionTextParts.push(txt);
+    } catch (e) {
+      // ignore malformed blocks
+    }
+  });
+  const notionText = notionTextParts.join(' ').replace(/\s+/g, ' ').trim();
+
+  // Use the new token-level LCS comparator (much less strict than phrase matching)
+  try {
+    const result = compareTexts(htmlText, notionText, {
+      sectionBased: false,  // Document-level for speed
+      minMissingSpanTokens: 40,  // Only report missing spans ≥40 tokens
+      maxCells: 50000000,  // Fallback to Jaccard if input too large
+    });
+
+    // Convert LCS result to legacy format for backward compatibility
+    const htmlTokens = tokenizeWords(canonicalizeText(htmlText));
+    const notionTokens = tokenizeWords(canonicalizeText(notionText));
+
+    // Map LCS spans back to original text
+    const missingSegments = (result.missingSpans || [])
+      .slice(0, 10)  // Top 10 only
+      .map(span => {
+        const snippet = htmlTokens.slice(span.startIdx, span.endIdx).join(' ');
+        return {
+          text: snippet,
+          length: snippet.length,
+          context: 'html'
+        };
+      });
+
+    return {
+      htmlSegmentCount: result.srcTokenCount,
+      notionSegmentCount: result.dstTokenCount,
+      missingSegments,
+      extraSegments: [],  // Not computed by LCS; use LCS coverage instead
+      groupMatches: [],
+      totalMissingChars: missingSegments.reduce((s, x) => s + (x.length || 0), 0),
+      totalExtraChars: 0,
+      // NEW: Include LCS metrics for diagnostics
+      lcsLength: result.lcsLength,
+      coverage: result.coverage,
+      method: result.method,  // 'lcs' or 'jaccard'
+    };
+  } catch (err) {
+    console.error('[LCS-COMPARATOR] Error:', err.message);
+    // Fallback to empty result on error
+    return {
+      htmlSegmentCount: 0,
+      notionSegmentCount: 0,
+      missingSegments: [],
+      extraSegments: [],
+      groupMatches: [],
+      totalMissingChars: 0,
+      totalExtraChars: 0,
+      coverage: 0,
+      method: 'error',
+    };
+  }
+}
+
 function parseMetadataFromUrl(url) {
   // Basic metadata extraction from ServiceNow URLs
   if (!url || typeof url !== "string") {
@@ -7792,4 +8226,11 @@ module.exports = {
   parseMetadataFromUrl,
   /** @type {function(Array): Array} */
   createPlainTextBlocksForValidation,
+  /**
+   * Expose detailed text comparison for testing and external validation hooks.
+   * NOTE: This is primarily used by tests and diagnostic scripts; the main
+   * W2N flow invokes this internally. Exporting it makes comparator behavior
+   * callable from test runners and debug scripts.
+   */
+  getDetailedTextComparison
 };

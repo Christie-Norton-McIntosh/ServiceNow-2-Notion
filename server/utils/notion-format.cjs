@@ -138,6 +138,16 @@ function cleanHtmlText(html) {
     console.log('🚨 [cleanHtmlText] INPUT WITH URL:', html.substring(0, 500));
   }
 
+  // CRITICAL STEP 0: Protect incoming __TECH_PLACEHOLDER_N__ markers from servicenow.cjs
+  // These markers were created upstream and must survive through this function
+  // to be restored later at servicenow.cjs line 7524
+  const incomingMarkers = [];
+  html = html.replace(/__TECH_PLACEHOLDER_(\d+)__/g, (match) => {
+    const marker = `__INCOMING_TECH_${incomingMarkers.length}__`;
+    incomingMarkers.push(match); // Store the original marker
+    return marker;
+  });
+
   // CRITICAL STEP 1: Protect technical placeholders FIRST (before any processing)
   // Convert &lt;placeholder-text&gt; patterns to markers so they survive HTML stripping
   // This handles both already-decoded (<instance-name>) and HTML-encoded (&lt;Tool ID&gt;) placeholders
@@ -238,15 +248,18 @@ function cleanHtmlText(html) {
   // Match actual HTML tags but preserve technical placeholders like <instance-name> or <Tool ID>
   // HTML tags: <tagname>, <tagname attr="value">, </tagname>
   // Preserved: <instance-name>, <Tool ID>, <file.txt>, <hostname>, etc.
-  text = text.replace(/<\/?(?:button|div|span|p|a|img|br|hr|b|i|u|strong|em|code|pre|ul|ol|li|table|tr|td|th|tbody|thead|tfoot|h[1-6]|font|center|small|big|sub|sup|abbr|cite|del|ins|mark|s|strike|blockquote|q|address|article|aside|footer|header|main|nav|section|details|summary|figure|figcaption|time|video|audio|source|canvas|svg|path|g|rect|circle|line|polyline|polygon)(?:\s+[^>]*)?>/gi, ' ');
+  // FIX v11.0.219: Replace with empty string (not space) to prevent trailing spaces in inline code
+  text = text.replace(/<\/?(?:button|div|span|p|a|img|br|hr|b|i|u|strong|em|code|pre|ul|ol|li|table|tr|td|th|tbody|thead|tfoot|h[1-6]|font|center|small|big|sub|sup|abbr|cite|del|ins|mark|s|strike|blockquote|q|address|article|aside|footer|header|main|nav|section|details|summary|figure|figcaption|time|video|audio|source|canvas|svg|path|g|rect|circle|line|polyline|polygon)(?:\s+[^>]*)?>/gi, '');
   
   // Safety: Remove incomplete HTML tags that might have been truncated during chunking
   // Only match known HTML tag names at end of string
-  text = text.replace(/<\/?(?:div|span|p|a|img|br|hr|b|i|u|strong|em|code|pre|ul|ol|li|table|tr|td|th|h[1-6]|font|center|small|big|sub|sup)(?:\s+[^>]*)?$/gi, ' ');
+  // FIX v11.0.219: Replace with empty string (not space) to prevent trailing spaces
+  text = text.replace(/<\/?(?:div|span|p|a|img|br|hr|b|i|u|strong|em|code|pre|ul|ol|li|table|tr|td|th|h[1-6]|font|center|small|big|sub|sup)(?:\s+[^>]*)?$/gi, '');
   
   // Pattern 2: Only strip if it starts with tag-like content (tag name followed by = for attributes)
   // This ensures we don't strip legitimate content like "All > System"
-  text = text.replace(/^[a-z][a-z0-9]*\s*[a-z]+\s*=\s*[^>]*>/gi, " ");
+  // FIX v11.0.219: Replace with empty string (not space) to prevent trailing spaces
+  text = text.replace(/^[a-z][a-z0-9]*\s*[a-z]+\s*=\s*[^>]*>/gi, "");
   
   // REMOVED: Don't strip standalone < and > characters - they may be legitimate content like navigation arrows
   // text = text.replace(/</g, " ").replace(/>/g, " ");
@@ -270,6 +283,11 @@ function cleanHtmlText(html) {
   // Restore technical placeholders (convert markers back to <content>)
   technicalPlaceholders.forEach((content, index) => {
     text = text.replace(`__TECH_PLACEHOLDER_${index}__`, `<${content}>`);
+  });
+
+  // Restore incoming markers from servicenow.cjs (preserve for later restoration)
+  incomingMarkers.forEach((originalMarker, index) => {
+    text = text.replace(`__INCOMING_TECH_${index}__`, originalMarker);
   });
 
   return text;
