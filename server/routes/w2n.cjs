@@ -2172,8 +2172,9 @@ router.post('/W2N', async (req, res) => {
               // We should only count the outer <div>, not the inner <span>
               // FIX v11.0.86: Exclude callouts inside tables - Notion table cells can't contain callout blocks
               // Callouts in tables get converted to text/other types, not callout blocks
+              // FIX v11.0.216: Also count section.prereq and div.section.prereq as callouts (converted to callouts in servicenow.cjs)
               let calloutCount = 0;
-              $('div.note, div.warning, div.info, div.tip, div.caution, div.important').each((i, elem) => {
+              $('div.note, div.warning, div.info, div.tip, div.caution, div.important, section.prereq, div.section.prereq').each((i, elem) => {
                 const $elem = $(elem);
                 // Skip if this callout is inside a table - it won't be rendered as a callout block
                 const inTable = $elem.closest('table, thead, tbody, tr, td, th').length > 0;
@@ -2182,7 +2183,7 @@ router.post('/W2N', async (req, res) => {
                 }
               });
               sourceCounts.callouts = calloutCount;
-              log(`📊 [HTML-SOURCE-DEBUG] Found ${calloutCount} callout elements (excluding callouts in tables)`);
+              log(`📊 [HTML-SOURCE-DEBUG] Found ${calloutCount} callout elements (including prereq sections, excluding callouts in tables)`);
               
               // Count code blocks (pre or code tags)
               const preCount = $('pre').length;
@@ -2351,6 +2352,86 @@ router.post('/W2N', async (req, res) => {
             log(`📊 Setting ContentComparison property with refined comparison breakdown`);
             log(`   ${countsIcon}  Content Comparison: ${comparisonStatus}`);
             log(`   Headings: ${sourceCounts.headings} → ${notionCounts.headings}`);
+            
+            // Run detailed text comparison to populate Coverage, MissingCount, MissingSpans properties
+            log(`🔍 Running detailed text comparison (token-level LCS)...`);
+            try {
+              const textComparison = servicenowService.getDetailedTextComparison(
+                payload.contentHtml || payload.content,
+                children
+              );
+              
+              // Calculate coverage percentage (now from LCS algorithm which is much more lenient)
+              let coveragePercent = textComparison.coverage !== undefined 
+                ? textComparison.coverage  // Use LCS coverage directly
+                : (textComparison.htmlSegmentCount > 0 
+                    ? (textComparison.notionSegmentCount / textComparison.htmlSegmentCount)
+                    : 1);
+              const coveragePercentageDisplay = Math.round(coveragePercent * 100);
+              
+              // Set Coverage property (number with percent format - 0-1 range)
+              propertyUpdates["Coverage"] = { number: coveragePercent };
+              log(`📊 Coverage: ${coveragePercentageDisplay}% (LCS: ${textComparison.lcsLength}/${textComparison.htmlSegmentCount} tokens matched)`);
+              
+              // Set MissingCount property (number)
+              const missingCount = textComparison.missingSegments.length;
+              propertyUpdates["MissingCount"] = { number: missingCount };
+              log(`📊 MissingCount: ${missingCount} missing spans (${textComparison.totalMissingChars} chars)`);
+              
+              // Set MissingSpans property (rich_text) - first 3 missing segments
+              if (textComparison.missingSegments.length > 0) {
+                const topMissing = textComparison.missingSegments.slice(0, 3);
+                const missingSpansText = topMissing
+                  .map((seg, idx) => `${idx + 1}. "${seg.text.substring(0, 100)}${seg.text.length > 100 ? '...' : ''}"`)
+                  .join('\n');
+                const fullMissingText = `${missingCount} missing span${missingCount === 1 ? '' : 's'} (${textComparison.totalMissingChars} chars):\n${missingSpansText}`;
+                
+                // Truncate to 2000 chars
+                const truncatedMissingSpans = fullMissingText.length > 2000 
+                  ? fullMissingText.substring(0, 1997) + '...'
+                  : fullMissingText;
+                
+                propertyUpdates["MissingSpans"] = {
+                  rich_text: [{ type: 'text', text: { content: truncatedMissingSpans } }]
+                };
+                log(`📊 MissingSpans: "${topMissing[0].text.substring(0, 50)}..."`);
+              } else {
+                propertyUpdates["MissingSpans"] = {
+                  rich_text: [{ type: 'text', text: { content: 'No missing spans detected (LCS coverage 100%)' } }]
+                };
+              }
+              
+              // Set Status property (select) based on coverage
+              let statusValue;
+              if (coveragePercentageDisplay >= 95) {
+                statusValue = 'Complete';
+              } else if (coveragePercentageDisplay >= 80) {
+                statusValue = 'Partial';
+              } else {
+                statusValue = 'Incomplete';
+              }
+              propertyUpdates["Status"] = { select: { name: statusValue } };
+              log(`📊 Status: ${statusValue}`);
+              
+              // Set Method property (select) - now using LCS
+              propertyUpdates["Method"] = { select: { name: 'token-lcs' } };
+              
+              // Set LastChecked property (date)
+              const now = new Date().toISOString().split('T')[0];
+              propertyUpdates["LastChecked"] = { date: { start: now } };
+              log(`📊 LastChecked: ${now}`);
+              
+              // Set RunId property (rich_text) - use timestamp + page ID
+              const runId = `${Date.now()}-${response.id.replace(/-/g, '').substring(0, 8)}`;
+              propertyUpdates["RunId"] = {
+                rich_text: [{ type: 'text', text: { content: runId } }]
+              };
+              log(`📊 RunId: ${runId}`);
+              
+            } catch (comparisonError) {
+              log(`⚠️ Detailed text comparison failed: ${comparisonError.message}`);
+              // Continue without these properties if comparison fails
+            }
             
             // FIX v11.0.187: Mark pages with critical failures for auto-save
             // Trigger auto-save if ContentComparison = FAIL or Audit = FAIL
@@ -4524,8 +4605,9 @@ ${html || ''}
         // FIX v11.0.180: Only count top-level callout containers (not nested titles/children)
         // FIX v11.0.86: Exclude callouts inside tables - Notion table cells can't contain callout blocks
         // Callouts in tables get converted to text/other types, not callout blocks
+        // FIX v11.0.216: Also count section.prereq and div.section.prereq as callouts (converted to callouts in servicenow.cjs)
         let calloutCount = 0;
-        $('div.note, div.warning, div.info, div.tip, div.caution, div.important').each((i, elem) => {
+        $('div.note, div.warning, div.info, div.tip, div.caution, div.important, section.prereq, div.section.prereq').each((i, elem) => {
           const $elem = $(elem);
           // Skip if this callout is inside a table - it won't be rendered as a callout block
           const inTable = $elem.closest('table, thead, tbody, tr, td, th').length > 0;
@@ -4534,7 +4616,7 @@ ${html || ''}
           }
         });
         sourceCounts.callouts = calloutCount;
-        log(`📊 [PATCH-HTML-SOURCE-DEBUG] Found ${calloutCount} callout elements (top-level only)`);
+        log(`📊 [PATCH-HTML-SOURCE-DEBUG] Found ${calloutCount} callout elements (including prereq sections, excluding callouts in tables)`);
         
         // Count code blocks (pre or code tags)
         const preCount = $('pre').length;
@@ -5181,6 +5263,87 @@ ${html || ''}
       log(`📊 Setting ContentComparison property with refined comparison breakdown (PATCH)`);
       log(`   Stats content length: ${truncatedStatsContent.length} chars`);
       log(`   Stats content preview: ${truncatedStatsContent.substring(0, 100)}...`);
+      
+      // Run detailed text comparison to populate Coverage, MissingCount, MissingSpans properties (PATCH)
+      log(`🔍 [PATCH] Running detailed text comparison (token-level LCS)...`);
+      try {
+        const servicenowService = require('../services/servicenow.cjs');
+        const textComparison = servicenowService.getDetailedTextComparison(
+          html,
+          extractedBlocks
+        );
+        
+        // Calculate coverage percentage (now from LCS algorithm which is much more lenient)
+        let coveragePercent = textComparison.coverage !== undefined 
+          ? textComparison.coverage  // Use LCS coverage directly
+          : (textComparison.htmlSegmentCount > 0 
+              ? (textComparison.notionSegmentCount / textComparison.htmlSegmentCount)
+              : 1);
+        const coveragePercentageDisplay = Math.round(coveragePercent * 100);
+        
+        // Set Coverage property (number with percent format - 0-1 range)
+        propertyUpdates["Coverage"] = { number: coveragePercent };
+        log(`📊 [PATCH] Coverage: ${coveragePercentageDisplay}% (LCS: ${textComparison.lcsLength}/${textComparison.htmlSegmentCount} tokens matched)`);
+        
+        // Set MissingCount property (number)
+        const missingCount = textComparison.missingSegments.length;
+        propertyUpdates["MissingCount"] = { number: missingCount };
+        log(`📊 [PATCH] MissingCount: ${missingCount} missing spans (${textComparison.totalMissingChars} chars)`);
+        
+        // Set MissingSpans property (rich_text) - first 3 missing segments
+        if (textComparison.missingSegments.length > 0) {
+          const topMissing = textComparison.missingSegments.slice(0, 3);
+          const missingSpansText = topMissing
+            .map((seg, idx) => `${idx + 1}. "${seg.text.substring(0, 100)}${seg.text.length > 100 ? '...' : ''}"`)
+            .join('\n');
+          const fullMissingText = `${missingCount} missing span${missingCount === 1 ? '' : 's'} (${textComparison.totalMissingChars} chars):\n${missingSpansText}`;
+          
+          // Truncate to 2000 chars
+          const truncatedMissingSpans = fullMissingText.length > 2000 
+            ? fullMissingText.substring(0, 1997) + '...'
+            : fullMissingText;
+          
+          propertyUpdates["MissingSpans"] = {
+            rich_text: [{ type: 'text', text: { content: truncatedMissingSpans } }]
+          };
+          log(`📊 [PATCH] MissingSpans: "${topMissing[0].text.substring(0, 50)}..."`);
+        } else {
+          propertyUpdates["MissingSpans"] = {
+            rich_text: [{ type: 'text', text: { content: 'No missing spans detected (LCS coverage 100%)' } }]
+          };
+        }
+        
+        // Set Status property (select) based on coverage
+        let statusValue;
+        if (coveragePercentageDisplay >= 95) {
+          statusValue = 'Complete';
+        } else if (coveragePercentageDisplay >= 80) {
+          statusValue = 'Partial';
+        } else {
+          statusValue = 'Incomplete';
+        }
+        propertyUpdates["Status"] = { select: { name: statusValue } };
+        log(`📊 [PATCH] Status: ${statusValue}`);
+        
+        // Set Method property (select) - now using LCS
+        propertyUpdates["Method"] = { select: { name: 'token-lcs' } };
+        
+        // Set LastChecked property (date)
+        const now = new Date().toISOString().split('T')[0];
+        propertyUpdates["LastChecked"] = { date: { start: now } };
+        log(`📊 [PATCH] LastChecked: ${now}`);
+        
+        // Set RunId property (rich_text) - use timestamp + page ID
+        const runId = `${Date.now()}-${pageId.replace(/-/g, '').substring(0, 8)}`;
+        propertyUpdates["RunId"] = {
+          rich_text: [{ type: 'text', text: { content: runId } }]
+        };
+        log(`📊 [PATCH] RunId: ${runId}`);
+        
+      } catch (comparisonError) {
+        log(`⚠️ [PATCH] Detailed text comparison failed: ${comparisonError.message}`);
+        // Continue without these properties if comparison fails
+      }
       
       // FIX v11.0.187: Mark pages with critical failures for auto-save
       // Trigger auto-save if ContentComparison = FAIL or Audit = FAIL
