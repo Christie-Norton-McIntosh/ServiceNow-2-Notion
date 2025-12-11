@@ -2173,12 +2173,15 @@ router.post('/W2N', async (req, res) => {
               // FIX v11.0.86: Exclude callouts inside tables - Notion table cells can't contain callout blocks
               // Callouts in tables get converted to text/other types, not callout blocks
               // FIX v11.0.216: Also count section.prereq and div.section.prereq as callouts (converted to callouts in servicenow.cjs)
+              // FIX v11.0.228: Exclude div.itemgroup from callout counting (servicenow.cjs line 1973 explicitly excludes itemgroup)
               let calloutCount = 0;
               $('div.note, div.warning, div.info, div.tip, div.caution, div.important, section.prereq, div.section.prereq').each((i, elem) => {
                 const $elem = $(elem);
                 // Skip if this callout is inside a table - it won't be rendered as a callout block
                 const inTable = $elem.closest('table, thead, tbody, tr, td, th').length > 0;
-                if (!inTable) {
+                // Skip if this is a div.itemgroup - these are content containers, not callouts
+                const hasItemgroup = /\bitemgroup\b/.test($elem.attr('class') || '');
+                if (!inTable && !hasItemgroup) {
                   calloutCount++;
                 }
               });
@@ -4606,12 +4609,15 @@ ${html || ''}
         // FIX v11.0.86: Exclude callouts inside tables - Notion table cells can't contain callout blocks
         // Callouts in tables get converted to text/other types, not callout blocks
         // FIX v11.0.216: Also count section.prereq and div.section.prereq as callouts (converted to callouts in servicenow.cjs)
+        // FIX v11.0.228: Exclude div.itemgroup from callout counting (servicenow.cjs line 1973 explicitly excludes itemgroup)
         let calloutCount = 0;
         $('div.note, div.warning, div.info, div.tip, div.caution, div.important, section.prereq, div.section.prereq').each((i, elem) => {
           const $elem = $(elem);
           // Skip if this callout is inside a table - it won't be rendered as a callout block
           const inTable = $elem.closest('table, thead, tbody, tr, td, th').length > 0;
-          if (!inTable) {
+          // Skip if this is a div.itemgroup - these are content containers, not callouts
+          const hasItemgroup = /\bitemgroup\b/.test($elem.attr('class') || '');
+          if (!inTable && !hasItemgroup) {
             calloutCount++;
           }
         });

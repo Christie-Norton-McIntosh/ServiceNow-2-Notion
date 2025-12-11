@@ -1205,11 +1205,13 @@ async function extractContentFromHtml(html) {
           const lines = cleanedText.split('\n');
           for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
+            // FIX v11.0.223: Trim each line to remove trailing spaces in inline code
+            const trimmedLine = line.trim();
             // Add the line if it has content or if it's not the last line (preserve empty lines between content)
-            if (line || i < lines.length - 1) {
+            if (trimmedLine || i < lines.length - 1) {
               richText.push({
                 type: "text",
-                text: { content: line },
+                text: { content: trimmedLine },
                 annotations: normalizeAnnotations(currentAnnotations),
               });
               // Add a soft line break after each line except the last
@@ -4775,16 +4777,71 @@ async function extractContentFromHtml(html) {
       // contentPlaceholder divs can contain actual content like "Related Content" sections
       // BUT they also contain UI chrome like Mini TOC navigation sidebars
       
-      // FILTER: Skip Mini TOC sidebars (navigation chrome, not article content)
-      const hasMiniToc = $elem.find('.zDocsMiniTocCollapseButton, .zDocsSideBoxes').length > 0;
-      const hasContentContainer = $elem.find('.contentContainer').length > 0;
+      // FILTER: Skip only "On this page" Mini TOC, not all sidebars (v11.0.229)
+      // Check for specific "On this page" heading text to distinguish from "Related Content"
+      const hasOnThisPage = $elem.find('h5').filter((i, h5) => {
+        const text = $(h5).text().trim().toLowerCase();
+        return text === 'on this page';
+      }).length > 0;
       
-      if (hasMiniToc || hasContentContainer) {
-        console.log(`🔍 Skipping contentPlaceholder with Mini TOC/sidebar (UI navigation, not article content)`);
+      if (hasOnThisPage) {
+        console.log(`🔍 Skipping contentPlaceholder with "On this page" Mini TOC (UI navigation, not article content)`);
         $elem.remove(); // Mark as processed
         return processedBlocks;
       }
       
+      // Check for a Related Content heading anywhere inside this placeholder even
+      // if the placeholder otherwise looks empty (some pages render a small h5 + ul)
+      try {
+        const relatedH5_any = $elem.find('h5').filter((i, h5) => $(h5).text().trim().toLowerCase() === 'related content');
+        if (relatedH5_any.length > 0) {
+          console.log(`🔍 [CONTENT-PLACEHOLDER-RELATED] Found Related Content heading inside contentPlaceholder (early check) - inserting heading and list`);
+          const headingText = 'Related Content';
+          processedBlocks.push({
+            object: 'block',
+            type: 'heading_3',
+            heading_3: { rich_text: [{ type: 'text', text: { content: headingText }, annotations: { bold: true, italic: false, strikethrough: false, underline: false, code: false, color: 'default' } }] }
+          });
+
+          // Try to find UL as sibling or descendant
+          let $ul_any = relatedH5_any.first().nextAll('ul').first();
+          if (!$ul_any || $ul_any.length === 0) $ul_any = relatedH5_any.first().parent().find('ul').first();
+
+          if ($ul_any && $ul_any.length > 0) {
+            const lis_any = $ul_any.find('> li').toArray();
+            for (const li of lis_any) {
+              const $li = $(li);
+              const link = $li.find('a').first();
+              const linkText = (link.text() || '').trim();
+              let linkHref = (link.attr('href') || '').trim();
+              const linkRichText = [{ type: 'text', text: { content: linkText }, annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' } }];
+              if (linkHref && linkHref.startsWith('/')) linkHref = `https://www.servicenow.com${linkHref}`;
+              try { if (linkHref) new URL(linkHref); if (linkHref) linkRichText[0].text.link = { url: linkHref }; } catch (e) { /* ignore invalid URLs */ }
+
+              processedBlocks.push({ object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: linkRichText } });
+
+              const paragraphs_any = $li.find('p').toArray();
+              for (const p of paragraphs_any) {
+                const pHtml = $(p).html() || '';
+                if (pHtml) {
+                  const { richText: pRichText } = await parseRichText(pHtml);
+                  if (pRichText.length > 0 && pRichText.some(rt => rt.text.content.trim())) {
+                    const chunks = splitRichTextArray(pRichText);
+                    for (const chunk of chunks) {
+                      processedBlocks.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: chunk } });
+                    }
+                  }
+                }
+              }
+            }
+
+            $ul_any.remove();
+          }
+        }
+      } catch (e) {
+        console.log('⚠️ Error processing Related Content in contentPlaceholder (early check):', e && e.message);
+      }
+
       // Check if it has meaningful content before skipping
       const children = $elem.find('> *').toArray();
       const hasContent = children.some(child => {
@@ -4794,7 +4851,7 @@ async function extractContentFromHtml(html) {
         const hasNavElements = $child.find('nav, [role="navigation"]').length > 0 || $child.is('nav, [role="navigation"]');
         return text.length > 20 || $child.find('h1, h2, h3, h4, h5, h6, ul, ol, p, a').length > 0 || hasNavElements;
       });
-      
+
       if (hasContent) {
         console.log(`🔍 contentPlaceholder has meaningful content (${children.length} children) - processing`);
         for (const child of children) {
@@ -4810,34 +4867,51 @@ async function extractContentFromHtml(html) {
       // Navigation elements - extract links and descriptions but flatten structure
       // ServiceNow docs use <nav><ul><li><a>link</a><p>description</p></li></ul></nav>
       // We want: both link and description as separate root-level paragraphs (not as list items)
-      console.log(`🔍 Processing <nav> element - will flatten nested paragraphs`);
+      const navHtml = $elem.html() || '';
+      const navClass = $elem.attr('class') || 'none';
+      console.log(`🔍 Processing <nav> element (class: ${navClass}) - will flatten nested paragraphs`);
+      console.log(`🔍 Nav content preview: ${navHtml.substring(0, 200)}...`);
       
       // Find all list items in the nav
       const listItems = $elem.find('li').toArray();
-      
+
+      // Detect if nav is actually a Related Content TOC: check preceding heading text or nav class
+      const prevHeading = $elem.prevAll('h1,h2,h3,h4,h5,h6').first();
+      const prevHeadingText = prevHeading ? $(prevHeading).text().trim().toLowerCase() : '';
+      const navClassAttr = $elem.attr('class') || '';
+      const isRelatedTOC = prevHeadingText === 'related content' || /related/i.test(navClassAttr);
+      if (isRelatedTOC) {
+        const headingText = 'Related Content';
+        processedBlocks.push({
+          object: 'block',
+          type: 'heading_3',
+          heading_3: {
+            rich_text: [{ type: 'text', text: { content: headingText }, annotations: { bold: true, italic: false, strikethrough: false, underline: false, code: false, color: 'default' } }]
+          }
+        });
+        console.log(`🔍 [NAV-RELATED] Inserting heading for Related Content: "${headingText}"`);
+      }
+
       for (const li of listItems) {
         const $li = $(li);
-        
-        // Extract link as a root-level paragraph
+
+        // Extract link text and href
         const linkText = $li.find('a').first().text().trim();
         let linkHref = $li.find('a').first().attr('href');
-        
+
+        console.log(`🔍 [NAV-LINK] Found link: "${linkText}" (href: ${linkHref})`);
+
         if (linkText) {
-          // Create paragraph with link
           const linkRichText = [{
             type: "text",
             text: { content: linkText },
             annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: "default" }
           }];
-          
-          // Add link annotation if href exists and is valid
+
           if (linkHref) {
-            // Convert relative URLs to absolute URLs for ServiceNow docs
             if (linkHref.startsWith('/')) {
               linkHref = `https://www.servicenow.com${linkHref}`;
             }
-            
-            // Validate URL before adding link annotation
             try {
               new URL(linkHref);
               linkRichText[0].text.link = { url: linkHref };
@@ -4845,17 +4919,27 @@ async function extractContentFromHtml(html) {
               console.log(`⚠️ Invalid URL in nav link, skipping link annotation: ${linkHref}`);
             }
           }
-          
-          processedBlocks.push({
-            object: "block",
-            type: "paragraph",
-            paragraph: {
-              rich_text: linkRichText
-            }
-          });
+
+          if (isRelatedTOC) {
+            // Create bulleted list item for Related Content
+            processedBlocks.push({
+              object: "block",
+              type: "bulleted_list_item",
+              bulleted_list_item: { rich_text: linkRichText }
+            });
+            console.log(`🔍 [NAV-RELATED] Created bulleted_list_item for link: "${linkText.substring(0,50)}..."`);
+          } else {
+            processedBlocks.push({
+              object: "block",
+              type: "paragraph",
+              paragraph: { rich_text: linkRichText }
+            });
+            console.log(`🔍 [NAV-BLOCK] Created paragraph block with link: "${linkText.substring(0, 50)}..."`);
+            console.log(`🔍 [NAV-BLOCK-RICHTEXT] Link rich_text length: ${linkRichText.length}, content: ${JSON.stringify(linkRichText.slice(0, 2))}`);
+          }
         }
-        
-        // Find any paragraphs in the list item and add them as root-level paragraphs
+
+        // Descriptions: add as paragraphs (after the list item)
         const paragraphs = $li.find('p').toArray();
         for (const p of paragraphs) {
           const $p = $(p);
@@ -4870,12 +4954,15 @@ async function extractContentFromHtml(html) {
                   type: "paragraph",
                   paragraph: { rich_text: chunk }
                 });
+                if (isRelatedTOC) console.log(`🔍 [NAV-RELATED] Created paragraph description for list item: "${chunk[0]?.text?.content?.substring(0,50) || 'empty'}..."`);
+                else console.log(`🔍 [NAV-BLOCK] Created paragraph block with description: "${chunk[0]?.text?.content?.substring(0, 50) || 'empty'}..."`);
+                console.log(`🔍 [NAV-BLOCK-RICHTEXT] Desc rich_text length: ${chunk.length}, content: ${JSON.stringify(chunk.slice(0, 2))}`);
               }
             }
           }
         }
       }
-      
+
       $elem.remove(); // Mark as processed
       
     } else if (tagName === 'div' && ($elem.hasClass('itemgroup') || $elem.hasClass('info') || $elem.hasClass('stepxmp'))) {
@@ -5940,14 +6027,20 @@ async function extractContentFromHtml(html) {
       // ALSO include contentPlaceholder siblings (Related Links, etc.) - these go at the END
       // BUT filter out Mini TOC sidebars (navigation chrome)
       // FIX v11.0.217: REMOVED Related Content filter - users want this content extracted
+      // FIX v11.0.229: More specific Mini TOC detection - only skip "On this page" sections, keep "Related Content"
       const contentPlaceholders = topLevelChildren.filter(c => {
         const $c = $(c);
         if (!$c.hasClass('contentPlaceholder')) return false;
         
-        // Skip Mini TOC sidebars and navigation containers
-        const hasMiniToc = $c.find('.zDocsMiniTocCollapseButton, .zDocsSideBoxes, .contentContainer').length > 0;
-        if (hasMiniToc) {
-          console.log(`🔍 ⏭️  Skipping contentPlaceholder with Mini TOC/sidebar (navigation chrome)`);
+        // Skip only "On this page" Mini TOC, not all sidebars
+        // Check for specific "On this page" heading text to distinguish from "Related Content"
+        const hasOnThisPage = $c.find('h5').filter((i, h5) => {
+          const text = $(h5).text().trim().toLowerCase();
+          return text === 'on this page';
+        }).length > 0;
+        
+        if (hasOnThisPage) {
+          console.log(`🔍 ⏭️  Skipping contentPlaceholder with "On this page" Mini TOC (navigation chrome)`);
           return false;
         }
         
@@ -6121,7 +6214,69 @@ async function extractContentFromHtml(html) {
     console.log(`🔍   → Element <${childTag} id="${childId}"> produced ${blocksAdded} blocks (total: ${blocksBefore} → ${blocksAfter})`);
     blocks.push(...childBlocks);
   }
-  
+
+  // FALLBACK: If we didn't find any .contentPlaceholder elements earlier,
+  // some pages render a "Related Content" h5 + ul outside of that wrapper.
+  // Detect any standalone <h5>Related Content</h5> anywhere and normalize it
+  // into a heading + bulleted list items at the end so users see related links.
+  try {
+    const globalContentPlaceholderCount = $('.contentPlaceholder').length;
+    if (globalContentPlaceholderCount === 0) {
+      const relatedH5s = $('h5').filter((i, h5) => $(h5).text().trim().toLowerCase().includes('related content'));
+      if (relatedH5s.length > 0) {
+        console.log(`🔍 [FALLBACK-RELATED] Found ${relatedH5s.length} <h5> elements with "Related Content" (global fallback) - emitting as heading + bullets`);
+        for (let i = 0; i < relatedH5s.length; i++) {
+          const $h5 = $(relatedH5s[i]);
+          const headingText = 'Related Content';
+          blocks.push({
+            object: 'block',
+            type: 'heading_3',
+            heading_3: { rich_text: [{ type: 'text', text: { content: headingText }, annotations: { bold: true, italic: false, strikethrough: false, underline: false, code: false, color: 'default' } }] }
+          });
+
+          // Find a sibling or descendant UL for list items
+          let $ul = $h5.nextAll('ul').first();
+          if (!$ul || $ul.length === 0) $ul = $h5.parent().find('ul').first();
+
+          if ($ul && $ul.length > 0) {
+            const lis = $ul.find('> li').toArray();
+            for (const li of lis) {
+              const $li = $(li);
+              const link = $li.find('a').first();
+              const linkText = (link.text() || '').trim();
+              let linkHref = (link.attr('href') || '').trim();
+              const linkRichText = [{ type: 'text', text: { content: linkText }, annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' } }];
+              if (linkHref && linkHref.startsWith('/')) linkHref = `https://www.servicenow.com${linkHref}`;
+              try { if (linkHref) new URL(linkHref); if (linkHref) linkRichText[0].text.link = { url: linkHref }; } catch (e) { /* ignore */ }
+
+              blocks.push({ object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: linkRichText } });
+
+              // Optional description paragraphs under the list item
+              const paragraphs = $li.find('p').toArray();
+              for (const p of paragraphs) {
+                const pHtml = $(p).html() || '';
+                if (pHtml) {
+                  const { richText: pRichText } = await parseRichText(pHtml);
+                  if (pRichText.length > 0 && pRichText.some(rt => rt.text.content.trim())) {
+                    const chunks = splitRichTextArray(pRichText);
+                    for (const chunk of chunks) {
+                      blocks.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: chunk } });
+                    }
+                  }
+                }
+              }
+            }
+
+            // Remove UL from DOM to avoid duplication by normal flow
+            $ul.remove();
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.log('⚠️ [FALLBACK-RELATED] Error while running fallback related-content extraction:', e && e.message);
+  }
+
   console.log(`🔍 Total blocks after processing: ${blocks.length}`);
   
   // Check for any truly unprocessed content in the PROCESSED area only
@@ -6824,19 +6979,20 @@ async function extractContentFromHtml(html) {
         $('.contentPlaceholder').each((i, elem) => {
           const $elem = $(elem);
           
-          // Skip Mini TOC sidebars and navigation containers
-          const hasMiniToc = $elem.find('.zDocsMiniTocCollapseButton, .zDocsSideBoxes, .contentContainer').length > 0;
-          if (hasMiniToc) {
+          // FIX v11.0.229: Skip only "On this page" Mini TOC, not all sidebars
+          // Check for specific "On this page" heading text to keep "Related Content"
+          const hasOnThisPage = $elem.find('h5').filter((i, h5) => {
+            const text = $(h5).text().trim().toLowerCase();
+            return text === 'on this page';
+          }).length > 0;
+          
+          if (hasOnThisPage) {
             $elem.remove();
             return;
           }
           
-          // Skip Related Content sections (not part of main article content)
-          const hasRelatedContent = $elem.text().trim().toLowerCase().includes('related content') ||
-                                    $elem.find('h1, h2, h3, h4, h5, h6').text().trim().toLowerCase().includes('related content');
-          if (hasRelatedContent) {
-            $elem.remove();
-          }
+          // FIX v11.0.227: REMOVED Related Content filter - users want this section extracted
+          // (filter removed entirely - keeping only "On this page" filter above)
         });
         
         // FIX v11.0.173: Add spaces around block elements (same as PATCH logic)
