@@ -1,12 +1,13 @@
 {
   "fixture": "override-contact-preferences-duplication-order-issue.html",
-  "timestamp": "2025-12-08T07:03:06.340Z",
+  "timestamp": "2025-12-11T18:49:05.760Z",
   "blockTypes": {
     "paragraph": 4,
     "callout": 2,
     "numbered_list_item": 10,
     "bulleted_list_item": 8,
-    "image": 1
+    "image": 1,
+    "heading_3": 1
   },
   "calloutCount": 2,
   "callouts": [
@@ -97,7 +98,7 @@
               "strikethrough": false,
               "underline": false,
               "code": true,
-              "color": "red"
+              "color": "default"
             }
           },
           {
@@ -125,7 +126,7 @@
               "strikethrough": false,
               "underline": false,
               "code": true,
-              "color": "red"
+              "color": "default"
             }
           }
         ],
@@ -180,7 +181,7 @@
           {
             "type": "text",
             "text": {
-              "content": " (sn2n:miwt1g7k-sxvljf)"
+              "content": " (sn2n:mj1skwxj-rkonpa)"
             },
             "annotations": {
               "bold": false,
@@ -384,7 +385,7 @@
                       {
                         "type": "text",
                         "text": {
-                          "content": " (sn2n:miwt1g7j-bkpl3y)"
+                          "content": " (sn2n:mj1skwxf-snytyj)"
                         },
                         "annotations": {
                           "bold": false,
@@ -404,7 +405,7 @@
                       "image": {
                         "type": "file_upload",
                         "file_upload": {
-                          "id": "2c3a89fe-dba5-81ba-a8c2-00b2c65207fa"
+                          "id": "2c6a89fe-dba5-81ef-901a-00b23a74a092"
                         },
                         "caption": [
                           {
@@ -416,7 +417,7 @@
                         ]
                       },
                       "_sn2n_sourceUrl": "https://servicenow-be-prod.servicenow.com/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/../image/icon-actions.png?_LANG=enus",
-                      "_sn2n_marker": "miwt1g7j-bkpl3y"
+                      "_sn2n_marker": "mj1skwxf-snytyj"
                     }
                   ]
                 }
@@ -581,7 +582,7 @@
             "image": {
               "type": "file_upload",
               "file_upload": {
-                "id": "2c3a89fe-dba5-81ba-a8c2-00b2c65207fa"
+                "id": "2c6a89fe-dba5-81ef-901a-00b23a74a092"
               },
               "caption": [
                 {
@@ -593,7 +594,7 @@
               ]
             },
             "_sn2n_sourceUrl": "https://servicenow-be-prod.servicenow.com/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/../image/icon-actions.png?_LANG=enus",
-            "_sn2n_marker": "miwt1g7j-bkpl3y"
+            "_sn2n_marker": "mj1skwxf-snytyj"
           }
         ]
       }
@@ -676,7 +677,7 @@
           {
             "type": "text",
             "text": {
-              "content": " (sn2n:miwt1g7l-tr2hgy)"
+              "content": " (sn2n:mj1skwxq-7o64bw)"
             },
             "annotations": {
               "bold": false,
@@ -740,7 +741,7 @@
             },
             "_sn2n_source_container": "itemgroup",
             "_sn2n_mixed_position": "standalone",
-            "_sn2n_marker": "miwt1g7l-tr2hgy"
+            "_sn2n_marker": "mj1skwxq-7o64bw"
           }
         ]
       }
@@ -767,7 +768,7 @@
           {
             "type": "text",
             "text": {
-              "content": " (sn2n:miwt1g7o-e1gsco)"
+              "content": " (sn2n:mj1skwxw-o13tma)"
             },
             "annotations": {
               "bold": false,
@@ -803,7 +804,7 @@
             },
             "_sn2n_source_container": "itemgroup",
             "_sn2n_mixed_position": "before",
-            "_sn2n_marker": "miwt1g7o-e1gsco"
+            "_sn2n_marker": "mj1skwxw-o13tma"
           },
           {
             "object": "block",
@@ -831,7 +832,7 @@
               },
               "color": "blue_background"
             },
-            "_sn2n_marker": "miwt1g7o-e1gsco"
+            "_sn2n_marker": "mj1skwxw-o13tma"
           },
           {
             "object": "block",
@@ -854,7 +855,7 @@
                 }
               ]
             },
-            "_sn2n_marker": "miwt1g7o-e1gsco"
+            "_sn2n_marker": "mj1skwxw-o13tma"
           },
           {
             "object": "block",
@@ -877,7 +878,7 @@
                 }
               ]
             },
-            "_sn2n_marker": "miwt1g7o-e1gsco"
+            "_sn2n_marker": "mj1skwxw-o13tma"
           },
           {
             "object": "block",
@@ -900,7 +901,7 @@
                 }
               ]
             },
-            "_sn2n_marker": "miwt1g7o-e1gsco"
+            "_sn2n_marker": "mj1skwxw-o13tma"
           },
           {
             "object": "block",
@@ -923,7 +924,7 @@
                 }
               ]
             },
-            "_sn2n_marker": "miwt1g7o-e1gsco"
+            "_sn2n_marker": "mj1skwxw-o13tma"
           },
           {
             "object": "block",
@@ -933,21 +934,7 @@
                 {
                   "type": "text",
                   "text": {
-                    "content": "Microsoft Teams. For information on setting up this channel, see "
-                  },
-                  "annotations": {
-                    "bold": false,
-                    "italic": false,
-                    "strikethrough": false,
-                    "underline": false,
-                    "code": false,
-                    "color": "default"
-                  }
-                },
-                {
-                  "type": "text",
-                  "text": {
-                    "content": "Set up Microsoft Teams as a contact method for an on-call escalation ",
+                    "content": "Set up Microsoft Teams as a contact method for an on-call escalation",
                     "link": {
                       "url": "https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/set-up-msteams-oncall.html"
                     }
@@ -960,24 +947,10 @@
                     "code": false,
                     "color": "default"
                   }
-                },
-                {
-                  "type": "text",
-                  "text": {
-                    "content": "."
-                  },
-                  "annotations": {
-                    "bold": false,
-                    "italic": false,
-                    "strikethrough": false,
-                    "underline": false,
-                    "code": false,
-                    "color": "default"
-                  }
                 }
               ]
             },
-            "_sn2n_marker": "miwt1g7o-e1gsco"
+            "_sn2n_marker": "mj1skwxw-o13tma"
           },
           {
             "object": "block",
@@ -987,21 +960,7 @@
                 {
                   "type": "text",
                   "text": {
-                    "content": "Mobile push. For information on setting up this channel, see "
-                  },
-                  "annotations": {
-                    "bold": false,
-                    "italic": false,
-                    "strikethrough": false,
-                    "underline": false,
-                    "code": false,
-                    "color": "default"
-                  }
-                },
-                {
-                  "type": "text",
-                  "text": {
-                    "content": "Set up mobile push as a contact method for an on-call escalation ",
+                    "content": "Set up mobile push as a contact method for an on-call escalation",
                     "link": {
                       "url": "https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/set-up-mobile-push-oncall.html"
                     }
@@ -1014,24 +973,10 @@
                     "code": false,
                     "color": "default"
                   }
-                },
-                {
-                  "type": "text",
-                  "text": {
-                    "content": "."
-                  },
-                  "annotations": {
-                    "bold": false,
-                    "italic": false,
-                    "strikethrough": false,
-                    "underline": false,
-                    "code": false,
-                    "color": "default"
-                  }
                 }
               ]
             },
-            "_sn2n_marker": "miwt1g7o-e1gsco"
+            "_sn2n_marker": "mj1skwxw-o13tma"
           }
         ]
       }
@@ -1085,6 +1030,28 @@
           }
         ]
       }
+    },
+    {
+      "object": "block",
+      "type": "heading_3",
+      "heading_3": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Related Content"
+            },
+            "annotations": {
+              "bold": true,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
     }
   ],
   "fullResult": {
@@ -1092,11 +1059,12 @@
     "data": {
       "dryRun": true,
       "pageId": "2bfa89fe-dba5-8119-8c92-d7fcde2546e3",
-      "blocksExtracted": 7,
+      "blocksExtracted": 8,
       "blockTypes": {
         "paragraph": 2,
         "callout": 1,
-        "numbered_list_item": 4
+        "numbered_list_item": 4,
+        "heading_3": 1
       },
       "children": [
         {
@@ -1165,7 +1133,7 @@
                   "strikethrough": false,
                   "underline": false,
                   "code": true,
-                  "color": "red"
+                  "color": "default"
                 }
               },
               {
@@ -1193,7 +1161,7 @@
                   "strikethrough": false,
                   "underline": false,
                   "code": true,
-                  "color": "red"
+                  "color": "default"
                 }
               }
             ],
@@ -1248,7 +1216,7 @@
               {
                 "type": "text",
                 "text": {
-                  "content": " (sn2n:miwt1g7k-sxvljf)"
+                  "content": " (sn2n:mj1skwxj-rkonpa)"
                 },
                 "annotations": {
                   "bold": false,
@@ -1452,7 +1420,7 @@
                           {
                             "type": "text",
                             "text": {
-                              "content": " (sn2n:miwt1g7j-bkpl3y)"
+                              "content": " (sn2n:mj1skwxf-snytyj)"
                             },
                             "annotations": {
                               "bold": false,
@@ -1472,7 +1440,7 @@
                           "image": {
                             "type": "file_upload",
                             "file_upload": {
-                              "id": "2c3a89fe-dba5-81ba-a8c2-00b2c65207fa"
+                              "id": "2c6a89fe-dba5-81ef-901a-00b23a74a092"
                             },
                             "caption": [
                               {
@@ -1484,7 +1452,7 @@
                             ]
                           },
                           "_sn2n_sourceUrl": "https://servicenow-be-prod.servicenow.com/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/../image/icon-actions.png?_LANG=enus",
-                          "_sn2n_marker": "miwt1g7j-bkpl3y"
+                          "_sn2n_marker": "mj1skwxf-snytyj"
                         }
                       ]
                     }
@@ -1649,7 +1617,7 @@
                 "image": {
                   "type": "file_upload",
                   "file_upload": {
-                    "id": "2c3a89fe-dba5-81ba-a8c2-00b2c65207fa"
+                    "id": "2c6a89fe-dba5-81ef-901a-00b23a74a092"
                   },
                   "caption": [
                     {
@@ -1661,7 +1629,7 @@
                   ]
                 },
                 "_sn2n_sourceUrl": "https://servicenow-be-prod.servicenow.com/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/../image/icon-actions.png?_LANG=enus",
-                "_sn2n_marker": "miwt1g7j-bkpl3y"
+                "_sn2n_marker": "mj1skwxf-snytyj"
               }
             ]
           }
@@ -1744,7 +1712,7 @@
               {
                 "type": "text",
                 "text": {
-                  "content": " (sn2n:miwt1g7l-tr2hgy)"
+                  "content": " (sn2n:mj1skwxq-7o64bw)"
                 },
                 "annotations": {
                   "bold": false,
@@ -1808,7 +1776,7 @@
                 },
                 "_sn2n_source_container": "itemgroup",
                 "_sn2n_mixed_position": "standalone",
-                "_sn2n_marker": "miwt1g7l-tr2hgy"
+                "_sn2n_marker": "mj1skwxq-7o64bw"
               }
             ]
           }
@@ -1835,7 +1803,7 @@
               {
                 "type": "text",
                 "text": {
-                  "content": " (sn2n:miwt1g7o-e1gsco)"
+                  "content": " (sn2n:mj1skwxw-o13tma)"
                 },
                 "annotations": {
                   "bold": false,
@@ -1871,7 +1839,7 @@
                 },
                 "_sn2n_source_container": "itemgroup",
                 "_sn2n_mixed_position": "before",
-                "_sn2n_marker": "miwt1g7o-e1gsco"
+                "_sn2n_marker": "mj1skwxw-o13tma"
               },
               {
                 "object": "block",
@@ -1899,7 +1867,7 @@
                   },
                   "color": "blue_background"
                 },
-                "_sn2n_marker": "miwt1g7o-e1gsco"
+                "_sn2n_marker": "mj1skwxw-o13tma"
               },
               {
                 "object": "block",
@@ -1922,7 +1890,7 @@
                     }
                   ]
                 },
-                "_sn2n_marker": "miwt1g7o-e1gsco"
+                "_sn2n_marker": "mj1skwxw-o13tma"
               },
               {
                 "object": "block",
@@ -1945,7 +1913,7 @@
                     }
                   ]
                 },
-                "_sn2n_marker": "miwt1g7o-e1gsco"
+                "_sn2n_marker": "mj1skwxw-o13tma"
               },
               {
                 "object": "block",
@@ -1968,7 +1936,7 @@
                     }
                   ]
                 },
-                "_sn2n_marker": "miwt1g7o-e1gsco"
+                "_sn2n_marker": "mj1skwxw-o13tma"
               },
               {
                 "object": "block",
@@ -1991,7 +1959,7 @@
                     }
                   ]
                 },
-                "_sn2n_marker": "miwt1g7o-e1gsco"
+                "_sn2n_marker": "mj1skwxw-o13tma"
               },
               {
                 "object": "block",
@@ -2001,21 +1969,7 @@
                     {
                       "type": "text",
                       "text": {
-                        "content": "Microsoft Teams. For information on setting up this channel, see "
-                      },
-                      "annotations": {
-                        "bold": false,
-                        "italic": false,
-                        "strikethrough": false,
-                        "underline": false,
-                        "code": false,
-                        "color": "default"
-                      }
-                    },
-                    {
-                      "type": "text",
-                      "text": {
-                        "content": "Set up Microsoft Teams as a contact method for an on-call escalation ",
+                        "content": "Set up Microsoft Teams as a contact method for an on-call escalation",
                         "link": {
                           "url": "https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/set-up-msteams-oncall.html"
                         }
@@ -2028,24 +1982,10 @@
                         "code": false,
                         "color": "default"
                       }
-                    },
-                    {
-                      "type": "text",
-                      "text": {
-                        "content": "."
-                      },
-                      "annotations": {
-                        "bold": false,
-                        "italic": false,
-                        "strikethrough": false,
-                        "underline": false,
-                        "code": false,
-                        "color": "default"
-                      }
                     }
                   ]
                 },
-                "_sn2n_marker": "miwt1g7o-e1gsco"
+                "_sn2n_marker": "mj1skwxw-o13tma"
               },
               {
                 "object": "block",
@@ -2055,21 +1995,7 @@
                     {
                       "type": "text",
                       "text": {
-                        "content": "Mobile push. For information on setting up this channel, see "
-                      },
-                      "annotations": {
-                        "bold": false,
-                        "italic": false,
-                        "strikethrough": false,
-                        "underline": false,
-                        "code": false,
-                        "color": "default"
-                      }
-                    },
-                    {
-                      "type": "text",
-                      "text": {
-                        "content": "Set up mobile push as a contact method for an on-call escalation ",
+                        "content": "Set up mobile push as a contact method for an on-call escalation",
                         "link": {
                           "url": "https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/set-up-mobile-push-oncall.html"
                         }
@@ -2082,24 +2008,10 @@
                         "code": false,
                         "color": "default"
                       }
-                    },
-                    {
-                      "type": "text",
-                      "text": {
-                        "content": "."
-                      },
-                      "annotations": {
-                        "bold": false,
-                        "italic": false,
-                        "strikethrough": false,
-                        "underline": false,
-                        "code": false,
-                        "color": "default"
-                      }
                     }
                   ]
                 },
-                "_sn2n_marker": "miwt1g7o-e1gsco"
+                "_sn2n_marker": "mj1skwxw-o13tma"
               }
             ]
           }
@@ -2153,12 +2065,34 @@
               }
             ]
           }
+        },
+        {
+          "object": "block",
+          "type": "heading_3",
+          "heading_3": {
+            "rich_text": [
+              {
+                "type": "text",
+                "text": {
+                  "content": "Related Content"
+                },
+                "annotations": {
+                  "bold": true,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "default"
+                }
+              }
+            ]
+          }
         }
       ],
       "hasVideos": false,
       "audit": {
-        "coverage": 107.2,
-        "coverageStr": "107.2%",
+        "coverage": 100.3,
+        "coverageStr": "100.3%",
         "threshold": "68-110%",
         "thresholdReason": "large page (>100 blocks)",
         "contentAnalysis": {
@@ -2175,17 +2109,17 @@
         },
         "nodeCount": 53,
         "totalLength": 1331,
-        "notionBlocks": 7,
-        "notionTextLength": 1427,
-        "blockNodeRatio": 0.13,
+        "notionBlocks": 8,
+        "notionTextLength": 1335,
+        "blockNodeRatio": 0.15,
         "passed": true,
         "missing": 0,
-        "extra": 96,
+        "extra": 4,
         "missingPercent": 0,
-        "extraPercent": "7.2",
+        "extraPercent": "0.3",
         "detailedComparison": {
           "htmlSegmentCount": 53,
-          "notionSegmentCount": 22,
+          "notionSegmentCount": 23,
           "missingSegments": [
             {
               "text": "begin Role required: rota_admin,",
@@ -2198,14 +2132,19 @@
               "length": 31
             },
             {
-              "text": "Voice Microsoft Teams",
+              "text": "Email Slack Voice Microsoft Teams . For information on setting up this channel, see",
               "context": "html",
-              "length": 21
+              "length": 83
             },
             {
-              "text": "on-call escalation .",
+              "text": "an on-call escalation . Mobile push. For information on setting up this channel, see",
               "context": "html",
-              "length": 20
+              "length": 84
+            },
+            {
+              "text": "an on-call escalation .",
+              "context": "html",
+              "length": 23
             },
             {
               "text": "Notify is active.",
@@ -2235,24 +2174,34 @@
               "length": 17
             },
             {
-              "text": "Slack Voice Microsoft Teams.",
+              "text": "Email Slack Voice",
               "context": "notion",
-              "length": 28
+              "length": 17
             },
             {
-              "text": "on-call escalation",
+              "text": "an on-call escalation",
               "context": "notion",
-              "length": 18
+              "length": 21
+            },
+            {
+              "text": "an on-call escalation",
+              "context": "notion",
+              "length": 21
+            },
+            {
+              "text": "user preference option. Related Content",
+              "context": "notion",
+              "length": 39
             }
           ],
           "groupMatches": [],
-          "totalMissingChars": 121,
-          "totalExtraChars": 136
+          "totalMissingChars": 270,
+          "totalExtraChars": 188
         },
         "fuzzyConfidenceThreshold": 0.95,
         "fuzzyMatchedChars": 0,
-        "adjustedCoverage": 107.2,
-        "adjustedCoverageStr": "107.2%",
+        "adjustedCoverage": 100.3,
+        "adjustedCoverageStr": "100.3%",
         "adjustedPassed": true
       }
     },
