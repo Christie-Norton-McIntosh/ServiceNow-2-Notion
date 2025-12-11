@@ -44,6 +44,7 @@ delete require.cache[tablePath];
 const { convertTableBlock } = require('../converters/table.cjs');
 
 const { generateMarker, removeMarkerFromRichTextArray } = require('../orchestration/marker-management.cjs');
+const { lcsCoverage, canonicalizeText, tokenizeWords, compareTexts } = require('../utils/lcs-comparator.cjs');
 
 /** @private Global tracker for video detection (reset per conversion) */
 let hasDetectedVideos = false;
@@ -488,6 +489,20 @@ async function extractContentFromHtml(html) {
   html = html.replace(/<div[^>]*class="[^\"]*miniTOC[^\"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
   html = html.replace(/<div[^>]*class="[^\"]*zDocsSideBoxes[^\"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
   
+  // Remove EMPTY navigation chrome elements (UI only, no content).
+  // DO NOT remove all <nav> elements - some contain Related Content links!
+  // Strategy: Remove specific UI chrome navs by class, or empty navs with no meaningful content
+  html = html.replace(/<nav[^>]*class="[^\"]*tasksNavigation[^\"]*"[^>]*>[\s\S]*?<\/nav>/gi, "");
+  html = html.replace(/<div[^>]*class="[^\"]*related-links[^\"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
+  html = html.replace(/<div[^>]*class="[^\"]*tasksNavigation[^\"]*"[^>]*>[\s\S]*?<\/div>/gi, "");
+  
+  // Remove empty navs (no text content except whitespace)
+  // Regex: <nav...>...content...</nav> where content has no letters/numbers
+  html = html.replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, (match) => {
+    // Keep nav if it contains any alphanumeric characters (actual content)
+    return /[a-zA-Z0-9]/.test(match) ? match : "";
+  });
+  
   // NOTE: Menu cascade preprocessing moved earlier (before AUDIT) in v11.0.158
   // This ensures both AUDIT and extraction use the same preprocessed HTML
   // See lines 283-295 for the menu cascade preprocessing
@@ -629,6 +644,63 @@ async function extractContentFromHtml(html) {
   // recent rollback. We only remove opening/closing tags; keep inner text for later formatting.
   // Examples: <var class="keyword varname">true</var> -> true
   text = text.replace(/<var[^>]*>([\s\S]*?)<\/var>/gi, '$1');
+
+    // CRITICAL: Protect technical placeholders FIRST (before SAMP/CODE processing)
+    // These are non-HTML tags like <plugin name>, <instance-name>, <Tool ID>, etc.
+    // Must protect them BEFORE they get wrapped in CODE markers or cleaned
+    const localTechnicalPlaceholders = [];
+    
+    // STEP 1: Protect HTML-encoded placeholders like &lt;plugin name&gt;
+    text = text.replace(/&lt;([^&]+)&gt;/g, (match, content) => {
+      const trimmed = content.trim();
+      
+      // Extract tag name (first word, ignoring / for closing tags)
+      const tagMatch = /^\/?\s*([a-z][a-z0-9-]*)/i.exec(trimmed);
+      if (!tagMatch) {
+        // Doesn't start with valid tag pattern, protect it
+        const marker = `__LOCAL_TECH_PLACEHOLDER_${localTechnicalPlaceholders.length}__`;
+        localTechnicalPlaceholders.push(content);
+        return marker;
+      }
+      
+      const tagName = tagMatch[1].toLowerCase();
+      
+      // If it's a known HTML tag, leave it for normal entity decoding
+      if (HTML_TAGS.has(tagName)) {
+        return match;
+      }
+      
+      // Unknown tag, protect it as a placeholder
+      const marker = `__LOCAL_TECH_PLACEHOLDER_${localTechnicalPlaceholders.length}__`;
+      localTechnicalPlaceholders.push(content);
+      return marker;
+    });
+    
+    // STEP 2: Protect raw angle bracket placeholders like <plugin name>
+    text = text.replace(/<([^>]+)>/g, (match, content) => {
+      const trimmed = content.trim();
+      
+      // Extract tag name (first word, ignoring / for closing tags)
+      const tagMatch = /^\/?\s*([a-z][a-z0-9-]*)/i.exec(trimmed);
+      if (!tagMatch) {
+        // Doesn't start with valid tag pattern, protect it
+        const marker = `__LOCAL_TECH_PLACEHOLDER_${localTechnicalPlaceholders.length}__`;
+        localTechnicalPlaceholders.push(content);
+        return marker;
+      }
+      
+      const tagName = tagMatch[1].toLowerCase();
+      
+      // If it's a known HTML tag, leave it alone
+      if (HTML_TAGS.has(tagName)) {
+        return match;
+      }
+      
+      // Unknown tag, protect it as a placeholder
+      const marker = `__LOCAL_TECH_PLACEHOLDER_${localTechnicalPlaceholders.length}__`;
+      localTechnicalPlaceholders.push(content);
+      return marker;
+    });
 
     // DEBUG: Log input HTML BEFORE normalization
     if (text && (text.includes('http') || text.includes('<code'))) {
@@ -932,12 +1004,24 @@ async function extractContentFromHtml(html) {
     });
 
     // Handle inline code tags
+    // FIX v11.0.220: Trim content to remove trailing/leading spaces inside code tags
     text = text.replace(/<code([^>]*)>([\s\S]*?)<\/code>/gi, (match, attrs, content) => {
       // If content already has CODE markers (from URL restoration), don't double-wrap
       if (content.includes('__CODE_START__')) {
         return content;
       }
-      return `__CODE_START__${content}__CODE_END__`;
+      return `__CODE_START__${content.trim()}__CODE_END__`;
+    });
+
+    // Handle <samp> tags (sample output/system output) - treat same as inline code
+    // CRITICAL: Must preserve <plugin name> placeholders inside samp content
+    // FIX v11.0.220: Trim content to remove trailing/leading spaces inside samp tags
+    text = text.replace(/<samp([^>]*)>([\s\S]*?)<\/samp>/gi, (match, attrs, content) => {
+      // If content already has CODE markers, don't double-wrap
+      if (content.includes('__CODE_START__')) {
+        return content;
+      }
+      return `__CODE_START__${content.trim()}__CODE_END__`;
     });
 
     // CRITICAL: Extract links FIRST, before identifier detection
@@ -966,8 +1050,9 @@ async function extractContentFromHtml(html) {
     });
 
     // Handle raw technical identifiers in parentheses/brackets as inline code
+    // FIX v11.0.220: Trim content and preserve original bracket/paren spacing
     text = text.replace(/([\(\[])[ \t\n\r]*([^\s()[\]]*[_.][^\s()[\]]*)[ \t\n\r]*([\)\]])/g, (match, open, code, close) => {
-      return `__CODE_START__${code.trim()}__CODE_END__`;
+      return `${open}__CODE_START__${code.trim()}__CODE_END__${close}`;
     });
 
     // Handle technical identifiers like (com.snc.software_asset_management) as inline code
@@ -992,6 +1077,7 @@ async function extractContentFromHtml(html) {
     // Handle standalone multi-word identifiers connected by _ or . (no spaces) as inline code
     // Examples: com.snc.incident.mim.ml_solution, sys_user_table, package.class.method
     // Must have at least 2 segments and no brackets/parentheses
+    // FIX v11.0.220: Trim identifier to remove any whitespace
     text = text.replace(/\b([a-zA-Z][a-zA-Z0-9]*(?:[_.][a-zA-Z][a-zA-Z0-9]*)+)(?![_.a-zA-Z0-9])/g, (match, identifier, offset) => {
       // Skip if already wrapped or if it's part of a URL
       if (match.includes('__CODE_START__') || match.includes('http')) {
@@ -1005,7 +1091,7 @@ async function extractContentFromHtml(html) {
         // We're inside a CODE block, don't wrap again
         return match;
       }
-      return `__CODE_START__${identifier}__CODE_END__`;
+      return `__CODE_START__${identifier.trim()}__CODE_END__`;
     });
 
     // Handle p/span with sectiontitle tasklabel class as bold
@@ -1033,6 +1119,11 @@ async function extractContentFromHtml(html) {
     text = text.replace(/__\s+BOLD\s+END__/g, '__BOLD_END__');
     text = text.replace(/__\s+ITALIC\s+START__/g, '__ITALIC_START__');
     text = text.replace(/__\s+ITALIC\s+END__/g, '__ITALIC_END__');
+    
+    // FIX v11.0.222: Remove extra spaces immediately after CODE_START and before CODE_END
+    // This handles cases like "( com.snc.procurement  )" where spaces are inside the formatted text
+    text = text.replace(/__CODE_START__\s+/g, '__CODE_START__');
+    text = text.replace(/\s+__CODE_END__/g, '__CODE_END__');
 
     // Add soft return between </a> and any <p> tag
     text = text.replace(/(<\/a>)(\s*)(<p[^>]*>)/gi, (match, closingA, whitespace, openingP) => {
@@ -1064,17 +1155,9 @@ async function extractContentFromHtml(html) {
       } else if (part === "__ITALIC_END__") {
         currentAnnotations.italic = false;
       } else if (part === "__CODE_START__") {
-        currentAnnotations._colorBeforeCode = currentAnnotations.color;
-        // FIX: Use red color instead of inline code formatting
-        currentAnnotations.color = "red";
+        currentAnnotations.code = true;
       } else if (part === "__CODE_END__") {
-        // FIX: Restore previous color (no code annotation to remove)
-        if (currentAnnotations._colorBeforeCode !== undefined) {
-          currentAnnotations.color = currentAnnotations._colorBeforeCode;
-          delete currentAnnotations._colorBeforeCode;
-        } else {
-          currentAnnotations.color = "default";
-        }
+        currentAnnotations.code = false;
       } else if (part === "__SOFT_BREAK__") {
         richText.push({
           type: "text",
@@ -1165,6 +1248,16 @@ async function extractContentFromHtml(html) {
         current.text.content += " ";
       }
     }
+
+    // CRITICAL: Restore local technical placeholders before returning
+    // These were protected at the start of parseRichText to survive SAMP/CODE processing
+    richText.forEach(obj => {
+      if (obj.text && obj.text.content) {
+        obj.text.content = obj.text.content.replace(/__LOCAL_TECH_PLACEHOLDER_(\d+)__/g, (match, index) => {
+          return `<${localTechnicalPlaceholders[parseInt(index)]}>`;
+        });
+      }
+    });
 
     return { richText, imageBlocks, videoBlocks };
   }
@@ -5831,13 +5924,22 @@ async function extractContentFromHtml(html) {
       
       // ALSO include nav elements that are children of articles (e.g., #request-predictive-intelligence-for-im > nav)
       // These should come AFTER sections but BEFORE contentPlaceholder
-      const articleNavs = $('.zDocsTopicPageBody article > nav, .zDocsTopicPageBody article[role="article"] > nav').toArray();
+      // Try multiple selectors: direct children of article, or any nav inside zDocsTopicPageBody
+      let articleNavs = $('.zDocsTopicPageBody article > nav, .zDocsTopicPageBody article[role="article"] > nav').toArray();
+      if (articleNavs.length === 0) {
+        // Fallback: Find all navs in zDocsTopicPageBody
+        articleNavs = $('.zDocsTopicPageBody nav').toArray();
+        if (articleNavs.length > 0) {
+          console.log(`🔍 ⏭️  Direct article > nav selector found 0 navs, using fallback .zDocsTopicPageBody nav selector`);
+        }
+      }
       if (articleNavs.length > 0) {
         console.log(`🔍 ✅ Found ${articleNavs.length} nav element(s) as children of articles, adding to contentElements`);
       }
       
       // ALSO include contentPlaceholder siblings (Related Links, etc.) - these go at the END
-      // BUT filter out Mini TOC sidebars (navigation chrome) AND Related Content sections
+      // BUT filter out Mini TOC sidebars (navigation chrome)
+      // FIX v11.0.217: REMOVED Related Content filter - users want this content extracted
       const contentPlaceholders = topLevelChildren.filter(c => {
         const $c = $(c);
         if (!$c.hasClass('contentPlaceholder')) return false;
@@ -5846,14 +5948,6 @@ async function extractContentFromHtml(html) {
         const hasMiniToc = $c.find('.zDocsMiniTocCollapseButton, .zDocsSideBoxes, .contentContainer').length > 0;
         if (hasMiniToc) {
           console.log(`🔍 ⏭️  Skipping contentPlaceholder with Mini TOC/sidebar (navigation chrome)`);
-          return false;
-        }
-        
-        // Skip Related Content sections (not part of main article content)
-        const hasRelatedContent = $c.text().trim().toLowerCase().includes('related content') ||
-                                  $c.find('h1, h2, h3, h4, h5, h6').text().trim().toLowerCase().includes('related content');
-        if (hasRelatedContent) {
-          console.log(`🔍 ⏭️  Skipping contentPlaceholder with Related Content section (not article content)`);
           return false;
         }
         
@@ -7730,6 +7824,105 @@ function createPlainTextBlocksForValidation(blocks) {
   });
 }
 
+// Lightweight, exportable detailed text comparison used by tests and diagnostics.
+// This implements the phrase-based matching logic (v11.0.172+) used by the
+// internal comparator but is kept small so it can be safely exported for
+// external callers and test scripts.
+function getDetailedTextComparison(html, blocks) {
+  const cheerio = require('cheerio');
+
+  // Basic HTML filtering to remove non-content noise
+  const $ = cheerio.load(html || '', { decodeEntities: false });
+  $('script, style, noscript, svg, iframe, button').remove();
+  $('.btn, .button, [role="button"]').remove();
+  $('pre, code').remove();
+  $('.miniTOC, .zDocsSideBoxes').remove();
+  $('.contentPlaceholder').each((i, el) => {
+    const $el = $(el);
+    const hasMiniToc = $el.find('.zDocsMiniTocCollapseButton, .zDocsSideBoxes, .contentContainer').length > 0;
+    if (hasMiniToc) $el.remove();
+  });
+  // Add spaces around block elements and replace <br> with space to avoid word joins
+  const blockElements = 'p, div, h1, h2, h3, h4, h5, h6, li, td, th, tr, table, section, article, aside, header, footer, nav, main, blockquote, pre, hr, dl, dt, dd, ul, ol, figure';
+  $(blockElements).each((i, el) => {
+    const $el = $(el);
+    const content = $el.html();
+    if (content) $el.html(' ' + content + ' ');
+  });
+  $('br').replaceWith(' ');
+
+  const filteredHtml = $.html();
+
+  // Extract plain text from HTML
+  const htmlText = cheerio.load(filteredHtml).text().replace(/\s+/g, ' ').trim();
+
+  // Extract plain text from notion blocks
+  const notionTextParts = [];
+  (blocks || []).forEach(b => {
+    try {
+      const tarr = (b && b[b.type] && b[b.type].rich_text) || [];
+      const txt = tarr.map(rt => rt.plain_text || (rt.text && rt.text.content) || '').join('').trim();
+      if (txt) notionTextParts.push(txt);
+    } catch (e) {
+      // ignore malformed blocks
+    }
+  });
+  const notionText = notionTextParts.join(' ').replace(/\s+/g, ' ').trim();
+
+  // Use the new token-level LCS comparator (much less strict than phrase matching)
+  try {
+    const result = compareTexts(htmlText, notionText, {
+      sectionBased: false,  // Document-level for speed
+      minMissingSpanTokens: 40,  // Only report missing spans ≥40 tokens
+      maxCells: 50000000,  // Fallback to Jaccard if input too large
+    });
+
+    // Convert LCS result to legacy format for backward compatibility
+    const htmlTokens = tokenizeWords(canonicalizeText(htmlText));
+    const notionTokens = tokenizeWords(canonicalizeText(notionText));
+
+    // Map LCS spans back to original text
+    const missingSegments = (result.missingSpans || [])
+      .slice(0, 10)  // Top 10 only
+      .map(span => {
+        const snippet = htmlTokens.slice(span.startIdx, span.endIdx).join(' ');
+        return {
+          text: snippet,
+          length: snippet.length,
+          context: 'html'
+        };
+      });
+
+    return {
+      htmlSegmentCount: result.srcTokenCount,
+      notionSegmentCount: result.dstTokenCount,
+      missingSegments,
+      extraSegments: [],  // Not computed by LCS; use LCS coverage instead
+      groupMatches: [],
+      totalMissingChars: missingSegments.reduce((s, x) => s + (x.length || 0), 0),
+      totalExtraChars: 0,
+      // NEW: Include LCS metrics for diagnostics
+      lcsLength: result.lcsLength,
+      coverage: result.coverage,
+      method: result.method,  // 'lcs' or 'jaccard'
+    };
+  } catch (err) {
+    console.error('[LCS-COMPARATOR] Error:', err.message);
+    // Fallback to empty result on error
+    return {
+      htmlSegmentCount: 0,
+      notionSegmentCount: 0,
+      missingSegments: [],
+      extraSegments: [],
+      groupMatches: [],
+      totalMissingChars: 0,
+      totalExtraChars: 0,
+      coverage: 0,
+      method: 'error',
+    };
+  }
+}
+
 function parseMetadataFromUrl(url) {
   // Basic metadata extraction from ServiceNow URLs
   if (!url || typeof url !== "string") {
@@ -7792,4 +7985,11 @@ module.exports = {
   parseMetadataFromUrl,
   /** @type {function(Array): Array} */
   createPlainTextBlocksForValidation,
+  /**
+   * Expose detailed text comparison for testing and external validation hooks.
+   * NOTE: This is primarily used by tests and diagnostic scripts; the main
+   * W2N flow invokes this internally. Exporting it makes comparator behavior
+   * callable from test runners and debug scripts.
+   */
+  getDetailedTextComparison
 };
