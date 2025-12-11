@@ -10,10 +10,122 @@
 
 | Category | Documents | Purpose |
 |----------|-----------|---------|
+| 🧩 [Text Completeness Comparator](#text-completeness-comparator) | 5 docs | Content validation and comparison (v11.0.205+) |
 | 🧪 [Testing](#testing-documentation) | 2 docs | Test scenarios and procedures |
 | 📖 [Technical Reference](#technical-reference) | 3 docs | Implementation details and API reference |
 | 🔧 [Fix History](#fix-history) | 2 docs | Bug fixes and solutions |
 | 📦 [Archived](#archived-documentation) | 18 docs | Historical and superseded documentation |
+
+---
+
+## 🧩 Text Completeness Comparator
+
+**Version**: v11.0.205+  
+**Purpose**: Validate that ServiceNow content is fully captured in Notion pages
+
+### COMPARATOR-QUICK-START.md ⭐
+**Purpose**: Get started in 5 minutes with common use cases  
+**Use When**:
+- First time using the comparator
+- Need quick reference for API usage
+- Testing basic functionality
+- Troubleshooting common issues
+
+**Contains**:
+- 5-minute setup instructions
+- Three common use cases with examples
+- Configuration options reference
+- Notion database setup guide
+- Troubleshooting section
+
+**Quick Start**: Follow the 3-step setup, then try the example curl commands
+
+---
+
+### COMPARATOR-LOCAL-USAGE.md ⭐
+**Purpose**: Complete guide for running comparator locally on your pages  
+**Use When**:
+- Running PATCH operations with validation (Option A)
+- Validating existing pages without re-PATCHing (Option B)
+- Manual API integration for custom workflows (Option C)
+- Need step-by-step instructions for local usage
+
+**Contains**:
+- Three usage options with complete instructions
+- Bash/Python/Node.js scripting examples
+- Configuration and environment setup
+- Troubleshooting common issues
+- Quick reference table for choosing the right option
+
+**Quick Start**: Choose your option (A/B/C) and follow the usage instructions
+
+---
+
+### COMPLETENESS-COMPARATOR.md
+**Purpose**: Comprehensive overview of the comparator feature  
+**Use When**:
+- Understanding how the comparator works
+- Learning about canonicalization and algorithms
+- Configuring thresholds and options
+- Setting up Notion database properties
+
+**Contains**:
+- Feature overview and key capabilities
+- API endpoints summary
+- Configuration options
+- Thresholds and defaults
+- Integration with W2N workflow
+
+---
+
+### API-COMPARATOR.md
+**Purpose**: Complete API reference for all endpoints  
+**Use When**:
+- Implementing comparator API calls
+- Understanding request/response formats
+- Working with Notion page comparisons
+- Debugging API issues
+
+**Contains**:
+- All endpoint specifications
+- Request/response schemas
+- Parameter descriptions
+- Error response formats
+- Practical examples with curl
+
+---
+
+### ARCHITECTURE-COMPARATOR.md
+**Purpose**: Technical architecture and implementation details  
+**Use When**:
+- Understanding the comparison algorithms
+- Learning about canonicalization process
+- Optimizing performance
+- Extending functionality
+
+**Contains**:
+- Architecture flow diagram
+- Canonicalization spec (canon-v1.4)
+- LCS vs Jaccard algorithm details
+- Performance characteristics
+- Security considerations
+
+---
+
+### DEPLOYMENT-COMPARATOR.md
+**Purpose**: Production deployment and configuration guide  
+**Use When**:
+- Deploying to production
+- Setting up environment variables
+- Configuring Notion database
+- Scaling considerations
+
+**Contains**:
+- Prerequisites and system requirements
+- Installation steps
+- Environment variable reference
+- Security best practices
+- Troubleshooting guide
 
 ---
 
