@@ -42,6 +42,25 @@
 
 ---
 
+### COMPARATOR-LOCAL-USAGE.md ⭐
+**Purpose**: Complete guide for running comparator locally on your pages  
+**Use When**:
+- Running PATCH operations with validation (Option A)
+- Validating existing pages without re-PATCHing (Option B)
+- Manual API integration for custom workflows (Option C)
+- Need step-by-step instructions for local usage
+
+**Contains**:
+- Three usage options with complete instructions
+- Bash/Python/Node.js scripting examples
+- Configuration and environment setup
+- Troubleshooting common issues
+- Quick reference table for choosing the right option
+
+**Quick Start**: Choose your option (A/B/C) and follow the usage instructions
+
+---
+
 ### COMPLETENESS-COMPARATOR.md
 **Purpose**: Comprehensive overview of the comparator feature  
 **Use When**:
