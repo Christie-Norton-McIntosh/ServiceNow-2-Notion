@@ -9,6 +9,10 @@ import { constructServiceNowBaseUrl } from "./metadata-extractor.js";
  * @returns {Object} Object with combinedHtml and combinedImages
  */
 export async function extractContentWithIframes(contentElement) {
+  // Log userscript version at extraction start
+  const version = window.BUILD_VERSION || 'unknown';
+  console.log(`🚀 ServiceNow-2-Notion v${version} - Starting extraction`);
+  
   console.log("🚀🚀🚀 EXTRACTION STARTED - extractContentWithIframes called");
   console.log("   - contentElement tagName:", contentElement?.tagName);
   console.log("   - contentElement id:", contentElement?.id);
@@ -16,7 +20,7 @@ export async function extractContentWithIframes(contentElement) {
   
   // Wait for Related Content to load dynamically (MutationObserver approach)
   // This runs for ALL content elements, not just iframes
-  console.log("⏳⏳⏳ [v11.0.215] Waiting for Related Content to load (max 10s)...");
+  console.log(`⏳⏳⏳ [v${version}] Waiting for Related Content to load (max 10s)...`);
   await new Promise((resolve) => {
     const startTime = Date.now();
     const maxWaitMs = 10000; // 10 seconds max
