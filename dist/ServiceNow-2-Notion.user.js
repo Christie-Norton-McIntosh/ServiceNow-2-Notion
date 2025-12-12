@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.221
+// @version      11.0.222
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.221";
+    window.BUILD_VERSION = "11.0.222";
 (function () {
 
   // Configuration constants and default settings
@@ -6996,7 +6996,9 @@
       // If no iframe content found, use the LIVE element content (not clone)
       // [v11.0.219] FIX: Use contentElement.innerHTML (live DOM) instead of contentClone
       // The clone doesn't include JavaScript-loaded content (like Related Content in contentPlaceholder)
+      console.log(`🔍 combinedHtml check: empty="${!combinedHtml}", length=${combinedHtml.length}`);
       if (!combinedHtml) {
+        console.log(`✅ Using LIVE DOM (contentElement.innerHTML = ${contentElement.innerHTML.length} chars)`);
         // Get content from LIVE DOM, then apply same filtering that was done to clone
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = contentElement.innerHTML;
