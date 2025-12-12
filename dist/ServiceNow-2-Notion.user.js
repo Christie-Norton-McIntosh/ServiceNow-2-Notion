@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.213
+// @version      11.0.214
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.213";
+    window.BUILD_VERSION = "11.0.214";
 (function () {
 
   // Configuration constants and default settings
@@ -6622,22 +6622,62 @@
           }
         }
         
-        // Wait for dynamic content (Related Content) to load - 3 seconds
-        console.log("⏳⏳⏳ [v11.0.212+] Waiting 3 seconds for dynamic content (Related Content) to load...");
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-        
-        // Log diagnostic info about contentPlaceholder elements
-        if (iframeDoc) {
-          const placeholderCount = iframeDoc.querySelectorAll('.contentPlaceholder').length;
-          console.log(`📊 After 3s wait: Found ${placeholderCount} contentPlaceholder elements`);
-          if (placeholderCount > 0) {
-            const firstPlaceholder = iframeDoc.querySelector('.contentPlaceholder');
-            const h5Count = firstPlaceholder.querySelectorAll('h5').length;
-            const ulCount = firstPlaceholder.querySelectorAll('ul').length;
-            const innerHTMLLength = firstPlaceholder.innerHTML?.length || 0;
-            console.log(`📊 First contentPlaceholder: ${h5Count} H5 elements, ${ulCount} UL elements, ${innerHTMLLength} chars`);
+        // Wait for Related Content to load dynamically (MutationObserver approach)
+        console.log("⏳⏳⏳ [v11.0.214] Waiting for Related Content to load (max 10s)...");
+        await new Promise((resolve) => {
+          const startTime = Date.now();
+          const maxWaitMs = 10000; // 10 seconds max
+          
+          // Check if Related Content already exists
+          const checkRelatedContent = () => {
+            const placeholders = iframeDoc?.querySelectorAll('.contentPlaceholder') || [];
+            for (const placeholder of placeholders) {
+              const h5 = placeholder.querySelector('h5');
+              if (h5 && h5.textContent.toLowerCase().includes('related content')) {
+                return true;
+              }
+            }
+            return false;
+          };
+          
+          if (checkRelatedContent()) {
+            console.log("✅ Related Content already present");
+            resolve();
+            return;
           }
-        }
+          
+          // Set up MutationObserver to watch for Related Content
+          const observer = new MutationObserver(() => {
+            if (checkRelatedContent()) {
+              console.log(`✅ Related Content appeared after ${Date.now() - startTime}ms`);
+              observer.disconnect();
+              resolve();
+            } else if (Date.now() - startTime > maxWaitMs) {
+              console.log(`⏱️ Timeout after ${maxWaitMs}ms - Related Content did not appear`);
+              observer.disconnect();
+              resolve();
+            }
+          });
+          
+          // Observe the entire document body for changes
+          if (iframeDoc?.body) {
+            observer.observe(iframeDoc.body, {
+              childList: true,
+              subtree: true
+            });
+          }
+          
+          // Fallback timeout
+          setTimeout(() => {
+            const placeholders = iframeDoc?.querySelectorAll('.contentPlaceholder') || [];
+            const h5Count = Array.from(placeholders).reduce((count, p) => {
+              return count + p.querySelectorAll('h5').length;
+            }, 0);
+            console.log(`📊 After ${maxWaitMs}ms: Found ${placeholders.length} contentPlaceholder elements, ${h5Count} H5 elements`);
+            observer.disconnect();
+            resolve();
+          }, maxWaitMs);
+        });
 
         // If still no access, check if iframe is cross-origin
         if (!iframeDoc) {
