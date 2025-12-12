@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.251
+// @version      11.0.252
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.251";
+    window.BUILD_VERSION = "11.0.252";
 (function () {
 
   // Configuration constants and default settings
@@ -6574,10 +6574,10 @@
     
     // Wait for Related Content to load dynamically (MutationObserver approach)
     // This runs for ALL content elements, not just iframes
-    console.log(`⏳⏳⏳ [v${version}] Waiting for Related Content to load (max 10s)...`);
+    console.log(`⏳⏳⏳ [v${version}] Waiting for Related Content to load (max 15s)...`);
     await new Promise((resolve) => {
       const startTime = Date.now();
-      const maxWaitMs = 10000; // 10 seconds max
+      const maxWaitMs = 15000; // 15 seconds max (increased from 10s for slower-loading Related Content)
       
       // Check if Related Content already exists in the document
       const checkRelatedContent = () => {
@@ -6613,7 +6613,8 @@
       // Set up MutationObserver to watch for Related Content
       const observer = new MutationObserver(() => {
         if (checkRelatedContent()) {
-          console.log(`✅ Related Content appeared after ${Date.now() - startTime}ms`);
+          const elapsed = Date.now() - startTime;
+          console.log(`✅ Related Content appeared after ${elapsed}ms`);
           observer.disconnect();
           resolve();
         } else if (Date.now() - startTime > maxWaitMs) {
