@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.219
+// @version      11.0.221
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.219";
+    window.BUILD_VERSION = "11.0.221";
 (function () {
 
   // Configuration constants and default settings
@@ -6563,6 +6563,10 @@
    * @returns {Object} Object with combinedHtml and combinedImages
    */
   async function extractContentWithIframes(contentElement) {
+    // Log userscript version at extraction start
+    const version = window.BUILD_VERSION || 'unknown';
+    console.log(`🚀 ServiceNow-2-Notion v${version} - Starting extraction`);
+    
     console.log("🚀🚀🚀 EXTRACTION STARTED - extractContentWithIframes called");
     console.log("   - contentElement tagName:", contentElement?.tagName);
     console.log("   - contentElement id:", contentElement?.id);
@@ -6570,7 +6574,7 @@
     
     // Wait for Related Content to load dynamically (MutationObserver approach)
     // This runs for ALL content elements, not just iframes
-    console.log("⏳⏳⏳ [v11.0.215] Waiting for Related Content to load (max 10s)...");
+    console.log(`⏳⏳⏳ [v${version}] Waiting for Related Content to load (max 10s)...`);
     await new Promise((resolve) => {
       const startTime = Date.now();
       const maxWaitMs = 10000; // 10 seconds max
