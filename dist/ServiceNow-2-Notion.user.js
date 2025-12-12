@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.229
+// @version      11.0.230
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.229";
+    window.BUILD_VERSION = "11.0.230";
 (function () {
 
   // Configuration constants and default settings
@@ -7018,12 +7018,14 @@
             tempContainer.style.display = 'block';  // Make it visible
             tempContainer.style.visibility = 'visible';
             const clone = p.cloneNode(true);  // Clone the placeholder
-            clone.style.display = 'block';  // Make clone visible
-            clone.style.visibility = 'visible';
-            clone.style.position = 'static';  // Override any positioning
-            clone.style.opacity = '1';  // Override any opacity
-            // Add !important inline styles to force visibility
-            clone.setAttribute('style', 'display: block !important; visibility: visible !important; position: static !important; opacity: 1 !important;');
+            
+            // CRITICAL: Must apply !important styles to ALL descendants, not just root
+            // Otherwise child elements (H5, UL, LI) remain hidden when re-parsed
+            const allElements = [clone, ...clone.querySelectorAll('*')];
+            allElements.forEach(el => {
+              el.setAttribute('style', 'display: block !important; visibility: visible !important; position: static !important; opacity: 1 !important;');
+            });
+            
             tempContainer.appendChild(clone);
             document.body.appendChild(tempContainer);  // Add to DOM temporarily
             
