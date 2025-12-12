@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.218
+// @version      11.0.219
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.218";
+    window.BUILD_VERSION = "11.0.219";
 (function () {
 
   // Configuration constants and default settings
@@ -6989,11 +6989,30 @@
         }
       }
 
-      // If no iframe content found, use the filtered element content
+      // If no iframe content found, use the LIVE element content (not clone)
+      // [v11.0.219] FIX: Use contentElement.innerHTML (live DOM) instead of contentClone
+      // The clone doesn't include JavaScript-loaded content (like Related Content in contentPlaceholder)
       if (!combinedHtml) {
-        combinedHtml = contentClone.outerHTML || contentClone.innerHTML;
+        // Get content from LIVE DOM, then apply same filtering that was done to clone
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = contentElement.innerHTML;
+        
+        // Remove the same nav elements we removed from clone
+        const tempNavElements = tempDiv.querySelectorAll(
+          "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer"
+        );
+        let tempRemovedCount = 0;
+        tempNavElements.forEach((el) => {
+          const isInsideArticleOrSection = el.closest('article, section');
+          if (!isInsideArticleOrSection) {
+            el.remove();
+            tempRemovedCount++;
+          }
+        });
+        
+        combinedHtml = tempDiv.innerHTML;
         const navCount = (combinedHtml.match(/<nav[^>]*>/g) || []).length;
-        console.log(`📄 Using filtered content: ${combinedHtml.length} chars, ${navCount} nav tags`);
+        console.log(`📄 Using filtered LIVE content: ${combinedHtml.length} chars, ${navCount} nav tags (removed ${tempRemovedCount} nav elements)`);
       }
 
       // Replace images/SVGs inside tables with bullet symbols
