@@ -454,8 +454,23 @@ export async function extractContentWithIframes(contentElement) {
       // Get all contentPlaceholder elements and append their outerHTML manually
       const placeholders = contentElement.querySelectorAll('.contentPlaceholder');
       console.log(`🔍 Found ${placeholders.length} contentPlaceholder divs to manually append`);
+      
+      // v11.0.236: CRITICAL FIX - Filter out "On this page" BEFORE processing
+      // Previously we added data-was-placeholder to ALL placeholders, then filtered later
+      // This caused the Mini TOC to be sent to server with data-was-placeholder="true"
+      const relatedContentPlaceholders = Array.from(placeholders).filter(p => {
+        const headings = p.querySelectorAll('h1, h2, h3, h4, h5, h6');
+        const hasOnThisPage = Array.from(headings).some(h => {
+          const t = h.textContent.trim().toLowerCase();
+          return t === 'on this page';
+        });
+        return !hasOnThisPage; // Keep only if it's NOT "On this page"
+      });
+      
+      console.log(`🔍 After filtering "On this page": ${relatedContentPlaceholders.length} placeholders remaining`);
+      
       let placeholderHtml = '';
-      placeholders.forEach((p, i) => {
+      relatedContentPlaceholders.forEach((p, i) => {
         const h5 = p.querySelector('h5');
         if (h5) {
           // CRITICAL: outerHTML also skips hidden content!
