@@ -472,6 +472,12 @@ export async function extractContentWithIframes(contentElement) {
             el.setAttribute('style', 'display: block !important; visibility: visible !important; position: static !important; opacity: 1 !important;');
           });
           
+          // CRITICAL: Remove contentPlaceholder class to prevent ServiceNow CSS from hiding it
+          // When DOMParser.parseFromString() re-parses the HTML in cleanHtmlContent,
+          // it applies CSS rules and .contentPlaceholder { display: none } overrides inline styles
+          clone.classList.remove('contentPlaceholder');
+          clone.setAttribute('data-was-placeholder', 'true'); // Mark for debugging
+          
           tempContainer.appendChild(clone);
           document.body.appendChild(tempContainer);  // Add to DOM temporarily
           
