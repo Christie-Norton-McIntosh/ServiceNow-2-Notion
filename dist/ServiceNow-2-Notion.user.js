@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.244
+// @version      11.0.245
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.244";
+    window.BUILD_VERSION = "11.0.245";
 (function () {
 
   // Configuration constants and default settings
@@ -7244,12 +7244,13 @@
     console.log('🔍 [NAV-EXTRACTION] Checking for navigation-based Related Content...');
 
     // Look for navigation elements that might contain Related Content
-    // Include standalone UL elements that might contain related links
+    // Include standalone UL elements and contentWrapper elements
     const navElements = contentElement.querySelectorAll('nav[role="navigation"], .navigation, [role="navigation"]');
     const ulElements = contentElement.querySelectorAll('ul');
+    const contentWrapperElements = contentElement.querySelectorAll('.contentWrapper');
 
-    // Combine both nav elements and standalone ULs for checking
-    const elementsToCheck = [...Array.from(navElements), ...Array.from(ulElements)];
+    // Combine both nav elements, standalone ULs, and contentWrapper elements for checking
+    const elementsToCheck = [...Array.from(navElements), ...Array.from(ulElements), ...Array.from(contentWrapperElements)];
 
     for (const element of elementsToCheck) {
       let ul;
@@ -7259,6 +7260,9 @@
       } else if (element.tagName === 'UL') {
         // For standalone UL elements, use the element itself
         ul = element;
+      } else if (element.classList.contains('contentWrapper')) {
+        // For contentWrapper elements, look for ul inside
+        ul = element.querySelector('ul');
       }
 
       if (!ul) continue;
@@ -7277,12 +7281,22 @@
         return link && (link.classList.contains('css-ettsdk') || link.querySelector('svg.ico-related-link'));
       });
 
-      if (!hasRelatedLinks && element.tagName === 'UL') {
+      // For contentWrapper elements, also check if there's an H5 with "Related Content"
+      let isRelatedContent = false;
+      if (element.classList.contains('contentWrapper')) {
+        const h5 = element.querySelector('h5');
+        isRelatedContent = h5 && h5.textContent.trim().toLowerCase().includes('related content');
+      } else if (element.tagName === 'UL') {
         // For standalone ULs, be more strict - require the related link indicators
-        continue;
+        isRelatedContent = hasRelatedLinks;
+      } else {
+        // For nav elements, any UL with descriptions is likely related content
+        isRelatedContent = true;
       }
 
-      console.log(`✅ [NAV-EXTRACTION] Found ${element.tagName} element with ${links.length} links and descriptions`);
+      if (!isRelatedContent) continue;
+
+      console.log(`✅ [NAV-EXTRACTION] Found ${element.tagName}${element.classList.contains('contentWrapper') ? '.contentWrapper' : ''} element with ${links.length} links and descriptions`);
 
       // Generate synthetic Related Content HTML
       let relatedHtml = '<h5>Related Content</h5><ul>';
