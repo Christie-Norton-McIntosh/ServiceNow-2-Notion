@@ -68,9 +68,62 @@ export async function extractContentWithIframes(contentElement) {
         }
       }
       
-      // Wait an additional 1 second for dynamic content (Related Content) to load
-      console.log("⏳ Waiting 1 second for dynamic content (Related Content) to load...");
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      // Wait for Related Content to load dynamically (MutationObserver approach)
+      console.log("⏳⏳⏳ [v11.0.214] Waiting for Related Content to load (max 10s)...");
+      await new Promise((resolve) => {
+        const startTime = Date.now();
+        const maxWaitMs = 10000; // 10 seconds max
+        
+        // Check if Related Content already exists
+        const checkRelatedContent = () => {
+          const placeholders = iframeDoc?.querySelectorAll('.contentPlaceholder') || [];
+          for (const placeholder of placeholders) {
+            const h5 = placeholder.querySelector('h5');
+            if (h5 && h5.textContent.toLowerCase().includes('related content')) {
+              return true;
+            }
+          }
+          return false;
+        };
+        
+        if (checkRelatedContent()) {
+          console.log("✅ Related Content already present");
+          resolve();
+          return;
+        }
+        
+        // Set up MutationObserver to watch for Related Content
+        const observer = new MutationObserver(() => {
+          if (checkRelatedContent()) {
+            console.log(`✅ Related Content appeared after ${Date.now() - startTime}ms`);
+            observer.disconnect();
+            resolve();
+          } else if (Date.now() - startTime > maxWaitMs) {
+            console.log(`⏱️ Timeout after ${maxWaitMs}ms - Related Content did not appear`);
+            observer.disconnect();
+            resolve();
+          }
+        });
+        
+        // Observe the entire document body for changes
+        if (iframeDoc?.body) {
+          observer.observe(iframeDoc.body, {
+            childList: true,
+            subtree: true
+          });
+        }
+        
+        // Fallback timeout
+        setTimeout(() => {
+          const placeholders = iframeDoc?.querySelectorAll('.contentPlaceholder') || [];
+          const h5Count = Array.from(placeholders).reduce((count, p) => {
+            return count + p.querySelectorAll('h5').length;
+          }, 0);
+          console.log(`📊 After ${maxWaitMs}ms: Found ${placeholders.length} contentPlaceholder elements, ${h5Count} H5 elements`);
+          observer.disconnect();
+          resolve();
+        }, maxWaitMs);
+      });
 
       // If still no access, check if iframe is cross-origin
       if (!iframeDoc) {
