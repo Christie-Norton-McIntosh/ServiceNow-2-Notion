@@ -467,12 +467,13 @@ export async function extractContentWithIframes(contentElement) {
       // Get content from LIVE DOM, then apply same filtering that was done to clone
       const tempDiv = document.createElement('div');
       
-      // Check if placeholders are already in innerHTML (to avoid duplication)
+      // Check if placeholders WITH CONTENT are already in innerHTML (to avoid duplication)
+      // Don't just check for 'contentPlaceholder' string - check if the H5 "Related Content" is there
       const baseHtml = contentElement.innerHTML;
-      const hasPlaceholderAlready = baseHtml.includes('contentPlaceholder');
-      console.log(`🔍 contentPlaceholder already in innerHTML? ${hasPlaceholderAlready}`);
+      const hasRelatedContentInHtml = baseHtml.includes('Related Content') && baseHtml.includes('<h5');
+      console.log(`🔍 Related Content H5 already in innerHTML? ${hasRelatedContentInHtml}`);
       
-      tempDiv.innerHTML = hasPlaceholderAlready ? baseHtml : (baseHtml + placeholderHtml);
+      tempDiv.innerHTML = hasRelatedContentInHtml ? baseHtml : (baseHtml + placeholderHtml);
       
       // Remove the same nav elements we removed from clone
       const tempNavElements = tempDiv.querySelectorAll(
