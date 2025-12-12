@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.225
+// @version      11.0.226
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.225";
+    window.BUILD_VERSION = "11.0.226";
 (function () {
 
   // Configuration constants and default settings
@@ -7021,12 +7021,13 @@
         // Get content from LIVE DOM, then apply same filtering that was done to clone
         const tempDiv = document.createElement('div');
         
-        // Check if placeholders are already in innerHTML (to avoid duplication)
+        // Check if placeholders WITH CONTENT are already in innerHTML (to avoid duplication)
+        // Don't just check for 'contentPlaceholder' string - check if the H5 "Related Content" is there
         const baseHtml = contentElement.innerHTML;
-        const hasPlaceholderAlready = baseHtml.includes('contentPlaceholder');
-        console.log(`🔍 contentPlaceholder already in innerHTML? ${hasPlaceholderAlready}`);
+        const hasRelatedContentInHtml = baseHtml.includes('Related Content') && baseHtml.includes('<h5');
+        console.log(`🔍 Related Content H5 already in innerHTML? ${hasRelatedContentInHtml}`);
         
-        tempDiv.innerHTML = hasPlaceholderAlready ? baseHtml : (baseHtml + placeholderHtml);
+        tempDiv.innerHTML = hasRelatedContentInHtml ? baseHtml : (baseHtml + placeholderHtml);
         
         // Remove the same nav elements we removed from clone
         const tempNavElements = tempDiv.querySelectorAll(
