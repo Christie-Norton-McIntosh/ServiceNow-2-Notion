@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.245
+// @version      11.0.246
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.245";
+    window.BUILD_VERSION = "11.0.246";
 (function () {
 
   // Configuration constants and default settings
@@ -7307,10 +7307,8 @@
 
         if (link && desc) {
           const linkText = link.textContent.trim();
-          const descText = desc.textContent.trim();
-          // FIX: Include description in link text to prevent separate paragraph blocks
-          const combinedText = `${linkText} - ${descText}`;
-          relatedHtml += `<li><a href="${link.href}">${combinedText}</a></li>`;
+          // Only include link text, not description (to avoid duplicate paragraphs)
+          relatedHtml += `<li><a href="${link.href}">${linkText}</a></li>`;
         }
       });
 
