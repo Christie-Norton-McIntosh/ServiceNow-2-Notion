@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.247
+// @version      11.0.248
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.247";
+    window.BUILD_VERSION = "11.0.248";
 (function () {
 
   // Configuration constants and default settings
@@ -7226,10 +7226,15 @@
     // [v11.0.243] FIX: Extract navigation-based Related Content
     // Some pages (like Activate Procurement) use navigation sections instead of contentPlaceholder divs
     // This creates synthetic Related Content HTML with descriptions included in link text to prevent duplicate paragraphs
-    const navRelatedContent = extractNavigationRelatedContent(contentElement);
-    if (navRelatedContent) {
-      console.log(`📄 [NAV-EXTRACTION] Adding navigation-based Related Content (${navRelatedContent.length} chars)`);
-      combinedHtml += navRelatedContent;
+    // Only run navigation extraction if Related Content hasn't already been extracted from contentPlaceholders
+    if (!combinedHtml.includes('Related Content')) {
+      const navRelatedContent = extractNavigationRelatedContent(contentElement);
+      if (navRelatedContent) {
+        console.log(`📄 [NAV-EXTRACTION] Adding navigation-based Related Content (${navRelatedContent.length} chars)`);
+        combinedHtml += navRelatedContent;
+      }
+    } else {
+      console.log(`📄 [NAV-EXTRACTION] Skipping navigation extraction - Related Content already found in contentPlaceholders`);
     }
 
     return { combinedHtml, combinedImages };
