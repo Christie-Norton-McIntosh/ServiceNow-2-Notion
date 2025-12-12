@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.211
+// @version      11.0.212
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.211";
+    window.BUILD_VERSION = "11.0.212";
 (function () {
 
   // Configuration constants and default settings
@@ -6622,9 +6622,22 @@
           }
         }
         
-        // Wait an additional 1 second for dynamic content (Related Content) to load
-        console.log("⏳ Waiting 1 second for dynamic content (Related Content) to load...");
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        // Wait for dynamic content (Related Content) to load
+        // Related Content is loaded via JavaScript after the page renders
+        console.log("⏳ Waiting 3 seconds for dynamic content (Related Content) to load...");
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        
+        // Log how many contentPlaceholder elements exist now
+        if (iframeDoc) {
+          const placeholderCount = iframeDoc.querySelectorAll('.contentPlaceholder').length;
+          console.log(`📊 After 3s wait: Found ${placeholderCount} contentPlaceholder elements`);
+          if (placeholderCount > 0) {
+            const firstPlaceholder = iframeDoc.querySelector('.contentPlaceholder');
+            const h5Count = firstPlaceholder.querySelectorAll('h5').length;
+            const ulCount = firstPlaceholder.querySelectorAll('ul').length;
+            console.log(`📊 First contentPlaceholder has ${h5Count} H5 elements and ${ulCount} UL elements`);
+          }
+        }
 
         // If still no access, check if iframe is cross-origin
         if (!iframeDoc) {
