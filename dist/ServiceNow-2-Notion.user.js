@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.212
+// @version      11.0.213
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.212";
+    window.BUILD_VERSION = "11.0.213";
 (function () {
 
   // Configuration constants and default settings
@@ -6622,12 +6622,11 @@
           }
         }
         
-        // Wait for dynamic content (Related Content) to load
-        // Related Content is loaded via JavaScript after the page renders
-        console.log("⏳ Waiting 3 seconds for dynamic content (Related Content) to load...");
+        // Wait for dynamic content (Related Content) to load - 3 seconds
+        console.log("⏳⏳⏳ [v11.0.212+] Waiting 3 seconds for dynamic content (Related Content) to load...");
         await new Promise((resolve) => setTimeout(resolve, 3000));
         
-        // Log how many contentPlaceholder elements exist now
+        // Log diagnostic info about contentPlaceholder elements
         if (iframeDoc) {
           const placeholderCount = iframeDoc.querySelectorAll('.contentPlaceholder').length;
           console.log(`📊 After 3s wait: Found ${placeholderCount} contentPlaceholder elements`);
@@ -6635,7 +6634,8 @@
             const firstPlaceholder = iframeDoc.querySelector('.contentPlaceholder');
             const h5Count = firstPlaceholder.querySelectorAll('h5').length;
             const ulCount = firstPlaceholder.querySelectorAll('ul').length;
-            console.log(`📊 First contentPlaceholder has ${h5Count} H5 elements and ${ulCount} UL elements`);
+            const innerHTMLLength = firstPlaceholder.innerHTML?.length || 0;
+            console.log(`📊 First contentPlaceholder: ${h5Count} H5 elements, ${ulCount} UL elements, ${innerHTMLLength} chars`);
           }
         }
 
