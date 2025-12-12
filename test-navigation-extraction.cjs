@@ -61,12 +61,13 @@ function extractNavigationRelatedContent(contentElement) {
   console.log('🔍 [NAV-EXTRACTION] Checking for navigation-based Related Content...');
 
   // Look for navigation elements that might contain Related Content
-  // Include standalone UL elements that might contain related links
+  // Include standalone UL elements and contentWrapper elements
   const navElements = contentElement.querySelectorAll('nav[role="navigation"], .navigation, [role="navigation"]');
   const ulElements = contentElement.querySelectorAll('ul');
+  const contentWrapperElements = contentElement.querySelectorAll('.contentWrapper');
 
-  // Combine both nav elements and standalone ULs for checking
-  const elementsToCheck = [...Array.from(navElements), ...Array.from(ulElements)];
+  // Combine both nav elements, standalone ULs, and contentWrapper elements for checking
+  const elementsToCheck = [...Array.from(navElements), ...Array.from(ulElements), ...Array.from(contentWrapperElements)];
 
   for (const element of elementsToCheck) {
     let ul;
@@ -76,6 +77,9 @@ function extractNavigationRelatedContent(contentElement) {
     } else if (element.tagName === 'UL') {
       // For standalone UL elements, use the element itself
       ul = element;
+    } else if (element.classList.contains('contentWrapper')) {
+      // For contentWrapper elements, look for ul inside
+      ul = element.querySelector('ul');
     }
 
     if (!ul) continue;
@@ -94,12 +98,22 @@ function extractNavigationRelatedContent(contentElement) {
       return link && (link.classList.contains('css-ettsdk') || link.querySelector('svg.ico-related-link'));
     });
 
-    if (!hasRelatedLinks && element.tagName === 'UL') {
+    // For contentWrapper elements, also check if there's an H5 with "Related Content"
+    let isRelatedContent = false;
+    if (element.classList.contains('contentWrapper')) {
+      const h5 = element.querySelector('h5');
+      isRelatedContent = h5 && h5.textContent.trim().toLowerCase().includes('related content');
+    } else if (element.tagName === 'UL') {
       // For standalone ULs, be more strict - require the related link indicators
-      continue;
+      isRelatedContent = hasRelatedLinks;
+    } else {
+      // For nav elements, any UL with descriptions is likely related content
+      isRelatedContent = true;
     }
 
-    console.log(`✅ [NAV-EXTRACTION] Found ${element.tagName} element with ${links.length} links and descriptions`);
+    if (!isRelatedContent) continue;
+
+    console.log(`✅ [NAV-EXTRACTION] Found ${element.tagName}${element.classList.contains('contentWrapper') ? '.contentWrapper' : ''} element with ${links.length} links and descriptions`);
 
     // Generate synthetic Related Content HTML
     let relatedHtml = '<h5>Related Content</h5><ul>';
@@ -110,10 +124,8 @@ function extractNavigationRelatedContent(contentElement) {
 
       if (link && desc) {
         const linkText = link.textContent.trim();
-        const descText = desc.textContent.trim();
-        // FIX: Include description in link text to prevent separate paragraph blocks
-        const combinedText = `${linkText} - ${descText}`;
-        relatedHtml += `<li><a href="${link.href}">${combinedText}</a></li>`;
+        // Only include link text, not description (to avoid duplicate paragraphs)
+        relatedHtml += `<li><a href="${link.href}">${linkText}</a></li>`;
       }
     });
 
@@ -137,9 +149,31 @@ console.log('\n📋 Test Results:');
 console.log('Captured logs:', capturedLogs);
 console.log('Extraction result:', result);
 
-if (result && result.includes('Related Content') && result.includes('Procurement roles') && result.includes('Procurement workflows')) {
-  console.log('✅ SUCCESS: Related Content extracted with proper header and links');
+const expectedLinks = [
+  'Procurement roles',
+  'Procurement workflows',
+  'Use the Procurement Overview module',
+  'Sourcing items in a service catalog request',
+  'Procurement purchase order management for assets',
+  'Receive assets',
+  'Domain separation and Procurement'
+];
+
+let success = result && result.includes('Related Content');
+expectedLinks.forEach(link => {
+  if (!result || !result.includes(link)) {
+    success = false;
+  }
+});
+
+// Check that descriptions are NOT included (should not contain " - " separator)
+if (result && result.includes(' - ')) {
+  success = false;
+}
+
+if (success) {
+  console.log('✅ SUCCESS: Related Content extracted with clean link text only (no descriptions)');
 } else {
   console.log('❌ FAILED: Related Content not properly extracted');
-  console.log('Expected to find: "Related Content", "Procurement roles", "Procurement workflows"');
+  console.log('Expected to find: "Related Content" header + clean link text without descriptions');
 }

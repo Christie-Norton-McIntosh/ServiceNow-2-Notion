@@ -753,10 +753,8 @@ function extractNavigationRelatedContent(contentElement) {
 
       if (link && desc) {
         const linkText = link.textContent.trim();
-        const descText = desc.textContent.trim();
-        // FIX: Include description in link text to prevent separate paragraph blocks
-        const combinedText = `${linkText} - ${descText}`;
-        relatedHtml += `<li><a href="${link.href}">${combinedText}</a></li>`;
+        // Only include link text, not description (to avoid duplicate paragraphs)
+        relatedHtml += `<li><a href="${link.href}">${linkText}</a></li>`;
       }
     });
 
