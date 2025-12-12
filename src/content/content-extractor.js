@@ -469,7 +469,7 @@ export async function extractContentWithIframes(contentElement) {
         
         if (hasRelatedContent) {
           console.log(`✅ Keeping placeholder: Related Content detected`);
-          return true; // KEEP Related Content
+          return true; // KEEP Related Content, even if it has Mini TOC elements
         }
         
         // Check if this is Mini TOC (FILTER IT OUT)
