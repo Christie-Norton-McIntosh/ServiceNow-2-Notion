@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.242
+// @version      11.0.243
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.242";
+    window.BUILD_VERSION = "11.0.243";
 (function () {
 
   // Configuration constants and default settings
@@ -7118,11 +7118,11 @@
                 }
               }
               
-              syntheticHtml += `<li><a href="${href}">${text}</a>`;
+              syntheticHtml += `<li><a href="${href}">${text}`;
               if (desc) {
-                syntheticHtml += `<p>${desc}</p>`;
+                syntheticHtml += ` - ${desc}`;
               }
-              syntheticHtml += '</li>';
+              syntheticHtml += '</a></li>';
             });
             syntheticHtml += '</ul>';
             
