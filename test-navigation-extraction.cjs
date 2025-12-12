@@ -70,11 +70,11 @@ function simulateNavigationExtraction(html) {
             const descMatch = linkHtml.match(/<p[^>]*class="shortdesc"[^>]*>([\s\S]*?)<\/p>/);
             const description = descMatch ? descMatch[1].trim() : '';
 
-            syntheticHtml += `<li><a href="${href}">${linkText}</a>`;
+            syntheticHtml += `<li><a href="${href}">${linkText}`;
             if (description) {
-              syntheticHtml += `<p>${description}</p>`;
+              syntheticHtml += ` - ${description}`;
             }
-            syntheticHtml += '</li>';
+            syntheticHtml += '</a></li>';
 
             console.log(`   ✅ Link: "${linkText}" (${href})`);
             if (description) {

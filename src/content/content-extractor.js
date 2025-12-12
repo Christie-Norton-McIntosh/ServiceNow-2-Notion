@@ -564,11 +564,11 @@ export async function extractContentWithIframes(contentElement) {
               }
             }
             
-            syntheticHtml += `<li><a href="${href}">${text}</a>`;
+            syntheticHtml += `<li><a href="${href}">${text}`;
             if (desc) {
-              syntheticHtml += `<p>${desc}</p>`;
+              syntheticHtml += ` - ${desc}`;
             }
-            syntheticHtml += '</li>';
+            syntheticHtml += '</a></li>';
           });
           syntheticHtml += '</ul>';
           
