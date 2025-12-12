@@ -4842,6 +4842,12 @@ async function extractContentFromHtml(html) {
       $elem.remove(); // Mark as processed
       
     } else if (tagName === 'div' && ($elem.hasClass('contentPlaceholder') || $elem.attr('data-was-placeholder') === 'true')) {
+      // v11.0.236: Add diagnostic logging for placeholder divs
+      const hasPlaceholderClass = $elem.hasClass('contentPlaceholder');
+      const dataWasPlaceholder = $elem.attr('data-was-placeholder');
+      const divClasses = $elem.attr('class') || 'none';
+      console.log(`🔍 [DIV-PLACEHOLDER-DEBUG] Found placeholder div: class=${divClasses}, data-was-placeholder=${dataWasPlaceholder}`);
+      
       // contentPlaceholder divs can contain actual content like "Related Content" sections
       // BUT they also contain UI chrome like Mini TOC navigation sidebars
       // v11.0.235: Also check for data-was-placeholder (client removes class to prevent CSS hiding)
@@ -4851,9 +4857,7 @@ async function extractContentFromHtml(html) {
       const hasOnThisPage = $elem.find('h5').filter((i, h5) => {
         const text = $(h5).text().trim().toLowerCase();
         return text === 'on this page';
-      }).length > 0;
-      
-      if (hasOnThisPage) {
+      }).length > 0;      if (hasOnThisPage) {
         console.log(`🔍 Skipping contentPlaceholder with "On this page" Mini TOC (UI navigation, not article content)`);
         $elem.remove(); // Mark as processed
         return processedBlocks;
@@ -4862,7 +4866,17 @@ async function extractContentFromHtml(html) {
       // Check for a Related Content heading anywhere inside this placeholder even
       // if the placeholder otherwise looks empty (some pages render a small h5 + ul)
       try {
+        // v11.0.236: Debug - show ALL H5 elements found in placeholder
+        const allH5 = $elem.find('h5');
+        console.log(`🔍 [PLACEHOLDER-H5-DEBUG] Found ${allH5.length} H5 elements in placeholder div`);
+        allH5.each((i, h5) => {
+          const h5Text = $(h5).text().trim();
+          console.log(`🔍 [PLACEHOLDER-H5-DEBUG]   H5 ${i+1}: "${h5Text}" (lowercase: "${h5Text.toLowerCase()}")`);
+        });
+        
         const relatedH5_any = $elem.find('h5').filter((i, h5) => $(h5).text().trim().toLowerCase() === 'related content');
+        console.log(`🔍 [PLACEHOLDER-H5-DEBUG] Filtered for "related content": ${relatedH5_any.length} matches`);
+        
         if (relatedH5_any.length > 0) {
           // Extra diagnostic: print the exact h5 text (escaped) and nearby UL outerHTML so we can see invisible whitespace
           const rawH5Text = relatedH5_any.first().text();

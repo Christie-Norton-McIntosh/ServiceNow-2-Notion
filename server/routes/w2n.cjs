@@ -174,6 +174,31 @@ router.post('/W2N', async (req, res) => {
         const navCount = (payload.contentHtml.match(/<nav[^>]*>/g) || []).length;
         console.log(`🔍 DEBUG API: Found ${navCount} <nav> tags in received HTML`);
         
+        // v11.0.236: Check for data-was-placeholder attribute (Related Content fix)
+        const hasDataWasPlaceholder = payload.contentHtml.includes('data-was-placeholder');
+        const dataWasPlaceholderCount = (payload.contentHtml.match(/data-was-placeholder="true"/g) || []).length;
+        console.log(`🔍 [HTML-RECEIVED] data-was-placeholder present: ${hasDataWasPlaceholder}, count: ${dataWasPlaceholderCount}`);
+        
+        if (hasDataWasPlaceholder) {
+          // Show snippet of the HTML containing data-was-placeholder
+          const placeholderIndex = payload.contentHtml.indexOf('data-was-placeholder');
+          const snippet = payload.contentHtml.substring(Math.max(0, placeholderIndex - 100), placeholderIndex + 600);
+          console.log(`🔍 [HTML-RECEIVED] data-was-placeholder snippet (600 chars): ${snippet.replace(/\n/g, '\\n')}`);
+          
+          // v11.0.236: Check if H5 with "Related Content" is in the raw HTML near data-was-placeholder
+          const hasRelatedH5 = snippet.toLowerCase().includes('<h5') && snippet.toLowerCase().includes('related content');
+          console.log(`🔍 [HTML-RECEIVED] Has H5 with "Related Content" in snippet: ${hasRelatedH5}`);
+          
+          if (hasRelatedH5) {
+            // Extract the H5 element
+            const h5Match = snippet.match(/<h5[^>]*>([^<]*)<\/h5>/i);
+            if (h5Match) {
+              console.log(`🔍 [HTML-RECEIVED] Found H5 element: ${h5Match[0]}`);
+              console.log(`🔍 [HTML-RECEIVED] H5 text content: "${h5Match[1]}"`);
+            }
+          }
+        }
+        
         // COUNT ARTICLE.NESTED1 ELEMENTS AT API ENTRY
         const nested1Matches = payload.contentHtml.match(/class="topic task nested1"/g);
         const nested1Count = nested1Matches ? nested1Matches.length : 0;
