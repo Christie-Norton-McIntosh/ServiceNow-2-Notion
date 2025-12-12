@@ -460,15 +460,20 @@ export async function extractContentWithIframes(contentElement) {
       // Now we explicitly check for "Related Content" H5 and keep those
       const relatedContentPlaceholders = Array.from(placeholders).filter(p => {
         const headings = p.querySelectorAll('h1, h2, h3, h4, h5, h6');
-        
+
         // Check if this is Related Content (KEEP IT)
         const hasRelatedContent = Array.from(headings).some(h => {
           const t = h.textContent.trim().toLowerCase();
           return t === 'related content';
         });
-        
+
         if (hasRelatedContent) {
           console.log(`✅ Keeping placeholder: Related Content detected`);
+          console.log(`   📍 Related Content placeholder details:`);
+          console.log(`      - Headings: ${headings.length}`);
+          console.log(`      - Links: ${p.querySelectorAll('a').length}`);
+          console.log(`      - Has Mini TOC button: ${p.querySelector('.zDocsMiniTocCollapseButton') !== null}`);
+          console.log(`      - Inner HTML length: ${p.innerHTML.length}`);
           return true; // KEEP Related Content, even if it has Mini TOC elements
         }
         
@@ -492,6 +497,15 @@ export async function extractContentWithIframes(contentElement) {
       });
       
       console.log(`🔍 After filtering: ${relatedContentPlaceholders.length} placeholders remaining`);
+      
+      // Log details about kept placeholders
+      relatedContentPlaceholders.forEach((p, idx) => {
+        const headings = p.querySelectorAll('h1, h2, h3, h4, h5, h6');
+        const hasRelatedContent = Array.from(headings).some(h => h.textContent.trim().toLowerCase() === 'related content');
+        if (hasRelatedContent) {
+          console.log(`📍 Kept placeholder #${idx + 1}: Related Content with ${p.querySelectorAll('a').length} links`);
+        }
+      });
       
       let placeholderHtml = '';
       relatedContentPlaceholders.forEach((p, i) => {
@@ -552,6 +566,14 @@ export async function extractContentWithIframes(contentElement) {
       combinedHtml = tempDiv.innerHTML;
       const navCount = (combinedHtml.match(/<nav[^>]*>/g) || []).length;
       console.log(`📄 Using filtered LIVE content: ${combinedHtml.length} chars, ${navCount} nav tags (removed ${tempRemovedCount} nav elements)`);
+      
+      // Check if Related Content is in the final HTML
+      const hasRelatedContentInFinal = combinedHtml.toLowerCase().includes('related content');
+      console.log(`🔍 Related Content in final HTML: ${hasRelatedContentInFinal ? 'YES' : 'NO'}`);
+      if (hasRelatedContentInFinal) {
+        const relatedMatches = combinedHtml.match(/Related Content/gi) || [];
+        console.log(`   📊 Found ${relatedMatches.length} "Related Content" mentions in final HTML`);
+      }
     }
 
     // Replace images/SVGs inside tables with bullet symbols
