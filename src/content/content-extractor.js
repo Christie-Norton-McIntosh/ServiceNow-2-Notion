@@ -444,6 +444,12 @@ export async function extractContentWithIframes(contentElement) {
     // The clone doesn't include JavaScript-loaded content (like Related Content in contentPlaceholder)
     console.log(`🔍 combinedHtml check: empty="${!combinedHtml}", length=${combinedHtml.length}`);
     if (!combinedHtml) {
+      // DIAGNOSTIC: Check if Related Content is actually in contentElement right now
+      const relatedInElement = contentElement.querySelector('.contentPlaceholder h5');
+      const relatedText = relatedInElement?.textContent || 'NOT FOUND';
+      console.log(`🔍 Related Content in contentElement? ${relatedText.includes('Related') ? 'YES' : 'NO'} (text: "${relatedText}")`);
+      console.log(`🔍 contentElement.querySelectorAll('.contentPlaceholder').length: ${contentElement.querySelectorAll('.contentPlaceholder').length}`);
+      
       console.log(`✅ Using LIVE DOM (contentElement.innerHTML = ${contentElement.innerHTML.length} chars)`);
       // Get content from LIVE DOM, then apply same filtering that was done to clone
       const tempDiv = document.createElement('div');
