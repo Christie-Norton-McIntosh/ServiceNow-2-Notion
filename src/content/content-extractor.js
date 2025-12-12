@@ -435,11 +435,30 @@ export async function extractContentWithIframes(contentElement) {
       }
     }
 
-    // If no iframe content found, use the filtered element content
+    // If no iframe content found, use the LIVE element content (not clone)
+    // [v11.0.219] FIX: Use contentElement.innerHTML (live DOM) instead of contentClone
+    // The clone doesn't include JavaScript-loaded content (like Related Content in contentPlaceholder)
     if (!combinedHtml) {
-      combinedHtml = contentClone.outerHTML || contentClone.innerHTML;
+      // Get content from LIVE DOM, then apply same filtering that was done to clone
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = contentElement.innerHTML;
+      
+      // Remove the same nav elements we removed from clone
+      const tempNavElements = tempDiv.querySelectorAll(
+        "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer"
+      );
+      let tempRemovedCount = 0;
+      tempNavElements.forEach((el) => {
+        const isInsideArticleOrSection = el.closest('article, section');
+        if (!isInsideArticleOrSection) {
+          el.remove();
+          tempRemovedCount++;
+        }
+      });
+      
+      combinedHtml = tempDiv.innerHTML;
       const navCount = (combinedHtml.match(/<nav[^>]*>/g) || []).length;
-      console.log(`📄 Using filtered content: ${combinedHtml.length} chars, ${navCount} nav tags`);
+      console.log(`📄 Using filtered LIVE content: ${combinedHtml.length} chars, ${navCount} nav tags (removed ${tempRemovedCount} nav elements)`);
     }
 
     // Replace images/SVGs inside tables with bullet symbols
