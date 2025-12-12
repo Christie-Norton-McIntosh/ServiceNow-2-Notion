@@ -847,20 +847,21 @@ export function cleanHtmlContent(htmlContent) {
         console.log(`🧹 Checking ${elements.length} elements matching "${selector}"`);
       }
       elements.forEach((el) => {
-        // Check if element is inside a nav that's inside article/section
-        const insideNav = el.closest('nav, [role="navigation"]');
+        // Check if element is inside article/section
+        // [v11.0.218] FIX: Preserve .sidebar and other unwanted selectors if they're inside article/section
+        // This fixes Related Content being removed even though it's inside the article
         const insideArticle = el.closest('article, section');
         
         const elHtmlLength = el.outerHTML?.length || 0;
         
         // Log what we're checking for large elements
         if (elHtmlLength > 200) {
-          console.log(`🔍 Large ${el.tagName} (${elHtmlLength} chars): insideNav=${!!insideNav}, insideArticle=${!!insideArticle}`);
+          console.log(`🔍 Large ${el.tagName} (${elHtmlLength} chars): insideArticle=${!!insideArticle}, selector="${selector}"`);
         }
         
-        // Don't remove if inside content nav
-        if (insideNav && insideArticle) {
-          console.log(`✅ Preserving ${el.tagName} (${elHtmlLength} chars) inside content nav (selector: ${selector})`);
+        // Don't remove if inside article/section (this is content, not chrome)
+        if (insideArticle) {
+          console.log(`✅ Preserving ${el.tagName}.${el.className} (${elHtmlLength} chars) inside article/section (selector: ${selector})`);
           return; // Skip removal
         }
         
