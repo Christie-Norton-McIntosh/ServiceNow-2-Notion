@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.252
+// @version      11.0.253
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.252";
+    window.BUILD_VERSION = "11.0.253";
 (function () {
 
   // Configuration constants and default settings
@@ -8686,6 +8686,9 @@
           mappings
         );
         
+        // LOG THE EXACT HTML BEING SENT TO SERVER (PATCH)
+        console.log('📤📤📤 EXACT HTML BEING SENT TO SERVER (PATCH):', htmlContent);
+        
         const patchData = {
           title: extractedData.title,
           contentHtml: htmlContent,
@@ -8932,6 +8935,9 @@
           const directLiInHtml = (olHtml.match(/<li[^>]*class="[^"]*li step[^"]*"[^>]*>/g) || []).length;
           console.log(`🔍🔍🔍 MAIN.JS - Main steps OL being sent has ${directLiInHtml} direct LI children (should be 6)`);
         }
+
+        // LOG THE EXACT HTML BEING SENT TO SERVER
+        console.log('📤📤📤 EXACT HTML BEING SENT TO SERVER:', htmlContent);
 
         const pageData = {
           title: extractedData.title || document.title || "Untitled Page",
