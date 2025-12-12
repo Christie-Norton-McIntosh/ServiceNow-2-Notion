@@ -537,6 +537,9 @@ class ServiceNowToNotionApp {
         mappings
       );
       
+      // LOG THE EXACT HTML BEING SENT TO SERVER (PATCH)
+      console.log('📤📤📤 EXACT HTML BEING SENT TO SERVER (PATCH):', htmlContent);
+      
       const patchData = {
         title: extractedData.title,
         contentHtml: htmlContent,
@@ -783,6 +786,9 @@ class ServiceNowToNotionApp {
         const directLiInHtml = (olHtml.match(/<li[^>]*class="[^"]*li step[^"]*"[^>]*>/g) || []).length;
         console.log(`🔍🔍🔍 MAIN.JS - Main steps OL being sent has ${directLiInHtml} direct LI children (should be 6)`);
       }
+
+      // LOG THE EXACT HTML BEING SENT TO SERVER
+      console.log('📤📤📤 EXACT HTML BEING SENT TO SERVER:', htmlContent);
 
       const pageData = {
         title: extractedData.title || document.title || "Untitled Page",
