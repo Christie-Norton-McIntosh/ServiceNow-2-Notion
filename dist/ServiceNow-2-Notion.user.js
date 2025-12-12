@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.239
+// @version      11.0.240
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.239";
+    window.BUILD_VERSION = "11.0.240";
 (function () {
 
   // Configuration constants and default settings
@@ -7009,30 +7009,43 @@
         const placeholders = contentElement.querySelectorAll('.contentPlaceholder');
         console.log(`🔍 Found ${placeholders.length} contentPlaceholder divs to manually append`);
         
-        // v11.0.239: CRITICAL FIX - Filter out "On this page" AND Mini TOC BEFORE processing
-        // Previously we added data-was-placeholder to ALL placeholders, then filtered later
-        // This caused the Mini TOC to be sent to server with data-was-placeholder="true"
+        // v11.0.240: CRITICAL FIX - Filter Mini TOC but KEEP Related Content
+        // Previously we filtered by Mini TOC class/text but Related Content also has these
+        // Now we explicitly check for "Related Content" H5 and keep those
         const relatedContentPlaceholders = Array.from(placeholders).filter(p => {
           const headings = p.querySelectorAll('h1, h2, h3, h4, h5, h6');
+          
+          // Check if this is Related Content (KEEP IT)
+          const hasRelatedContent = Array.from(headings).some(h => {
+            const t = h.textContent.trim().toLowerCase();
+            return t === 'related content';
+          });
+          
+          if (hasRelatedContent) {
+            console.log(`✅ Keeping placeholder: Related Content detected`);
+            return true; // KEEP Related Content
+          }
+          
+          // Check if this is Mini TOC (FILTER IT OUT)
           const hasOnThisPage = Array.from(headings).some(h => {
             const t = h.textContent.trim().toLowerCase();
             return t === 'on this page';
           });
           
-          // Also filter out Mini TOC by checking for Mini TOC specific classes/text
           const hasMiniTocClass = p.querySelector('.zDocsMiniTocCollapseButton') !== null;
           const htmlSnippet = p.innerHTML.toLowerCase();
           const hasMiniTocText = htmlSnippet.includes('mini toc') || htmlSnippet.includes('minitoc');
           
           if (hasOnThisPage || hasMiniTocClass || hasMiniTocText) {
             console.log(`🔍 Filtering out placeholder: hasOnThisPage=${hasOnThisPage}, hasMiniTocClass=${hasMiniTocClass}, hasMiniTocText=${hasMiniTocText}`);
-            return false; // Exclude this placeholder
+            return false; // FILTER OUT Mini TOC
           }
           
-          return true; // Keep this placeholder
+          // Keep any other placeholders by default
+          return true;
         });
         
-        console.log(`🔍 After filtering "On this page": ${relatedContentPlaceholders.length} placeholders remaining`);
+        console.log(`🔍 After filtering: ${relatedContentPlaceholders.length} placeholders remaining`);
         
         let placeholderHtml = '';
         relatedContentPlaceholders.forEach((p, i) => {
