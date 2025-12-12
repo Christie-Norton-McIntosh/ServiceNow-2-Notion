@@ -20,10 +20,10 @@ export async function extractContentWithIframes(contentElement) {
   
   // Wait for Related Content to load dynamically (MutationObserver approach)
   // This runs for ALL content elements, not just iframes
-  console.log(`⏳⏳⏳ [v${version}] Waiting for Related Content to load (max 10s)...`);
+  console.log(`⏳⏳⏳ [v${version}] Waiting for Related Content to load (max 15s)...`);
   await new Promise((resolve) => {
     const startTime = Date.now();
-    const maxWaitMs = 10000; // 10 seconds max
+    const maxWaitMs = 15000; // 15 seconds max (increased from 10s for slower-loading Related Content)
     
     // Check if Related Content already exists in the document
     const checkRelatedContent = () => {
@@ -59,7 +59,8 @@ export async function extractContentWithIframes(contentElement) {
     // Set up MutationObserver to watch for Related Content
     const observer = new MutationObserver(() => {
       if (checkRelatedContent()) {
-        console.log(`✅ Related Content appeared after ${Date.now() - startTime}ms`);
+        const elapsed = Date.now() - startTime;
+        console.log(`✅ Related Content appeared after ${elapsed}ms`);
         observer.disconnect();
         resolve();
       } else if (Date.now() - startTime > maxWaitMs) {
