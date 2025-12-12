@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.241
+// @version      11.0.242
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.241";
+    window.BUILD_VERSION = "11.0.242";
 (function () {
 
   // Configuration constants and default settings
@@ -7058,19 +7058,18 @@
             tempContainer.style.visibility = 'visible';
             const clone = p.cloneNode(true);  // Clone the placeholder
             
-            // CRITICAL FIX v11.0.241: Do NOT apply inline styles to child elements!
-            // Inline styles on child elements cause Cheerio to fail parsing them on the server.
-            // Server logs showed: "[0 children, text:0chars]" for placeholders with inline styles.
-            // Solution: Only apply styles to the root div, remove the contentPlaceholder class.
-            
-            // Apply styles ONLY to root placeholder div
-            clone.setAttribute('style', 'display: block !important; visibility: visible !important; position: static !important; opacity: 1 !important;');
+            // CRITICAL: Must apply !important styles to ALL descendants, not just root
+            // Otherwise child elements (H5, UL, LI) remain hidden when re-parsed
+            const allElements = [clone, ...clone.querySelectorAll('*')];
+            allElements.forEach(el => {
+              el.setAttribute('style', 'display: block !important; visibility: visible !important; position: static !important; opacity: 1 !important;');
+            });
             
             // CRITICAL: Remove contentPlaceholder class to prevent ServiceNow CSS from hiding it
             // When DOMParser.parseFromString() re-parses the HTML in cleanHtmlContent,
             // it applies CSS rules and .contentPlaceholder { display: none } overrides inline styles
             clone.classList.remove('contentPlaceholder');
-            clone.setAttribute('data-was-placeholder', 'true'); // Mark for server processing
+            clone.setAttribute('data-was-placeholder', 'true'); // Mark for debugging
             
             tempContainer.appendChild(clone);
             document.body.appendChild(tempContainer);  // Add to DOM temporarily
@@ -7083,13 +7082,82 @@
           }
         });
         
-        console.log(`✅ Using LIVE DOM (contentElement.innerHTML = ${contentElement.innerHTML.length} chars) + manual placeholders (${placeholderHtml.length} chars)`);
+        // v11.0.242: NEW - Also look for Related Content in navigation sections
+        // Some ServiceNow pages put Related Content in <nav> elements instead of contentPlaceholder divs
+        console.log(`🔍 Checking for Related Content in navigation sections...`);
+        const navElements = contentElement.querySelectorAll('nav[role="navigation"], ul.ullinks');
+        console.log(`🔍 Found ${navElements.length} navigation elements to check`);
+        
+        let navigationHtml = '';
+        Array.from(navElements).forEach((nav, i) => {
+          // Check if this navigation contains links (potential Related Content)
+          const links = nav.querySelectorAll('a[href]');
+          const hasLinks = links.length > 0;
+          
+          if (hasLinks) {
+            console.log(`🔍 Navigation ${i+1} has ${links.length} links - treating as Related Content`);
+            
+            // Create a synthetic Related Content structure
+            const tempContainer = document.createElement('div');
+            tempContainer.style.display = 'block';
+            tempContainer.style.visibility = 'visible';
+            
+            // Create synthetic Related Content HTML
+            let syntheticHtml = '<h5>Related Content</h5><ul>';
+            links.forEach(link => {
+              const href = link.getAttribute('href');
+              const text = link.textContent.trim();
+              
+              // Look for description in next sibling or parent li
+              let desc = '';
+              const li = link.closest('li');
+              if (li) {
+                const descElement = li.querySelector('p.shortdesc');
+                if (descElement) {
+                  desc = descElement.textContent.trim();
+                }
+              }
+              
+              syntheticHtml += `<li><a href="${href}">${text}</a>`;
+              if (desc) {
+                syntheticHtml += `<p>${desc}</p>`;
+              }
+              syntheticHtml += '</li>';
+            });
+            syntheticHtml += '</ul>';
+            
+            // Create a wrapper div with data-was-placeholder
+            const wrapper = document.createElement('div');
+            wrapper.setAttribute('data-was-placeholder', 'true');
+            wrapper.setAttribute('data-source', 'navigation');
+            wrapper.innerHTML = syntheticHtml;
+            
+            // Apply visibility styles
+            const allElements = [wrapper, ...wrapper.querySelectorAll('*')];
+            allElements.forEach(el => {
+              el.setAttribute('style', 'display: block !important; visibility: visible !important; position: static !important; opacity: 1 !important;');
+            });
+            
+            tempContainer.appendChild(wrapper);
+            document.body.appendChild(tempContainer);
+            
+            const serializedHtml = wrapper.outerHTML;
+            document.body.removeChild(tempContainer);
+            
+            console.log(`   Navigation ${i+1}: created synthetic Related Content (${serializedHtml.length} chars)`);
+            navigationHtml += serializedHtml;
+          }
+        });
+        
+        console.log(`✅ Added navigation-based Related Content: ${navigationHtml.length} chars`);
+        
+        console.log(`✅ Using LIVE DOM (contentElement.innerHTML = ${contentElement.innerHTML.length} chars) + manual placeholders (${placeholderHtml.length} chars) + navigation (${navigationHtml.length} chars)`);
         // Get content from LIVE DOM, then apply same filtering that was done to clone
         const tempDiv = document.createElement('div');
         
         // ALWAYS append placeholderHtml because innerHTML NEVER includes hidden elements
         // The contentPlaceholder div is hidden by CSS, so it's never in innerHTML
-        tempDiv.innerHTML = contentElement.innerHTML + placeholderHtml;
+        tempDiv.innerHTML = contentElement.innerHTML + placeholderHtml + navigationHtml;
         
         // Remove the same nav elements we removed from clone
         const tempNavElements = tempDiv.querySelectorAll(
@@ -7106,7 +7174,7 @@
         
         combinedHtml = tempDiv.innerHTML;
         const navCount = (combinedHtml.match(/<nav[^>]*>/g) || []).length;
-        console.log(`📄 Using filtered LIVE content: ${combinedHtml.length} chars, ${navCount} nav tags (removed ${tempRemovedCount} nav elements)`);
+        console.log(`📄 Using filtered LIVE content: ${combinedHtml.length} chars, ${navCount} nav tags (removed ${tempRemovedCount} nav elements), includes navigation-based Related Content`);
       }
 
       // Replace images/SVGs inside tables with bullet symbols
