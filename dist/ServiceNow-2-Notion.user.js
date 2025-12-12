@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.222
+// @version      11.0.223
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.222";
+    window.BUILD_VERSION = "11.0.223";
 (function () {
 
   // Configuration constants and default settings
@@ -6998,6 +6998,12 @@
       // The clone doesn't include JavaScript-loaded content (like Related Content in contentPlaceholder)
       console.log(`🔍 combinedHtml check: empty="${!combinedHtml}", length=${combinedHtml.length}`);
       if (!combinedHtml) {
+        // DIAGNOSTIC: Check if Related Content is actually in contentElement right now
+        const relatedInElement = contentElement.querySelector('.contentPlaceholder h5');
+        const relatedText = relatedInElement?.textContent || 'NOT FOUND';
+        console.log(`🔍 Related Content in contentElement? ${relatedText.includes('Related') ? 'YES' : 'NO'} (text: "${relatedText}")`);
+        console.log(`🔍 contentElement.querySelectorAll('.contentPlaceholder').length: ${contentElement.querySelectorAll('.contentPlaceholder').length}`);
+        
         console.log(`✅ Using LIVE DOM (contentElement.innerHTML = ${contentElement.innerHTML.length} chars)`);
         // Get content from LIVE DOM, then apply same filtering that was done to clone
         const tempDiv = document.createElement('div');
