@@ -442,7 +442,9 @@ export async function extractContentWithIframes(contentElement) {
     // If no iframe content found, use the LIVE element content (not clone)
     // [v11.0.219] FIX: Use contentElement.innerHTML (live DOM) instead of contentClone
     // The clone doesn't include JavaScript-loaded content (like Related Content in contentPlaceholder)
+    console.log(`🔍 combinedHtml check: empty="${!combinedHtml}", length=${combinedHtml.length}`);
     if (!combinedHtml) {
+      console.log(`✅ Using LIVE DOM (contentElement.innerHTML = ${contentElement.innerHTML.length} chars)`);
       // Get content from LIVE DOM, then apply same filtering that was done to clone
       const tempDiv = document.createElement('div');
       tempDiv.innerHTML = contentElement.innerHTML;
