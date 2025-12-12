@@ -8,7 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 
-// Mock HTML from real Procurement page (contentWrapper structure)
+// Mock HTML from real Procurement page (contentPlaceholder with contentWrapper structure)
 const testHtml = `
 <!DOCTYPE html>
 <html>
@@ -18,22 +18,26 @@ const testHtml = `
       <h1>Procurement</h1>
       <p>This is the main content of the Procurement page.</p>
 
-      <!-- ContentWrapper-based Related Content (real structure) -->
-      <div class="contentWrapper" style="height: 469px;">
-        <button aria-hidden="true" data-tooltip-id="zDocsMiniTocCollapseToolTip" data-tooltip-content="Hide Mini TOC" data-testid="expand-collapse-button" class="zDocsMiniTocCollapseButton" aria-label="Hide" aria-expanded="true">
-          <svg aria-hidden="true" class="ico-angle-arrow-right"><use xlink:href="#ico-angle-arrow-right"></use></svg>
-        </button>
-        <div>
-          <h5 class=" css-g931ng" aria-level="5">Related Content</h5>
-          <ul>
-            <li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-it-service-management/page/product/procurement/reference/r_ProcurementRoles.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Procurement roles</a><p>The Procurement application uses the following roles.</p></li>
-            <li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-it-service-management/page/product/procurement/concept/c_ProcurementWorkflows.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Procurement workflows</a><p>Procurement uses the following workflows.</p></li>
-            <li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-it-service-management/page/product/procurement/task/t_UsingTheProcurementOverviewModule.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Use the Procurement Overview module</a><p>Use the gauges on the Procurement Overview homepage to help you track and manage requests, purchase orders, and other important aspects of the procurement process.</p></li>
-            <li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-it-service-management/page/product/procurement/concept/c_SourcingRequestItems.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Sourcing items in a service catalog request</a><p>A service catalog request can contain multiple items that must be sourced.</p></li>
-            <li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-it-service-management/page/product/procurement/concept/c_UseProcurement.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Procurement purchase order management for assets</a><p>Accurate purchase order information is important for invoice tracking, receiving, and reporting in the ServiceNow platform.</p></li>
-            <li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-it-service-management/page/product/procurement/concept/c_ReceiveAssets.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Receive assets</a><p>Assets can be received and added to the system when they are delivered to a stockroom.</p></li>
-            <li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-it-service-management/page/product/procurement/concept/domain-separation-procurement.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Domain separation and Procurement</a><p>Domain separation is supported in Procurement processing. Domain separation enables you to separate data, processes, and administrative tasks into logical groupings called domains. You can control several aspects of this separation, including which users can see and access data.</p></li>
-          </ul>
+      <!-- ContentPlaceholder-based Related Content (real structure) -->
+      <div class="contentPlaceholder" style="height: 469px;">
+        <div class="contentContainer zDocsSideBoxes withExpandCollapse zDocsSideBoxesFloating withStickyTitle floating" style="top: 30px;">
+          <div class="contentWrapper" style="height: 469px;">
+            <button aria-hidden="true" data-tooltip-id="zDocsMiniTocCollapseToolTip" data-tooltip-content="Hide Mini TOC" data-testid="expand-collapse-button" class="zDocsMiniTocCollapseButton" aria-label="Hide" aria-expanded="true">
+              <svg aria-hidden="true" class="ico-angle-arrow-right"><use xlink:href="#ico-angle-arrow-right"></use></svg>
+            </button>
+            <div>
+              <h5 class=" css-g931ng" aria-level="5">Related Content</h5>
+              <ul>
+                <li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-it-service-management/page/product/procurement/reference/r_ProcurementRoles.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Procurement roles</a><p>The Procurement application uses the following roles.</p></li>
+                <li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-it-service-management/page/product/procurement/concept/c_ProcurementWorkflows.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Procurement workflows</a><p>Procurement uses the following workflows.</p></li>
+                <li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-it-service-management/page/product/procurement/task/t_UsingTheProcurementOverviewModule.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Use the Procurement Overview module</a><p>Use the gauges on the Procurement Overview homepage to help you track and manage requests, purchase orders, and other important aspects of the procurement process.</p></li>
+                <li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-it-service-management/page/product/procurement/concept/c_SourcingRequestItems.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Sourcing items in a service catalog request</a><p>A service catalog request can contain multiple items that must be sourced.</p></li>
+                <li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-it-service-management/page/product/procurement/concept/c_UseProcurement.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Procurement purchase order management for assets</a><p>Accurate purchase order information is important for invoice tracking, receiving, and reporting in the ServiceNow platform.</p></li>
+                <li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-it-service-management/page/product/procurement/concept/c_ReceiveAssets.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Receive assets</a><p>Assets can be received and added to the system when they are delivered to a stockroom.</p></li>
+                <li><a class=" css-ettsdk" stylesprops="[object Object]" href="/docs/bundle/yokohama-it-service-management/page/product/procurement/concept/domain-separation-procurement.html"><svg class="ico-related-link" aria-hidden="true"><use xlink:href="#ico-related-link"></use></svg>Domain separation and Procurement</a><p>Domain separation is supported in Procurement processing. Domain separation enables you to separate data, processes, and administrative tasks into logical groupings called domains. You can control several aspects of this separation, including which users can see and access data.</p></li>
+              </ul>
+            </div>
+          </div>
         </div>
       </div>
     </article>
