@@ -67,6 +67,10 @@ export async function extractContentWithIframes(contentElement) {
           debug(`⚠️ contentWindow.document access also blocked: ${e.message}`);
         }
       }
+      
+      // Wait an additional 1 second for dynamic content (Related Content) to load
+      console.log("⏳ Waiting 1 second for dynamic content (Related Content) to load...");
+      await new Promise((resolve) => setTimeout(resolve, 1000));
 
       // If still no access, check if iframe is cross-origin
       if (!iframeDoc) {
