@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.227
+// @version      11.0.228
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.227";
+    window.BUILD_VERSION = "11.0.228";
 (function () {
 
   // Configuration constants and default settings
@@ -7012,8 +7012,22 @@
         placeholders.forEach((p, i) => {
           const h5 = p.querySelector('h5');
           if (h5) {
-            console.log(`   ${i+1}. H5 text: "${h5.textContent.trim()}", outerHTML length: ${p.outerHTML.length}`);
-            placeholderHtml += p.outerHTML;
+            // CRITICAL: outerHTML also skips hidden content!
+            // Manually serialize by copying to a visible temp div
+            const tempContainer = document.createElement('div');
+            tempContainer.style.display = 'block';  // Make it visible
+            tempContainer.style.visibility = 'visible';
+            const clone = p.cloneNode(true);  // Clone the placeholder
+            clone.style.display = 'block';  // Make clone visible
+            clone.style.visibility = 'visible';
+            tempContainer.appendChild(clone);
+            document.body.appendChild(tempContainer);  // Add to DOM temporarily
+            
+            const serializedHtml = clone.outerHTML;  // Now outerHTML will include content
+            document.body.removeChild(tempContainer);  // Clean up
+            
+            console.log(`   ${i+1}. H5 text: "${h5.textContent.trim()}", serialized HTML length: ${serializedHtml.length}, original outerHTML: ${p.outerHTML.length}`);
+            placeholderHtml += serializedHtml;
           }
         });
         
