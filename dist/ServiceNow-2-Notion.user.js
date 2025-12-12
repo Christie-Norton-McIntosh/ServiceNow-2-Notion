@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.232
+// @version      11.0.233
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.232";
+    window.BUILD_VERSION = "11.0.233";
 (function () {
 
   // Configuration constants and default settings
@@ -7138,16 +7138,13 @@
     }
 
     // Clean the HTML content (removes unwanted elements, processes code-toolbar, etc.)
-    console.log(`🔍 [BEFORE-CLEAN] combinedHtml length: ${combinedHtml.length}, contains data-was-placeholder: ${combinedHtml.includes('data-was-placeholder')}`);
     combinedHtml = cleanHtmlContent(combinedHtml);
-    console.log(`🔍 [AFTER-CLEAN] combinedHtml length: ${combinedHtml.length}, contains data-was-placeholder: ${combinedHtml.includes('data-was-placeholder')}`);
 
     // Filter out "Related Content" sections before sending to server
     // This prevents AUDIT validation from showing them as "extra" content
     // Server-side filtering also exists, but userscript filtering ensures cleaner AUDIT results
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = combinedHtml;
-    console.log(`🔍 [AFTER-TEMPIV] tempDiv contains data-was-placeholder: ${tempDiv.querySelector('[data-was-placeholder]') ? 'YES' : 'NO'}`);
     
     // Historically we filtered out 'Related Content' here in the userscript to reduce AUDIT noise.
     // That caused legitimate Related Content to be dropped before server-side processing.
@@ -7179,9 +7176,13 @@
     });
 
     if (removedCount > 0) {
-      combinedHtml = tempDiv.innerHTML;
       debug(`✅ Filtered out ${removedCount} Mini TOC contentPlaceholder(s) in userscript`);
     }
+
+    // CRITICAL: Always get final HTML from tempDiv, not just when we removed elements
+    // This ensures our manually-added data-was-placeholder elements are included
+    combinedHtml = tempDiv.innerHTML;
+    console.log(`🔍 [FINAL-HTML] combinedHtml length: ${combinedHtml.length}, contains data-was-placeholder: ${combinedHtml.includes('data-was-placeholder')}`);
 
     return { combinedHtml, combinedImages };
   }
