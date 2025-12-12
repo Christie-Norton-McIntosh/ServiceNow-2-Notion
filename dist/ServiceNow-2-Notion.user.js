@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.214
+// @version      11.0.215
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.214";
+    window.BUILD_VERSION = "11.0.215";
 (function () {
 
   // Configuration constants and default settings
@@ -6568,6 +6568,64 @@
     console.log("   - contentElement id:", contentElement?.id);
     console.log("   - contentElement class:", contentElement?.className);
     
+    // Wait for Related Content to load dynamically (MutationObserver approach)
+    // This runs for ALL content elements, not just iframes
+    console.log("⏳⏳⏳ [v11.0.215] Waiting for Related Content to load (max 10s)...");
+    await new Promise((resolve) => {
+      const startTime = Date.now();
+      const maxWaitMs = 10000; // 10 seconds max
+      
+      // Check if Related Content already exists in the document
+      const checkRelatedContent = () => {
+        const placeholders = document.querySelectorAll('.contentPlaceholder') || [];
+        for (const placeholder of placeholders) {
+          const h5 = placeholder.querySelector('h5');
+          if (h5 && h5.textContent.toLowerCase().includes('related content')) {
+            return true;
+          }
+        }
+        return false;
+      };
+      
+      if (checkRelatedContent()) {
+        console.log("✅ Related Content already present");
+        resolve();
+        return;
+      }
+      
+      // Set up MutationObserver to watch for Related Content
+      const observer = new MutationObserver(() => {
+        if (checkRelatedContent()) {
+          console.log(`✅ Related Content appeared after ${Date.now() - startTime}ms`);
+          observer.disconnect();
+          resolve();
+        } else if (Date.now() - startTime > maxWaitMs) {
+          console.log(`⏱️ Timeout after ${maxWaitMs}ms - Related Content did not appear`);
+          observer.disconnect();
+          resolve();
+        }
+      });
+      
+      // Observe the entire document body for changes
+      if (document.body) {
+        observer.observe(document.body, {
+          childList: true,
+          subtree: true
+        });
+      }
+      
+      // Fallback timeout
+      setTimeout(() => {
+        const placeholders = document.querySelectorAll('.contentPlaceholder') || [];
+        const h5Count = Array.from(placeholders).reduce((count, p) => {
+          return count + p.querySelectorAll('h5').length;
+        }, 0);
+        console.log(`📊 After ${maxWaitMs}ms: Found ${placeholders.length} contentPlaceholder elements, ${h5Count} H5 elements`);
+        observer.disconnect();
+        resolve();
+      }, maxWaitMs);
+    });
+    
     let combinedHtml = "";
     let combinedImages = [];
 
@@ -6621,63 +6679,6 @@
             debug(`⚠️ contentWindow.document access also blocked: ${e.message}`);
           }
         }
-        
-        // Wait for Related Content to load dynamically (MutationObserver approach)
-        console.log("⏳⏳⏳ [v11.0.214] Waiting for Related Content to load (max 10s)...");
-        await new Promise((resolve) => {
-          const startTime = Date.now();
-          const maxWaitMs = 10000; // 10 seconds max
-          
-          // Check if Related Content already exists
-          const checkRelatedContent = () => {
-            const placeholders = iframeDoc?.querySelectorAll('.contentPlaceholder') || [];
-            for (const placeholder of placeholders) {
-              const h5 = placeholder.querySelector('h5');
-              if (h5 && h5.textContent.toLowerCase().includes('related content')) {
-                return true;
-              }
-            }
-            return false;
-          };
-          
-          if (checkRelatedContent()) {
-            console.log("✅ Related Content already present");
-            resolve();
-            return;
-          }
-          
-          // Set up MutationObserver to watch for Related Content
-          const observer = new MutationObserver(() => {
-            if (checkRelatedContent()) {
-              console.log(`✅ Related Content appeared after ${Date.now() - startTime}ms`);
-              observer.disconnect();
-              resolve();
-            } else if (Date.now() - startTime > maxWaitMs) {
-              console.log(`⏱️ Timeout after ${maxWaitMs}ms - Related Content did not appear`);
-              observer.disconnect();
-              resolve();
-            }
-          });
-          
-          // Observe the entire document body for changes
-          if (iframeDoc?.body) {
-            observer.observe(iframeDoc.body, {
-              childList: true,
-              subtree: true
-            });
-          }
-          
-          // Fallback timeout
-          setTimeout(() => {
-            const placeholders = iframeDoc?.querySelectorAll('.contentPlaceholder') || [];
-            const h5Count = Array.from(placeholders).reduce((count, p) => {
-              return count + p.querySelectorAll('h5').length;
-            }, 0);
-            console.log(`📊 After ${maxWaitMs}ms: Found ${placeholders.length} contentPlaceholder elements, ${h5Count} H5 elements`);
-            observer.disconnect();
-            resolve();
-          }, maxWaitMs);
-        });
 
         // If still no access, check if iframe is cross-origin
         if (!iframeDoc) {
