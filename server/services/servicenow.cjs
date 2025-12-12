@@ -4852,6 +4852,10 @@ async function extractContentFromHtml(html) {
       // BUT they also contain UI chrome like Mini TOC navigation sidebars
       // v11.0.235: Also check for data-was-placeholder (client removes class to prevent CSS hiding)
       
+      console.log(`🔍 [CONTENT-PLACEHOLDER] Processing contentPlaceholder div - outerHTML length: ${$elem.html().length}`);
+      console.log(`🔍 [CONTENT-PLACEHOLDER] Has data-was-placeholder: ${$elem.attr('data-was-placeholder') === 'true'}`);
+      console.log(`🔍 [CONTENT-PLACEHOLDER] First 200 chars: ${$elem.html().substring(0, 200).replace(/\n/g, '\\n')}`);
+      
       // FILTER: Skip only "On this page" Mini TOC, not all sidebars (v11.0.229)
       // Check for specific "On this page" heading text to distinguish from "Related Content"
       const hasOnThisPage = $elem.find('h5').filter((i, h5) => {
