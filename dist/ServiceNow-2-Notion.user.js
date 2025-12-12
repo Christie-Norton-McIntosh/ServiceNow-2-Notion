@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.243
+// @version      11.0.244
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.243";
+    window.BUILD_VERSION = "11.0.244";
 (function () {
 
   // Configuration constants and default settings
@@ -7244,10 +7244,23 @@
     console.log('🔍 [NAV-EXTRACTION] Checking for navigation-based Related Content...');
 
     // Look for navigation elements that might contain Related Content
+    // Include standalone UL elements that might contain related links
     const navElements = contentElement.querySelectorAll('nav[role="navigation"], .navigation, [role="navigation"]');
+    const ulElements = contentElement.querySelectorAll('ul');
 
-    for (const nav of navElements) {
-      const ul = nav.querySelector('ul.ullinks, ul');
+    // Combine both nav elements and standalone ULs for checking
+    const elementsToCheck = [...Array.from(navElements), ...Array.from(ulElements)];
+
+    for (const element of elementsToCheck) {
+      let ul;
+      if (element.tagName === 'NAV' || element.hasAttribute('role')) {
+        // For nav elements, look for ul inside
+        ul = element.querySelector('ul.ullinks, ul');
+      } else if (element.tagName === 'UL') {
+        // For standalone UL elements, use the element itself
+        ul = element;
+      }
+
       if (!ul) continue;
 
       const links = ul.querySelectorAll('li');
@@ -7257,7 +7270,19 @@
       const hasDescriptions = Array.from(links).some(li => li.querySelector('p'));
       if (!hasDescriptions) continue;
 
-      console.log(`✅ [NAV-EXTRACTION] Found navigation with ${links.length} links and descriptions`);
+      // Additional check: ensure this looks like related content, not just any list
+      // Look for patterns that indicate this is related content
+      const hasRelatedLinks = Array.from(links).some(li => {
+        const link = li.querySelector('a');
+        return link && (link.classList.contains('css-ettsdk') || link.querySelector('svg.ico-related-link'));
+      });
+
+      if (!hasRelatedLinks && element.tagName === 'UL') {
+        // For standalone ULs, be more strict - require the related link indicators
+        continue;
+      }
+
+      console.log(`✅ [NAV-EXTRACTION] Found ${element.tagName} element with ${links.length} links and descriptions`);
 
       // Generate synthetic Related Content HTML
       let relatedHtml = '<h5>Related Content</h5><ul>';
