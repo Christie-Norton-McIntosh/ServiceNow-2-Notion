@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.223
+// @version      11.0.224
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.223";
+    window.BUILD_VERSION = "11.0.224";
 (function () {
 
   // Configuration constants and default settings
@@ -7004,10 +7004,23 @@
         console.log(`🔍 Related Content in contentElement? ${relatedText.includes('Related') ? 'YES' : 'NO'} (text: "${relatedText}")`);
         console.log(`🔍 contentElement.querySelectorAll('.contentPlaceholder').length: ${contentElement.querySelectorAll('.contentPlaceholder').length}`);
         
-        console.log(`✅ Using LIVE DOM (contentElement.innerHTML = ${contentElement.innerHTML.length} chars)`);
+        // CRITICAL FIX: innerHTML doesn't include hidden elements!
+        // Get all contentPlaceholder elements and append their outerHTML manually
+        const placeholders = contentElement.querySelectorAll('.contentPlaceholder');
+        console.log(`🔍 Found ${placeholders.length} contentPlaceholder divs to manually append`);
+        let placeholderHtml = '';
+        placeholders.forEach((p, i) => {
+          const h5 = p.querySelector('h5');
+          if (h5) {
+            console.log(`   ${i+1}. H5 text: "${h5.textContent.trim()}", outerHTML length: ${p.outerHTML.length}`);
+            placeholderHtml += p.outerHTML;
+          }
+        });
+        
+        console.log(`✅ Using LIVE DOM (contentElement.innerHTML = ${contentElement.innerHTML.length} chars) + manual placeholders (${placeholderHtml.length} chars)`);
         // Get content from LIVE DOM, then apply same filtering that was done to clone
         const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = contentElement.innerHTML;
+        tempDiv.innerHTML = contentElement.innerHTML + placeholderHtml;  // APPEND manually extracted placeholders!
         
         // Remove the same nav elements we removed from clone
         const tempNavElements = tempDiv.querySelectorAll(
