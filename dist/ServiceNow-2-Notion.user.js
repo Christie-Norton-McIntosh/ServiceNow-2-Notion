@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.224
+// @version      11.0.225
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.224";
+    window.BUILD_VERSION = "11.0.225";
 (function () {
 
   // Configuration constants and default settings
@@ -7020,7 +7020,13 @@
         console.log(`✅ Using LIVE DOM (contentElement.innerHTML = ${contentElement.innerHTML.length} chars) + manual placeholders (${placeholderHtml.length} chars)`);
         // Get content from LIVE DOM, then apply same filtering that was done to clone
         const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = contentElement.innerHTML + placeholderHtml;  // APPEND manually extracted placeholders!
+        
+        // Check if placeholders are already in innerHTML (to avoid duplication)
+        const baseHtml = contentElement.innerHTML;
+        const hasPlaceholderAlready = baseHtml.includes('contentPlaceholder');
+        console.log(`🔍 contentPlaceholder already in innerHTML? ${hasPlaceholderAlready}`);
+        
+        tempDiv.innerHTML = hasPlaceholderAlready ? baseHtml : (baseHtml + placeholderHtml);
         
         // Remove the same nav elements we removed from clone
         const tempNavElements = tempDiv.querySelectorAll(
