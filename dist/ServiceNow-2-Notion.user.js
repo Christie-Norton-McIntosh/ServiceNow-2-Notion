@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.242
+// @version      11.0.243
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.242";
+    window.BUILD_VERSION = "11.0.243";
 (function () {
 
   // Configuration constants and default settings
@@ -7082,82 +7082,13 @@
           }
         });
         
-        // v11.0.242: NEW - Also look for Related Content in navigation sections
-        // Some ServiceNow pages put Related Content in <nav> elements instead of contentPlaceholder divs
-        console.log(`🔍 Checking for Related Content in navigation sections...`);
-        const navElements = contentElement.querySelectorAll('nav[role="navigation"], ul.ullinks');
-        console.log(`🔍 Found ${navElements.length} navigation elements to check`);
-        
-        let navigationHtml = '';
-        Array.from(navElements).forEach((nav, i) => {
-          // Check if this navigation contains links (potential Related Content)
-          const links = nav.querySelectorAll('a[href]');
-          const hasLinks = links.length > 0;
-          
-          if (hasLinks) {
-            console.log(`🔍 Navigation ${i+1} has ${links.length} links - treating as Related Content`);
-            
-            // Create a synthetic Related Content structure
-            const tempContainer = document.createElement('div');
-            tempContainer.style.display = 'block';
-            tempContainer.style.visibility = 'visible';
-            
-            // Create synthetic Related Content HTML
-            let syntheticHtml = '<h5>Related Content</h5><ul>';
-            links.forEach(link => {
-              const href = link.getAttribute('href');
-              const text = link.textContent.trim();
-              
-              // Look for description in next sibling or parent li
-              let desc = '';
-              const li = link.closest('li');
-              if (li) {
-                const descElement = li.querySelector('p.shortdesc');
-                if (descElement) {
-                  desc = descElement.textContent.trim();
-                }
-              }
-              
-              syntheticHtml += `<li><a href="${href}">${text}</a>`;
-              if (desc) {
-                syntheticHtml += `<p>${desc}</p>`;
-              }
-              syntheticHtml += '</li>';
-            });
-            syntheticHtml += '</ul>';
-            
-            // Create a wrapper div with data-was-placeholder
-            const wrapper = document.createElement('div');
-            wrapper.setAttribute('data-was-placeholder', 'true');
-            wrapper.setAttribute('data-source', 'navigation');
-            wrapper.innerHTML = syntheticHtml;
-            
-            // Apply visibility styles
-            const allElements = [wrapper, ...wrapper.querySelectorAll('*')];
-            allElements.forEach(el => {
-              el.setAttribute('style', 'display: block !important; visibility: visible !important; position: static !important; opacity: 1 !important;');
-            });
-            
-            tempContainer.appendChild(wrapper);
-            document.body.appendChild(tempContainer);
-            
-            const serializedHtml = wrapper.outerHTML;
-            document.body.removeChild(tempContainer);
-            
-            console.log(`   Navigation ${i+1}: created synthetic Related Content (${serializedHtml.length} chars)`);
-            navigationHtml += serializedHtml;
-          }
-        });
-        
-        console.log(`✅ Added navigation-based Related Content: ${navigationHtml.length} chars`);
-        
-        console.log(`✅ Using LIVE DOM (contentElement.innerHTML = ${contentElement.innerHTML.length} chars) + manual placeholders (${placeholderHtml.length} chars) + navigation (${navigationHtml.length} chars)`);
+        console.log(`✅ Using LIVE DOM (contentElement.innerHTML = ${contentElement.innerHTML.length} chars) + manual placeholders (${placeholderHtml.length} chars)`);
         // Get content from LIVE DOM, then apply same filtering that was done to clone
         const tempDiv = document.createElement('div');
         
         // ALWAYS append placeholderHtml because innerHTML NEVER includes hidden elements
         // The contentPlaceholder div is hidden by CSS, so it's never in innerHTML
-        tempDiv.innerHTML = contentElement.innerHTML + placeholderHtml + navigationHtml;
+        tempDiv.innerHTML = contentElement.innerHTML + placeholderHtml;
         
         // Remove the same nav elements we removed from clone
         const tempNavElements = tempDiv.querySelectorAll(
@@ -7174,7 +7105,7 @@
         
         combinedHtml = tempDiv.innerHTML;
         const navCount = (combinedHtml.match(/<nav[^>]*>/g) || []).length;
-        console.log(`📄 Using filtered LIVE content: ${combinedHtml.length} chars, ${navCount} nav tags (removed ${tempRemovedCount} nav elements), includes navigation-based Related Content`);
+        console.log(`📄 Using filtered LIVE content: ${combinedHtml.length} chars, ${navCount} nav tags (removed ${tempRemovedCount} nav elements)`);
       }
 
       // Replace images/SVGs inside tables with bullet symbols
@@ -7292,7 +7223,66 @@
     combinedHtml = tempDiv.innerHTML;
     console.log(`🔍 [FINAL-HTML] combinedHtml length: ${combinedHtml.length}, contains data-was-placeholder: ${combinedHtml.includes('data-was-placeholder')}`);
 
+    // [v11.0.243] FIX: Extract navigation-based Related Content
+    // Some pages (like Activate Procurement) use navigation sections instead of contentPlaceholder divs
+    // This creates synthetic Related Content HTML with descriptions included in link text to prevent duplicate paragraphs
+    const navRelatedContent = extractNavigationRelatedContent(contentElement);
+    if (navRelatedContent) {
+      console.log(`📄 [NAV-EXTRACTION] Adding navigation-based Related Content (${navRelatedContent.length} chars)`);
+      combinedHtml += navRelatedContent;
+    }
+
     return { combinedHtml, combinedImages };
+  }
+
+  /**
+   * Extract navigation-based Related Content from pages that don't use contentPlaceholder divs
+   * @param {HTMLElement} contentElement - The main content element to search
+   * @returns {string|null} Synthetic Related Content HTML or null if not found
+   */
+  function extractNavigationRelatedContent(contentElement) {
+    console.log('🔍 [NAV-EXTRACTION] Checking for navigation-based Related Content...');
+
+    // Look for navigation elements that might contain Related Content
+    const navElements = contentElement.querySelectorAll('nav[role="navigation"], .navigation, [role="navigation"]');
+
+    for (const nav of navElements) {
+      const ul = nav.querySelector('ul.ullinks, ul');
+      if (!ul) continue;
+
+      const links = ul.querySelectorAll('li');
+      if (links.length === 0) continue;
+
+      // Check if this looks like Related Content (has links with descriptions)
+      const hasDescriptions = Array.from(links).some(li => li.querySelector('p'));
+      if (!hasDescriptions) continue;
+
+      console.log(`✅ [NAV-EXTRACTION] Found navigation with ${links.length} links and descriptions`);
+
+      // Generate synthetic Related Content HTML
+      let relatedHtml = '<h5>Related Content</h5><ul>';
+
+      links.forEach(li => {
+        const link = li.querySelector('a');
+        const desc = li.querySelector('p');
+
+        if (link && desc) {
+          const linkText = link.textContent.trim();
+          const descText = desc.textContent.trim();
+          // FIX: Include description in link text to prevent separate paragraph blocks
+          const combinedText = `${linkText} - ${descText}`;
+          relatedHtml += `<li><a href="${link.href}">${combinedText}</a></li>`;
+        }
+      });
+
+      relatedHtml += '</ul>';
+      console.log(`📝 [NAV-EXTRACTION] Generated synthetic Related Content HTML (${relatedHtml.length} chars)`);
+
+      return relatedHtml;
+    }
+
+    console.log('❌ [NAV-EXTRACTION] No navigation-based Related Content found');
+    return null;
   }
 
   /**
