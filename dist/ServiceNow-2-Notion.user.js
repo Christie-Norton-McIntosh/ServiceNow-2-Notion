@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.230
+// @version      11.0.231
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.230";
+    window.BUILD_VERSION = "11.0.231";
 (function () {
 
   // Configuration constants and default settings
@@ -7025,6 +7025,12 @@
             allElements.forEach(el => {
               el.setAttribute('style', 'display: block !important; visibility: visible !important; position: static !important; opacity: 1 !important;');
             });
+            
+            // CRITICAL: Remove contentPlaceholder class to prevent ServiceNow CSS from hiding it
+            // When DOMParser.parseFromString() re-parses the HTML in cleanHtmlContent,
+            // it applies CSS rules and .contentPlaceholder { display: none } overrides inline styles
+            clone.classList.remove('contentPlaceholder');
+            clone.setAttribute('data-was-placeholder', 'true'); // Mark for debugging
             
             tempContainer.appendChild(clone);
             document.body.appendChild(tempContainer);  // Add to DOM temporarily
