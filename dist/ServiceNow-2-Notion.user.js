@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.210
+// @version      11.0.211
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.210";
+    window.BUILD_VERSION = "11.0.211";
 (function () {
 
   // Configuration constants and default settings
@@ -6621,6 +6621,10 @@
             debug(`⚠️ contentWindow.document access also blocked: ${e.message}`);
           }
         }
+        
+        // Wait an additional 1 second for dynamic content (Related Content) to load
+        console.log("⏳ Waiting 1 second for dynamic content (Related Content) to load...");
+        await new Promise((resolve) => setTimeout(resolve, 1000));
 
         // If still no access, check if iframe is cross-origin
         if (!iframeDoc) {
