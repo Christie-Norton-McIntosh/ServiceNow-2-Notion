@@ -4841,9 +4841,10 @@ async function extractContentFromHtml(html) {
 
       $elem.remove(); // Mark as processed
       
-    } else if (tagName === 'div' && $elem.hasClass('contentPlaceholder')) {
+    } else if (tagName === 'div' && ($elem.hasClass('contentPlaceholder') || $elem.attr('data-was-placeholder') === 'true')) {
       // contentPlaceholder divs can contain actual content like "Related Content" sections
       // BUT they also contain UI chrome like Mini TOC navigation sidebars
+      // v11.0.235: Also check for data-was-placeholder (client removes class to prevent CSS hiding)
       
       // FILTER: Skip only "On this page" Mini TOC, not all sidebars (v11.0.229)
       // Check for specific "On this page" heading text to distinguish from "Related Content"
