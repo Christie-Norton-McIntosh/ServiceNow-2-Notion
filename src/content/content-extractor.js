@@ -669,7 +669,66 @@ export async function extractContentWithIframes(contentElement) {
   combinedHtml = tempDiv.innerHTML;
   console.log(`🔍 [FINAL-HTML] combinedHtml length: ${combinedHtml.length}, contains data-was-placeholder: ${combinedHtml.includes('data-was-placeholder')}`);
 
+  // [v11.0.243] FIX: Extract navigation-based Related Content
+  // Some pages (like Activate Procurement) use navigation sections instead of contentPlaceholder divs
+  // This creates synthetic Related Content HTML with descriptions included in link text to prevent duplicate paragraphs
+  const navRelatedContent = extractNavigationRelatedContent(contentElement);
+  if (navRelatedContent) {
+    console.log(`📄 [NAV-EXTRACTION] Adding navigation-based Related Content (${navRelatedContent.length} chars)`);
+    combinedHtml += navRelatedContent;
+  }
+
   return { combinedHtml, combinedImages };
+}
+
+/**
+ * Extract navigation-based Related Content from pages that don't use contentPlaceholder divs
+ * @param {HTMLElement} contentElement - The main content element to search
+ * @returns {string|null} Synthetic Related Content HTML or null if not found
+ */
+function extractNavigationRelatedContent(contentElement) {
+  console.log('🔍 [NAV-EXTRACTION] Checking for navigation-based Related Content...');
+
+  // Look for navigation elements that might contain Related Content
+  const navElements = contentElement.querySelectorAll('nav[role="navigation"], .navigation, [role="navigation"]');
+
+  for (const nav of navElements) {
+    const ul = nav.querySelector('ul.ullinks, ul');
+    if (!ul) continue;
+
+    const links = ul.querySelectorAll('li');
+    if (links.length === 0) continue;
+
+    // Check if this looks like Related Content (has links with descriptions)
+    const hasDescriptions = Array.from(links).some(li => li.querySelector('p'));
+    if (!hasDescriptions) continue;
+
+    console.log(`✅ [NAV-EXTRACTION] Found navigation with ${links.length} links and descriptions`);
+
+    // Generate synthetic Related Content HTML
+    let relatedHtml = '<h5>Related Content</h5><ul>';
+
+    links.forEach(li => {
+      const link = li.querySelector('a');
+      const desc = li.querySelector('p');
+
+      if (link && desc) {
+        const linkText = link.textContent.trim();
+        const descText = desc.textContent.trim();
+        // FIX: Include description in link text to prevent separate paragraph blocks
+        const combinedText = `${linkText} - ${descText}`;
+        relatedHtml += `<li><a href="${link.href}">${combinedText}</a></li>`;
+      }
+    });
+
+    relatedHtml += '</ul>';
+    console.log(`📝 [NAV-EXTRACTION] Generated synthetic Related Content HTML (${relatedHtml.length} chars)`);
+
+    return relatedHtml;
+  }
+
+  console.log('❌ [NAV-EXTRACTION] No navigation-based Related Content found');
+  return null;
 }
 
 /**
