@@ -622,9 +622,13 @@ export async function extractContentWithIframes(contentElement) {
   });
 
   if (removedCount > 0) {
-    combinedHtml = tempDiv.innerHTML;
     debug(`✅ Filtered out ${removedCount} Mini TOC contentPlaceholder(s) in userscript`);
   }
+
+  // CRITICAL: Always get final HTML from tempDiv, not just when we removed elements
+  // This ensures our manually-added data-was-placeholder elements are included
+  combinedHtml = tempDiv.innerHTML;
+  console.log(`🔍 [FINAL-HTML] combinedHtml length: ${combinedHtml.length}, contains data-was-placeholder: ${combinedHtml.includes('data-was-placeholder')}`);
 
   return { combinedHtml, combinedImages };
 }
