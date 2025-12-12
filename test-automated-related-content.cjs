@@ -29,24 +29,33 @@ class RelatedContentTester {
   }
 
   async testExtraction(htmlContent) {
-    this.log('Testing extraction with server...');
+    this.log('Testing extraction using PATCH dryRun...');
 
     const axios = require('axios');
 
     try {
-      const response = await axios.post('http://localhost:3004/api/W2N', {
+      // Use PATCH with dryRun to test extraction without creating/updating a real page
+      // Use a dummy page ID since dryRun doesn't actually access the page
+      const dummyPageId = '12345678-1234-1234-1234-123456789012';
+      
+      const response = await axios.patch(`http://localhost:3004/api/W2N/${dummyPageId}`, {
         title: 'Related Content Test',
-        databaseId: process.env.NOTION_TEST_DATABASE_ID,
         contentHtml: htmlContent,
-        dryRun: true // Don't create actual page, just return blocks
+        dryRun: true // Return extracted blocks without updating page
       });
 
-      const { children } = response.data;
+      this.log(`Response status: ${response.status}`);
+      this.log(`Response data keys: ${Object.keys(response.data).join(', ')}`);
+      if (response.data.data) {
+        this.log(`Response data.data keys: ${Object.keys(response.data.data).join(', ')}`);
+      }
+      
+      const { children } = response.data.data || response.data;
 
-      // Find Related Content heading
+      // Find Related Content heading (it's heading_3, not heading_5)
       const relatedHeading = children.find(block =>
-        block.type === 'heading_5' &&
-        block.heading_5?.rich_text?.[0]?.plain_text?.toLowerCase().includes('related content')
+        block.type === 'heading_3' &&
+        block.heading_3?.rich_text?.[0]?.text?.content?.toLowerCase().includes('related content')
       );
 
       if (!relatedHeading) {
@@ -61,11 +70,13 @@ class RelatedContentTester {
       for (let i = headingIndex + 1; i < children.length; i++) {
         const block = children[i];
         if (block.type === 'bulleted_list_item') {
-          const text = block.bulleted_list_item?.rich_text?.[0]?.plain_text || '';
+          const text = block.bulleted_list_item?.rich_text?.[0]?.text?.content || '';
           if (text) foundLinks.push(text);
-        } else if (foundLinks.length > 0) {
-          break; // Stop after the list
+        } else if (block.type !== 'paragraph') {
+          // Stop when we hit something that's not a bulleted item or description paragraph
+          break;
         }
+        // Continue through paragraphs (they're descriptions for the links)
       }
 
       this.log(`Found ${foundLinks.length} links: ${foundLinks.join(', ')}`);
