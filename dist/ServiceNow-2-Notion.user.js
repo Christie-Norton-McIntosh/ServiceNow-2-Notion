@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.215
+// @version      11.0.216
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.215";
+    window.BUILD_VERSION = "11.0.216";
 (function () {
 
   // Configuration constants and default settings
@@ -6589,6 +6589,19 @@
       
       if (checkRelatedContent()) {
         console.log("✅ Related Content already present");
+        // Diagnostic: Check WHERE Related Content is located
+        const placeholders = document.querySelectorAll('.contentPlaceholder') || [];
+        placeholders.forEach((ph, idx) => {
+          const h5 = ph.querySelector('h5');
+          if (h5 && h5.textContent.toLowerCase().includes('related content')) {
+            const isInZDocs = ph.closest('.zDocsTopicPageBody');
+            console.log(`📍 Related Content #${idx + 1}:`);
+            console.log(`   - Inside .zDocsTopicPageBody: ${!!isInZDocs}`);
+            console.log(`   - Parent chain:`, ph.parentElement?.className, '→', ph.parentElement?.parentElement?.className);
+            console.log(`   - H5 text:`, h5.textContent.trim());
+            console.log(`   - UL count:`, ph.querySelectorAll('ul').length);
+          }
+        });
         resolve();
         return;
       }
