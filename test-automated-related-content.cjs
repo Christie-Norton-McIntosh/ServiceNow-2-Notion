@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 
-console.log('🚀 Starting test script...');
-
 /**
  * Automated Related Content Extraction Test
  * Tests Related Content extraction from HTML fixtures
  */
+
+require('dotenv').config({ path: require('path').join(__dirname, 'server', '.env') });
+require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 
 const fs = require('fs');
 const path = require('path');
