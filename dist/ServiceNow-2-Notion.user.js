@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.216
+// @version      11.0.217
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.216";
+    window.BUILD_VERSION = "11.0.217";
 (function () {
 
   // Configuration constants and default settings
@@ -7078,6 +7078,15 @@
     // New behavior (v11.0.231+): only strip the *Mini TOC* ("On this page") from userscript extraction.
     // Keep actual "Related Content" sections so the server can decide how to render them.
     const contentPlaceholders = tempDiv.querySelectorAll('.contentPlaceholder');
+    
+    // [v11.0.217] Diagnostic: Log all contentPlaceholders BEFORE filtering
+    console.log(`🔍 [PRE-FILTER] Found ${contentPlaceholders.length} contentPlaceholder elements in extracted HTML`);
+    contentPlaceholders.forEach((cp, idx) => {
+      const h5 = cp.querySelector('h5');
+      const h5Text = h5 ? h5.textContent.trim() : 'NO H5';
+      const hasContent = cp.innerHTML.trim().length > 0;
+      console.log(`   ${idx + 1}. H5: "${h5Text}", hasContent: ${hasContent}, innerHTML length: ${cp.innerHTML.length}`);
+    });
     let removedCount = 0;
     contentPlaceholders.forEach(cp => {
       const headings = cp.querySelectorAll('h1, h2, h3, h4, h5, h6');
