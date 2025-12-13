@@ -4894,10 +4894,27 @@ async function extractContentFromHtml(html) {
       const hasOnThisPage = $elem.find('h5').filter((i, h5) => {
         const text = $(h5).text().trim().toLowerCase();
         return text === 'on this page';
-      }).length > 0;      if (hasOnThisPage) {
-        console.log(`🔍 Skipping contentPlaceholder with "On this page" Mini TOC (UI navigation, not article content)`);
-        $elem.remove(); // Mark as processed
-        return processedBlocks;
+      }).length > 0;
+      if (hasOnThisPage) {
+        // If the contentPlaceholder contains a Mini TOC, remove only the Mini TOC
+        // nodes (and their UI chrome) but keep other sidebox content such as
+        // Related Content. This prevents skipping the whole placeholder when a
+        // sidebox contains both the mini TOC and Related Content.
+        console.log(`🔍 Found "On this page" Mini TOC inside placeholder; removing miniTOC elements but preserving sidebox content`);
+        try {
+          $elem.find('.miniTOC').remove();
+          $elem.find('.zDocsMiniTocCollapseButton').remove();
+          $elem.find('.miniTOCHeader').remove();
+          $elem.find('.miniTOCTitle').remove();
+          // Also remove any nav elements that appear to be miniTOC UI
+          $elem.find('nav').filter((i, n) => {
+            const $n = $(n);
+            return $n.hasClass('miniTOC') || $n.find('.zDocsMiniTocCollapseButton').length > 0;
+          }).remove();
+        } catch (ux) {
+          console.log('🔍 [CONTENT-PLACEHOLDER-RELATED] Warning: unable to remove miniTOC elements', ux && ux.message);
+        }
+        // Continue; do not skip entire placeholder; Related Content will be processed below
       }
       
       // Check for a Related Content heading anywhere inside this placeholder even
