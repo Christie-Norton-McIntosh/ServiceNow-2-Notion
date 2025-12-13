@@ -232,7 +232,7 @@ export function injectMainPanel() {
             📚 ServiceNow to Notion
             <span style="font-size:12px; color:#6b7280; font-weight:normal;">⇄ drag to move</span>
           </h3>
-          <div style="font-size:11px; color:#9ca3af;">v${window.BUILD_VERSION || "11.0.84"}</div>
+          <div style="font-size:11px; color:#9ca3af;">v${window.BUILD_VERSION || "12.0.0"}</div>
         </div>
         <div style="display:flex; align-items:center; gap:8px;">
           <button id="w2n-reset-position-btn" title="Reset panel position to top-right corner" style="background:none;border:none;font-size:16px;cursor:pointer;color:#6b7280;padding:4px;line-height:1;">↗️</button>

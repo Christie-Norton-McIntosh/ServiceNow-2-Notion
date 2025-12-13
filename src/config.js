@@ -5,7 +5,7 @@
 // =============================================================================
 
 // Use build-injected version if available, otherwise fallback
-export const PROVIDER_VERSION = (typeof window !== "undefined" && window.BUILD_VERSION) || "9.0.0";
+export const PROVIDER_VERSION = (typeof window !== "undefined" && window.BUILD_VERSION) || "12.0.0";
 export const PROVIDER_NAME = "ServiceNow";
 
 // =============================================================================
