@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.258
+// @version      11.0.259
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.258";
+    window.BUILD_VERSION = "11.0.259";
 (function () {
 
   // Configuration constants and default settings
@@ -7250,14 +7250,14 @@
     // Some pages (like Activate Procurement) use navigation sections instead of contentPlaceholder divs
     // This creates synthetic Related Content HTML with descriptions included in link text to prevent duplicate paragraphs
     // Only run navigation extraction if Related Content hasn't already been extracted from contentPlaceholders
-    if (!combinedHtml.includes('Related Content')) {
+    // TEMPORARY: Always run navigation extraction to test if this fixes Activate Procurement page
+    console.log(`🔍 [NAV-EXTRACTION-DEBUG] combinedHtml contains 'Related Content': ${combinedHtml.includes('Related Content')}`);
+    { // Temporarily always run navigation extraction
       const navRelatedContent = extractNavigationRelatedContent(contentElement);
       if (navRelatedContent) {
         console.log(`📄 [NAV-EXTRACTION] Adding navigation-based Related Content (${navRelatedContent.length} chars)`);
         combinedHtml += navRelatedContent;
       }
-    } else {
-      console.log(`📄 [NAV-EXTRACTION] Skipping navigation extraction - Related Content already found in contentPlaceholders`);
     }
 
     return { combinedHtml, combinedImages };
