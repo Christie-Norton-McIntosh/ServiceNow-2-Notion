@@ -32,6 +32,7 @@ server/.env
 # Log files
  # Backup artifacts
  backups/*.tar.gz
+backups/modules-server-dist-backup-*
 logs/
 *.log
 tests/
