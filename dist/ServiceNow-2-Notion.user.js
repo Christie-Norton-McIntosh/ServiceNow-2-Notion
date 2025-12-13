@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.273
+// @version      12.0.1
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.273";
+    window.BUILD_VERSION = "12.0.1";
 (function () {
 
   // Configuration constants and default settings
@@ -35,7 +35,7 @@
   // =============================================================================
 
   // Use build-injected version if available, otherwise fallback
-  const PROVIDER_VERSION = (typeof window !== "undefined" && window.BUILD_VERSION) || "9.0.0";
+  const PROVIDER_VERSION = (typeof window !== "undefined" && window.BUILD_VERSION) || "12.0.0";
   const PROVIDER_NAME = "ServiceNow";
 
   // =============================================================================
@@ -3000,7 +3000,7 @@
             📚 ServiceNow to Notion
             <span style="font-size:12px; color:#6b7280; font-weight:normal;">⇄ drag to move</span>
           </h3>
-          <div style="font-size:11px; color:#9ca3af;">v${window.BUILD_VERSION || "11.0.84"}</div>
+          <div style="font-size:11px; color:#9ca3af;">v${window.BUILD_VERSION || "12.0.0"}</div>
         </div>
         <div style="display:flex; align-items:center; gap:8px;">
           <button id="w2n-reset-position-btn" title="Reset panel position to top-right corner" style="background:none;border:none;font-size:16px;cursor:pointer;color:#6b7280;padding:4px;line-height:1;">↗️</button>
