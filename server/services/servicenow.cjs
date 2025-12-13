@@ -4880,8 +4880,9 @@ async function extractContentFromHtml(html) {
         
         const relatedH5_any = $elem.find('h5').filter((i, h5) => $(h5).text().trim().toLowerCase() === 'related content');
         console.log(`🔍 [PLACEHOLDER-H5-DEBUG] Filtered for "related content": ${relatedH5_any.length} matches`);
-        
+
         if (relatedH5_any.length > 0) {
+          console.log(`🎯 [RELATED-CONTENT-FOUND] Processing Related Content placeholder - START`);
           // Extra diagnostic: print the exact h5 text (escaped) and nearby UL outerHTML so we can see invisible whitespace
           const rawH5Text = relatedH5_any.first().text();
           console.log(`🔍 [CONTENT-PLACEHOLDER-RELATED] Found Related Content heading inside contentPlaceholder (early check) - h5 text (raw): "${rawH5Text.replace(/\n/g, '\\n').replace(/\r/g, '\\r')}"`);
@@ -4935,6 +4936,8 @@ async function extractContentFromHtml(html) {
 
             $ul_any.remove();
           }
+          console.log(`✅ [RELATED-CONTENT-PROCESSED] Related Content processing complete - added blocks to processedBlocks array`);
+        }
         }
       } catch (e) {
         console.log('⚠️ Error processing Related Content in contentPlaceholder (early check):', e && e.message);
@@ -5922,6 +5925,21 @@ async function extractContentFromHtml(html) {
     // [EXTRACTION-DEBUG] Log exit point
     const blockTypes = processedBlocks.map(b => b.type).join(', ');
     console.log(`[EXTRACTION-DEBUG] EXIT processElement(<${tagName}${elemId !== 'no-id' ? ` id="${elemId}"` : ''}${elemClass !== 'none' ? ` class="${elemClass.substring(0, 30)}"` : ''}>) → ${processedBlocks.length} blocks [${blockTypes}]`);
+
+    // DEBUG: Check for Related Content blocks
+    const relatedBlocks = processedBlocks.filter(b => {
+      if (b.type === 'heading_2' && b.heading_2?.rich_text?.some(rt => rt.text?.content?.includes('Related Content'))) return true;
+      if (b.type === 'bulleted_list_item' && b.bulleted_list_item?.rich_text?.some(rt => rt.text?.content?.includes('Procurement'))) return true;
+      return false;
+    });
+    if (relatedBlocks.length > 0) {
+      console.log(`🎯 [RELATED-CONTENT-DEBUG] Found ${relatedBlocks.length} Related Content related blocks in final output`);
+      relatedBlocks.forEach((block, idx) => {
+        const preview = block.type === 'heading_2' ? block.heading_2.rich_text[0]?.text?.content :
+                       block.type === 'bulleted_list_item' ? block.bulleted_list_item.rich_text[0]?.text?.content : 'unknown';
+        console.log(`   Block ${idx}: ${block.type} - "${preview?.substring(0, 50)}..."`);
+      });
+    }
 
     return processedBlocks;
   }

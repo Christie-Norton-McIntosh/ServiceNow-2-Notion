@@ -591,11 +591,22 @@ router.post('/W2N', async (req, res) => {
     // Use central dedupe utility so unit tests can target it
     const beforeDedupeCount = children.length;
     const calloutsBefore = children.filter(c => c.type === 'callout').length;
-    log(`🔍 [DEDUPE-DEBUG] Before deduplication: ${beforeDedupeCount} blocks (${calloutsBefore} callouts)`);
+    const relatedContentBefore = children.filter(c => 
+      (c.type === 'heading_2' && c.heading_2?.rich_text?.some(rt => rt.text?.content?.includes('Related Content'))) ||
+      (c.type === 'bulleted_list_item' && c.bulleted_list_item?.rich_text?.some(rt => rt.text?.content?.includes('Procurement')))
+    ).length;
+    log(`🔍 [DEDUPE-DEBUG] Before deduplication: ${beforeDedupeCount} blocks (${calloutsBefore} callouts, ${relatedContentBefore} Related Content blocks)`);
   children = dedupeUtil.dedupeAndFilterBlocks(children, { log, expectedCallouts });
     const afterDedupeCount = children.length;
     const calloutsAfter = children.filter(c => c.type === 'callout').length;
-    log(`🔍 [DEDUPE-DEBUG] After deduplication: ${afterDedupeCount} blocks (${calloutsAfter} callouts), removed ${beforeDedupeCount - afterDedupeCount} blocks`);
+    const relatedContentAfter = children.filter(c => 
+      (c.type === 'heading_2' && c.heading_2?.rich_text?.some(rt => rt.text?.content?.includes('Related Content'))) ||
+      (c.type === 'bulleted_list_item' && c.bulleted_list_item?.rich_text?.some(rt => rt.text?.content?.includes('Procurement')))
+    ).length;
+    log(`🔍 [DEDUPE-DEBUG] After deduplication: ${afterDedupeCount} blocks (${calloutsAfter} callouts, ${relatedContentAfter} Related Content blocks), removed ${beforeDedupeCount - afterDedupeCount} blocks`);
+    if (relatedContentBefore > 0 && relatedContentAfter === 0) {
+      log(`⚠️ [RELATED-CONTENT-ALERT] Related Content blocks were REMOVED during deduplication!`);
+    }
     
     // CRITICAL: Also dedupe children nested inside list items
     // Callouts can appear as children of list items and need deduplication too
