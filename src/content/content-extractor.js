@@ -247,7 +247,7 @@ export async function extractContentWithIframes(contentElement) {
             // BUT: Keep nav elements that are inside article/section tags (these are "Related Links" content)
             // Note: Can't use descendant selectors in :not(), so we'll remove manually
             const navElements = mainClone.querySelectorAll(
-              "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer"
+              "nav, [role='navigation'], .navigation, .breadcrumb, .menu, footer"
             );
             navElements.forEach((el) => {
               // Keep nav elements that are inside article or section tags
@@ -399,7 +399,7 @@ export async function extractContentWithIframes(contentElement) {
 
     // Apply nav filtering - remove navigation elements that are NOT inside article/section
     const navElements = contentClone.querySelectorAll(
-      "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer"
+      "nav, [role='navigation'], .navigation, .breadcrumb, .menu, footer"
     );
     console.log(`📄 Found ${navElements.length} navigation elements in regular content`);
     console.log(`📄 contentClone tagName: ${contentClone.tagName}, id: ${contentClone.id}, class: ${contentClone.className}`);
@@ -553,7 +553,7 @@ export async function extractContentWithIframes(contentElement) {
       
       // Remove the same nav elements we removed from clone
       const tempNavElements = tempDiv.querySelectorAll(
-        "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer"
+        "nav, [role='navigation'], .navigation, .breadcrumb, .menu, footer"
       );
       let tempRemovedCount = 0;
       tempNavElements.forEach((el) => {
@@ -696,14 +696,17 @@ export async function extractContentWithIframes(contentElement) {
   // Some pages (like Activate Procurement) use navigation sections instead of contentPlaceholder divs
   // This creates synthetic Related Content HTML with descriptions included in link text to prevent duplicate paragraphs
   // Only run navigation extraction if Related Content hasn't already been extracted from contentPlaceholders
-  if (!combinedHtml.includes('Related Content')) {
+  // IMPROVED: Check for actual Related Content H5 headings in contentPlaceholders, not just any "Related Content" text
+  const hasRelatedContentHeading = /<h[1-6][^>]*>\s*Related Content\s*<\/h[1-6]>/i.test(combinedHtml);
+  console.log(`🔍 [NAV-EXTRACTION-DEBUG] combinedHtml contains Related Content heading: ${hasRelatedContentHeading}`);
+  if (!hasRelatedContentHeading) {
     const navRelatedContent = extractNavigationRelatedContent(contentElement);
     if (navRelatedContent) {
       console.log(`📄 [NAV-EXTRACTION] Adding navigation-based Related Content (${navRelatedContent.length} chars)`);
       combinedHtml += navRelatedContent;
     }
   } else {
-    console.log(`📄 [NAV-EXTRACTION] Skipping navigation extraction - Related Content already found in contentPlaceholders`);
+    console.log(`📄 [NAV-EXTRACTION] Skipping navigation extraction - Related Content heading already found in contentPlaceholders`);
   }
 
   return { combinedHtml, combinedImages };

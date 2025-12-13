@@ -1,6 +1,6 @@
 {
   "fixture": "override-contact-preferences-duplication-order-issue.html",
-  "timestamp": "2025-12-11T18:49:05.760Z",
+  "timestamp": "2025-12-13T00:54:09.753Z",
   "blockTypes": {
     "paragraph": 4,
     "callout": 2,
@@ -181,7 +181,7 @@
           {
             "type": "text",
             "text": {
-              "content": " (sn2n:mj1skwxj-rkonpa)"
+              "content": " (sn2n:mj3l28tz-hagl7j)"
             },
             "annotations": {
               "bold": false,
@@ -385,7 +385,7 @@
                       {
                         "type": "text",
                         "text": {
-                          "content": " (sn2n:mj1skwxf-snytyj)"
+                          "content": " (sn2n:mj3l28tw-su9fj5)"
                         },
                         "annotations": {
                           "bold": false,
@@ -405,7 +405,7 @@
                       "image": {
                         "type": "file_upload",
                         "file_upload": {
-                          "id": "2c6a89fe-dba5-81ef-901a-00b23a74a092"
+                          "id": "2c8a89fe-dba5-8127-91a0-00b25e8ac3f7"
                         },
                         "caption": [
                           {
@@ -417,7 +417,7 @@
                         ]
                       },
                       "_sn2n_sourceUrl": "https://servicenow-be-prod.servicenow.com/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/../image/icon-actions.png?_LANG=enus",
-                      "_sn2n_marker": "mj1skwxf-snytyj"
+                      "_sn2n_marker": "mj3l28tw-su9fj5"
                     }
                   ]
                 }
@@ -582,7 +582,7 @@
             "image": {
               "type": "file_upload",
               "file_upload": {
-                "id": "2c6a89fe-dba5-81ef-901a-00b23a74a092"
+                "id": "2c8a89fe-dba5-8127-91a0-00b25e8ac3f7"
               },
               "caption": [
                 {
@@ -594,7 +594,7 @@
               ]
             },
             "_sn2n_sourceUrl": "https://servicenow-be-prod.servicenow.com/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/../image/icon-actions.png?_LANG=enus",
-            "_sn2n_marker": "mj1skwxf-snytyj"
+            "_sn2n_marker": "mj3l28tw-su9fj5"
           }
         ]
       }
@@ -677,7 +677,7 @@
           {
             "type": "text",
             "text": {
-              "content": " (sn2n:mj1skwxq-7o64bw)"
+              "content": " (sn2n:mj3l28u5-5xo51u)"
             },
             "annotations": {
               "bold": false,
@@ -741,7 +741,7 @@
             },
             "_sn2n_source_container": "itemgroup",
             "_sn2n_mixed_position": "standalone",
-            "_sn2n_marker": "mj1skwxq-7o64bw"
+            "_sn2n_marker": "mj3l28u5-5xo51u"
           }
         ]
       }
@@ -768,7 +768,7 @@
           {
             "type": "text",
             "text": {
-              "content": " (sn2n:mj1skwxw-o13tma)"
+              "content": " (sn2n:mj3l28u9-0syjeb)"
             },
             "annotations": {
               "bold": false,
@@ -804,7 +804,7 @@
             },
             "_sn2n_source_container": "itemgroup",
             "_sn2n_mixed_position": "before",
-            "_sn2n_marker": "mj1skwxw-o13tma"
+            "_sn2n_marker": "mj3l28u9-0syjeb"
           },
           {
             "object": "block",
@@ -832,7 +832,7 @@
               },
               "color": "blue_background"
             },
-            "_sn2n_marker": "mj1skwxw-o13tma"
+            "_sn2n_marker": "mj3l28u9-0syjeb"
           },
           {
             "object": "block",
@@ -855,7 +855,7 @@
                 }
               ]
             },
-            "_sn2n_marker": "mj1skwxw-o13tma"
+            "_sn2n_marker": "mj3l28u9-0syjeb"
           },
           {
             "object": "block",
@@ -878,7 +878,7 @@
                 }
               ]
             },
-            "_sn2n_marker": "mj1skwxw-o13tma"
+            "_sn2n_marker": "mj3l28u9-0syjeb"
           },
           {
             "object": "block",
@@ -901,7 +901,7 @@
                 }
               ]
             },
-            "_sn2n_marker": "mj1skwxw-o13tma"
+            "_sn2n_marker": "mj3l28u9-0syjeb"
           },
           {
             "object": "block",
@@ -924,7 +924,7 @@
                 }
               ]
             },
-            "_sn2n_marker": "mj1skwxw-o13tma"
+            "_sn2n_marker": "mj3l28u9-0syjeb"
           },
           {
             "object": "block",
@@ -950,7 +950,7 @@
                 }
               ]
             },
-            "_sn2n_marker": "mj1skwxw-o13tma"
+            "_sn2n_marker": "mj3l28u9-0syjeb"
           },
           {
             "object": "block",
@@ -976,7 +976,7 @@
                 }
               ]
             },
-            "_sn2n_marker": "mj1skwxw-o13tma"
+            "_sn2n_marker": "mj3l28u9-0syjeb"
           }
         ]
       }
@@ -1216,7 +1216,7 @@
               {
                 "type": "text",
                 "text": {
-                  "content": " (sn2n:mj1skwxj-rkonpa)"
+                  "content": " (sn2n:mj3l28tz-hagl7j)"
                 },
                 "annotations": {
                   "bold": false,
@@ -1420,7 +1420,7 @@
                           {
                             "type": "text",
                             "text": {
-                              "content": " (sn2n:mj1skwxf-snytyj)"
+                              "content": " (sn2n:mj3l28tw-su9fj5)"
                             },
                             "annotations": {
                               "bold": false,
@@ -1440,7 +1440,7 @@
                           "image": {
                             "type": "file_upload",
                             "file_upload": {
-                              "id": "2c6a89fe-dba5-81ef-901a-00b23a74a092"
+                              "id": "2c8a89fe-dba5-8127-91a0-00b25e8ac3f7"
                             },
                             "caption": [
                               {
@@ -1452,7 +1452,7 @@
                             ]
                           },
                           "_sn2n_sourceUrl": "https://servicenow-be-prod.servicenow.com/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/../image/icon-actions.png?_LANG=enus",
-                          "_sn2n_marker": "mj1skwxf-snytyj"
+                          "_sn2n_marker": "mj3l28tw-su9fj5"
                         }
                       ]
                     }
@@ -1617,7 +1617,7 @@
                 "image": {
                   "type": "file_upload",
                   "file_upload": {
-                    "id": "2c6a89fe-dba5-81ef-901a-00b23a74a092"
+                    "id": "2c8a89fe-dba5-8127-91a0-00b25e8ac3f7"
                   },
                   "caption": [
                     {
@@ -1629,7 +1629,7 @@
                   ]
                 },
                 "_sn2n_sourceUrl": "https://servicenow-be-prod.servicenow.com/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/../image/icon-actions.png?_LANG=enus",
-                "_sn2n_marker": "mj1skwxf-snytyj"
+                "_sn2n_marker": "mj3l28tw-su9fj5"
               }
             ]
           }
@@ -1712,7 +1712,7 @@
               {
                 "type": "text",
                 "text": {
-                  "content": " (sn2n:mj1skwxq-7o64bw)"
+                  "content": " (sn2n:mj3l28u5-5xo51u)"
                 },
                 "annotations": {
                   "bold": false,
@@ -1776,7 +1776,7 @@
                 },
                 "_sn2n_source_container": "itemgroup",
                 "_sn2n_mixed_position": "standalone",
-                "_sn2n_marker": "mj1skwxq-7o64bw"
+                "_sn2n_marker": "mj3l28u5-5xo51u"
               }
             ]
           }
@@ -1803,7 +1803,7 @@
               {
                 "type": "text",
                 "text": {
-                  "content": " (sn2n:mj1skwxw-o13tma)"
+                  "content": " (sn2n:mj3l28u9-0syjeb)"
                 },
                 "annotations": {
                   "bold": false,
@@ -1839,7 +1839,7 @@
                 },
                 "_sn2n_source_container": "itemgroup",
                 "_sn2n_mixed_position": "before",
-                "_sn2n_marker": "mj1skwxw-o13tma"
+                "_sn2n_marker": "mj3l28u9-0syjeb"
               },
               {
                 "object": "block",
@@ -1867,7 +1867,7 @@
                   },
                   "color": "blue_background"
                 },
-                "_sn2n_marker": "mj1skwxw-o13tma"
+                "_sn2n_marker": "mj3l28u9-0syjeb"
               },
               {
                 "object": "block",
@@ -1890,7 +1890,7 @@
                     }
                   ]
                 },
-                "_sn2n_marker": "mj1skwxw-o13tma"
+                "_sn2n_marker": "mj3l28u9-0syjeb"
               },
               {
                 "object": "block",
@@ -1913,7 +1913,7 @@
                     }
                   ]
                 },
-                "_sn2n_marker": "mj1skwxw-o13tma"
+                "_sn2n_marker": "mj3l28u9-0syjeb"
               },
               {
                 "object": "block",
@@ -1936,7 +1936,7 @@
                     }
                   ]
                 },
-                "_sn2n_marker": "mj1skwxw-o13tma"
+                "_sn2n_marker": "mj3l28u9-0syjeb"
               },
               {
                 "object": "block",
@@ -1959,7 +1959,7 @@
                     }
                   ]
                 },
-                "_sn2n_marker": "mj1skwxw-o13tma"
+                "_sn2n_marker": "mj3l28u9-0syjeb"
               },
               {
                 "object": "block",
@@ -1985,7 +1985,7 @@
                     }
                   ]
                 },
-                "_sn2n_marker": "mj1skwxw-o13tma"
+                "_sn2n_marker": "mj3l28u9-0syjeb"
               },
               {
                 "object": "block",
@@ -2011,7 +2011,7 @@
                     }
                   ]
                 },
-                "_sn2n_marker": "mj1skwxw-o13tma"
+                "_sn2n_marker": "mj3l28u9-0syjeb"
               }
             ]
           }
