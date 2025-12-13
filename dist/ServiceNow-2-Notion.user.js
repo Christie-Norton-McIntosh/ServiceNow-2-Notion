@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.261
+// @version      11.0.262
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.261";
+    window.BUILD_VERSION = "11.0.262";
 (function () {
 
   // Configuration constants and default settings
@@ -7249,12 +7249,17 @@
     // [v11.0.243] FIX: Extract navigation-based Related Content
     // Some pages (like Activate Procurement) use navigation sections instead of contentPlaceholder divs
     // This creates synthetic Related Content HTML with descriptions included in link text to prevent duplicate paragraphs
-    // TEMPORARY: Always run navigation extraction to restore Activate Procurement functionality
-    console.log(`🔍 [NAV-EXTRACTION-DEBUG] Always running navigation extraction for Activate Procurement fix`);
-    const navRelatedContent = extractNavigationRelatedContent(contentElement);
-    if (navRelatedContent) {
-      console.log(`📄 [NAV-EXTRACTION] Adding navigation-based Related Content (${navRelatedContent.length} chars)`);
-      combinedHtml += navRelatedContent;
+    // Only run navigation extraction if no contentPlaceholder already has Related Content
+    const hasContentPlaceholderRelatedContent = /<div[^>]*class="[^"]*contentPlaceholder[^"]*"[^>]*>[\s\S]*?<h[1-6][^>]*>\s*Related Content\s*<\/h[1-6]>/i.test(combinedHtml);
+    console.log(`🔍 [NAV-EXTRACTION-DEBUG] combinedHtml has contentPlaceholder Related Content: ${hasContentPlaceholderRelatedContent}`);
+    if (!hasContentPlaceholderRelatedContent) {
+      const navRelatedContent = extractNavigationRelatedContent(contentElement);
+      if (navRelatedContent) {
+        console.log(`📄 [NAV-EXTRACTION] Adding navigation-based Related Content (${navRelatedContent.length} chars)`);
+        combinedHtml += navRelatedContent;
+      }
+    } else {
+      console.log(`📄 [NAV-EXTRACTION] Skipping navigation extraction - Related Content already found in contentPlaceholder`);
     }
 
     return { combinedHtml, combinedImages };
