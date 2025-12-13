@@ -2566,20 +2566,39 @@ async function extractContentFromHtml(html) {
         let relatedContentHeadingCount = 0;
         const filteredBlocks = [];
         for (const block of processedBlocks) {
-          if (block && (block.type === 'heading_1' || block.type === 'heading_2' || block.type === 'heading_3')) {
-            const headingType = block.type;
-            const richText = block[headingType]?.rich_text;
-            if (richText && Array.isArray(richText)) {
-              const headingText = richText.map(rt => rt.text?.content || '').join('').trim();
-              const isRelatedContentHeading = /related content/i.test(headingText);
-              
-              if (isRelatedContentHeading) {
-                if (relatedContentHeadingCount > 0) {
-                  console.log(`🚫 Duplicate Related Content heading found, skipping: "${headingText}"`);
-                  continue; // Skip this duplicate
-                } else {
-                  console.log(`✓ Related Content heading added: "${headingText}"`);
-                  relatedContentHeadingCount++;
+          if (block) {
+            // Check for heading blocks with 'Related Content' text
+            if (block.type === 'heading_1' || block.type === 'heading_2' || block.type === 'heading_3') {
+              const headingType = block.type;
+              const richText = block[headingType]?.rich_text;
+              if (richText && Array.isArray(richText)) {
+                const headingText = richText.map(rt => rt.text?.content || '').join('').trim();
+                const isRelatedContentHeading = /related content/i.test(headingText);
+                if (isRelatedContentHeading) {
+                  if (relatedContentHeadingCount > 0) {
+                    console.log(`🚫 Duplicate Related Content heading found, skipping: "${headingText}"`);
+                    continue; // Skip this duplicate
+                  } else {
+                    console.log(`✓ Related Content heading added: "${headingText}"`);
+                    relatedContentHeadingCount++;
+                  }
+                }
+              }
+            }
+            // Check for toggle blocks with 'Related Content' title
+            if (block.type === 'toggle') {
+              const richText = (block.toggle || {}).rich_text;
+              if (richText && Array.isArray(richText)) {
+                const toggleText = richText.map(rt => rt.text?.content || '').join('').trim();
+                const isRelatedToggle = /related content/i.test(toggleText);
+                if (isRelatedToggle) {
+                  if (relatedContentHeadingCount > 0) {
+                    console.log(`🚫 Duplicate Related Content toggle found, skipping: "${toggleText}"`);
+                    continue;
+                  } else {
+                    console.log(`✓ Related Content toggle added: "${toggleText}"`);
+                    relatedContentHeadingCount++;
+                  }
                 }
               }
             }
@@ -4939,12 +4958,8 @@ async function extractContentFromHtml(html) {
           console.log(`🔍 [CONTENT-PLACEHOLDER-RELATED] contentPlaceholder snippet (first 400 chars): ${$elem.html().substring(0,400).replace(/\n/g,'\\n').replace(/\r/g,'\\r')}...`);
           console.log(`🔍 [CONTENT-PLACEHOLDER-RELATED] inserting heading and list`);
           const headingText = 'Related Content';
-          processedBlocks.push({
-            object: 'block',
-            type: 'heading_3',
-            heading_3: { rich_text: [{ type: 'text', text: { content: headingText }, annotations: { bold: true, italic: false, strikethrough: false, underline: false, code: false, color: 'default' } }] }
-          });
-
+          // Collect child blocks (list items + descriptions) and wrap them in a single toggle
+          const relatedChildren = [];
           // Try to find UL as sibling or descendant
           let $ul_any = relatedH5_any.first().nextAll('ul').first();
           if (!$ul_any || $ul_any.length === 0) $ul_any = relatedH5_any.first().parent().find('ul').first();
@@ -4970,7 +4985,7 @@ async function extractContentFromHtml(html) {
               if (linkHref && linkHref.startsWith('/')) linkHref = `https://www.servicenow.com${linkHref}`;
               try { if (linkHref) new URL(linkHref); if (linkHref) linkRichText[0].text.link = { url: linkHref }; } catch (e) { /* ignore invalid URLs */ }
 
-              processedBlocks.push({ object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: linkRichText } });
+              relatedChildren.push({ object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: linkRichText } });
               blocksAdded++;
 
               const paragraphs_any = $li.find('p').toArray();
@@ -4981,15 +4996,48 @@ async function extractContentFromHtml(html) {
                   if (pRichText.length > 0 && pRichText.some(rt => rt.text.content.trim())) {
                     const chunks = splitRichTextArray(pRichText);
                     for (const chunk of chunks) {
-                      processedBlocks.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: chunk } });
+                      relatedChildren.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: chunk } });
                       blocksAdded++;
                     }
                   }
                 }
               }
             }
-            console.log(`🔍 [CONTENT-PLACEHOLDER-RELATED] Added ${blocksAdded} total blocks (including paragraphs)`);
+            console.log(`🔍 [CONTENT-PLACEHOLDER-RELATED] Prepared ${blocksAdded} related child block(s) (including paragraphs)`);
+            // Only add a toggle block if we have children
+            if (relatedChildren.length > 0) {
+              // Emit toggle block
+              processedBlocks.push({
+                object: 'block',
+                type: 'toggle',
+                toggle: {
+                  rich_text: [{ type: 'text', text: { content: headingText }, annotations: { bold: true, italic: false, strikethrough: false, underline: false, code: false, color: 'default' } }],
+                  children: relatedChildren
+                }
+              });
 
+              // Remove any previously-added heading_x blocks with 'Related Content' so we don't duplicate
+              try {
+                const oldLen = processedBlocks.length;
+                const filtered = [];
+                for (const b of processedBlocks) {
+                  if (b && (b.type === 'heading_1' || b.type === 'heading_2' || b.type === 'heading_3')) {
+                    const r = (b[b.type] && b[b.type].rich_text) || [];
+                    const text = r.map(rt => rt.text?.content || '').join('').trim();
+                    if (/related content/i.test(text)) {
+                      // skip this old heading
+                      continue;
+                    }
+                  }
+                  filtered.push(b);
+                }
+                processedBlocks.length = 0; processedBlocks.push(...filtered);
+                console.log(`🔍 [CONTENT-PLACEHOLDER-RELATED] Removed any duplicate Related Content heading blocks (if present) - ${oldLen} -> ${processedBlocks.length}`);
+              } catch (rErr) { /* ignore */ }
+            }
+
+            // Remove the original related H5 so it doesn't create a duplicate heading
+            try { relatedH5_any.first().remove(); } catch (rmErr) { /* ignore */ }
             $ul_any.remove();
           }
           console.log(`✅ [RELATED-CONTENT-PROCESSED] Related Content processing complete - processedBlocks now has ${processedBlocks.length} blocks`);
@@ -5060,21 +5108,20 @@ async function extractContentFromHtml(html) {
       const listItems = $elem.find('li').toArray();
 
       // Detect if nav is actually a Related Content TOC: check preceding heading text or nav class
-      const prevHeading = $elem.prevAll('h1,h2,h3,h4,h5,h6').first();
+  const prevHeading = $elem.prevAll('h1,h2,h3,h4,h5,h6').first();
       const prevHeadingText = prevHeading ? $(prevHeading).text().trim().toLowerCase() : '';
       const navClassAttr = $elem.attr('class') || '';
       const isRelatedTOC = prevHeadingText === 'related content' || /related/i.test(navClassAttr);
       
+      // If this nav contains Related Content, we'll collect the children and emit
+      // a single toggle block containing them (toggle title = 'Related Content')
+      const relatedChildren = [];
       if (isRelatedTOC) {
-        const headingText = 'Related Content';
-        processedBlocks.push({
-          object: 'block',
-          type: 'heading_3',
-          heading_3: {
-            rich_text: [{ type: 'text', text: { content: headingText }, annotations: { bold: true, italic: false, strikethrough: false, underline: false, code: false, color: 'default' } }]
-          }
-        });
-        console.log(`🔍 [NAV-RELATED] Inserting heading for Related Content: "${headingText}"`);
+        // If a heading precedes this nav and indicates 'Related Content',
+        // remove it so that we don't emit a duplicate heading after we
+        // create the toggle block that replaces it.
+        try { if (prevHeading && prevHeading.length > 0) prevHeading.remove(); } catch (err) { /* ignore */ }
+        console.log(`🔍 [NAV-RELATED] Detected Related Content nav - will create a Toggle block`);
       }
 
       for (const li of listItems) {
@@ -5106,13 +5153,9 @@ async function extractContentFromHtml(html) {
           }
 
           if (isRelatedTOC) {
-            // Create bulleted list item for Related Content
-            processedBlocks.push({
-              object: "block",
-              type: "bulleted_list_item",
-              bulleted_list_item: { rich_text: linkRichText }
-            });
-            console.log(`🔍 [NAV-RELATED] Created bulleted_list_item for link: "${linkText.substring(0,50)}..."`);
+            // Create bulleted list item for Related Content (deferred to relatedChildren)
+            relatedChildren.push({ object: "block", type: "bulleted_list_item", bulleted_list_item: { rich_text: linkRichText } });
+            console.log(`🔍 [NAV-RELATED] Created bulleted_list_item (deferred) for link: "${linkText.substring(0,50)}..."`);
           } else {
             processedBlocks.push({
               object: "block",
@@ -5134,13 +5177,13 @@ async function extractContentFromHtml(html) {
             if (pRichText.length > 0 && pRichText.some(rt => rt.text.content.trim())) {
               const richTextChunks = splitRichTextArray(pRichText);
               for (const chunk of richTextChunks) {
-                processedBlocks.push({
-                  object: "block",
-                  type: "paragraph",
-                  paragraph: { rich_text: chunk }
-                });
-                if (isRelatedTOC) console.log(`🔍 [NAV-RELATED] Created paragraph description for list item: "${chunk[0]?.text?.content?.substring(0,50) || 'empty'}..."`);
-                else console.log(`🔍 [NAV-BLOCK] Created paragraph block with description: "${chunk[0]?.text?.content?.substring(0, 50) || 'empty'}..."`);
+                if (isRelatedTOC) {
+                  relatedChildren.push({ object: "block", type: "paragraph", paragraph: { rich_text: chunk } });
+                  console.log(`🔍 [NAV-RELATED] Created paragraph (deferred) description for list item: "${chunk[0]?.text?.content?.substring(0,50) || 'empty'}..."`);
+                } else {
+                  processedBlocks.push({ object: "block", type: "paragraph", paragraph: { rich_text: chunk } });
+                  console.log(`🔍 [NAV-BLOCK] Created paragraph block with description: "${chunk[0]?.text?.content?.substring(0, 50) || 'empty'}..."`);
+                }
                 console.log(`🔍 [NAV-BLOCK-RICHTEXT] Desc rich_text length: ${chunk.length}, content: ${JSON.stringify(chunk.slice(0, 2))}`);
               }
             }
@@ -5148,6 +5191,36 @@ async function extractContentFromHtml(html) {
         }
       }
 
+      // If we collected relatedChildren, emit a single toggle block with them
+  if (isRelatedTOC && relatedChildren.length > 0) {
+        const headingText = 'Related Content';
+        processedBlocks.push({
+          object: 'block',
+          type: 'toggle',
+          toggle: {
+            rich_text: [{ type: 'text', text: { content: headingText }, annotations: { bold: true, italic: false, strikethrough: false, underline: false, code: false, color: 'default' } }],
+            children: relatedChildren
+          }
+        });
+        // Remove previously added headings so the toggle is the canonical representation
+        try {
+          const oldLen = processedBlocks.length;
+          const filtered = [];
+          for (const b of processedBlocks) {
+            if (b && (b.type === 'heading_1' || b.type === 'heading_2' || b.type === 'heading_3')) {
+              const r = (b[b.type] && b[b.type].rich_text) || [];
+              const text = r.map(rt => rt.text?.content || '').join('').trim();
+              if (/related content/i.test(text)) {
+                continue; // skip
+              }
+            }
+            filtered.push(b);
+          }
+          processedBlocks.length = 0; processedBlocks.push(...filtered);
+          console.log(`🔍 [NAV-RELATED] Removed any duplicate Related Content heading blocks (if present) - ${oldLen} -> ${processedBlocks.length}`);
+        } catch (err) { /* ignore */ }
+        console.log(`🔍 [NAV-RELATED] Emitted toggle block for Related Content with ${relatedChildren.length} child blocks`);
+      }
       $elem.remove(); // Mark as processed
       
     } else if (tagName === 'div' && ($elem.hasClass('itemgroup') || $elem.hasClass('info') || $elem.hasClass('stepxmp'))) {
@@ -6003,6 +6076,31 @@ async function extractContentFromHtml(html) {
     // [EXTRACTION-DEBUG] Log exit point
     const blockTypes = processedBlocks.map(b => b.type).join(', ');
     console.log(`[EXTRACTION-DEBUG] EXIT processElement(<${tagName}${elemId !== 'no-id' ? ` id="${elemId}"` : ''}${elemClass !== 'none' ? ` class="${elemClass.substring(0, 30)}"` : ''}>) → ${processedBlocks.length} blocks [${blockTypes}]`);
+
+    // Final dedupe: If we emitted a Related Content toggle, remove any
+    // heading blocks that also claim to be 'Related Content' so only the
+    // toggle remains. This avoids duplication caused by processing the
+    // h5 heading and the nav separately.
+    try {
+      const hasRelatedToggle = processedBlocks.some(b => b.type === 'toggle' && ((b.toggle || {}).rich_text || []).map(rt => rt.text.content).join('').trim().toLowerCase().includes('related content'));
+      if (hasRelatedToggle) {
+        const before = processedBlocks.length;
+        const filtered = processedBlocks.filter(b => {
+          if (b && (b.type === 'heading_1' || b.type === 'heading_2' || b.type === 'heading_3')) {
+            const r = b[b.type]?.rich_text || [];
+            const t = r.map(rt => rt.text?.content || '').join('').trim().toLowerCase();
+            if (/related content/i.test(t)) {
+              return false;
+            }
+          }
+          return true;
+        });
+        processedBlocks.length = 0; processedBlocks.push(...filtered);
+        console.log(`🔍 [RELATED-CONTENT-DEDUPE] Removed duplicate heading blocks because a Related Content toggle exists (${before} -> ${processedBlocks.length})`);
+      }
+    } catch (err) {
+      /* ignore */
+    }
 
     // DEBUG: Check for Related Content blocks
     const relatedBlocks = processedBlocks.filter(b => {
