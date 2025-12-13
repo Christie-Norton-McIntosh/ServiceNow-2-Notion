@@ -1,7 +1,11 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.257
+<<<<<<< HEAD
+// @version      12.0.1
+=======
+// @version      11.0.256
+>>>>>>> 2033e48b619d09ece9cb1a2e1e56a79184e9ee6c
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +29,11 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.257";
+<<<<<<< HEAD
+  window.BUILD_VERSION = "12.0.1";
+=======
+    window.BUILD_VERSION = "11.0.256";
+>>>>>>> 2033e48b619d09ece9cb1a2e1e56a79184e9ee6c
 (function () {
 
   // Configuration constants and default settings
