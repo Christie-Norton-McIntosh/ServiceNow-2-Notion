@@ -124,6 +124,19 @@ function dedupeAndFilterBlocks(blockArray, options = {}) {
         continue;
       }
       
+      // Never dedupe Related Content headings - they can legitimately appear multiple times
+      // in different pages or sections (e.g., "Related Content" heading with different lists)
+      if (blk && (blk.type === 'heading_1' || blk.type === 'heading_2' || blk.type === 'heading_3')) {
+        const headingType = blk.type;
+        const txt = plainTextFromRich(blk[headingType]?.rich_text || []);
+        const isRelatedContentHeading = /related content/i.test(txt.trim());
+        if (isRelatedContentHeading) {
+          log(`✓ Related Content heading, NEVER deduped: "${txt.substring(0, 60)}..."`);
+          out.push(blk);
+          continue;
+        }
+      }
+      
       // Never dedupe common section headings/labels that appear in multiple places
       // (e.g., "Procedure", "About this task", "Before you begin")
       if (blk && blk.type === 'paragraph') {

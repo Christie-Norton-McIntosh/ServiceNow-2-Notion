@@ -4938,7 +4938,6 @@ async function extractContentFromHtml(html) {
           }
           console.log(`✅ [RELATED-CONTENT-PROCESSED] Related Content processing complete - added blocks to processedBlocks array`);
         }
-        }
       } catch (e) {
         console.log('⚠️ Error processing Related Content in contentPlaceholder (early check):', e && e.message);
       }
@@ -5928,8 +5927,8 @@ async function extractContentFromHtml(html) {
 
     // DEBUG: Check for Related Content blocks
     const relatedBlocks = processedBlocks.filter(b => {
-      if (b.type === 'heading_2' && b.heading_2?.rich_text?.some(rt => rt.text?.content?.includes('Related Content'))) return true;
-      if (b.type === 'bulleted_list_item' && b.bulleted_list_item?.rich_text?.some(rt => rt.text?.content?.includes('Procurement'))) return true;
+    if (b.type === 'heading_3' && b.heading_3?.rich_text?.some(rt => rt.text?.content?.toLowerCase().includes('related content'))) return true;
+      if (b.type === 'heading_2' && b.heading_2?.rich_text?.some(rt => rt.text?.content?.toLowerCase().includes('related content'))) return true;
       return false;
     });
     if (relatedBlocks.length > 0) {
