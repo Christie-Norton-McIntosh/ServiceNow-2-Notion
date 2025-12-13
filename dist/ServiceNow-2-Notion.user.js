@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.267
+// @version      11.0.268
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.267";
+    window.BUILD_VERSION = "11.0.268";
 (function () {
 
   // Configuration constants and default settings
@@ -6975,7 +6975,15 @@
           el.remove();
           removedCount++;
         } else {
-          console.log(`   ✅ Keeping nav: ${el.tagName} (inside article/section)`);
+          // Additional check: filter out navigation menu elements even if inside article/section
+          const hasNavigationMenu = el.querySelector('ul.ullinks, li.link.ulchildlink, .ullinks, .ulchildlink');
+          if (hasNavigationMenu) {
+            console.log(`   ❌ Removing nav: ${el.tagName} (contains navigation menu elements)`);
+            el.remove();
+            removedCount++;
+          } else {
+            console.log(`   ✅ Keeping nav: ${el.tagName} (inside article/section, no navigation menu)`);
+          }
         }
       });
       console.log(`📄 Removed ${removedCount} navigation elements, kept ${navElements.length - removedCount}`);
