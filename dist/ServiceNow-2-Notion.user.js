@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.263
+// @version      11.0.264
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.263";
+    window.BUILD_VERSION = "11.0.264";
 (function () {
 
   // Configuration constants and default settings
@@ -7262,6 +7262,11 @@
       console.log(`📄 [NAV-EXTRACTION] Skipping navigation extraction - Related Content already found in contentPlaceholder`);
     }
 
+    console.log(`📤📤📤 FINAL HTML BEING SENT TO SERVER (length: ${combinedHtml.length}):`);
+    console.log(`📤📤📤 Related Content in final HTML: ${combinedHtml.includes('Related Content')}`);
+    const relatedMatches = combinedHtml.match(/Related Content/gi);
+    console.log(`📤📤📤 "Related Content" matches: ${relatedMatches ? relatedMatches.length : 0}`);
+    
     return { combinedHtml, combinedImages };
   }
 
