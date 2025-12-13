@@ -1,13 +1,16 @@
 {
   "fixture": "override-contact-preferences-duplication-order-issue.html",
-  "timestamp": "2025-12-11T18:49:05.760Z",
+<<<<<<< Updated upstream
+  "timestamp": "2025-12-13T03:59:00.728Z",
+=======
+  "timestamp": "2025-12-13T19:44:09.230Z",
+>>>>>>> Stashed changes
   "blockTypes": {
-    "paragraph": 4,
+    "paragraph": 2,
     "callout": 2,
     "numbered_list_item": 10,
     "bulleted_list_item": 8,
-    "image": 1,
-    "heading_3": 1
+    "image": 1
   },
   "calloutCount": 2,
   "callouts": [
@@ -16,7 +19,7 @@
       "text": "Before you begin\nRole required: rota_admin , rota_manager"
     },
     {
-      "depth": 1,
+      "depth": 0,
       "text": "Note: SMS and voice require that Notify is active."
     }
   ],
@@ -25,7 +28,7 @@
     "occurrences": 1,
     "locations": [
       {
-        "path": "numbered_list_item[5] → callout[1]",
+        "path": "callout[7]",
         "type": "callout",
         "text": "Note: SMS and voice require that Notify is active."
       }
@@ -98,7 +101,7 @@
               "strikethrough": false,
               "underline": false,
               "code": true,
-              "color": "default"
+              "color": "red"
             }
           },
           {
@@ -126,7 +129,7 @@
               "strikethrough": false,
               "underline": false,
               "code": true,
-              "color": "default"
+              "color": "red"
             }
           }
         ],
@@ -181,7 +184,11 @@
           {
             "type": "text",
             "text": {
-              "content": " (sn2n:mj1skwxj-rkonpa)"
+<<<<<<< Updated upstream
+              "content": " (sn2n:mj3rnyp1-g2n3sf)"
+=======
+              "content": " (sn2n:mj4pff9b-nflsxi)"
+>>>>>>> Stashed changes
             },
             "annotations": {
               "bold": false,
@@ -385,7 +392,11 @@
                       {
                         "type": "text",
                         "text": {
-                          "content": " (sn2n:mj1skwxf-snytyj)"
+<<<<<<< Updated upstream
+                          "content": " (sn2n:mj3rnyoy-jdsetr)"
+=======
+                          "content": " (sn2n:mj4pff98-yc9qkk)"
+>>>>>>> Stashed changes
                         },
                         "annotations": {
                           "bold": false,
@@ -405,7 +416,11 @@
                       "image": {
                         "type": "file_upload",
                         "file_upload": {
-                          "id": "2c6a89fe-dba5-81ef-901a-00b23a74a092"
+<<<<<<< Updated upstream
+                          "id": "2c8a89fe-dba5-8182-acbf-00b204d6dd3d"
+=======
+                          "id": "2c8a89fe-dba5-81b4-82b2-00b25209973b"
+>>>>>>> Stashed changes
                         },
                         "caption": [
                           {
@@ -417,7 +432,11 @@
                         ]
                       },
                       "_sn2n_sourceUrl": "https://servicenow-be-prod.servicenow.com/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/../image/icon-actions.png?_LANG=enus",
-                      "_sn2n_marker": "mj1skwxf-snytyj"
+<<<<<<< Updated upstream
+                      "_sn2n_marker": "mj3rnyoy-jdsetr"
+=======
+                      "_sn2n_marker": "mj4pff98-yc9qkk"
+>>>>>>> Stashed changes
                     }
                   ]
                 }
@@ -575,6 +594,7 @@
                 }
               ]
             }
+<<<<<<< Updated upstream
           },
           {
             "object": "block",
@@ -582,7 +602,7 @@
             "image": {
               "type": "file_upload",
               "file_upload": {
-                "id": "2c6a89fe-dba5-81ef-901a-00b23a74a092"
+                "id": "2c8a89fe-dba5-8182-acbf-00b204d6dd3d"
               },
               "caption": [
                 {
@@ -594,10 +614,32 @@
               ]
             },
             "_sn2n_sourceUrl": "https://servicenow-be-prod.servicenow.com/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/../image/icon-actions.png?_LANG=enus",
-            "_sn2n_marker": "mj1skwxf-snytyj"
+            "_sn2n_marker": "mj3rnyoy-jdsetr"
+=======
+>>>>>>> Stashed changes
           }
         ]
       }
+    },
+    {
+      "object": "block",
+      "type": "image",
+      "image": {
+        "type": "file_upload",
+        "file_upload": {
+          "id": "2c8a89fe-dba5-81b4-82b2-00b25209973b"
+        },
+        "caption": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Actions icon"
+            }
+          }
+        ]
+      },
+      "_sn2n_sourceUrl": "https://servicenow-be-prod.servicenow.com/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/../image/icon-actions.png?_LANG=enus",
+      "_sn2n_marker": "mj4pff98-yc9qkk"
     },
     {
       "object": "block",
@@ -663,7 +705,7 @@
           {
             "type": "text",
             "text": {
-              "content": "method to configure."
+              "content": "method to configure. The "
             },
             "annotations": {
               "bold": false,
@@ -677,7 +719,25 @@
           {
             "type": "text",
             "text": {
-              "content": " (sn2n:mj1skwxq-7o64bw)"
+<<<<<<< Updated upstream
+              "content": " (sn2n:mj3rnyp2-fozoku)"
+=======
+              "content": "Contact Preferences "
+            },
+            "annotations": {
+              "bold": true,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "blue"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "dialog box appears."
+>>>>>>> Stashed changes
             },
             "annotations": {
               "bold": false,
@@ -688,6 +748,7 @@
               "color": "default"
             }
           }
+<<<<<<< Updated upstream
         ],
         "children": [
           {
@@ -741,8 +802,10 @@
             },
             "_sn2n_source_container": "itemgroup",
             "_sn2n_mixed_position": "standalone",
-            "_sn2n_marker": "mj1skwxq-7o64bw"
+            "_sn2n_marker": "mj3rnyp2-fozoku"
           }
+=======
+>>>>>>> Stashed changes
         ]
       }
     },
@@ -754,7 +817,7 @@
           {
             "type": "text",
             "text": {
-              "content": "Select the contact methods that the instance should use for all shift members for the selected contact attempt."
+              "content": "Select the contact methods that the instance should use for all shift members for the selected contact attempt. Depending on your instance configuration, you can specify any or all of the following notification methods:"
             },
             "annotations": {
               "bold": false,
@@ -768,7 +831,33 @@
           {
             "type": "text",
             "text": {
-              "content": " (sn2n:mj1skwxw-o13tma)"
+<<<<<<< Updated upstream
+              "content": " (sn2n:mj3rnyp5-3jrcjx)"
+=======
+              "content": " (sn2n:mj4pff9i-wxbsdc)"
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "object": "block",
+      "type": "callout",
+      "callout": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Note: SMS and voice require that Notify is active."
+>>>>>>> Stashed changes
             },
             "annotations": {
               "bold": false,
@@ -780,31 +869,28 @@
             }
           }
         ],
-        "children": [
+        "icon": {
+          "type": "emoji",
+          "emoji": "ℹ️"
+        },
+        "color": "blue_background"
+      },
+      "_sn2n_marker": "mj4pff9i-wxbsdc"
+    },
+    {
+      "object": "block",
+      "type": "bulleted_list_item",
+      "bulleted_list_item": {
+        "rich_text": [
           {
-            "object": "block",
-            "type": "paragraph",
-            "paragraph": {
-              "rich_text": [
-                {
-                  "type": "text",
-                  "text": {
-                    "content": "Depending on your instance configuration, you can specify any or all of the following notification methods:"
-                  },
-                  "annotations": {
-                    "bold": false,
-                    "italic": false,
-                    "strikethrough": false,
-                    "underline": false,
-                    "code": false,
-                    "color": "default"
-                  }
-                }
-              ]
+            "type": "text",
+            "text": {
+              "content": "SMS text"
             },
+<<<<<<< Updated upstream
             "_sn2n_source_container": "itemgroup",
             "_sn2n_mixed_position": "before",
-            "_sn2n_marker": "mj1skwxw-o13tma"
+            "_sn2n_marker": "mj3rnyp5-3jrcjx"
           },
           {
             "object": "block",
@@ -832,7 +918,7 @@
               },
               "color": "blue_background"
             },
-            "_sn2n_marker": "mj1skwxw-o13tma"
+            "_sn2n_marker": "mj3rnyp5-3jrcjx"
           },
           {
             "object": "block",
@@ -855,7 +941,7 @@
                 }
               ]
             },
-            "_sn2n_marker": "mj1skwxw-o13tma"
+            "_sn2n_marker": "mj3rnyp5-3jrcjx"
           },
           {
             "object": "block",
@@ -878,7 +964,7 @@
                 }
               ]
             },
-            "_sn2n_marker": "mj1skwxw-o13tma"
+            "_sn2n_marker": "mj3rnyp5-3jrcjx"
           },
           {
             "object": "block",
@@ -901,7 +987,7 @@
                 }
               ]
             },
-            "_sn2n_marker": "mj1skwxw-o13tma"
+            "_sn2n_marker": "mj3rnyp5-3jrcjx"
           },
           {
             "object": "block",
@@ -924,7 +1010,7 @@
                 }
               ]
             },
-            "_sn2n_marker": "mj1skwxw-o13tma"
+            "_sn2n_marker": "mj3rnyp5-3jrcjx"
           },
           {
             "object": "block",
@@ -950,7 +1036,7 @@
                 }
               ]
             },
-            "_sn2n_marker": "mj1skwxw-o13tma"
+            "_sn2n_marker": "mj3rnyp5-3jrcjx"
           },
           {
             "object": "block",
@@ -976,10 +1062,198 @@
                 }
               ]
             },
-            "_sn2n_marker": "mj1skwxw-o13tma"
+            "_sn2n_marker": "mj3rnyp5-3jrcjx"
+=======
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+>>>>>>> Stashed changes
           }
         ]
-      }
+      },
+      "_sn2n_marker": "mj4pff9i-wxbsdc"
+    },
+    {
+      "object": "block",
+      "type": "bulleted_list_item",
+      "bulleted_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Email"
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      },
+      "_sn2n_marker": "mj4pff9i-wxbsdc"
+    },
+    {
+      "object": "block",
+      "type": "bulleted_list_item",
+      "bulleted_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Slack"
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      },
+      "_sn2n_marker": "mj4pff9i-wxbsdc"
+    },
+    {
+      "object": "block",
+      "type": "bulleted_list_item",
+      "bulleted_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Voice"
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      },
+      "_sn2n_marker": "mj4pff9i-wxbsdc"
+    },
+    {
+      "object": "block",
+      "type": "bulleted_list_item",
+      "bulleted_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Microsoft Teams. For information on setting up this channel, see "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "Set up Microsoft Teams as a contact method for an on-call escalation ",
+              "link": {
+                "url": "https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/set-up-msteams-oncall.html"
+              }
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      },
+      "_sn2n_marker": "mj4pff9i-wxbsdc"
+    },
+    {
+      "object": "block",
+      "type": "bulleted_list_item",
+      "bulleted_list_item": {
+        "rich_text": [
+          {
+            "type": "text",
+            "text": {
+              "content": "Mobile push. For information on setting up this channel, see "
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "Set up mobile push as a contact method for an on-call escalation ",
+              "link": {
+                "url": "https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/set-up-mobile-push-oncall.html"
+              }
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "content": "."
+            },
+            "annotations": {
+              "bold": false,
+              "italic": false,
+              "strikethrough": false,
+              "underline": false,
+              "code": false,
+              "color": "default"
+            }
+          }
+        ]
+      },
+      "_sn2n_marker": "mj4pff9i-wxbsdc"
     },
     {
       "object": "block",
@@ -1030,28 +1304,6 @@
           }
         ]
       }
-    },
-    {
-      "object": "block",
-      "type": "heading_3",
-      "heading_3": {
-        "rich_text": [
-          {
-            "type": "text",
-            "text": {
-              "content": "Related Content"
-            },
-            "annotations": {
-              "bold": true,
-              "italic": false,
-              "strikethrough": false,
-              "underline": false,
-              "code": false,
-              "color": "default"
-            }
-          }
-        ]
-      }
     }
   ],
   "fullResult": {
@@ -1059,12 +1311,13 @@
     "data": {
       "dryRun": true,
       "pageId": "2bfa89fe-dba5-8119-8c92-d7fcde2546e3",
-      "blocksExtracted": 8,
+      "blocksExtracted": 15,
       "blockTypes": {
         "paragraph": 2,
-        "callout": 1,
+        "callout": 2,
         "numbered_list_item": 4,
-        "heading_3": 1
+        "image": 1,
+        "bulleted_list_item": 6
       },
       "children": [
         {
@@ -1133,7 +1386,7 @@
                   "strikethrough": false,
                   "underline": false,
                   "code": true,
-                  "color": "default"
+                  "color": "red"
                 }
               },
               {
@@ -1161,7 +1414,7 @@
                   "strikethrough": false,
                   "underline": false,
                   "code": true,
-                  "color": "default"
+                  "color": "red"
                 }
               }
             ],
@@ -1216,7 +1469,11 @@
               {
                 "type": "text",
                 "text": {
-                  "content": " (sn2n:mj1skwxj-rkonpa)"
+<<<<<<< Updated upstream
+                  "content": " (sn2n:mj3rnyp1-g2n3sf)"
+=======
+                  "content": " (sn2n:mj4pff9b-nflsxi)"
+>>>>>>> Stashed changes
                 },
                 "annotations": {
                   "bold": false,
@@ -1420,7 +1677,11 @@
                           {
                             "type": "text",
                             "text": {
-                              "content": " (sn2n:mj1skwxf-snytyj)"
+<<<<<<< Updated upstream
+                              "content": " (sn2n:mj3rnyoy-jdsetr)"
+=======
+                              "content": " (sn2n:mj4pff98-yc9qkk)"
+>>>>>>> Stashed changes
                             },
                             "annotations": {
                               "bold": false,
@@ -1440,7 +1701,11 @@
                           "image": {
                             "type": "file_upload",
                             "file_upload": {
-                              "id": "2c6a89fe-dba5-81ef-901a-00b23a74a092"
+<<<<<<< Updated upstream
+                              "id": "2c8a89fe-dba5-8182-acbf-00b204d6dd3d"
+=======
+                              "id": "2c8a89fe-dba5-81b4-82b2-00b25209973b"
+>>>>>>> Stashed changes
                             },
                             "caption": [
                               {
@@ -1452,7 +1717,11 @@
                             ]
                           },
                           "_sn2n_sourceUrl": "https://servicenow-be-prod.servicenow.com/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/../image/icon-actions.png?_LANG=enus",
-                          "_sn2n_marker": "mj1skwxf-snytyj"
+<<<<<<< Updated upstream
+                          "_sn2n_marker": "mj3rnyoy-jdsetr"
+=======
+                          "_sn2n_marker": "mj4pff98-yc9qkk"
+>>>>>>> Stashed changes
                         }
                       ]
                     }
@@ -1610,6 +1879,7 @@
                     }
                   ]
                 }
+<<<<<<< Updated upstream
               },
               {
                 "object": "block",
@@ -1617,7 +1887,7 @@
                 "image": {
                   "type": "file_upload",
                   "file_upload": {
-                    "id": "2c6a89fe-dba5-81ef-901a-00b23a74a092"
+                    "id": "2c8a89fe-dba5-8182-acbf-00b204d6dd3d"
                   },
                   "caption": [
                     {
@@ -1629,10 +1899,32 @@
                   ]
                 },
                 "_sn2n_sourceUrl": "https://servicenow-be-prod.servicenow.com/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/../image/icon-actions.png?_LANG=enus",
-                "_sn2n_marker": "mj1skwxf-snytyj"
+                "_sn2n_marker": "mj3rnyoy-jdsetr"
+=======
+>>>>>>> Stashed changes
               }
             ]
           }
+        },
+        {
+          "object": "block",
+          "type": "image",
+          "image": {
+            "type": "file_upload",
+            "file_upload": {
+              "id": "2c8a89fe-dba5-81b4-82b2-00b25209973b"
+            },
+            "caption": [
+              {
+                "type": "text",
+                "text": {
+                  "content": "Actions icon"
+                }
+              }
+            ]
+          },
+          "_sn2n_sourceUrl": "https://servicenow-be-prod.servicenow.com/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/../image/icon-actions.png?_LANG=enus",
+          "_sn2n_marker": "mj4pff98-yc9qkk"
         },
         {
           "object": "block",
@@ -1698,7 +1990,7 @@
               {
                 "type": "text",
                 "text": {
-                  "content": "method to configure."
+                  "content": "method to configure. The "
                 },
                 "annotations": {
                   "bold": false,
@@ -1712,7 +2004,25 @@
               {
                 "type": "text",
                 "text": {
-                  "content": " (sn2n:mj1skwxq-7o64bw)"
+<<<<<<< Updated upstream
+                  "content": " (sn2n:mj3rnyp2-fozoku)"
+=======
+                  "content": "Contact Preferences "
+                },
+                "annotations": {
+                  "bold": true,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "blue"
+                }
+              },
+              {
+                "type": "text",
+                "text": {
+                  "content": "dialog box appears."
+>>>>>>> Stashed changes
                 },
                 "annotations": {
                   "bold": false,
@@ -1723,6 +2033,7 @@
                   "color": "default"
                 }
               }
+<<<<<<< Updated upstream
             ],
             "children": [
               {
@@ -1776,8 +2087,10 @@
                 },
                 "_sn2n_source_container": "itemgroup",
                 "_sn2n_mixed_position": "standalone",
-                "_sn2n_marker": "mj1skwxq-7o64bw"
+                "_sn2n_marker": "mj3rnyp2-fozoku"
               }
+=======
+>>>>>>> Stashed changes
             ]
           }
         },
@@ -1789,7 +2102,7 @@
               {
                 "type": "text",
                 "text": {
-                  "content": "Select the contact methods that the instance should use for all shift members for the selected contact attempt."
+                  "content": "Select the contact methods that the instance should use for all shift members for the selected contact attempt. Depending on your instance configuration, you can specify any or all of the following notification methods:"
                 },
                 "annotations": {
                   "bold": false,
@@ -1803,7 +2116,33 @@
               {
                 "type": "text",
                 "text": {
-                  "content": " (sn2n:mj1skwxw-o13tma)"
+<<<<<<< Updated upstream
+                  "content": " (sn2n:mj3rnyp5-3jrcjx)"
+=======
+                  "content": " (sn2n:mj4pff9i-wxbsdc)"
+                },
+                "annotations": {
+                  "bold": false,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "default"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "object": "block",
+          "type": "callout",
+          "callout": {
+            "rich_text": [
+              {
+                "type": "text",
+                "text": {
+                  "content": "Note: SMS and voice require that Notify is active."
+>>>>>>> Stashed changes
                 },
                 "annotations": {
                   "bold": false,
@@ -1815,31 +2154,28 @@
                 }
               }
             ],
-            "children": [
+            "icon": {
+              "type": "emoji",
+              "emoji": "ℹ️"
+            },
+            "color": "blue_background"
+          },
+          "_sn2n_marker": "mj4pff9i-wxbsdc"
+        },
+        {
+          "object": "block",
+          "type": "bulleted_list_item",
+          "bulleted_list_item": {
+            "rich_text": [
               {
-                "object": "block",
-                "type": "paragraph",
-                "paragraph": {
-                  "rich_text": [
-                    {
-                      "type": "text",
-                      "text": {
-                        "content": "Depending on your instance configuration, you can specify any or all of the following notification methods:"
-                      },
-                      "annotations": {
-                        "bold": false,
-                        "italic": false,
-                        "strikethrough": false,
-                        "underline": false,
-                        "code": false,
-                        "color": "default"
-                      }
-                    }
-                  ]
+                "type": "text",
+                "text": {
+                  "content": "SMS text"
                 },
+<<<<<<< Updated upstream
                 "_sn2n_source_container": "itemgroup",
                 "_sn2n_mixed_position": "before",
-                "_sn2n_marker": "mj1skwxw-o13tma"
+                "_sn2n_marker": "mj3rnyp5-3jrcjx"
               },
               {
                 "object": "block",
@@ -1867,7 +2203,7 @@
                   },
                   "color": "blue_background"
                 },
-                "_sn2n_marker": "mj1skwxw-o13tma"
+                "_sn2n_marker": "mj3rnyp5-3jrcjx"
               },
               {
                 "object": "block",
@@ -1890,7 +2226,7 @@
                     }
                   ]
                 },
-                "_sn2n_marker": "mj1skwxw-o13tma"
+                "_sn2n_marker": "mj3rnyp5-3jrcjx"
               },
               {
                 "object": "block",
@@ -1913,7 +2249,7 @@
                     }
                   ]
                 },
-                "_sn2n_marker": "mj1skwxw-o13tma"
+                "_sn2n_marker": "mj3rnyp5-3jrcjx"
               },
               {
                 "object": "block",
@@ -1936,7 +2272,7 @@
                     }
                   ]
                 },
-                "_sn2n_marker": "mj1skwxw-o13tma"
+                "_sn2n_marker": "mj3rnyp5-3jrcjx"
               },
               {
                 "object": "block",
@@ -1959,7 +2295,7 @@
                     }
                   ]
                 },
-                "_sn2n_marker": "mj1skwxw-o13tma"
+                "_sn2n_marker": "mj3rnyp5-3jrcjx"
               },
               {
                 "object": "block",
@@ -1985,7 +2321,7 @@
                     }
                   ]
                 },
-                "_sn2n_marker": "mj1skwxw-o13tma"
+                "_sn2n_marker": "mj3rnyp5-3jrcjx"
               },
               {
                 "object": "block",
@@ -2011,10 +2347,198 @@
                     }
                   ]
                 },
-                "_sn2n_marker": "mj1skwxw-o13tma"
+                "_sn2n_marker": "mj3rnyp5-3jrcjx"
+=======
+                "annotations": {
+                  "bold": false,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "default"
+                }
+>>>>>>> Stashed changes
               }
             ]
-          }
+          },
+          "_sn2n_marker": "mj4pff9i-wxbsdc"
+        },
+        {
+          "object": "block",
+          "type": "bulleted_list_item",
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "type": "text",
+                "text": {
+                  "content": "Email"
+                },
+                "annotations": {
+                  "bold": false,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "default"
+                }
+              }
+            ]
+          },
+          "_sn2n_marker": "mj4pff9i-wxbsdc"
+        },
+        {
+          "object": "block",
+          "type": "bulleted_list_item",
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "type": "text",
+                "text": {
+                  "content": "Slack"
+                },
+                "annotations": {
+                  "bold": false,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "default"
+                }
+              }
+            ]
+          },
+          "_sn2n_marker": "mj4pff9i-wxbsdc"
+        },
+        {
+          "object": "block",
+          "type": "bulleted_list_item",
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "type": "text",
+                "text": {
+                  "content": "Voice"
+                },
+                "annotations": {
+                  "bold": false,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "default"
+                }
+              }
+            ]
+          },
+          "_sn2n_marker": "mj4pff9i-wxbsdc"
+        },
+        {
+          "object": "block",
+          "type": "bulleted_list_item",
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "type": "text",
+                "text": {
+                  "content": "Microsoft Teams. For information on setting up this channel, see "
+                },
+                "annotations": {
+                  "bold": false,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "default"
+                }
+              },
+              {
+                "type": "text",
+                "text": {
+                  "content": "Set up Microsoft Teams as a contact method for an on-call escalation ",
+                  "link": {
+                    "url": "https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/set-up-msteams-oncall.html"
+                  }
+                },
+                "annotations": {
+                  "bold": false,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "default"
+                }
+              },
+              {
+                "type": "text",
+                "text": {
+                  "content": "."
+                },
+                "annotations": {
+                  "bold": false,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "default"
+                }
+              }
+            ]
+          },
+          "_sn2n_marker": "mj4pff9i-wxbsdc"
+        },
+        {
+          "object": "block",
+          "type": "bulleted_list_item",
+          "bulleted_list_item": {
+            "rich_text": [
+              {
+                "type": "text",
+                "text": {
+                  "content": "Mobile push. For information on setting up this channel, see "
+                },
+                "annotations": {
+                  "bold": false,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "default"
+                }
+              },
+              {
+                "type": "text",
+                "text": {
+                  "content": "Set up mobile push as a contact method for an on-call escalation ",
+                  "link": {
+                    "url": "https://www.servicenow.com/docs/bundle/yokohama-it-service-management/page/administer/on-call-scheduling/task/set-up-mobile-push-oncall.html"
+                  }
+                },
+                "annotations": {
+                  "bold": false,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "default"
+                }
+              },
+              {
+                "type": "text",
+                "text": {
+                  "content": "."
+                },
+                "annotations": {
+                  "bold": false,
+                  "italic": false,
+                  "strikethrough": false,
+                  "underline": false,
+                  "code": false,
+                  "color": "default"
+                }
+              }
+            ]
+          },
+          "_sn2n_marker": "mj4pff9i-wxbsdc"
         },
         {
           "object": "block",
@@ -2065,145 +2589,10 @@
               }
             ]
           }
-        },
-        {
-          "object": "block",
-          "type": "heading_3",
-          "heading_3": {
-            "rich_text": [
-              {
-                "type": "text",
-                "text": {
-                  "content": "Related Content"
-                },
-                "annotations": {
-                  "bold": true,
-                  "italic": false,
-                  "strikethrough": false,
-                  "underline": false,
-                  "code": false,
-                  "color": "default"
-                }
-              }
-            ]
-          }
         }
       ],
       "hasVideos": false,
-      "audit": {
-        "coverage": 100.3,
-        "coverageStr": "100.3%",
-        "threshold": "68-110%",
-        "thresholdReason": "large page (>100 blocks)",
-        "contentAnalysis": {
-          "tableCount": 0,
-          "calloutCount": 2,
-          "deepNestingCount": 6,
-          "listItemCount": 18,
-          "nestedListCount": 5,
-          "imageCount": 1,
-          "maxNestingDepth": 3,
-          "hasTablesInCallouts": false,
-          "hasListsInCallouts": false,
-          "hasMultiRowTables": false
-        },
-        "nodeCount": 53,
-        "totalLength": 1331,
-        "notionBlocks": 8,
-        "notionTextLength": 1335,
-        "blockNodeRatio": 0.15,
-        "passed": true,
-        "missing": 0,
-        "extra": 4,
-        "missingPercent": 0,
-        "extraPercent": "0.3",
-        "detailedComparison": {
-          "htmlSegmentCount": 53,
-          "notionSegmentCount": 23,
-          "missingSegments": [
-            {
-              "text": "begin Role required: rota_admin,",
-              "context": "html",
-              "length": 32
-            },
-            {
-              "text": "following notification methods:",
-              "context": "html",
-              "length": 31
-            },
-            {
-              "text": "Email Slack Voice Microsoft Teams . For information on setting up this channel, see",
-              "context": "html",
-              "length": 83
-            },
-            {
-              "text": "an on-call escalation . Mobile push. For information on setting up this channel, see",
-              "context": "html",
-              "length": 84
-            },
-            {
-              "text": "an on-call escalation .",
-              "context": "html",
-              "length": 23
-            },
-            {
-              "text": "Notify is active.",
-              "context": "html",
-              "length": 17
-            }
-          ],
-          "extraSegments": [
-            {
-              "text": "Role required: (rota_admin",
-              "context": "notion",
-              "length": 26
-            },
-            {
-              "text": "the Actions icon",
-              "context": "notion",
-              "length": 16
-            },
-            {
-              "text": "following notification methods:",
-              "context": "notion",
-              "length": 31
-            },
-            {
-              "text": "Notify is active.",
-              "context": "notion",
-              "length": 17
-            },
-            {
-              "text": "Email Slack Voice",
-              "context": "notion",
-              "length": 17
-            },
-            {
-              "text": "an on-call escalation",
-              "context": "notion",
-              "length": 21
-            },
-            {
-              "text": "an on-call escalation",
-              "context": "notion",
-              "length": 21
-            },
-            {
-              "text": "user preference option. Related Content",
-              "context": "notion",
-              "length": 39
-            }
-          ],
-          "groupMatches": [],
-          "totalMissingChars": 270,
-          "totalExtraChars": 188
-        },
-        "fuzzyConfidenceThreshold": 0.95,
-        "fuzzyMatchedChars": 0,
-        "adjustedCoverage": 100.3,
-        "adjustedCoverageStr": "100.3%",
-        "adjustedPassed": true
-      }
+      "audit": null
     },
     "meta": {}
   }

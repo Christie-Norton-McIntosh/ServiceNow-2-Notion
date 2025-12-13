@@ -124,6 +124,31 @@ function dedupeAndFilterBlocks(blockArray, options = {}) {
         continue;
       }
       
+      // Handle Related Content headings specially - allow deduplication within same page
+      // but preserve them across different pages/sections
+      if (blk && (blk.type === 'heading_1' || blk.type === 'heading_2' || blk.type === 'heading_3')) {
+        const headingType = blk.type;
+        const txt = plainTextFromRich(blk[headingType]?.rich_text || []);
+        const isRelatedContentHeading = /related content/i.test(txt.trim());
+        if (isRelatedContentHeading) {
+          // Check if we already have this exact Related Content heading in the current output
+          const hasDuplicateRelatedHeading = out.some(existing => 
+            existing.type === blk.type && 
+            existing[existing.type]?.rich_text && 
+            plainTextFromRich(existing[existing.type].rich_text) === txt
+          );
+          
+          if (hasDuplicateRelatedHeading) {
+            console.log(`🚫 Duplicate Related Content heading found, skipping: "${txt.substring(0, 60)}..."`);
+            continue; // Skip this duplicate
+          } else {
+            console.log(`✓ Related Content heading added: "${txt.substring(0, 60)}..."`);
+            out.push(blk);
+            continue;
+          }
+        }
+      }
+      
       // Never dedupe common section headings/labels that appear in multiple places
       // (e.g., "Procedure", "About this task", "Before you begin")
       if (blk && blk.type === 'paragraph') {

@@ -2290,6 +2290,7 @@ async function extractContentFromHtml(html) {
         // semantic duplicates and ordering mismatches in Notion output.
         try {
           const doDedupe = !(process.env.SN2N_VALIDATE_OUTPUT === '1' || process.env.SN2N_VALIDATE_OUTPUT === 'true');
+          console.log(`🔍 DEBUG: doDedupe = ${doDedupe}, SN2N_VALIDATE_OUTPUT = "${process.env.SN2N_VALIDATE_OUTPUT}"`);
           if (doDedupe) {
             const normalize = (s) => {
               if (!s) return '';
@@ -2559,6 +2560,57 @@ async function extractContentFromHtml(html) {
           }
         } catch (e) {
           console.log(`⚠️ Table dedupe failed: ${e && e.message}`);
+        }
+
+        // Additional deduplication: Remove duplicate Related Content headings within the same page
+        let relatedContentHeadingCount = 0;
+        const filteredBlocks = [];
+        for (const block of processedBlocks) {
+          if (block) {
+            // Check for heading blocks with 'Related Content' text
+            if (block.type === 'heading_1' || block.type === 'heading_2' || block.type === 'heading_3') {
+              const headingType = block.type;
+              const richText = block[headingType]?.rich_text;
+              if (richText && Array.isArray(richText)) {
+                const headingText = richText.map(rt => rt.text?.content || '').join('').trim();
+                const isRelatedContentHeading = /related content/i.test(headingText);
+                if (isRelatedContentHeading) {
+                  if (relatedContentHeadingCount > 0) {
+                    console.log(`🚫 Duplicate Related Content heading found, skipping: "${headingText}"`);
+                    continue; // Skip this duplicate
+                  } else {
+                    console.log(`✓ Related Content heading added: "${headingText}"`);
+                    relatedContentHeadingCount++;
+                  }
+                }
+              }
+            }
+            // Check for toggle blocks with 'Related Content' title
+            if (block.type === 'toggle') {
+              const richText = (block.toggle || {}).rich_text;
+              if (richText && Array.isArray(richText)) {
+                const toggleText = richText.map(rt => rt.text?.content || '').join('').trim();
+                const isRelatedToggle = /related content/i.test(toggleText);
+                if (isRelatedToggle) {
+                  if (relatedContentHeadingCount > 0) {
+                    console.log(`🚫 Duplicate Related Content toggle found, skipping: "${toggleText}"`);
+                    continue;
+                  } else {
+                    console.log(`✓ Related Content toggle added: "${toggleText}"`);
+                    relatedContentHeadingCount++;
+                  }
+                }
+              }
+            }
+          }
+          filteredBlocks.push(block);
+        }
+        
+        if (relatedContentHeadingCount > 1) {
+          const removedHeadings = relatedContentHeadingCount - 1;
+          processedBlocks.length = 0;
+          processedBlocks.push(...filteredBlocks);
+          log(`🧹 Removed ${removedHeadings} duplicate Related Content heading(s)`);
         }
 
         return processedBlocks;
@@ -4861,10 +4913,27 @@ async function extractContentFromHtml(html) {
       const hasOnThisPage = $elem.find('h5').filter((i, h5) => {
         const text = $(h5).text().trim().toLowerCase();
         return text === 'on this page';
-      }).length > 0;      if (hasOnThisPage) {
-        console.log(`🔍 Skipping contentPlaceholder with "On this page" Mini TOC (UI navigation, not article content)`);
-        $elem.remove(); // Mark as processed
-        return processedBlocks;
+      }).length > 0;
+      if (hasOnThisPage) {
+        // If the contentPlaceholder contains a Mini TOC, remove only the Mini TOC
+        // nodes (and their UI chrome) but keep other sidebox content such as
+        // Related Content. This prevents skipping the whole placeholder when a
+        // sidebox contains both the mini TOC and Related Content.
+        console.log(`🔍 Found "On this page" Mini TOC inside placeholder; removing miniTOC elements but preserving sidebox content`);
+        try {
+          $elem.find('.miniTOC').remove();
+          $elem.find('.zDocsMiniTocCollapseButton').remove();
+          $elem.find('.miniTOCHeader').remove();
+          $elem.find('.miniTOCTitle').remove();
+          // Also remove any nav elements that appear to be miniTOC UI
+          $elem.find('nav').filter((i, n) => {
+            const $n = $(n);
+            return $n.hasClass('miniTOC') || $n.find('.zDocsMiniTocCollapseButton').length > 0;
+          }).remove();
+        } catch (ux) {
+          console.log('🔍 [CONTENT-PLACEHOLDER-RELATED] Warning: unable to remove miniTOC elements', ux && ux.message);
+        }
+        // Continue; do not skip entire placeholder; Related Content will be processed below
       }
       
       // Check for a Related Content heading anywhere inside this placeholder even
@@ -4889,12 +4958,8 @@ async function extractContentFromHtml(html) {
           console.log(`🔍 [CONTENT-PLACEHOLDER-RELATED] contentPlaceholder snippet (first 400 chars): ${$elem.html().substring(0,400).replace(/\n/g,'\\n').replace(/\r/g,'\\r')}...`);
           console.log(`🔍 [CONTENT-PLACEHOLDER-RELATED] inserting heading and list`);
           const headingText = 'Related Content';
-          processedBlocks.push({
-            object: 'block',
-            type: 'heading_3',
-            heading_3: { rich_text: [{ type: 'text', text: { content: headingText }, annotations: { bold: true, italic: false, strikethrough: false, underline: false, code: false, color: 'default' } }] }
-          });
-
+          // Collect child blocks (list items + descriptions) and wrap them in a single toggle
+          const relatedChildren = [];
           // Try to find UL as sibling or descendant
           let $ul_any = relatedH5_any.first().nextAll('ul').first();
           if (!$ul_any || $ul_any.length === 0) $ul_any = relatedH5_any.first().parent().find('ul').first();
@@ -4908,16 +4973,20 @@ async function extractContentFromHtml(html) {
               console.log('🔍 [CONTENT-PLACEHOLDER-RELATED] Warning: unable to serialize UL HTML', ux && ux.message);
             }
             const lis_any = $ul_any.find('> li').toArray();
+            console.log(`🔍 [CONTENT-PLACEHOLDER-RELATED] Processing ${lis_any.length} LI elements`);
+            let blocksAdded = 0;
             for (const li of lis_any) {
               const $li = $(li);
               const link = $li.find('a').first();
               const linkText = (link.text() || '').trim();
+              console.log(`   📎 Processing LI: "${linkText}"`);
               let linkHref = (link.attr('href') || '').trim();
               const linkRichText = [{ type: 'text', text: { content: linkText }, annotations: { bold: false, italic: false, strikethrough: false, underline: false, code: false, color: 'default' } }];
               if (linkHref && linkHref.startsWith('/')) linkHref = `https://www.servicenow.com${linkHref}`;
               try { if (linkHref) new URL(linkHref); if (linkHref) linkRichText[0].text.link = { url: linkHref }; } catch (e) { /* ignore invalid URLs */ }
 
-              processedBlocks.push({ object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: linkRichText } });
+              relatedChildren.push({ object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: linkRichText } });
+              blocksAdded++;
 
               const paragraphs_any = $li.find('p').toArray();
               for (const p of paragraphs_any) {
@@ -4927,22 +4996,59 @@ async function extractContentFromHtml(html) {
                   if (pRichText.length > 0 && pRichText.some(rt => rt.text.content.trim())) {
                     const chunks = splitRichTextArray(pRichText);
                     for (const chunk of chunks) {
-                      processedBlocks.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: chunk } });
+                      relatedChildren.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: chunk } });
+                      blocksAdded++;
                     }
                   }
                 }
               }
             }
+            console.log(`🔍 [CONTENT-PLACEHOLDER-RELATED] Prepared ${blocksAdded} related child block(s) (including paragraphs)`);
+            // Only add a toggle block if we have children
+            if (relatedChildren.length > 0) {
+              // Emit toggle block
+              processedBlocks.push({
+                object: 'block',
+                type: 'toggle',
+                toggle: {
+                  rich_text: [{ type: 'text', text: { content: headingText }, annotations: { bold: true, italic: false, strikethrough: false, underline: false, code: false, color: 'default' } }],
+                  children: relatedChildren
+                }
+              });
 
+              // Remove any previously-added heading_x blocks with 'Related Content' so we don't duplicate
+              try {
+                const oldLen = processedBlocks.length;
+                const filtered = [];
+                for (const b of processedBlocks) {
+                  if (b && (b.type === 'heading_1' || b.type === 'heading_2' || b.type === 'heading_3')) {
+                    const r = (b[b.type] && b[b.type].rich_text) || [];
+                    const text = r.map(rt => rt.text?.content || '').join('').trim();
+                    if (/related content/i.test(text)) {
+                      // skip this old heading
+                      continue;
+                    }
+                  }
+                  filtered.push(b);
+                }
+                processedBlocks.length = 0; processedBlocks.push(...filtered);
+                console.log(`🔍 [CONTENT-PLACEHOLDER-RELATED] Removed any duplicate Related Content heading blocks (if present) - ${oldLen} -> ${processedBlocks.length}`);
+              } catch (rErr) { /* ignore */ }
+            }
+
+            // Remove the original related H5 so it doesn't create a duplicate heading
+            try { relatedH5_any.first().remove(); } catch (rmErr) { /* ignore */ }
             $ul_any.remove();
           }
-          console.log(`✅ [RELATED-CONTENT-PROCESSED] Related Content processing complete - added blocks to processedBlocks array`);
+            console.log(`✅ [RELATED-CONTENT-PROCESSED] Related Content processing complete - processedBlocks now has ${processedBlocks.length} blocks`);
+            // Related Content has been processed from contentPlaceholder
         }
       } catch (e) {
         console.log('⚠️ Error processing Related Content in contentPlaceholder (early check):', e && e.message);
       }
 
       // Check if it has meaningful content before skipping
+      // For contentPlaceholder divs, be more lenient since they often contain Related Content
       const children = $elem.find('> *').toArray();
       const hasContent = children.some(child => {
         const $child = $(child);
@@ -4952,11 +5058,31 @@ async function extractContentFromHtml(html) {
         return text.length > 20 || $child.find('h1, h2, h3, h4, h5, h6, ul, ol, p, a').length > 0 || hasNavElements;
       });
 
-      if (hasContent) {
-        console.log(`🔍 contentPlaceholder has meaningful content (${children.length} children) - processing`);
-        for (const child of children) {
-          const childBlocks = await processElement(child);
-          processedBlocks.push(...childBlocks);
+      // Special handling for contentPlaceholder divs - they often contain Related Content
+      // Always process them recursively since they're specifically identified as content containers
+      const isContentPlaceholder = $elem.hasClass('contentPlaceholder') || $elem.attr('data-was-placeholder') === 'true';
+
+      if (hasContent || isContentPlaceholder) {
+        console.log(`🔍 contentPlaceholder has meaningful content (${children.length} children${isContentPlaceholder && !hasContent ? ', processing as contentPlaceholder' : ''}) - processing`);
+        
+        if (children.length > 0) {
+          // Normal processing
+          for (const child of children) {
+            const childBlocks = await processElement(child);
+            processedBlocks.push(...childBlocks);
+          }
+        } else if (isContentPlaceholder) {
+          // Fallback: Parse inner HTML as separate HTML fragment when Cheerio parsing fails
+          const innerHtml = $elem.html();
+          if (innerHtml && innerHtml.trim()) {
+            console.log(`🔍 contentPlaceholder fallback: parsing inner HTML as separate fragment (${innerHtml.length} chars)`);
+            try {
+              const innerBlocks = await extractContentFromHtml(`<div>${innerHtml}</div>`, options);
+              processedBlocks.push(...innerBlocks.children);
+            } catch (e) {
+              console.log(`⚠️ contentPlaceholder fallback failed:`, e.message);
+            }
+          }
         }
       } else {
         // Diagnostic: output the contentPlaceholder outerHTML to help debugging cases where it looks empty
@@ -4982,20 +5108,20 @@ async function extractContentFromHtml(html) {
       const listItems = $elem.find('li').toArray();
 
       // Detect if nav is actually a Related Content TOC: check preceding heading text or nav class
-      const prevHeading = $elem.prevAll('h1,h2,h3,h4,h5,h6').first();
+  const prevHeading = $elem.prevAll('h1,h2,h3,h4,h5,h6').first();
       const prevHeadingText = prevHeading ? $(prevHeading).text().trim().toLowerCase() : '';
       const navClassAttr = $elem.attr('class') || '';
       const isRelatedTOC = prevHeadingText === 'related content' || /related/i.test(navClassAttr);
+      
+      // If this nav contains Related Content, we'll collect the children and emit
+      // a single toggle block containing them (toggle title = 'Related Content')
+      const relatedChildren = [];
       if (isRelatedTOC) {
-        const headingText = 'Related Content';
-        processedBlocks.push({
-          object: 'block',
-          type: 'heading_3',
-          heading_3: {
-            rich_text: [{ type: 'text', text: { content: headingText }, annotations: { bold: true, italic: false, strikethrough: false, underline: false, code: false, color: 'default' } }]
-          }
-        });
-        console.log(`🔍 [NAV-RELATED] Inserting heading for Related Content: "${headingText}"`);
+        // If a heading precedes this nav and indicates 'Related Content',
+        // remove it so that we don't emit a duplicate heading after we
+        // create the toggle block that replaces it.
+        try { if (prevHeading && prevHeading.length > 0) prevHeading.remove(); } catch (err) { /* ignore */ }
+        console.log(`🔍 [NAV-RELATED] Detected Related Content nav - will create a Toggle block`);
       }
 
       for (const li of listItems) {
@@ -5027,13 +5153,9 @@ async function extractContentFromHtml(html) {
           }
 
           if (isRelatedTOC) {
-            // Create bulleted list item for Related Content
-            processedBlocks.push({
-              object: "block",
-              type: "bulleted_list_item",
-              bulleted_list_item: { rich_text: linkRichText }
-            });
-            console.log(`🔍 [NAV-RELATED] Created bulleted_list_item for link: "${linkText.substring(0,50)}..."`);
+            // Create bulleted list item for Related Content (deferred to relatedChildren)
+            relatedChildren.push({ object: "block", type: "bulleted_list_item", bulleted_list_item: { rich_text: linkRichText } });
+            console.log(`🔍 [NAV-RELATED] Created bulleted_list_item (deferred) for link: "${linkText.substring(0,50)}..."`);
           } else {
             processedBlocks.push({
               object: "block",
@@ -5055,13 +5177,13 @@ async function extractContentFromHtml(html) {
             if (pRichText.length > 0 && pRichText.some(rt => rt.text.content.trim())) {
               const richTextChunks = splitRichTextArray(pRichText);
               for (const chunk of richTextChunks) {
-                processedBlocks.push({
-                  object: "block",
-                  type: "paragraph",
-                  paragraph: { rich_text: chunk }
-                });
-                if (isRelatedTOC) console.log(`🔍 [NAV-RELATED] Created paragraph description for list item: "${chunk[0]?.text?.content?.substring(0,50) || 'empty'}..."`);
-                else console.log(`🔍 [NAV-BLOCK] Created paragraph block with description: "${chunk[0]?.text?.content?.substring(0, 50) || 'empty'}..."`);
+                if (isRelatedTOC) {
+                  relatedChildren.push({ object: "block", type: "paragraph", paragraph: { rich_text: chunk } });
+                  console.log(`🔍 [NAV-RELATED] Created paragraph (deferred) description for list item: "${chunk[0]?.text?.content?.substring(0,50) || 'empty'}..."`);
+                } else {
+                  processedBlocks.push({ object: "block", type: "paragraph", paragraph: { rich_text: chunk } });
+                  console.log(`🔍 [NAV-BLOCK] Created paragraph block with description: "${chunk[0]?.text?.content?.substring(0, 50) || 'empty'}..."`);
+                }
                 console.log(`🔍 [NAV-BLOCK-RICHTEXT] Desc rich_text length: ${chunk.length}, content: ${JSON.stringify(chunk.slice(0, 2))}`);
               }
             }
@@ -5069,6 +5191,36 @@ async function extractContentFromHtml(html) {
         }
       }
 
+      // If we collected relatedChildren, emit a single toggle block with them
+  if (isRelatedTOC && relatedChildren.length > 0) {
+        const headingText = 'Related Content';
+        processedBlocks.push({
+          object: 'block',
+          type: 'toggle',
+          toggle: {
+            rich_text: [{ type: 'text', text: { content: headingText }, annotations: { bold: true, italic: false, strikethrough: false, underline: false, code: false, color: 'default' } }],
+            children: relatedChildren
+          }
+        });
+        // Remove previously added headings so the toggle is the canonical representation
+        try {
+          const oldLen = processedBlocks.length;
+          const filtered = [];
+          for (const b of processedBlocks) {
+            if (b && (b.type === 'heading_1' || b.type === 'heading_2' || b.type === 'heading_3')) {
+              const r = (b[b.type] && b[b.type].rich_text) || [];
+              const text = r.map(rt => rt.text?.content || '').join('').trim();
+              if (/related content/i.test(text)) {
+                continue; // skip
+              }
+            }
+            filtered.push(b);
+          }
+          processedBlocks.length = 0; processedBlocks.push(...filtered);
+          console.log(`🔍 [NAV-RELATED] Removed any duplicate Related Content heading blocks (if present) - ${oldLen} -> ${processedBlocks.length}`);
+        } catch (err) { /* ignore */ }
+        console.log(`🔍 [NAV-RELATED] Emitted toggle block for Related Content with ${relatedChildren.length} child blocks`);
+      }
       $elem.remove(); // Mark as processed
       
     } else if (tagName === 'div' && ($elem.hasClass('itemgroup') || $elem.hasClass('info') || $elem.hasClass('stepxmp'))) {
@@ -5925,10 +6077,35 @@ async function extractContentFromHtml(html) {
     const blockTypes = processedBlocks.map(b => b.type).join(', ');
     console.log(`[EXTRACTION-DEBUG] EXIT processElement(<${tagName}${elemId !== 'no-id' ? ` id="${elemId}"` : ''}${elemClass !== 'none' ? ` class="${elemClass.substring(0, 30)}"` : ''}>) → ${processedBlocks.length} blocks [${blockTypes}]`);
 
+    // Final dedupe: If we emitted a Related Content toggle, remove any
+    // heading blocks that also claim to be 'Related Content' so only the
+    // toggle remains. This avoids duplication caused by processing the
+    // h5 heading and the nav separately.
+    try {
+      const hasRelatedToggle = processedBlocks.some(b => b.type === 'toggle' && ((b.toggle || {}).rich_text || []).map(rt => rt.text.content).join('').trim().toLowerCase().includes('related content'));
+      if (hasRelatedToggle) {
+        const before = processedBlocks.length;
+        const filtered = processedBlocks.filter(b => {
+          if (b && (b.type === 'heading_1' || b.type === 'heading_2' || b.type === 'heading_3')) {
+            const r = b[b.type]?.rich_text || [];
+            const t = r.map(rt => rt.text?.content || '').join('').trim().toLowerCase();
+            if (/related content/i.test(t)) {
+              return false;
+            }
+          }
+          return true;
+        });
+        processedBlocks.length = 0; processedBlocks.push(...filtered);
+        console.log(`🔍 [RELATED-CONTENT-DEDUPE] Removed duplicate heading blocks because a Related Content toggle exists (${before} -> ${processedBlocks.length})`);
+      }
+    } catch (err) {
+      /* ignore */
+    }
+
     // DEBUG: Check for Related Content blocks
     const relatedBlocks = processedBlocks.filter(b => {
-      if (b.type === 'heading_2' && b.heading_2?.rich_text?.some(rt => rt.text?.content?.includes('Related Content'))) return true;
-      if (b.type === 'bulleted_list_item' && b.bulleted_list_item?.rich_text?.some(rt => rt.text?.content?.includes('Procurement'))) return true;
+    if (b.type === 'heading_3' && b.heading_3?.rich_text?.some(rt => rt.text?.content?.toLowerCase().includes('related content'))) return true;
+      if (b.type === 'heading_2' && b.heading_2?.rich_text?.some(rt => rt.text?.content?.toLowerCase().includes('related content'))) return true;
       return false;
     });
     if (relatedBlocks.length > 0) {
@@ -6149,9 +6326,9 @@ async function extractContentFromHtml(html) {
       // BUT filter out Mini TOC sidebars (navigation chrome)
       // FIX v11.0.217: REMOVED Related Content filter - users want this content extracted
       // FIX v11.0.229: More specific Mini TOC detection - only skip "On this page" sections, keep "Related Content"
-      const contentPlaceholders = topLevelChildren.filter(c => {
+      let contentPlaceholders = topLevelChildren.filter(c => {
         const $c = $(c);
-        if (!$c.hasClass('contentPlaceholder')) return false;
+        if (!$c.hasClass('contentPlaceholder') && $c.attr('data-was-placeholder') !== 'true') return false;
         
         // Skip only "On this page" Mini TOC, not all sidebars
         // Check for specific "On this page" heading text to distinguish from "Related Content"
@@ -6173,12 +6350,13 @@ async function extractContentFromHtml(html) {
       }
       
         // FALLBACK: If contentPlaceholders exist in DOM but not in topLevelChildren (malformed HTML), add them
-        const allContentPlaceholdersInBody = $('.zDocsTopicPageBody .contentPlaceholder').toArray();
-        if (allContentPlaceholdersInBody.length > contentPlaceholders.length) {
-          console.log(`🔍 ⚠️ FALLBACK: Found ${allContentPlaceholdersInBody.length} contentPlaceholders in DOM but only ${contentPlaceholders.length} in topLevelChildren`);
-          console.log(`🔍 ⚠️ Adding ${allContentPlaceholdersInBody.length - contentPlaceholders.length} missing contentPlaceholders to contentElements`);
+        // Search globally since contentPlaceholders can be siblings of .zDocsTopicPageBody, not children
+        const allContentPlaceholdersInDOM = $('[class*="contentPlaceholder"], [data-was-placeholder="true"]').toArray();
+        if (allContentPlaceholdersInDOM.length > contentPlaceholders.length) {
+          console.log(`🔍 ⚠️ FALLBACK: Found ${allContentPlaceholdersInDOM.length} contentPlaceholders in DOM but only ${contentPlaceholders.length} in topLevelChildren`);
+          console.log(`🔍 ⚠️ Adding ${allContentPlaceholdersInDOM.length - contentPlaceholders.length} missing contentPlaceholders to contentElements`);
           // Add the missing ones
-          const missingPlaceholders = allContentPlaceholdersInBody.filter(cp => !contentPlaceholders.includes(cp));
+          const missingPlaceholders = allContentPlaceholdersInDOM.filter(cp => !contentPlaceholders.includes(cp));
           contentPlaceholders.push(...missingPlaceholders);
         }
       
@@ -6190,9 +6368,9 @@ async function extractContentFromHtml(html) {
       contentElements = topLevelChildren;
       
         // FALLBACK: Check for contentPlaceholders that exist in DOM but weren't in topLevelChildren
-        const allContentPlaceholdersInBody = $('.contentPlaceholder').toArray(); // Use global search since parent might be malformed
+        const allContentPlaceholdersInBody = $('[class*="contentPlaceholder"], [data-was-placeholder="true"]').toArray(); // Use global search since parent might be malformed
         if (allContentPlaceholdersInBody.length > 0) {
-          const existingPlaceholders = contentElements.filter(el => $(el).hasClass('contentPlaceholder'));
+          const existingPlaceholders = contentElements.filter(el => $(el).hasClass('contentPlaceholder') || $(el).attr('data-was-placeholder') === 'true');
           console.log(`🔍 ⚠️ FALLBACK CHECK: Found ${allContentPlaceholdersInBody.length} contentPlaceholders globally, ${existingPlaceholders.length} already in contentElements`);
           if (allContentPlaceholdersInBody.length > existingPlaceholders.length) {
             console.log(`🔍 ⚠️ FALLBACK ACTIVE: Adding ${allContentPlaceholdersInBody.length - existingPlaceholders.length} missing contentPlaceholders`);
@@ -6399,6 +6577,38 @@ async function extractContentFromHtml(html) {
   }
 
   console.log(`🔍 Total blocks after processing: ${blocks.length}`);
+  
+  // Additional deduplication: Remove duplicate Related Content headings within the same page
+  let relatedContentHeadingsFound = 0;
+  const filteredBlocks = [];
+  for (const block of blocks) {
+    if (block && (block.type === 'heading_1' || block.type === 'heading_2' || block.type === 'heading_3')) {
+      const headingType = block.type;
+      const richText = block[headingType]?.rich_text;
+      if (richText && Array.isArray(richText)) {
+        const headingText = richText.map(rt => rt.text?.content || '').join('').trim();
+        const isRelatedContentHeading = /related content/i.test(headingText);
+        
+        if (isRelatedContentHeading) {
+          relatedContentHeadingsFound++;
+          if (relatedContentHeadingsFound > 1) {
+            console.log(`🚫 Duplicate Related Content heading found, skipping: "${headingText}"`);
+            continue; // Skip this duplicate
+          } else {
+            console.log(`✓ Related Content heading added: "${headingText}"`);
+          }
+        }
+      }
+    }
+    filteredBlocks.push(block);
+  }
+  
+  if (relatedContentHeadingsFound > 1) {
+    const removedHeadings = relatedContentHeadingsFound - 1;
+    blocks.length = 0;
+    blocks.push(...filteredBlocks);
+    console.log(`🧹 Removed ${removedHeadings} duplicate Related Content heading(s)`);
+  }
   
   // Check for any truly unprocessed content in the PROCESSED area only
   // Get the remaining HTML from the specific content area we processed

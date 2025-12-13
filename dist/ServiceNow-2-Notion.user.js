@@ -1,11 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-<<<<<<< HEAD
-// @version      12.0.1
-=======
-// @version      11.0.256
->>>>>>> 2033e48b619d09ece9cb1a2e1e56a79184e9ee6c
+// @version      11.0.257
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -29,11 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-<<<<<<< HEAD
-  window.BUILD_VERSION = "12.0.1";
-=======
-    window.BUILD_VERSION = "11.0.256";
->>>>>>> 2033e48b619d09ece9cb1a2e1e56a79184e9ee6c
+    window.BUILD_VERSION = "11.0.257";
 (function () {
 
   // Configuration constants and default settings
@@ -43,7 +35,7 @@
   // =============================================================================
 
   // Use build-injected version if available, otherwise fallback
-  const PROVIDER_VERSION = (typeof window !== "undefined" && window.BUILD_VERSION) || "9.0.0";
+  const PROVIDER_VERSION = (typeof window !== "undefined" && window.BUILD_VERSION) || "12.0.0";
   const PROVIDER_NAME = "ServiceNow";
 
   // =============================================================================
@@ -3008,7 +3000,7 @@
             📚 ServiceNow to Notion
             <span style="font-size:12px; color:#6b7280; font-weight:normal;">⇄ drag to move</span>
           </h3>
-          <div style="font-size:11px; color:#9ca3af;">v${window.BUILD_VERSION || "11.0.84"}</div>
+          <div style="font-size:11px; color:#9ca3af;">v${window.BUILD_VERSION || "12.0.0"}</div>
         </div>
         <div style="display:flex; align-items:center; gap:8px;">
           <button id="w2n-reset-position-btn" title="Reset panel position to top-right corner" style="background:none;border:none;font-size:16px;cursor:pointer;color:#6b7280;padding:4px;line-height:1;">↗️</button>
@@ -6809,7 +6801,7 @@
               // BUT: Keep nav elements that are inside article/section tags (these are "Related Links" content)
               // Note: Can't use descendant selectors in :not(), so we'll remove manually
               const navElements = mainClone.querySelectorAll(
-                "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer"
+                "nav, [role='navigation'], .navigation, .breadcrumb, .menu, footer"
               );
               navElements.forEach((el) => {
                 // Keep nav elements that are inside article or section tags
@@ -6961,7 +6953,7 @@
 
       // Apply nav filtering - remove navigation elements that are NOT inside article/section
       const navElements = contentClone.querySelectorAll(
-        "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer"
+        "nav, [role='navigation'], .navigation, .breadcrumb, .menu, footer"
       );
       console.log(`📄 Found ${navElements.length} navigation elements in regular content`);
       console.log(`📄 contentClone tagName: ${contentClone.tagName}, id: ${contentClone.id}, class: ${contentClone.className}`);
@@ -6983,7 +6975,15 @@
           el.remove();
           removedCount++;
         } else {
-          console.log(`   ✅ Keeping nav: ${el.tagName} (inside article/section)`);
+          // Additional check: filter out navigation menu elements even if inside article/section
+          const hasNavigationMenu = el.querySelector('ul.ullinks, li.link.ulchildlink, .ullinks, .ulchildlink');
+          if (hasNavigationMenu) {
+            console.log(`   ❌ Removing nav: ${el.tagName} (contains navigation menu elements)`);
+            el.remove();
+            removedCount++;
+          } else {
+            console.log(`   ✅ Keeping nav: ${el.tagName} (inside article/section, no navigation menu)`);
+          }
         }
       });
       console.log(`📄 Removed ${removedCount} navigation elements, kept ${navElements.length - removedCount}`);
@@ -7115,7 +7115,7 @@
         
         // Remove the same nav elements we removed from clone
         const tempNavElements = tempDiv.querySelectorAll(
-          "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer"
+          "nav, [role='navigation'], .navigation, .breadcrumb, .menu, footer"
         );
         let tempRemovedCount = 0;
         tempNavElements.forEach((el) => {
@@ -7257,17 +7257,24 @@
     // [v11.0.243] FIX: Extract navigation-based Related Content
     // Some pages (like Activate Procurement) use navigation sections instead of contentPlaceholder divs
     // This creates synthetic Related Content HTML with descriptions included in link text to prevent duplicate paragraphs
-    // Only run navigation extraction if Related Content hasn't already been extracted from contentPlaceholders
-    if (!combinedHtml.includes('Related Content')) {
+    // Only run navigation extraction if no Related Content heading exists anywhere
+    const hasAnyRelatedContentHeading = /<h[1-6][^>]*>\s*Related Content\s*<\/h[1-6]>/i.test(combinedHtml);
+    console.log(`🔍 [NAV-EXTRACTION-DEBUG] combinedHtml has ANY Related Content heading: ${hasAnyRelatedContentHeading}`);
+    if (!hasAnyRelatedContentHeading) {
       const navRelatedContent = extractNavigationRelatedContent(contentElement);
       if (navRelatedContent) {
         console.log(`📄 [NAV-EXTRACTION] Adding navigation-based Related Content (${navRelatedContent.length} chars)`);
         combinedHtml += navRelatedContent;
       }
     } else {
-      console.log(`📄 [NAV-EXTRACTION] Skipping navigation extraction - Related Content already found in contentPlaceholders`);
+      console.log(`📄 [NAV-EXTRACTION] Skipping navigation extraction - Related Content heading found anywhere in HTML`);
     }
 
+    console.log(`📤📤📤 FINAL HTML BEING SENT TO SERVER (length: ${combinedHtml.length}):`);
+    console.log(`📤📤📤 Related Content in final HTML: ${combinedHtml.includes('Related Content')}`);
+    const relatedMatches = combinedHtml.match(/Related Content/gi);
+    console.log(`📤📤📤 "Related Content" matches: ${relatedMatches ? relatedMatches.length : 0}`);
+    
     return { combinedHtml, combinedImages };
   }
 
@@ -7333,6 +7340,14 @@
       if (!isRelatedContent) continue;
 
       console.log(`✅ [NAV-EXTRACTION] Found ${element.tagName}${element.classList.contains('contentWrapper') ? '.contentWrapper' : ''} element with ${links.length} links and descriptions`);
+      console.log(`🔍 [NAV-EXTRACTION] Links details:`);
+      links.forEach((li, idx) => {
+        const link = li.querySelector('a');
+        const desc = li.querySelector('p');
+        if (link) {
+          console.log(`   ${idx + 1}. Link: "${link.textContent.trim()}", href: "${link.href}", has desc: ${!!desc}`);
+        }
+      });
 
       // Generate synthetic Related Content HTML
       let relatedHtml = '<h5>Related Content</h5><ul>';
