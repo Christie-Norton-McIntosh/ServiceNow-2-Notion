@@ -4938,7 +4938,6 @@ async function extractContentFromHtml(html) {
           }
           console.log(`✅ [RELATED-CONTENT-PROCESSED] Related Content processing complete - added blocks to processedBlocks array`);
         }
-        }
       } catch (e) {
         console.log('⚠️ Error processing Related Content in contentPlaceholder (early check):', e && e.message);
       }
