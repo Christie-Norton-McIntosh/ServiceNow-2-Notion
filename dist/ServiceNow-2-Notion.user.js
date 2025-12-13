@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.257
+// @version      11.0.258
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.257";
+    window.BUILD_VERSION = "11.0.258";
 (function () {
 
   // Configuration constants and default settings
@@ -6801,7 +6801,7 @@
               // BUT: Keep nav elements that are inside article/section tags (these are "Related Links" content)
               // Note: Can't use descendant selectors in :not(), so we'll remove manually
               const navElements = mainClone.querySelectorAll(
-                "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer"
+                "nav, [role='navigation'], .navigation, .breadcrumb, .menu, footer"
               );
               navElements.forEach((el) => {
                 // Keep nav elements that are inside article or section tags
@@ -6953,7 +6953,7 @@
 
       // Apply nav filtering - remove navigation elements that are NOT inside article/section
       const navElements = contentClone.querySelectorAll(
-        "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer"
+        "nav, [role='navigation'], .navigation, .breadcrumb, .menu, footer"
       );
       console.log(`📄 Found ${navElements.length} navigation elements in regular content`);
       console.log(`📄 contentClone tagName: ${contentClone.tagName}, id: ${contentClone.id}, class: ${contentClone.className}`);
@@ -7107,7 +7107,7 @@
         
         // Remove the same nav elements we removed from clone
         const tempNavElements = tempDiv.querySelectorAll(
-          "nav, [role='navigation'], .navigation, .breadcrumb, .menu, header, footer"
+          "nav, [role='navigation'], .navigation, .breadcrumb, .menu, footer"
         );
         let tempRemovedCount = 0;
         tempNavElements.forEach((el) => {
