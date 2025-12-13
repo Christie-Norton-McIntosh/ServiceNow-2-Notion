@@ -30,6 +30,8 @@ server/.env
 *.swp
 
 # Log files
+ # Backup artifacts
+ backups/*.tar.gz
 logs/
 *.log
 tests/
