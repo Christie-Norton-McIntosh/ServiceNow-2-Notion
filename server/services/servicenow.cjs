@@ -4999,9 +4999,25 @@ async function extractContentFromHtml(html) {
 
       if (hasContent || isContentPlaceholder) {
         console.log(`🔍 contentPlaceholder has meaningful content (${children.length} children${isContentPlaceholder && !hasContent ? ', processing as contentPlaceholder' : ''}) - processing`);
-        for (const child of children) {
-          const childBlocks = await processElement(child);
-          processedBlocks.push(...childBlocks);
+        
+        if (children.length > 0) {
+          // Normal processing
+          for (const child of children) {
+            const childBlocks = await processElement(child);
+            processedBlocks.push(...childBlocks);
+          }
+        } else if (isContentPlaceholder) {
+          // Fallback: Parse inner HTML as separate HTML fragment when Cheerio parsing fails
+          const innerHtml = $elem.html();
+          if (innerHtml && innerHtml.trim()) {
+            console.log(`🔍 contentPlaceholder fallback: parsing inner HTML as separate fragment (${innerHtml.length} chars)`);
+            try {
+              const innerBlocks = await extractContentFromHtml(`<div>${innerHtml}</div>`, options);
+              processedBlocks.push(...innerBlocks.children);
+            } catch (e) {
+              console.log(`⚠️ contentPlaceholder fallback failed:`, e.message);
+            }
+          }
         }
       } else {
         // Diagnostic: output the contentPlaceholder outerHTML to help debugging cases where it looks empty
