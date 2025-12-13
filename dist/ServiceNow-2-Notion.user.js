@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ServiceNow-2-Notion
 // @namespace    https://github.com/Christie-Norton-McIntosh/ServiceNow-2-Notion
-// @version      11.0.262
+// @version      11.0.263
 // @description  Extract ServiceNow content and save to Notion via proxy server
 // @author       Norton-McIntosh
 // @match        https://*.service-now.com/*
@@ -25,7 +25,7 @@
 (function() {
     'use strict';
     // Inject runtime version from build process
-    window.BUILD_VERSION = "11.0.262";
+    window.BUILD_VERSION = "11.0.263";
 (function () {
 
   // Configuration constants and default settings
@@ -7327,6 +7327,14 @@
       if (!isRelatedContent) continue;
 
       console.log(`✅ [NAV-EXTRACTION] Found ${element.tagName}${element.classList.contains('contentWrapper') ? '.contentWrapper' : ''} element with ${links.length} links and descriptions`);
+      console.log(`🔍 [NAV-EXTRACTION] Links details:`);
+      links.forEach((li, idx) => {
+        const link = li.querySelector('a');
+        const desc = li.querySelector('p');
+        if (link) {
+          console.log(`   ${idx + 1}. Link: "${link.textContent.trim()}", href: "${link.href}", has desc: ${!!desc}`);
+        }
+      });
 
       // Generate synthetic Related Content HTML
       let relatedHtml = '<h5>Related Content</h5><ul>';
