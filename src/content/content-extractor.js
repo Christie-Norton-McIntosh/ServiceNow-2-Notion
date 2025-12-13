@@ -421,7 +421,15 @@ export async function extractContentWithIframes(contentElement) {
         el.remove();
         removedCount++;
       } else {
-        console.log(`   ✅ Keeping nav: ${el.tagName} (inside article/section)`);
+        // Additional check: filter out navigation menu elements even if inside article/section
+        const hasNavigationMenu = el.querySelector('ul.ullinks, li.link.ulchildlink, .ullinks, .ulchildlink');
+        if (hasNavigationMenu) {
+          console.log(`   ❌ Removing nav: ${el.tagName} (contains navigation menu elements)`);
+          el.remove();
+          removedCount++;
+        } else {
+          console.log(`   ✅ Keeping nav: ${el.tagName} (inside article/section, no navigation menu)`);
+        }
       }
     });
     console.log(`📄 Removed ${removedCount} navigation elements, kept ${navElements.length - removedCount}`);
@@ -695,20 +703,24 @@ export async function extractContentWithIframes(contentElement) {
   // [v11.0.243] FIX: Extract navigation-based Related Content
   // Some pages (like Activate Procurement) use navigation sections instead of contentPlaceholder divs
   // This creates synthetic Related Content HTML with descriptions included in link text to prevent duplicate paragraphs
-  // Only run navigation extraction if Related Content hasn't already been extracted from contentPlaceholders
-  // IMPROVED: Check for actual Related Content H5 headings in contentPlaceholders, not just any "Related Content" text
-  const hasRelatedContentHeading = /<h[1-6][^>]*>\s*Related Content\s*<\/h[1-6]>/i.test(combinedHtml);
-  console.log(`🔍 [NAV-EXTRACTION-DEBUG] combinedHtml contains Related Content heading: ${hasRelatedContentHeading}`);
-  if (!hasRelatedContentHeading) {
+  // Only run navigation extraction if no Related Content heading exists anywhere
+  const hasAnyRelatedContentHeading = /<h[1-6][^>]*>\s*Related Content\s*<\/h[1-6]>/i.test(combinedHtml);
+  console.log(`🔍 [NAV-EXTRACTION-DEBUG] combinedHtml has ANY Related Content heading: ${hasAnyRelatedContentHeading}`);
+  if (!hasAnyRelatedContentHeading) {
     const navRelatedContent = extractNavigationRelatedContent(contentElement);
     if (navRelatedContent) {
       console.log(`📄 [NAV-EXTRACTION] Adding navigation-based Related Content (${navRelatedContent.length} chars)`);
       combinedHtml += navRelatedContent;
     }
   } else {
-    console.log(`📄 [NAV-EXTRACTION] Skipping navigation extraction - Related Content heading already found in contentPlaceholders`);
+    console.log(`📄 [NAV-EXTRACTION] Skipping navigation extraction - Related Content heading found anywhere in HTML`);
   }
 
+  console.log(`📤📤📤 FINAL HTML BEING SENT TO SERVER (length: ${combinedHtml.length}):`);
+  console.log(`📤📤📤 Related Content in final HTML: ${combinedHtml.includes('Related Content')}`);
+  const relatedMatches = combinedHtml.match(/Related Content/gi);
+  console.log(`📤📤📤 "Related Content" matches: ${relatedMatches ? relatedMatches.length : 0}`);
+  
   return { combinedHtml, combinedImages };
 }
 
@@ -774,6 +786,14 @@ function extractNavigationRelatedContent(contentElement) {
     if (!isRelatedContent) continue;
 
     console.log(`✅ [NAV-EXTRACTION] Found ${element.tagName}${element.classList.contains('contentWrapper') ? '.contentWrapper' : ''} element with ${links.length} links and descriptions`);
+    console.log(`🔍 [NAV-EXTRACTION] Links details:`);
+    links.forEach((li, idx) => {
+      const link = li.querySelector('a');
+      const desc = li.querySelector('p');
+      if (link) {
+        console.log(`   ${idx + 1}. Link: "${link.textContent.trim()}", href: "${link.href}", has desc: ${!!desc}`);
+      }
+    });
 
     // Generate synthetic Related Content HTML
     let relatedHtml = '<h5>Related Content</h5><ul>';
